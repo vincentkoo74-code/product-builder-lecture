@@ -660,9 +660,9 @@
         <div class="summary-item"><strong id="totalCount">0</strong><span>참가자</span></div>
       </div>
       <div class="choice-buttons">
-        <button class="choice-button" onclick="selectChoice('scissors')"><span class="emoji">✌️</span>가위</button>
-        <button class="choice-button" onclick="selectChoice('rock')"><span class="emoji">✊</span>바위</button>
-        <button class="choice-button" onclick="selectChoice('paper')"><span class="emoji">🖐</span>보</button>
+        <button class="choice-button" onclick="selectChoice('scissors', event)"><span class="emoji">✌️</span>가위</button>
+        <button class="choice-button" onclick="selectChoice('rock', event)"><span class="emoji">✊</span>바위</button>
+        <button class="choice-button" onclick="selectChoice('paper', event)"><span class="emoji">🖐</span>보</button>
       </div>
       <div style="height: 12px"></div>
       <button class="btn-light btn-full" onclick="autoFillChoices()">테스트용: 모든 참가자 랜덤 선택</button>
@@ -712,7 +712,17 @@
     </section>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    // Supabase 설정 (사용자 정보 입력 필요)
+    const SUPABASE_URL = "https://cmfxhehpreanijwanwrr.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_vLqtQSJz9GRtTiiz84EDGQ_9eVm7L3l";
+    let supabase = null;
+
+    if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+
     const choiceLabel = {
       scissors: "가위",
       rock: "바위",
@@ -740,15 +750,89 @@
       currentUserId: "",
       penalty: "",
       round: 1,
+      status: "waiting",
       participants: [],
       timer: null,
       animationTimer: null,
-      remainingSeconds: 5
+      remainingSeconds: 5,
+      channel: null
     };
 
     function $(id) {
       return document.getElementById(id);
     }
+
+    // --- Supabase 실시간 연동 로직 ---
+
+    async function subscribeToRoom(roomCode) {
+      if (state.channel) supabase.removeChannel(state.channel);
+
+      state.channel = supabase
+        .channel(`room:${roomCode}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomCode}` }, payload => {
+          handleRoomUpdate(payload.new);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomCode}` }, payload => {
+          fetchParticipants(roomCode);
+        })
+        .subscribe();
+
+      // 초기 데이터 로드
+      const { data: room } = await supabase.from('rooms').select('*').eq('id', roomCode).single();
+      if (room) handleRoomUpdate(room);
+      await fetchParticipants(roomCode);
+    }
+
+    function handleRoomUpdate(room) {
+      if (!room) return;
+      state.penalty = room.penalty;
+      state.round = room.round;
+      
+      const oldStatus = state.status;
+      state.status = room.status;
+
+      // 상태 변화에 따른 화면 전환
+      if (oldStatus !== state.status) {
+        if (state.status === "waiting") {
+          state.role === "host" ? showHostRoom() : showScreen("screenParticipantWait");
+        } else if (state.status === "penalty_setting") {
+          state.role === "host" ? showPenaltyScreen() : showScreen("screenParticipantWait");
+        } else if (state.status === "playing") {
+          showGameScreen();
+        } else if (state.status === "result") {
+          finishRoundLocal(); // 로컬에서 판정 및 결과 화면 표시
+        } else if (state.status === "stats") {
+          showStats();
+        }
+      }
+      renderAll();
+    }
+
+    async function fetchParticipants(roomCode) {
+      const { data } = await supabase.from('participants').select('*').eq('room_id', roomCode).order('created_at', { ascending: true });
+      if (data) {
+        state.participants = data;
+        updateSelectedCount();
+        renderAll();
+        
+        // 결과 화면에서 모두가 선택했는지 확인 (호스트가 판정 트리거)
+        if (state.role === "host" && state.status === "playing" && data.every(p => p.choice)) {
+          updateRoomStatus("result");
+        }
+      }
+    }
+
+    async function updateRoomStatus(status) {
+      if (!supabase) return;
+      await supabase.from('rooms').update({ status }).eq('id', state.roomCode);
+    }
+
+    async function updateParticipantChoice(choice) {
+      if (!supabase) return;
+      await supabase.from('participants').update({ choice }).eq('id', state.currentUserId);
+    }
+
+    // --- 기존 UI 제어 로직 수정 ---
 
     function hideAllScreens() {
       [
@@ -774,18 +858,36 @@
       $("roomBadge").textContent = state.roomCode ? `방 ${state.roomCode}` : "방 없음";
     }
 
-    function createRoom() {
+    async function createRoom() {
       const code = Math.random().toString(36).substring(2, 6).toUpperCase();
+      
+      if (supabase) {
+        const { error } = await supabase.from('rooms').insert([{ id: code, status: 'waiting' }]);
+        if (error) { alert("방 생성 실패"); return; }
+        
+        const hostId = `h_${Date.now()}`;
+        await supabase.from('participants').insert([{ 
+          id: hostId, 
+          room_id: code, 
+          name: "호스트", 
+          is_host: true 
+        }]);
+
+        state.currentUserId = hostId;
+      }
+
       state.roomCode = code;
       state.roomUrl = `${location.origin}${location.pathname}?room=${code}`;
       state.role = "host";
-      state.currentUserId = "host";
-      state.penalty = "";
-      state.round = 1;
-      state.participants = [
-        createParticipant("host", "호스트", true)
-      ];
-      saveState();
+      state.status = "waiting";
+      
+      if (supabase) {
+        subscribeToRoom(code);
+      } else {
+        // 오프라인 모드용 초기화
+        state.participants = [createParticipant("host", "호스트", true)];
+        saveState();
+      }
       showHostRoom();
     }
 
@@ -809,7 +911,6 @@
     }
 
     function showJoinScreen() {
-      loadState();
       if (state.roomCode) {
         $("joinRoomCode").value = state.roomCode;
       }
@@ -828,77 +929,89 @@
     }
 
     function showStats() {
-      loadState();
       renderStats();
       showScreen("screenStats");
     }
 
     function goHome() {
       stopTimers();
+      if (state.channel) supabase.removeChannel(state.channel);
       showScreen("screenHome");
     }
 
-    function joinRoom() {
+    async function joinRoom() {
       const code = $("joinRoomCode").value.trim().toUpperCase();
       const name = $("joinName").value.trim();
 
-      if (!code) {
-        alert("방 코드를 입력해주세요.");
-        return;
-      }
-      if (!name) {
-        alert("닉네임을 입력해주세요.");
-        return;
-      }
-
-      loadState();
-      if (!state.roomCode) {
-        state.roomCode = code;
-        state.roomUrl = `${location.origin}${location.pathname}?room=${code}`;
-      }
+      if (!code) { alert("방 코드를 입력해주세요."); return; }
+      if (!name) { alert("닉네임을 입력해주세요."); return; }
 
       const id = `p_${Date.now()}`;
       state.role = "participant";
       state.currentUserId = id;
-      state.participants.push(createParticipant(id, name, false));
-      saveState();
-      showScreen("screenParticipantWait");
+      state.roomCode = code;
+
+      if (supabase) {
+        const { data: room } = await supabase.from('rooms').select('*').eq('id', code).single();
+        if (!room) { alert("존재하지 않는 방입니다."); return; }
+
+        await supabase.from('participants').insert([{ id, room_id: code, name, is_host: false }]);
+        subscribeToRoom(code);
+      } else {
+        state.participants.push(createParticipant(id, name, false));
+        saveState();
+        showScreen("screenParticipantWait");
+      }
     }
 
-    function addDemoParticipant() {
+    async function addDemoParticipant() {
       const names = ["민수", "지훈", "수진", "하나", "도윤", "유나", "태오", "서준"];
       const existing = state.participants.map(p => p.name);
       const nextName = names.find(name => !existing.includes(name)) || `참가자${state.participants.length}`;
-      state.participants.push(createParticipant(`demo_${Date.now()}`, nextName, false));
-      saveState();
-      renderAll();
+      
+      if (supabase) {
+        await supabase.from('participants').insert([{ 
+          id: `demo_${Date.now()}`, 
+          room_id: state.roomCode, 
+          name: nextName 
+        }]);
+      } else {
+        state.participants.push(createParticipant(`demo_${Date.now()}`, nextName, false));
+        saveState();
+        renderAll();
+      }
     }
 
-    function savePenalty() {
+    async function savePenalty() {
       const value = $("penaltyInput").value.trim();
-      if (!value) {
-        alert("벌칙을 입력해주세요.");
-        return;
-      }
+      if (!value) { alert("벌칙을 입력해주세요."); return; }
 
-      state.penalty = value;
-      savePenaltyHistory(value);
-      saveState();
+      if (supabase) {
+        await supabase.from('rooms').update({ penalty: value, status: 'penalty_setting' }).eq('id', state.roomCode);
+      } else {
+        state.penalty = value;
+        savePenaltyHistory(value);
+        saveState();
+      }
       alert("벌칙이 참가자 화면에 표시되었습니다.");
       renderAll();
     }
 
-    function startGame() {
+    async function startGame() {
       if (!state.penalty) {
         const ok = confirm("벌칙이 아직 설정되지 않았습니다. 그래도 시작할까요?");
         if (!ok) return;
       }
-      state.participants.forEach(p => {
-        p.choice = null;
-        p.lastResult = null;
-      });
-      saveState();
-      showGameScreen();
+
+      if (supabase) {
+        // 모든 참가자의 선택 초기화
+        await supabase.from('participants').update({ choice: null }).eq('room_id', state.roomCode);
+        await updateRoomStatus('playing');
+      } else {
+        state.participants.forEach(p => p.choice = null);
+        saveState();
+        showGameScreen();
+      }
     }
 
     function beginRoundTimer() {
@@ -921,7 +1034,8 @@
         state.remainingSeconds -= 1;
         $("timerText").textContent = state.remainingSeconds;
         if (state.remainingSeconds <= 0) {
-          autoFillChoices();
+          stopTimers();
+          if (state.role === "host") autoFillChoices();
         }
       }, 1000);
     }
@@ -933,20 +1047,22 @@
       state.animationTimer = null;
     }
 
-    function selectChoice(choice) {
-      const userId = state.currentUserId || "host";
-      const participant = state.participants.find(p => p.id === userId) || state.participants[0];
-      participant.choice = choice;
+    async function selectChoice(choice, event) {
+      if (state.status !== "playing") return;
+
+      if (supabase) {
+        await updateParticipantChoice(choice);
+      } else {
+        const userId = state.currentUserId || "host";
+        const participant = state.participants.find(p => p.id === userId) || state.participants[0];
+        participant.choice = choice;
+        saveState();
+        updateSelectedCount();
+        if (state.participants.every(p => p.choice)) finishRound();
+      }
 
       document.querySelectorAll(".choice-button").forEach(btn => btn.classList.remove("selected"));
-      event.currentTarget.classList.add("selected");
-
-      saveState();
-      updateSelectedCount();
-
-      if (state.participants.every(p => p.choice)) {
-        finishRound();
-      }
+      if (event && event.currentTarget) event.currentTarget.classList.add("selected");
     }
 
     function updateSelectedCount() {
@@ -954,33 +1070,52 @@
       $("selectedCount").textContent = count;
     }
 
-    function autoFillChoices() {
+    async function autoFillChoices() {
       const choices = ["scissors", "rock", "paper"];
-      state.participants.forEach(p => {
-        if (!p.choice) {
-          p.choice = choices[Math.floor(Math.random() * choices.length)];
+      if (supabase) {
+        for (const p of state.participants) {
+          if (!p.choice) {
+            await supabase.from('participants').update({ 
+              choice: choices[Math.floor(Math.random() * choices.length)] 
+            }).eq('id', p.id);
+          }
         }
-      });
-      saveState();
-      finishRound();
+        await updateRoomStatus('result');
+      } else {
+        state.participants.forEach(p => {
+          if (!p.choice) p.choice = choices[Math.floor(Math.random() * choices.length)];
+        });
+        saveState();
+        finishRound();
+      }
     }
 
-    function finishRound() {
+    // 판정 및 결과 표시 (로컬 계산 후 DB 업데이트는 호스트만 수행 가능하도록 설계 가능)
+    function finishRoundLocal() {
       stopTimers();
       const result = judgeRound(state.participants);
 
       state.participants.forEach(p => {
         const status = result[p.id];
         p.lastResult = status;
-
-        if (status === "win") p.wins += 1;
-        if (status === "lose") {
-          p.losses += 1;
-          p.penalties += 1;
-        }
-        if (status === "draw") p.draws += 1;
+        // 통계용 로컬 업데이트 (DB 연동 시에는 호스트가 DB에 승/패 기록 업데이트 필요)
       });
 
+      renderRoundResult();
+      showScreen("screenRoundResult");
+    }
+
+    // 오프라인/프로토타입용 원본 finishRound
+    function finishRound() {
+      stopTimers();
+      const result = judgeRound(state.participants);
+      state.participants.forEach(p => {
+        const status = result[p.id];
+        p.lastResult = status;
+        if (status === "win") p.wins += 1;
+        if (status === "lose") { p.losses += 1; p.penalties += 1; }
+        if (status === "draw") p.draws += 1;
+      });
       saveState();
       renderRoundResult();
       showScreen("screenRoundResult");
@@ -1060,18 +1195,20 @@
       });
     }
 
-    function nextRound() {
-      const isDrawRound = state.participants.every(p => p.lastResult === "draw");
-      state.round += 1;
-      state.participants.forEach(p => {
-        p.choice = null;
-        p.lastResult = null;
-      });
-      saveState();
-
-      if (isDrawRound) {
-        showGameScreen();
+    async function nextRound() {
+      if (supabase) {
+        await supabase.from('participants').update({ choice: null }).eq('room_id', state.roomCode);
+        await supabase.from('rooms').update({ 
+          round: state.round + 1,
+          status: 'playing' 
+        }).eq('id', state.roomCode);
       } else {
+        state.round += 1;
+        state.participants.forEach(p => {
+          p.choice = null;
+          p.lastResult = null;
+        });
+        saveState();
         showGameScreen();
       }
     }
@@ -1082,18 +1219,25 @@
       showScreen("screenStats");
     }
 
-    function resetGameKeepRoom() {
-      state.round = 1;
-      state.participants.forEach(p => {
-        p.choice = null;
-        p.lastResult = null;
-        p.wins = 0;
-        p.losses = 0;
-        p.draws = 0;
-        p.penalties = 0;
-      });
-      saveState();
-      showHostRoom();
+    async function resetGameKeepRoom() {
+      if (supabase) {
+        await supabase.from('participants').update({ 
+          choice: null, wins: 0, losses: 0, draws: 0, penalties: 0 
+        }).eq('room_id', state.roomCode);
+        await supabase.from('rooms').update({ round: 1, status: 'waiting' }).eq('id', state.roomCode);
+      } else {
+        state.round = 1;
+        state.participants.forEach(p => {
+          p.choice = null;
+          p.lastResult = null;
+          p.wins = 0;
+          p.losses = 0;
+          p.draws = 0;
+          p.penalties = 0;
+        });
+        saveState();
+        showHostRoom();
+      }
     }
 
     function renderStats() {
