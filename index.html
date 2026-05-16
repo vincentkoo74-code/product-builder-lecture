@@ -1,14 +1,1251 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="ko">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hello World</title>
-  <link href='/style.css' rel='stylesheet'>
+  <title>QR 가위바위보 파티 게임</title>
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --primary: #4f46e5;
+      --primary-dark: #3730a3;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning: #f59e0b;
+      --line: #e5e7eb;
+      --shadow: 0 18px 50px rgba(15, 23, 42, 0.12);
+      --radius: 24px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, #dbeafe 0, transparent 30%),
+        radial-gradient(circle at bottom right, #ede9fe 0, transparent 28%),
+        var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 24px;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 520px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 900;
+      font-size: 20px;
+    }
+
+    .brand-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #4f46e5, #9333ea);
+      display: grid;
+      place-items: center;
+      color: white;
+      font-size: 22px;
+      box-shadow: var(--shadow);
+    }
+
+    .room-badge {
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 22px;
+      margin-bottom: 16px;
+    }
+
+    h1, h2, h3, p {
+      margin-top: 0;
+    }
+
+    h1 {
+      font-size: 30px;
+      line-height: 1.15;
+      margin-bottom: 10px;
+    }
+
+    h2 {
+      font-size: 23px;
+      margin-bottom: 8px;
+    }
+
+    h3 {
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+
+    .lead {
+      color: var(--muted);
+      line-height: 1.55;
+      margin-bottom: 20px;
+    }
+
+    .notice {
+      background: #eef2ff;
+      border: 1px solid #c7d2fe;
+      color: #312e81;
+      padding: 12px 14px;
+      border-radius: 16px;
+      line-height: 1.5;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+
+    .warning {
+      background: #fff7ed;
+      border-color: #fed7aa;
+      color: #9a3412;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .grid-2 {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    button, input, textarea, select {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      border-radius: 18px;
+      padding: 15px 16px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+
+    button:active {
+      transform: translateY(1px) scale(0.99);
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-dark);
+    }
+
+    .btn-light {
+      background: #f3f4f6;
+      color: #111827;
+    }
+
+    .btn-outline {
+      background: white;
+      border: 1px solid var(--line);
+      color: #111827;
+    }
+
+    .btn-danger {
+      background: var(--danger);
+      color: white;
+    }
+
+    .btn-success {
+      background: var(--success);
+      color: white;
+    }
+
+    .btn-full {
+      width: 100%;
+    }
+
+    .btn-small {
+      padding: 9px 12px;
+      border-radius: 12px;
+      font-size: 13px;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px 15px;
+      background: white;
+      outline: none;
+      color: var(--text);
+    }
+
+    textarea {
+      min-height: 92px;
+      resize: vertical;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.12);
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 7px;
+      font-weight: 700;
+    }
+
+    .field {
+      margin-bottom: 14px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .qr-box {
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 16px;
+      display: grid;
+      place-items: center;
+      margin: 14px 0;
+    }
+
+    .fake-qr {
+      width: 210px;
+      height: 210px;
+      background: white;
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+      grid-template-rows: repeat(9, 1fr);
+      gap: 4px;
+      padding: 8px;
+      border: 8px solid #111827;
+    }
+
+    .fake-qr span {
+      border-radius: 4px;
+      background: #111827;
+    }
+
+    .fake-qr span.blank {
+      background: transparent;
+    }
+
+    .code-text {
+      text-align: center;
+      font-size: 32px;
+      font-weight: 900;
+      letter-spacing: 3px;
+      margin: 8px 0 0;
+    }
+
+    .url-text {
+      color: var(--muted);
+      font-size: 12px;
+      word-break: break-all;
+      text-align: center;
+    }
+
+    .participant-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .participant {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      background: white;
+      border-radius: 14px;
+    }
+
+    .participant strong {
+      font-size: 14px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 54px;
+      border-radius: 999px;
+      padding: 5px 9px;
+      font-size: 12px;
+      font-weight: 800;
+      background: #f3f4f6;
+      color: #374151;
+    }
+
+    .tag.host {
+      background: #ede9fe;
+      color: #5b21b6;
+    }
+
+    .tag.win {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .tag.lose {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .tag.draw {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .penalty-chip-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .penalty-chip {
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 9px 12px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .penalty-box {
+      background: #111827;
+      color: white;
+      border-radius: 20px;
+      padding: 18px;
+      margin: 14px 0;
+    }
+
+    .penalty-box small {
+      color: #cbd5e1;
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .penalty-box strong {
+      font-size: 22px;
+      line-height: 1.35;
+      display: block;
+    }
+
+    .countdown {
+      height: 120px;
+      display: grid;
+      place-items: center;
+      font-size: 70px;
+      font-weight: 900;
+      color: var(--primary);
+      margin: 14px 0;
+    }
+
+    .choice-anim {
+      height: 120px;
+      display: grid;
+      place-items: center;
+      font-size: 72px;
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      margin-bottom: 16px;
+    }
+
+    .choice-buttons {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .choice-button {
+      background: white;
+      border: 1px solid var(--line);
+      min-height: 116px;
+      display: grid;
+      place-items: center;
+      gap: 4px;
+      font-size: 16px;
+    }
+
+    .choice-button .emoji {
+      display: block;
+      font-size: 42px;
+    }
+
+    .choice-button.selected {
+      border-color: var(--primary);
+      background: #eef2ff;
+      color: #312e81;
+      box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.12);
+    }
+
+    .result-hero {
+      text-align: center;
+      padding: 18px 0 10px;
+    }
+
+    .result-emoji {
+      font-size: 84px;
+      margin-bottom: 12px;
+    }
+
+    .result-title {
+      font-size: 42px;
+      font-weight: 900;
+      margin-bottom: 10px;
+    }
+
+    .result-title.win {
+      color: var(--success);
+    }
+
+    .result-title.lose {
+      color: var(--danger);
+    }
+
+    .result-title.draw {
+      color: var(--warning);
+    }
+
+    .summary-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin: 14px 0;
+    }
+
+    .summary-item {
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .summary-item strong {
+      display: block;
+      font-size: 24px;
+    }
+
+    .summary-item span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 16px;
+      background: white;
+      border: 1px solid var(--line);
+    }
+
+    th, td {
+      padding: 12px 9px;
+      border-bottom: 1px solid var(--line);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    th {
+      color: var(--muted);
+      background: #f9fafb;
+      font-weight: 800;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .footer-actions {
+      position: sticky;
+      bottom: 0;
+      background: linear-gradient(180deg, transparent, rgba(244, 246, 251, 0.95) 20%);
+      padding-top: 18px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .mini {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    @media (max-width: 430px) {
+      body {
+        padding: 16px;
+      }
+
+      .card {
+        padding: 18px;
+      }
+
+      h1 {
+        font-size: 26px;
+      }
+
+      .choice-buttons {
+        grid-template-columns: 1fr;
+      }
+
+      .choice-button {
+        min-height: 82px;
+      }
+    }
+  </style>
 </head>
 <body>
-  <h1>Hello, world!</h1>
-  <button onclick="console.log('hello');">Press me</button>
-  <script defer type="text/javascript" src="/main.js"></script>
+  <main class="app">
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-icon">✊</div>
+        <div>QR 가위바위보</div>
+      </div>
+      <div class="room-badge" id="roomBadge">방 없음</div>
+    </div>
+
+    <section class="card" id="screenHome">
+      <h1>친구들과 QR로 바로 참여하는 벌칙 가위바위보</h1>
+      <p class="lead">호스트가 방을 만들고 QR코드를 보여주면, 참가자들이 접속해서 함께 가위바위보를 진행합니다.</p>
+      <div class="notice warning">
+        이 파일은 단일 HTML 프로토타입입니다. 실제 여러 휴대폰 간 실시간 동기화는 Firebase, Supabase, WebSocket 같은 백엔드 연결이 필요합니다.
+      </div>
+      <div class="grid">
+        <button class="btn-primary btn-full" onclick="createRoom()">방 만들기 / 호스트 시작</button>
+        <button class="btn-light btn-full" onclick="showJoinScreen()">QR코드로 참여한 화면 보기</button>
+        <button class="btn-outline btn-full" onclick="showStats()">최근 게임 결과 보기</button>
+      </div>
+    </section>
+
+    <section class="card hidden" id="screenHostRoom">
+      <h2>호스트 방</h2>
+      <p class="lead">이 QR코드 또는 방 코드를 참가자에게 공유하세요.</p>
+
+      <div class="qr-box">
+        <div class="fake-qr" id="fakeQr"></div>
+        <div class="code-text" id="roomCodeText">----</div>
+        <div class="url-text" id="roomUrlText"></div>
+      </div>
+
+      <div class="grid grid-2">
+        <button class="btn-outline" onclick="copyRoomLink()">초대 링크 복사</button>
+        <button class="btn-light" onclick="addDemoParticipant()">참가자 추가 테스트</button>
+      </div>
+
+      <div style="height: 16px"></div>
+      <h3>참가자 목록</h3>
+      <div class="participant-list" id="hostParticipantList"></div>
+
+      <div class="footer-actions">
+        <button class="btn-primary btn-full" onclick="showPenaltyScreen()">벌칙 설정하기</button>
+        <button class="btn-outline btn-full" onclick="goHome()">처음으로</button>
+      </div>
+    </section>
+
+    <section class="card hidden" id="screenJoin">
+      <h2>게임방 참여</h2>
+      <p class="lead">QR코드로 들어온 참가자가 닉네임을 입력하는 화면입니다.</p>
+      <div class="field">
+        <label>방 코드</label>
+        <input id="joinRoomCode" placeholder="예: A7K2" />
+      </div>
+      <div class="field">
+        <label>닉네임</label>
+        <input id="joinName" placeholder="예: 영선" />
+      </div>
+      <div class="grid">
+        <button class="btn-primary btn-full" onclick="joinRoom()">참가하기</button>
+        <button class="btn-outline btn-full" onclick="goHome()">처음으로</button>
+      </div>
+    </section>
+
+    <section class="card hidden" id="screenParticipantWait">
+      <h2>참가 완료</h2>
+      <p class="lead">호스트가 벌칙을 정하고 게임을 시작할 때까지 기다려주세요.</p>
+      <div class="penalty-box">
+        <small>이번 게임 벌칙</small>
+        <strong id="waitPenaltyText">아직 벌칙이 설정되지 않았습니다.</strong>
+      </div>
+      <h3>참가자 목록</h3>
+      <div class="participant-list" id="waitParticipantList"></div>
+      <div class="footer-actions">
+        <button class="btn-light btn-full" onclick="showGameScreen()">게임 화면 미리보기</button>
+        <button class="btn-outline btn-full" onclick="goHome()">나가기</button>
+      </div>
+    </section>
+
+    <section class="card hidden" id="screenPenalty">
+      <h2>벌칙 설정</h2>
+      <p class="lead">호스트가 입력한 벌칙은 참가자 화면에 표시됩니다.</p>
+      <div class="field">
+        <label>이번 게임 벌칙</label>
+        <textarea id="penaltyInput" placeholder="예: 오늘 커피 사기"></textarea>
+      </div>
+      <h3>자주 사용한 벌칙</h3>
+      <div class="penalty-chip-wrap" id="penaltyChips"></div>
+      <div class="grid">
+        <button class="btn-primary btn-full" onclick="savePenalty()">벌칙 저장 및 참가자에게 표시</button>
+        <button class="btn-success btn-full" onclick="startGame()">게임 시작</button>
+        <button class="btn-outline btn-full" onclick="showHostRoom()">방 화면으로 돌아가기</button>
+      </div>
+    </section>
+
+    <section class="card hidden" id="screenGame">
+      <h2>라운드 <span id="roundNumber">1</span></h2>
+      <p class="lead">가위, 바위, 보 그래픽이 나온 뒤 큰 버튼을 눌러 선택하세요.</p>
+      <div class="choice-anim" id="choiceAnim">✌️</div>
+      <div class="summary-row">
+        <div class="summary-item"><strong id="timerText">5</strong><span>남은 시간</span></div>
+        <div class="summary-item"><strong id="selectedCount">0</strong><span>선택 완료</span></div>
+        <div class="summary-item"><strong id="totalCount">0</strong><span>참가자</span></div>
+      </div>
+      <div class="choice-buttons">
+        <button class="choice-button" onclick="selectChoice('scissors')"><span class="emoji">✌️</span>가위</button>
+        <button class="choice-button" onclick="selectChoice('rock')"><span class="emoji">✊</span>바위</button>
+        <button class="choice-button" onclick="selectChoice('paper')"><span class="emoji">🖐</span>보</button>
+      </div>
+      <div style="height: 12px"></div>
+      <button class="btn-light btn-full" onclick="autoFillChoices()">테스트용: 모든 참가자 랜덤 선택</button>
+    </section>
+
+    <section class="card hidden" id="screenRoundResult">
+      <div class="result-hero">
+        <div class="result-emoji" id="resultEmoji">🎉</div>
+        <div class="result-title" id="resultTitle">승리!</div>
+        <p class="lead" id="resultMessage">다음 라운드를 기다려주세요.</p>
+      </div>
+
+      <div class="penalty-box hidden" id="resultPenaltyBox">
+        <small>이번 벌칙</small>
+        <strong id="resultPenaltyText"></strong>
+      </div>
+
+      <h3>라운드 결과</h3>
+      <div class="participant-list" id="roundResultList"></div>
+
+      <div class="footer-actions">
+        <button class="btn-primary btn-full" onclick="nextRound()">다음 라운드 시작</button>
+        <button class="btn-danger btn-full" onclick="endGame()">게임 종료 및 통계 보기</button>
+      </div>
+    </section>
+
+    <section class="card hidden" id="screenStats">
+      <h2>최종 결과</h2>
+      <p class="lead">참가자별 승률과 벌칙 횟수를 확인합니다.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>참가자</th>
+            <th>승</th>
+            <th>패</th>
+            <th>무</th>
+            <th>승률</th>
+            <th>벌칙</th>
+          </tr>
+        </thead>
+        <tbody id="statsTableBody"></tbody>
+      </table>
+      <div class="footer-actions">
+        <button class="btn-primary btn-full" onclick="resetGameKeepRoom()">같은 방에서 다시 하기</button>
+        <button class="btn-outline btn-full" onclick="goHome()">처음으로</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const choiceLabel = {
+      scissors: "가위",
+      rock: "바위",
+      paper: "보"
+    };
+
+    const choiceEmoji = {
+      scissors: "✌️",
+      rock: "✊",
+      paper: "🖐"
+    };
+
+    const defaultPenalties = [
+      "오늘 커피 사기",
+      "10초 동안 춤추기",
+      "웃긴 표정 짓기",
+      "물 한 잔 마시기",
+      "다음 게임 호스트 하기"
+    ];
+
+    let state = {
+      roomCode: "",
+      roomUrl: "",
+      role: "",
+      currentUserId: "",
+      penalty: "",
+      round: 1,
+      participants: [],
+      timer: null,
+      animationTimer: null,
+      remainingSeconds: 5
+    };
+
+    function $(id) {
+      return document.getElementById(id);
+    }
+
+    function hideAllScreens() {
+      [
+        "screenHome",
+        "screenHostRoom",
+        "screenJoin",
+        "screenParticipantWait",
+        "screenPenalty",
+        "screenGame",
+        "screenRoundResult",
+        "screenStats"
+      ].forEach(id => $(id).classList.add("hidden"));
+    }
+
+    function showScreen(id) {
+      hideAllScreens();
+      $(id).classList.remove("hidden");
+      updateRoomBadge();
+      renderAll();
+    }
+
+    function updateRoomBadge() {
+      $("roomBadge").textContent = state.roomCode ? `방 ${state.roomCode}` : "방 없음";
+    }
+
+    function createRoom() {
+      const code = Math.random().toString(36).substring(2, 6).toUpperCase();
+      state.roomCode = code;
+      state.roomUrl = `${location.origin}${location.pathname}?room=${code}`;
+      state.role = "host";
+      state.currentUserId = "host";
+      state.penalty = "";
+      state.round = 1;
+      state.participants = [
+        createParticipant("host", "호스트", true)
+      ];
+      saveState();
+      showHostRoom();
+    }
+
+    function createParticipant(id, name, isHost = false) {
+      return {
+        id,
+        name,
+        isHost,
+        choice: null,
+        lastResult: null,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        penalties: 0
+      };
+    }
+
+    function showHostRoom() {
+      showScreen("screenHostRoom");
+      renderQr();
+    }
+
+    function showJoinScreen() {
+      loadState();
+      if (state.roomCode) {
+        $("joinRoomCode").value = state.roomCode;
+      }
+      showScreen("screenJoin");
+    }
+
+    function showPenaltyScreen() {
+      $("penaltyInput").value = state.penalty || "";
+      renderPenaltyChips();
+      showScreen("screenPenalty");
+    }
+
+    function showGameScreen() {
+      showScreen("screenGame");
+      beginRoundTimer();
+    }
+
+    function showStats() {
+      loadState();
+      renderStats();
+      showScreen("screenStats");
+    }
+
+    function goHome() {
+      stopTimers();
+      showScreen("screenHome");
+    }
+
+    function joinRoom() {
+      const code = $("joinRoomCode").value.trim().toUpperCase();
+      const name = $("joinName").value.trim();
+
+      if (!code) {
+        alert("방 코드를 입력해주세요.");
+        return;
+      }
+      if (!name) {
+        alert("닉네임을 입력해주세요.");
+        return;
+      }
+
+      loadState();
+      if (!state.roomCode) {
+        state.roomCode = code;
+        state.roomUrl = `${location.origin}${location.pathname}?room=${code}`;
+      }
+
+      const id = `p_${Date.now()}`;
+      state.role = "participant";
+      state.currentUserId = id;
+      state.participants.push(createParticipant(id, name, false));
+      saveState();
+      showScreen("screenParticipantWait");
+    }
+
+    function addDemoParticipant() {
+      const names = ["민수", "지훈", "수진", "하나", "도윤", "유나", "태오", "서준"];
+      const existing = state.participants.map(p => p.name);
+      const nextName = names.find(name => !existing.includes(name)) || `참가자${state.participants.length}`;
+      state.participants.push(createParticipant(`demo_${Date.now()}`, nextName, false));
+      saveState();
+      renderAll();
+    }
+
+    function savePenalty() {
+      const value = $("penaltyInput").value.trim();
+      if (!value) {
+        alert("벌칙을 입력해주세요.");
+        return;
+      }
+
+      state.penalty = value;
+      savePenaltyHistory(value);
+      saveState();
+      alert("벌칙이 참가자 화면에 표시되었습니다.");
+      renderAll();
+    }
+
+    function startGame() {
+      if (!state.penalty) {
+        const ok = confirm("벌칙이 아직 설정되지 않았습니다. 그래도 시작할까요?");
+        if (!ok) return;
+      }
+      state.participants.forEach(p => {
+        p.choice = null;
+        p.lastResult = null;
+      });
+      saveState();
+      showGameScreen();
+    }
+
+    function beginRoundTimer() {
+      stopTimers();
+      state.remainingSeconds = 5;
+      $("timerText").textContent = state.remainingSeconds;
+      $("roundNumber").textContent = state.round;
+      $("totalCount").textContent = state.participants.length;
+      updateSelectedCount();
+
+      const animChoices = ["✌️", "✊", "🖐"];
+      let animIndex = 0;
+      $("choiceAnim").textContent = animChoices[animIndex];
+      state.animationTimer = setInterval(() => {
+        animIndex = (animIndex + 1) % animChoices.length;
+        $("choiceAnim").textContent = animChoices[animIndex];
+      }, 450);
+
+      state.timer = setInterval(() => {
+        state.remainingSeconds -= 1;
+        $("timerText").textContent = state.remainingSeconds;
+        if (state.remainingSeconds <= 0) {
+          autoFillChoices();
+        }
+      }, 1000);
+    }
+
+    function stopTimers() {
+      if (state.timer) clearInterval(state.timer);
+      if (state.animationTimer) clearInterval(state.animationTimer);
+      state.timer = null;
+      state.animationTimer = null;
+    }
+
+    function selectChoice(choice) {
+      const userId = state.currentUserId || "host";
+      const participant = state.participants.find(p => p.id === userId) || state.participants[0];
+      participant.choice = choice;
+
+      document.querySelectorAll(".choice-button").forEach(btn => btn.classList.remove("selected"));
+      event.currentTarget.classList.add("selected");
+
+      saveState();
+      updateSelectedCount();
+
+      if (state.participants.every(p => p.choice)) {
+        finishRound();
+      }
+    }
+
+    function updateSelectedCount() {
+      const count = state.participants.filter(p => p.choice).length;
+      $("selectedCount").textContent = count;
+    }
+
+    function autoFillChoices() {
+      const choices = ["scissors", "rock", "paper"];
+      state.participants.forEach(p => {
+        if (!p.choice) {
+          p.choice = choices[Math.floor(Math.random() * choices.length)];
+        }
+      });
+      saveState();
+      finishRound();
+    }
+
+    function finishRound() {
+      stopTimers();
+      const result = judgeRound(state.participants);
+
+      state.participants.forEach(p => {
+        const status = result[p.id];
+        p.lastResult = status;
+
+        if (status === "win") p.wins += 1;
+        if (status === "lose") {
+          p.losses += 1;
+          p.penalties += 1;
+        }
+        if (status === "draw") p.draws += 1;
+      });
+
+      saveState();
+      renderRoundResult();
+      showScreen("screenRoundResult");
+    }
+
+    function judgeRound(participants) {
+      const selectedTypes = [...new Set(participants.map(p => p.choice))];
+      const result = {};
+
+      if (selectedTypes.length === 1 || selectedTypes.length === 3) {
+        participants.forEach(p => result[p.id] = "draw");
+        return result;
+      }
+
+      const a = selectedTypes[0];
+      const b = selectedTypes[1];
+      const winningChoice = getWinningChoice(a, b);
+
+      participants.forEach(p => {
+        result[p.id] = p.choice === winningChoice ? "win" : "lose";
+      });
+
+      return result;
+    }
+
+    function getWinningChoice(a, b) {
+      if ((a === "scissors" && b === "paper") || (b === "scissors" && a === "paper")) return "scissors";
+      if ((a === "rock" && b === "scissors") || (b === "rock" && a === "scissors")) return "rock";
+      if ((a === "paper" && b === "rock") || (b === "paper" && a === "rock")) return "paper";
+      return a;
+    }
+
+    function renderRoundResult() {
+      const current = state.participants.find(p => p.id === state.currentUserId) || state.participants[0];
+      const status = current.lastResult || "draw";
+
+      const title = $("resultTitle");
+      const emoji = $("resultEmoji");
+      const message = $("resultMessage");
+      const penaltyBox = $("resultPenaltyBox");
+      const penaltyText = $("resultPenaltyText");
+
+      title.className = "result-title";
+      penaltyBox.classList.add("hidden");
+
+      if (status === "win") {
+        title.textContent = "승리!";
+        title.classList.add("win");
+        emoji.textContent = "🎉";
+        message.textContent = "다음 라운드를 기다려주세요.";
+      } else if (status === "lose") {
+        title.textContent = "패배!";
+        title.classList.add("lose");
+        emoji.textContent = "😵";
+        message.textContent = "벌칙을 수행하세요.";
+        penaltyText.textContent = state.penalty || "벌칙이 설정되지 않았습니다.";
+        penaltyBox.classList.remove("hidden");
+      } else {
+        title.textContent = "무승부!";
+        title.classList.add("draw");
+        emoji.textContent = "🤝";
+        message.textContent = "무승부입니다. 자동으로 다음 게임으로 넘어갈 수 있습니다.";
+      }
+
+      const list = $("roundResultList");
+      list.innerHTML = "";
+      state.participants.forEach(p => {
+        const div = document.createElement("div");
+        div.className = "participant";
+        const tagClass = p.lastResult === "win" ? "win" : p.lastResult === "lose" ? "lose" : "draw";
+        const tagText = p.lastResult === "win" ? "승리" : p.lastResult === "lose" ? "패배" : "무승부";
+        div.innerHTML = `
+          <strong>${escapeHtml(p.name)} ${p.isHost ? "<span class='tag host'>HOST</span>" : ""}</strong>
+          <span>${choiceEmoji[p.choice]} ${choiceLabel[p.choice]} <span class="tag ${tagClass}">${tagText}</span></span>
+        `;
+        list.appendChild(div);
+      });
+    }
+
+    function nextRound() {
+      const isDrawRound = state.participants.every(p => p.lastResult === "draw");
+      state.round += 1;
+      state.participants.forEach(p => {
+        p.choice = null;
+        p.lastResult = null;
+      });
+      saveState();
+
+      if (isDrawRound) {
+        showGameScreen();
+      } else {
+        showGameScreen();
+      }
+    }
+
+    function endGame() {
+      renderStats();
+      saveState();
+      showScreen("screenStats");
+    }
+
+    function resetGameKeepRoom() {
+      state.round = 1;
+      state.participants.forEach(p => {
+        p.choice = null;
+        p.lastResult = null;
+        p.wins = 0;
+        p.losses = 0;
+        p.draws = 0;
+        p.penalties = 0;
+      });
+      saveState();
+      showHostRoom();
+    }
+
+    function renderStats() {
+      const tbody = $("statsTableBody");
+      tbody.innerHTML = "";
+
+      if (!state.participants.length) {
+        tbody.innerHTML = `<tr><td colspan="6">아직 게임 결과가 없습니다.</td></tr>`;
+        return;
+      }
+
+      const sorted = [...state.participants].sort((a, b) => {
+        const ar = getWinRate(a);
+        const br = getWinRate(b);
+        return br - ar || b.wins - a.wins;
+      });
+
+      sorted.forEach(p => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(p.name)}</td>
+          <td>${p.wins}</td>
+          <td>${p.losses}</td>
+          <td>${p.draws}</td>
+          <td>${getWinRate(p)}%</td>
+          <td>${p.penalties}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function getWinRate(p) {
+      const total = p.wins + p.losses;
+      if (total === 0) return 0;
+      return Math.round((p.wins / total) * 100);
+    }
+
+    function renderAll() {
+      renderParticipants("hostParticipantList");
+      renderParticipants("waitParticipantList");
+      $("waitPenaltyText").textContent = state.penalty || "아직 벌칙이 설정되지 않았습니다.";
+      $("roomCodeText").textContent = state.roomCode || "----";
+      $("roomUrlText").textContent = state.roomUrl || "";
+    }
+
+    function renderParticipants(targetId) {
+      const el = $(targetId);
+      if (!el) return;
+      el.innerHTML = "";
+
+      if (!state.participants.length) {
+        el.innerHTML = `<div class="mini">아직 참가자가 없습니다.</div>`;
+        return;
+      }
+
+      state.participants.forEach(p => {
+        const div = document.createElement("div");
+        div.className = "participant";
+        div.innerHTML = `
+          <strong>${escapeHtml(p.name)}</strong>
+          ${p.isHost ? `<span class="tag host">HOST</span>` : `<span class="tag">참가자</span>`}
+        `;
+        el.appendChild(div);
+      });
+    }
+
+    function renderPenaltyChips() {
+      const history = getPenaltyHistory();
+      const merged = [...new Set([...history, ...defaultPenalties])];
+      const wrap = $("penaltyChips");
+      wrap.innerHTML = "";
+
+      merged.forEach(text => {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "penalty-chip";
+        chip.textContent = text;
+        chip.onclick = () => {
+          $("penaltyInput").value = text;
+        };
+        wrap.appendChild(chip);
+      });
+    }
+
+    function savePenaltyHistory(text) {
+      const history = getPenaltyHistory();
+      const next = [text, ...history.filter(item => item !== text)].slice(0, 8);
+      localStorage.setItem("rpsPenaltyHistory", JSON.stringify(next));
+    }
+
+    function getPenaltyHistory() {
+      try {
+        return JSON.parse(localStorage.getItem("rpsPenaltyHistory")) || [];
+      } catch {
+        return [];
+      }
+    }
+
+    function renderQr() {
+      const qr = $("fakeQr");
+      qr.innerHTML = "";
+      const seed = state.roomCode || "ROOM";
+      for (let i = 0; i < 81; i++) {
+        const span = document.createElement("span");
+        const value = (seed.charCodeAt(i % seed.length) + i * 7) % 5;
+        if (value < 2) span.className = "blank";
+        qr.appendChild(span);
+      }
+    }
+
+    function copyRoomLink() {
+      const text = state.roomUrl || location.href;
+      navigator.clipboard?.writeText(text)
+        .then(() => alert("초대 링크가 복사되었습니다."))
+        .catch(() => alert(text));
+    }
+
+    function saveState() {
+      localStorage.setItem("rpsPartyState", JSON.stringify({
+        roomCode: state.roomCode,
+        roomUrl: state.roomUrl,
+        penalty: state.penalty,
+        round: state.round,
+        participants: state.participants
+      }));
+    }
+
+    function loadState() {
+      try {
+        const saved = JSON.parse(localStorage.getItem("rpsPartyState"));
+        if (!saved) return;
+        state.roomCode = saved.roomCode || state.roomCode;
+        state.roomUrl = saved.roomUrl || state.roomUrl;
+        state.penalty = saved.penalty || state.penalty;
+        state.round = saved.round || state.round;
+        state.participants = saved.participants || state.participants;
+      } catch {
+        // 저장 데이터가 깨졌을 경우 무시
+      }
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function initFromUrl() {
+      const params = new URLSearchParams(location.search);
+      const room = params.get("room");
+      loadState();
+      if (room) {
+        state.roomCode = room.toUpperCase();
+        state.roomUrl = location.href;
+        $("joinRoomCode").value = state.roomCode;
+        showScreen("screenJoin");
+      } else {
+        showScreen("screenHome");
+      }
+    }
+
+    initFromUrl();
+  </script>
 </body>
 </html>
