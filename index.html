@@ -589,7 +589,7 @@
       <div id="penaltyStatusBox" class="notice hidden" style="margin-top:12px"></div>
       <div class="footer-actions" style="margin-top:12px">
         <button id="startGameBtn" class="btn-success btn-full hidden" onclick="window.startGame()">🎮 게임 시작</button>
-        <button class="btn-primary btn-full" onclick="window.showPenaltyScreen()">벌칙 설정하기</button>
+        <button id="penaltySetBtn" class="btn-primary btn-full" onclick="window.showPenaltyScreen()">벌칙 설정하기</button>
         <button class="btn-outline btn-full" onclick="window.goHome()">처음으로</button>
       </div>
     </section>
@@ -784,7 +784,7 @@
         if (state.status === "waiting") {
           state.role === "host" ? showHostRoom() : showScreen("screenParticipantWait");
         } else if (state.status === "penalty_setting") {
-          state.role === "host" ? showPenaltyScreen() : showScreen("screenParticipantWait");
+          if (state.role !== "host") showScreen("screenParticipantWait");
         } else if (state.status === "playing") {
           showGameScreen();
         } else if (state.status === "result") {
@@ -908,13 +908,16 @@
       renderQr();
       const penaltyBox = $("penaltyStatusBox");
       const startBtn = $("startGameBtn");
+      const penaltyBtn = $("penaltySetBtn");
       if (state.penalty) {
-        penaltyBox.textContent = `벌칙: ${state.penalty}`;
+        penaltyBox.textContent = `설정된 벌칙: ${state.penalty}`;
         penaltyBox.classList.remove("hidden");
         startBtn.classList.remove("hidden");
+        penaltyBtn.textContent = "벌칙 바꾸기";
       } else {
         penaltyBox.classList.add("hidden");
         startBtn.classList.add("hidden");
+        penaltyBtn.textContent = "벌칙 설정하기";
       }
     }
 
@@ -1071,8 +1074,9 @@
       } else {
         state.participants.forEach(p => p.choice = null);
         saveState();
-        showGameScreen();
       }
+      // 호스트는 Realtime 대기 없이 직접 게임 화면으로 전환
+      showGameScreen();
     }
 
     function beginRoundTimer() {
