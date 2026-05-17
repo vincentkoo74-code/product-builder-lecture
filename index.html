@@ -670,6 +670,12 @@
       <h3>참가자 목록</h3>
       <div class="participant-list" id="hostParticipantList"></div>
 
+      <div id="loserCountBox" class="notice" style="margin-top:12px;display:flex;align-items:center;justify-content:space-between">
+        <span style="font-weight:700">🎯 술래 숫자</span>
+        <select id="loserCountSelect" onchange="window.onLoserCountChange(this.value)" style="padding:5px 10px;border-radius:8px;border:1px solid #c7d2fe;background:white;font-size:14px;font-weight:700;color:#312e81">
+          <option value="1">1명</option>
+        </select>
+      </div>
       <div id="penaltyStatusBox" class="notice hidden" style="margin-top:12px"></div>
       <div class="footer-actions" style="margin-top:12px">
         <button id="startGameBtn" class="btn-success btn-full hidden" onclick="window.goToReadyScreen()">🎮 게임 준비하기</button>
@@ -821,6 +827,21 @@
       </div>
     </section>
 
+    <section class="card hidden" id="screenLoserWait">
+      <div class="result-hero">
+        <div style="font-size:72px">🎺</div>
+        <div class="result-title lose">술래 확정!</div>
+        <p class="lead" id="loserWaitMessage">벌칙을 준비하세요. 게임이 계속 진행 중입니다...</p>
+      </div>
+      <div class="penalty-box" id="loserWaitPenaltyBox">
+        <small>이번 벌칙</small>
+        <strong id="loserWaitPenaltyText"></strong>
+      </div>
+      <div style="text-align:center;margin-top:12px">
+        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
+      </div>
+    </section>
+
     <!-- 게임 승률 팝업 -->
     <div id="statsPopup" class="popup-overlay hidden">
       <div class="popup-card">
@@ -898,9 +919,18 @@
       remainingSeconds: 5,
       channel: null,
       pollInterval: null,
-      currentWinnerIds: [],
+      confirmedSafeIds: [],
+      confirmedLoserIds: [],
+      targetLoserCount: 1,
       gameStarting: false
     };
+
+    function parsePenalty(raw) {
+      try { const p = JSON.parse(raw); if (p && typeof p === "object" && p.text !== undefined) return p; } catch {}
+      return { text: raw || "", loserCount: 1 };
+    }
+    function getPenaltyText() { return parsePenalty(state.penalty).text; }
+    function getTargetLoserCount() { return parsePenalty(state.penalty).loserCount || state.targetLoserCount || 1; }
 
     function $(id) {
       return document.getElementById(id);
@@ -939,28 +969,34 @@
     function handleRoomUpdate(room) {
       if (!room) return;
       state.penalty = room.penalty;
+
+      // Bug fix: reset winner/loser tracking when round resets to 1 (new game started)
+      if (room.round === 1 && state.round !== 1) {
+        state.confirmedSafeIds = [];
+        state.confirmedLoserIds = [];
+        state.targetLoserCount = getTargetLoserCount();
+      }
       state.round = room.round;
-      
+
       const oldStatus = state.status;
       state.status = room.status;
 
-      // 상태 변화에 따른 화면 전환
       if (oldStatus !== state.status) {
-        const iAmWinner = state.currentWinnerIds.includes(state.currentUserId);
+        const iAmSafe = state.confirmedSafeIds.includes(state.currentUserId);
+        const iAmConfirmedLoser = state.confirmedLoserIds.includes(state.currentUserId);
 
         if (state.status === "result") {
           finishRoundLocal();
         } else if (state.status === "playing") {
-          // Issue 3: all devices run countdown when playing starts
-          if (iAmWinner) {
-            // Winners hear countdown but stay on wait screen
+          if (iAmSafe || iAmConfirmedLoser) {
             runCountdown().catch(() => {});
           } else {
             runCountdownThenShowGame();
           }
         } else if (state.status === "ready") {
-          // Feature 5: winners wait, host keeps QR screen, participants go to ready screen
-          if (iAmWinner) {
+          if (iAmConfirmedLoser) {
+            showLoserWaitScreen();
+          } else if (iAmSafe) {
             showScreen("screenWinnerWait");
           } else if (state.role === "host") {
             showHostRoom();
@@ -976,6 +1012,18 @@
         }
       }
       renderAll();
+    }
+
+    function showLoserWaitScreen() {
+      showScreen("screenLoserWait");
+      const penaltyText = getPenaltyText();
+      $("loserWaitPenaltyText").textContent = penaltyText || "벌칙이 설정되지 않았습니다.";
+      const remaining = getTargetLoserCount() - state.confirmedLoserIds.length;
+      if (remaining > 0) {
+        $("loserWaitMessage").textContent = `벌칙을 준비하세요. 술래 ${remaining}명을 더 찾는 중...`;
+      } else {
+        $("loserWaitMessage").textContent = "벌칙을 준비하세요. 게임이 끝났습니다!";
+      }
     }
 
     async function fetchParticipants(roomCode) {
@@ -995,15 +1043,18 @@
         renderAll();
 
         if (state.role === "host") {
-          // 2라운드 이상: 비호스트 전원 준비 완료 시 자동 시작
-          const nonHostData = data.filter(p => !p.is_host);
-          if (state.status === "ready" && !state.gameStarting && state.currentWinnerIds.length > 0 && nonHostData.length > 0 && nonHostData.every(p => p.is_ready)) {
+          const safeIds = state.confirmedSafeIds || [];
+          const loserIds = state.confirmedLoserIds || [];
+          // Auto-start: active (non-host, non-confirmed) players all ready
+          const activePlayers = data.filter(p => !p.is_host && !safeIds.includes(p.id) && !loserIds.includes(p.id));
+          const gameInProgress = safeIds.length > 0 || loserIds.length > 0;
+          if (state.status === "ready" && !state.gameStarting && gameInProgress && activePlayers.length > 0 && activePlayers.every(p => p.is_ready)) {
             startGame();
           }
-          // Auto-trigger result when all active (non-winner) players have chosen
+          // Auto-trigger result when all active players have chosen
           if (state.status === "playing") {
-            const activePlayers = data.filter(p => !state.currentWinnerIds.includes(p.id));
-            if (activePlayers.length > 0 && activePlayers.every(p => p.choice)) {
+            const activeForRound = data.filter(p => !safeIds.includes(p.id) && !loserIds.includes(p.id));
+            if (activeForRound.length > 0 && activeForRound.every(p => p.choice)) {
               updateRoomStatus("result");
             }
           }
@@ -1034,6 +1085,7 @@
         "screenGame",
         "screenRoundResult",
         "screenWinnerWait",
+        "screenLoserWait",
         "screenStats"
       ].forEach(id => $(id).classList.add("hidden"));
     }
@@ -1112,25 +1164,27 @@
     function showHostRoom() {
       showScreen("screenHostRoom");
       renderQr();
+      updateLoserCountDropdown();
       const penaltyBox = $("penaltyStatusBox");
       const startBtn = $("startGameBtn");
       const penaltyBtn = $("penaltySetBtn");
+      const penaltyTxt = getPenaltyText();
 
       if (state.status === "ready") {
-        // 게임 준비 단계: QR은 유지, 참가자 준비 현황 + 게임 시작 버튼 표시
-        penaltyBox.textContent = `벌칙: ${state.penalty}`;
+        penaltyBox.textContent = `벌칙: ${penaltyTxt}`;
         penaltyBox.classList.remove("hidden");
         startBtn.textContent = "🚀 게임 시작!";
         startBtn.onclick = () => window.startGame();
         startBtn.classList.remove("hidden");
         penaltyBtn.textContent = "✏️ 벌칙 수정";
-        // 호스트 자신은 준비 버튼 없으므로 제외
-        const nonHosts = state.participants.filter(p => !p.is_host);
-        const allReady = nonHosts.length > 0 && nonHosts.every(p => p.is_ready);
+        const safeIds = state.confirmedSafeIds || [];
+        const loserIds = state.confirmedLoserIds || [];
+        const activePlayers = state.participants.filter(p => !p.is_host && !safeIds.includes(p.id) && !loserIds.includes(p.id));
+        const allReady = activePlayers.length > 0 && activePlayers.every(p => p.is_ready);
         startBtn.disabled = !allReady;
         startBtn.style.opacity = allReady ? "1" : "0.5";
-      } else if (state.penalty) {
-        penaltyBox.textContent = `설정된 벌칙: ${state.penalty}`;
+      } else if (penaltyTxt) {
+        penaltyBox.textContent = `설정된 벌칙: ${penaltyTxt}`;
         penaltyBox.classList.remove("hidden");
         startBtn.textContent = "🎮 게임 준비하기";
         startBtn.onclick = () => window.goToReadyScreen();
@@ -1147,6 +1201,27 @@
       }
     }
 
+    function updateLoserCountDropdown() {
+      const sel = $("loserCountSelect");
+      if (!sel) return;
+      const total = state.participants.length;
+      const max = Math.max(1, total - 1);
+      const current = state.targetLoserCount || getTargetLoserCount();
+      sel.innerHTML = "";
+      for (let i = 1; i <= max; i++) {
+        const opt = document.createElement("option");
+        opt.value = i;
+        opt.textContent = `${i}명`;
+        if (i === current) opt.selected = true;
+        sel.appendChild(opt);
+      }
+      sel.disabled = (state.status === "ready" || state.status === "playing");
+    }
+
+    function onLoserCountChange(val) {
+      state.targetLoserCount = parseInt(val, 10) || 1;
+    }
+
     function showJoinScreen() {
       if (state.roomCode) {
         $("joinRoomCode").value = state.roomCode;
@@ -1157,7 +1232,7 @@
     }
 
     function showPenaltyScreen() {
-      $("penaltyInput").value = state.penalty || "";
+      $("penaltyInput").value = getPenaltyText() || "";
       renderPenaltyChips();
       showScreen("screenPenalty");
     }
@@ -1175,7 +1250,8 @@
     function goHome() {
       stopTimers();
       if (state.channel) db.removeChannel(state.channel);
-      state.currentWinnerIds = [];
+      state.confirmedSafeIds = [];
+      state.confirmedLoserIds = [];
       state.gameStarting = false;
       showScreen("screenHome");
     }
@@ -1238,20 +1314,22 @@
     }
 
     async function savePenalty() {
-      const value = $("penaltyInput").value.trim();
-      if (!value) { alert("벌칙을 입력해주세요."); return; }
+      const textVal = $("penaltyInput").value.trim();
+      if (!textVal) { alert("벌칙을 입력해주세요."); return; }
+
+      const loserCount = state.targetLoserCount || 1;
+      const value = JSON.stringify({ text: textVal, loserCount });
 
       const btn = $("savePenaltyBtn");
       btn.disabled = true;
       btn.textContent = "저장 중...";
 
       state.penalty = value;
-      savePenaltyHistory(value);
+      savePenaltyHistory(textVal);
       saveState();
 
       if (db) {
         try {
-          // 참가자 ready 초기화 → 바로 ready 상태로 전환 (penalty_setting 단계 생략)
           await Promise.race([
             db.from('participants').update({ is_ready: false }).eq('room_id', state.roomCode),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
@@ -1365,7 +1443,10 @@
       state.remainingSeconds = 5;
       $("timerText").textContent = state.remainingSeconds;
       $("roundNumber").textContent = state.round;
-      $("totalCount").textContent = state.participants.length;
+      const safeIds = state.confirmedSafeIds || [];
+      const loserIds = state.confirmedLoserIds || [];
+      const activeCount = state.participants.filter(p => !safeIds.includes(p.id) && !loserIds.includes(p.id)).length;
+      $("totalCount").textContent = activeCount;
       updateSelectedCount();
 
       const animChoices = ["✌️", "✊", "🖐"];
@@ -1414,14 +1495,18 @@
     }
 
     function updateSelectedCount() {
-      const count = state.participants.filter(p => p.choice).length;
+      const safeIds = state.confirmedSafeIds || [];
+      const loserIds = state.confirmedLoserIds || [];
+      const active = state.participants.filter(p => !safeIds.includes(p.id) && !loserIds.includes(p.id));
+      const count = active.filter(p => p.choice).length;
       $("selectedCount").textContent = count;
     }
 
     async function autoFillChoices() {
       const choices = ["scissors", "rock", "paper"];
-      // Only fill choices for active (non-winner) players
-      const activePlayers = state.participants.filter(p => !state.currentWinnerIds.includes(p.id));
+      const safeIds = state.confirmedSafeIds || [];
+      const loserIds = state.confirmedLoserIds || [];
+      const activePlayers = state.participants.filter(p => !safeIds.includes(p.id) && !loserIds.includes(p.id));
       if (db) {
         for (const p of activePlayers) {
           if (!p.choice) {
@@ -1445,36 +1530,52 @@
       const result = judgeRound(state.participants);
       state.participants.forEach(p => { p.lastResult = result[p.id]; });
 
-      const losers = state.participants.filter(p => p.lastResult === "lose");
-      // newWinners = participants who won this specific round (not previous-round winners)
-      const prevWinnerIds = [...state.currentWinnerIds];
-      const newWinners = state.participants.filter(p => p.lastResult === "win" && !prevWinnerIds.includes(p.id));
-      // Accumulate all winners across rounds
-      state.currentWinnerIds = [...new Set([...prevWinnerIds, ...newWinners.map(p => p.id)])];
-
-      // allDraw = every active player (non-prev-winner) drew this round
-      const activePlayers = state.participants.filter(p => !prevWinnerIds.includes(p.id));
+      const prevSafeIds = [...(state.confirmedSafeIds || [])];
+      const prevLoserIds = [...(state.confirmedLoserIds || [])];
+      const activePlayers = state.participants.filter(p => !prevSafeIds.includes(p.id) && !prevLoserIds.includes(p.id));
+      const targetCount = getTargetLoserCount();
+      const remainingSlots = targetCount - prevLoserIds.length;
       const allDraw = activePlayers.length > 0 && activePlayers.every(p => p.lastResult === "draw");
+
+      if (allDraw) {
+        renderRoundResult("draw", 0, remainingSlots);
+        showScreen("screenRoundResult");
+        return;
+      }
+
+      const roundLosers = activePlayers.filter(p => p.lastResult === "lose");
+      const roundWinners = activePlayers.filter(p => p.lastResult === "win");
       const myResult = (state.participants.find(p => p.id === state.currentUserId) || {}).lastResult;
-      const isFinalLoser = losers.length === 1 && state.currentWinnerIds.length > 0;
 
-      // 복수의 패자 → 자동으로 다음 라운드 진행 (아직 술래 미확정)
-      const multiLoser = !isFinalLoser && !allDraw && losers.length > 1;
-
-      renderRoundResult(allDraw, isFinalLoser, multiLoser);
-      showScreen("screenRoundResult");
-
-      if (isFinalLoser) {
+      if (roundLosers.length === remainingSlots) {
+        // Game over: exactly the right number of losers found
+        state.confirmedLoserIds = [...prevLoserIds, ...roundLosers.map(p => p.id)];
+        state.confirmedSafeIds = [...prevSafeIds, ...roundWinners.map(p => p.id)];
+        renderRoundResult("gameOver", roundLosers.length, remainingSlots);
+        showScreen("screenRoundResult");
         setTimeout(() => playFinalFanfare(), 400);
-        if (myResult === "win") setTimeout(() => speak("축하합니다! 술래가 결정됐습니다!", 1.4, 1.0), 2200);
         if (myResult === "lose") setTimeout(() => speak("아이고, 술래가 되셨습니다!", 1.4, 1.0), 2200);
-      } else if (multiLoser) {
-        // 호스트가 3초 후 자동으로 다음 라운드 시작
+        else if (myResult === "win") setTimeout(() => speak("축하합니다! 술래가 결정됐습니다!", 1.4, 1.0), 2200);
+      } else if (roundLosers.length > remainingSlots) {
+        // Case 4-1: Too many losers → losers battle among themselves next round
+        // Winners from this round become confirmed safe (sit out)
+        state.confirmedSafeIds = [...prevSafeIds, ...roundWinners.map(p => p.id)];
+        // confirmedLoserIds unchanged — losers are NOT yet confirmed, they play again
+        renderRoundResult("tooMany", roundLosers.length, remainingSlots);
+        showScreen("screenRoundResult");
         if (state.role === "host") setTimeout(() => nextRound(), 3000);
-      } else if (!allDraw && myResult === "win" && losers.length > 0 && newWinners.some(w => w.id === state.currentUserId)) {
-        setTimeout(() => speak("휴~ 다행이다", 1.4, 0.9), 800);
-      } else if (!allDraw && myResult === "lose") {
-        setTimeout(() => playFanfare(), 400);
+      } else {
+        // Case 4-2: Too few losers → roundLosers confirmed, winners replay
+        state.confirmedLoserIds = [...prevLoserIds, ...roundLosers.map(p => p.id)];
+        // confirmedSafeIds unchanged — winners continue playing
+        renderRoundResult("tooFew", roundLosers.length, remainingSlots);
+        showScreen("screenRoundResult");
+        if (roundLosers.length > 0 && myResult === "lose") {
+          setTimeout(() => speak("아이고, 술래가 되셨습니다!", 1.4, 1.0), 800);
+        } else if (myResult === "win") {
+          setTimeout(() => speak("휴~ 다행이다. 계속 진행합니다!", 1.4, 0.9), 800);
+        }
+        if (state.role === "host") setTimeout(() => nextRound(), 3000);
       }
     }
 
@@ -1490,19 +1591,18 @@
         if (status === "draw") p.draws += 1;
       });
       saveState();
-      renderRoundResult();
-      showScreen("screenRoundResult");
+      finishRoundLocal();
     }
 
     function judgeRound(participants) {
       const result = {};
-      const prevWinnerIds = state.currentWinnerIds || [];
+      const safeIds = state.confirmedSafeIds || [];
+      const loserIds = state.confirmedLoserIds || [];
 
-      // Previous round winners stay as "win" (they didn't play this round)
-      prevWinnerIds.forEach(id => { result[id] = "win"; });
+      safeIds.forEach(id => { result[id] = "win"; });
+      loserIds.forEach(id => { result[id] = "lose"; });
 
-      // Only judge active (non-winner) players
-      const active = participants.filter(p => !prevWinnerIds.includes(p.id));
+      const active = participants.filter(p => !safeIds.includes(p.id) && !loserIds.includes(p.id));
       if (active.length === 0) return result;
 
       const selectedTypes = [...new Set(active.map(p => p.choice))];
@@ -1530,101 +1630,120 @@
       return a;
     }
 
-    function renderRoundResult(allDraw, isFinalLoser, multiLoser) {
+    function renderRoundResult(caseType, roundLoserCount, remainingSlots) {
       const current = state.participants.find(p => p.id === state.currentUserId) || state.participants[0];
-      const status = current ? current.lastResult || "draw" : "draw";
+      const myResult = current ? current.lastResult || "draw" : "draw";
+      const iAmConfirmedLoser = state.confirmedLoserIds.includes(state.currentUserId);
 
       const title = $("resultTitle");
       const emoji = $("resultEmoji");
       const message = $("resultMessage");
       const penaltyBox = $("resultPenaltyBox");
-      const penaltyText = $("resultPenaltyText");
+      const penaltyTextEl = $("resultPenaltyText");
       const nextBtn = $("nextRoundBtn");
       const actionsDiv = $("roundResultActions");
+      const finalBtns = $("finalResultBtns");
+      const penTxt = getPenaltyText();
 
       title.className = "result-title";
       penaltyBox.classList.add("hidden");
+      finalBtns.classList.add("hidden");
+      finalBtns.innerHTML = "";
 
-      if (isFinalLoser && status === "lose") {
-        title.textContent = "술래!";
-        title.classList.add("lose");
-        emoji.textContent = "🎺";
-        message.textContent = "축하합니다(?) 벌칙을 수행하세요!";
-        penaltyText.textContent = state.penalty || "벌칙이 설정되지 않았습니다.";
-        penaltyBox.classList.remove("hidden");
-      } else if (isFinalLoser && status === "win") {
-        title.textContent = "생존!";
-        title.classList.add("win");
-        emoji.textContent = "🥳";
-        message.textContent = "최종 술래가 결정됐습니다!";
-      } else if (status === "win") {
-        title.textContent = "승리!";
-        title.classList.add("win");
-        emoji.textContent = "🎉";
-        message.textContent = "다음 결과를 기다려주세요.";
-      } else if (status === "lose") {
-        title.textContent = "패배!";
-        title.classList.add("lose");
-        emoji.textContent = "😵";
-        message.textContent = multiLoser ? "잠시 후 다음 라운드가 자동으로 시작됩니다..." : "벌칙을 수행하세요.";
-        if (!multiLoser) {
-          penaltyText.textContent = state.penalty || "벌칙이 설정되지 않았습니다.";
-          penaltyBox.classList.remove("hidden");
-        }
-      } else {
+      if (caseType === "draw") {
         title.textContent = "무승부!";
         title.classList.add("draw");
         emoji.textContent = "🤝";
-        message.textContent = "무승부입니다. 다음 게임으로 넘어갑니다.";
-      }
-
-      // 최종 결과일 때: "다음 라운드 시작" 숨기고, 호스트에게 "한번더!" 등 표시
-      if (isFinalLoser) {
-        nextBtn.style.display = "none";
+        message.textContent = "무승부입니다. 다음 라운드로 넘어갑니다.";
+        nextBtn.style.display = "";
+        nextBtn.textContent = "🎮 다시 시작";
+        nextBtn.onclick = () => window.directStartGame();
         actionsDiv.style.display = state.role === "host" ? "" : "none";
 
-        const myResult = (state.participants.find(p => p.id === state.currentUserId) || {}).lastResult;
-        const finalBtns = $("finalResultBtns");
+      } else if (caseType === "gameOver") {
+        // 술래 확정 - 게임 종료
+        if (myResult === "lose") {
+          title.textContent = `술래 확정! (${state.confirmedLoserIds.length}/${getTargetLoserCount()}명)`;
+          title.classList.add("lose");
+          emoji.textContent = "🎺";
+          message.textContent = "축하합니다(?) 벌칙을 수행하세요!";
+          penaltyTextEl.textContent = penTxt || "벌칙이 설정되지 않았습니다.";
+          penaltyBox.classList.remove("hidden");
+        } else {
+          title.textContent = "생존!";
+          title.classList.add("win");
+          emoji.textContent = "🥳";
+          message.textContent = `술래 ${getTargetLoserCount()}명이 모두 결정됐습니다!`;
+        }
+        nextBtn.style.display = "none";
+        actionsDiv.style.display = "none";
         finalBtns.classList.remove("hidden");
         let html = "";
         if (state.role === "host") {
           html += `<button class="btn-success btn-full" onclick="window.resetGameKeepRoom()" style="margin-bottom:8px">🎮 한번더!</button>`;
         }
         html += `<button class="btn-light btn-full" onclick="window.showStatsPopup()" style="margin-bottom:8px">🏆 게임 승률 보기</button>`;
-        // Feature 3: 벌칙이 "호스트" 유형이고 본인이 술래면 호스트 전환 버튼 표시
-        if (myResult === "lose" && state.penalty && state.penalty.includes("호스트")) {
-          html += `<button class="btn-primary btn-full" onclick="window.becomeNextHost()">🎮 다음 게임 호스트 시작하기</button>`;
+        if (myResult === "lose" && penTxt && penTxt.includes("호스트")) {
+          html += `<button class="btn-primary btn-full" onclick="window.becomeNextHost()" style="margin-top:8px">🎮 다음 게임 호스트 시작하기</button>`;
         }
         finalBtns.innerHTML = html;
-      } else if (multiLoser) {
-        // 복수 패자 → 자동 진행, 버튼 모두 숨김
-        $("finalResultBtns").classList.add("hidden");
-        $("finalResultBtns").innerHTML = "";
+
+      } else if (caseType === "tooMany") {
+        // 4-1: 패자가 너무 많음 → 패자들끼리 재대결
+        if (myResult === "lose") {
+          title.textContent = "패배!";
+          title.classList.add("lose");
+          emoji.textContent = "😵";
+          message.textContent = `패자 ${roundLoserCount}명 중 ${remainingSlots}명만 술래! 잠시 후 패자들끼리 재대결...`;
+        } else {
+          title.textContent = "일단 안전!";
+          title.classList.add("win");
+          emoji.textContent = "😅";
+          message.textContent = "패자들끼리 다음 라운드가 자동으로 시작됩니다...";
+        }
         nextBtn.style.display = "none";
         actionsDiv.style.display = "none";
-      } else {
-        $("finalResultBtns").classList.add("hidden");
-        $("finalResultBtns").innerHTML = "";
-        nextBtn.style.display = "";
-        // all-draw → host direct-start
-        if (allDraw && state.role === "host") {
-          nextBtn.textContent = "🎮 다음 게임 바로 시작";
-          nextBtn.onclick = () => window.directStartGame();
+
+      } else if (caseType === "tooFew") {
+        // 4-2: 패자가 부족 → 일부 술래 확정, 나머지 재대결
+        const newlyConfirmed = roundLoserCount;
+        if (iAmConfirmedLoser && myResult === "lose") {
+          title.textContent = "술래 확정!";
+          title.classList.add("lose");
+          emoji.textContent = "🎺";
+          message.textContent = `술래 확정 (${state.confirmedLoserIds.length}/${getTargetLoserCount()}명). 벌칙 준비!`;
+          penaltyTextEl.textContent = penTxt || "벌칙이 설정되지 않았습니다.";
+          penaltyBox.classList.remove("hidden");
         } else {
-          nextBtn.textContent = "다음 라운드 시작";
-          nextBtn.onclick = () => window.nextRound();
+          title.textContent = myResult === "win" ? "계속 진행!" : "무승부!";
+          title.classList.add(myResult === "win" ? "win" : "draw");
+          emoji.textContent = "🔄";
+          message.textContent = `술래 ${newlyConfirmed}명 확정. ${remainingSlots - newlyConfirmed}명 더 필요! 잠시 후 재대결...`;
         }
-        // Only host can advance to next round
-        actionsDiv.style.display = state.role === "host" ? "" : "none";
+        nextBtn.style.display = "none";
+        actionsDiv.style.display = "none";
       }
 
+      // 참가자 결과 목록
       const list = $("roundResultList");
       list.innerHTML = "";
+      const safeIds = state.confirmedSafeIds || [];
+      const loserIds = state.confirmedLoserIds || [];
       state.participants.forEach(p => {
         const div = document.createElement("div");
         div.className = "participant";
-        const tagClass = p.lastResult === "win" ? "win" : p.lastResult === "lose" ? "lose" : "draw";
-        const tagText = p.lastResult === "win" ? "승리" : p.lastResult === "lose" ? "패배" : "무승부";
+        let tagClass, tagText;
+        if (loserIds.includes(p.id)) {
+          tagClass = "lose"; tagText = "술래 확정";
+        } else if (safeIds.includes(p.id)) {
+          tagClass = "win"; tagText = "안전";
+        } else if (p.lastResult === "win") {
+          tagClass = "win"; tagText = "승리";
+        } else if (p.lastResult === "lose") {
+          tagClass = "lose"; tagText = "패배";
+        } else {
+          tagClass = "draw"; tagText = "무승부";
+        }
         div.innerHTML = `
           <strong>${escapeHtml(p.name)} ${p.is_host ? "<span class='tag host'>HOST</span>" : ""}</strong>
           <span>${choiceEmoji[p.choice] || ""} ${choiceLabel[p.choice] || ""} <span class="tag ${tagClass}">${tagText}</span></span>
@@ -1634,17 +1753,22 @@
     }
 
     async function nextRound() {
-      const winnerIds = state.currentWinnerIds || [];
+      const safeIds = state.confirmedSafeIds || [];
+      const loserIds = state.confirmedLoserIds || [];
+      const nonActiveIds = [...new Set([...safeIds, ...loserIds])];
       if (db) {
-        // Clear choices for everyone; pre-mark winners as ready so only non-winners need to click
         await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
-        if (winnerIds.length > 0) {
-          await db.from('participants').update({ is_ready: true }).in('id', winnerIds);
+        // 확정된 안전/술래 플레이어는 자동으로 준비 완료 처리 (다시 버튼 안 눌러도 됨)
+        if (nonActiveIds.length > 0) {
+          await db.from('participants').update({ is_ready: true }).in('id', nonActiveIds);
         }
         await db.from('rooms').update({ round: state.round + 1, status: 'ready' }).eq('id', state.roomCode);
       } else {
         state.round += 1;
-        state.participants.forEach(p => { p.choice = null; p.lastResult = null; p.is_ready = winnerIds.includes(p.id); });
+        state.participants.forEach(p => {
+          p.choice = null; p.lastResult = null;
+          p.is_ready = nonActiveIds.includes(p.id);
+        });
         saveState();
         showReadyScreen();
       }
@@ -1657,7 +1781,9 @@
     }
 
     async function resetGameKeepRoom() {
-      state.currentWinnerIds = [];
+      state.confirmedSafeIds = [];
+      state.confirmedLoserIds = [];
+      state.targetLoserCount = getTargetLoserCount();
       state.gameStarting = false;
       if (db) {
         await db.from('participants').update({
@@ -1721,19 +1847,22 @@
       renderParticipants("hostParticipantList");
       renderParticipants("waitParticipantList");
       renderReadyList();
-      $("waitPenaltyText").textContent = state.penalty || "아직 벌칙이 설정되지 않았습니다.";
+      $("waitPenaltyText").textContent = getPenaltyText() || "아직 벌칙이 설정되지 않았습니다.";
       $("roomCodeText").textContent = state.roomCode || "----";
       $("roomUrlText").textContent = state.roomUrl || "";
       // 호스트 방에서 ready 상태일 때 "게임 시작!" 버튼 활성/비활성 갱신 (호스트 제외)
       if (state.role === "host" && state.status === "ready") {
         const startBtn = $("startGameBtn");
         if (startBtn && !startBtn.classList.contains("hidden")) {
-          const nonHosts = state.participants.filter(p => !p.is_host);
-          const allReady = nonHosts.length > 0 && nonHosts.every(p => p.is_ready);
+          const safeIds = state.confirmedSafeIds || [];
+          const loserIds = state.confirmedLoserIds || [];
+          const activePlayers = state.participants.filter(p => !p.is_host && !safeIds.includes(p.id) && !loserIds.includes(p.id));
+          const allReady = activePlayers.length > 0 && activePlayers.every(p => p.is_ready);
           startBtn.disabled = !allReady;
           startBtn.style.opacity = allReady ? "1" : "0.5";
         }
       }
+      updateLoserCountDropdown();
     }
 
     function renderParticipants(targetId) {
@@ -1850,7 +1979,7 @@
 
     function showReadyScreen() {
       showScreen("screenReady");
-      $("readyPenaltyBox").textContent = `벌칙: ${state.penalty || "없음"}`;
+      $("readyPenaltyBox").textContent = `벌칙: ${getPenaltyText() || "없음"}`;
       renderReadyList();
       if (state.role === "host") {
         $("hostStartBtn").classList.remove("hidden");
@@ -1999,7 +2128,8 @@
       }
       if (state.pollInterval) { clearInterval(state.pollInterval); state.pollInterval = null; }
       if (state.channel) { state.channel.unsubscribe(); state.channel = null; }
-      state.currentWinnerIds = [];
+      state.confirmedSafeIds = [];
+      state.confirmedLoserIds = [];
       state.gameStarting = false;
       goHome();
     }
@@ -2031,7 +2161,8 @@
       }
       if (state.pollInterval) { clearInterval(state.pollInterval); state.pollInterval = null; }
       if (state.channel) { state.channel.unsubscribe(); state.channel = null; }
-      state.currentWinnerIds = [];
+      state.confirmedSafeIds = [];
+      state.confirmedLoserIds = [];
       state.gameStarting = false;
       goHome();
     }
@@ -2045,12 +2176,11 @@
       }
       // 나(술래)를 호스트로 승격
       await db.from('participants').update({ is_host: true }).eq('id', state.currentUserId);
-      // 모든 참가자 초기화 후 waiting 상태로
       await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
       await db.from('rooms').update({ round: 1, status: 'waiting' }).eq('id', state.roomCode);
-      // 로컬 상태 전환
       state.role = "host";
-      state.currentWinnerIds = [];
+      state.confirmedSafeIds = [];
+      state.confirmedLoserIds = [];
       state.gameStarting = false;
       showHostRoom();
     }
@@ -2218,6 +2348,8 @@
     window.becomeNextHost = becomeNextHost;
     window.showStatsPopup = showStatsPopup;
     window.closeStatsPopup = closeStatsPopup;
+    window.onLoserCountChange = onLoserCountChange;
+    window.showLoserWaitScreen = showLoserWaitScreen;
   </script>
 </body>
 </html>
