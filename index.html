@@ -743,7 +743,8 @@
       timer: null,
       animationTimer: null,
       remainingSeconds: 5,
-      channel: null
+      channel: null,
+      pollInterval: null
     };
 
     function $(id) {
@@ -754,6 +755,7 @@
 
     async function subscribeToRoom(roomCode) {
       if (state.channel) db.removeChannel(state.channel);
+      if (state.pollInterval) clearInterval(state.pollInterval);
 
       state.channel = db
         .channel(`room:${roomCode}`)
@@ -761,10 +763,17 @@
           const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
           if (room) handleRoomUpdate(room);
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomCode}` }, payload => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomCode}` }, () => {
           fetchParticipants(roomCode);
         })
         .subscribe();
+
+      // 폴링 백업: Realtime이 동작 안 할 경우 3초마다 직접 체크
+      state.pollInterval = setInterval(async () => {
+        const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
+        if (room) handleRoomUpdate(room);
+        fetchParticipants(roomCode);
+      }, 3000);
 
       // 초기 데이터 로드
       const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
@@ -1109,8 +1118,10 @@
     function stopTimers() {
       if (state.timer) clearInterval(state.timer);
       if (state.animationTimer) clearInterval(state.animationTimer);
+      if (state.pollInterval) clearInterval(state.pollInterval);
       state.timer = null;
       state.animationTimer = null;
+      state.pollInterval = null;
     }
 
     async function selectChoice(choice, event) {
