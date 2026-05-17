@@ -571,9 +571,9 @@
         이 파일은 단일 HTML 프로토타입입니다. 실제 여러 휴대폰 간 실시간 동기화는 Firebase, Supabase, WebSocket 같은 백엔드 연결이 필요합니다.
       </div>
       <div class="grid">
-        <button class="btn-primary btn-full" onclick="createRoom()">방 만들기 / 호스트 시작</button>
-        <button class="btn-light btn-full" onclick="showJoinScreen()">QR코드로 참여한 화면 보기</button>
-        <button class="btn-outline btn-full" onclick="showStats()">최근 게임 결과 보기</button>
+        <button class="btn-primary btn-full" onclick="window.createRoom()">방 만들기 / 호스트 시작</button>
+        <button class="btn-light btn-full" onclick="window.showJoinScreen()">QR코드로 참여한 화면 보기</button>
+        <button class="btn-outline btn-full" onclick="window.showStats()">최근 게임 결과 보기</button>
       </div>
     </section>
 
@@ -588,8 +588,8 @@
       </div>
 
       <div class="grid grid-2">
-        <button class="btn-outline" onclick="copyRoomLink()">초대 링크 복사</button>
-        <button class="btn-light" onclick="addDemoParticipant()">참가자 추가 테스트</button>
+        <button class="btn-outline" onclick="window.copyRoomLink()">초대 링크 복사</button>
+        <button class="btn-light" onclick="window.addDemoParticipant()">참가자 추가 테스트</button>
       </div>
 
       <div style="height: 16px"></div>
@@ -597,8 +597,8 @@
       <div class="participant-list" id="hostParticipantList"></div>
 
       <div class="footer-actions">
-        <button class="btn-primary btn-full" onclick="showPenaltyScreen()">벌칙 설정하기</button>
-        <button class="btn-outline btn-full" onclick="goHome()">처음으로</button>
+        <button class="btn-primary btn-full" onclick="window.showPenaltyScreen()">벌칙 설정하기</button>
+        <button class="btn-outline btn-full" onclick="window.goHome()">처음으로</button>
       </div>
     </section>
 
@@ -614,8 +614,8 @@
         <input id="joinName" placeholder="예: 영선" />
       </div>
       <div class="grid">
-        <button class="btn-primary btn-full" onclick="joinRoom()">참가하기</button>
-        <button class="btn-outline btn-full" onclick="goHome()">처음으로</button>
+        <button class="btn-primary btn-full" onclick="window.joinRoom()">참가하기</button>
+        <button class="btn-outline btn-full" onclick="window.goHome()">처음으로</button>
       </div>
     </section>
 
@@ -629,8 +629,8 @@
       <h3>참가자 목록</h3>
       <div class="participant-list" id="waitParticipantList"></div>
       <div class="footer-actions">
-        <button class="btn-light btn-full" onclick="showGameScreen()">게임 화면 미리보기</button>
-        <button class="btn-outline btn-full" onclick="goHome()">나가기</button>
+        <button class="btn-light btn-full" onclick="window.showGameScreen()">게임 화면 미리보기</button>
+        <button class="btn-outline btn-full" onclick="window.goHome()">나가기</button>
       </div>
     </section>
 
@@ -644,9 +644,9 @@
       <h3>자주 사용한 벌칙</h3>
       <div class="penalty-chip-wrap" id="penaltyChips"></div>
       <div class="grid">
-        <button class="btn-primary btn-full" onclick="savePenalty()">벌칙 저장 및 참가자에게 표시</button>
-        <button class="btn-success btn-full" onclick="startGame()">게임 시작</button>
-        <button class="btn-outline btn-full" onclick="showHostRoom()">방 화면으로 돌아가기</button>
+        <button class="btn-primary btn-full" onclick="window.savePenalty()">벌칙 저장 및 참가자에게 표시</button>
+        <button class="btn-success btn-full" onclick="window.startGame()">게임 시작</button>
+        <button class="btn-outline btn-full" onclick="window.showHostRoom()">방 화면으로 돌아가기</button>
       </div>
     </section>
 
@@ -660,12 +660,12 @@
         <div class="summary-item"><strong id="totalCount">0</strong><span>참가자</span></div>
       </div>
       <div class="choice-buttons">
-        <button class="choice-button" onclick="selectChoice('scissors', event)"><span class="emoji">✌️</span>가위</button>
-        <button class="choice-button" onclick="selectChoice('rock', event)"><span class="emoji">✊</span>바위</button>
-        <button class="choice-button" onclick="selectChoice('paper', event)"><span class="emoji">🖐</span>보</button>
+        <button class="choice-button" onclick="window.selectChoice('scissors', event)"><span class="emoji">✌️</span>가위</button>
+        <button class="choice-button" onclick="window.selectChoice('rock', event)"><span class="emoji">✊</span>바위</button>
+        <button class="choice-button" onclick="window.selectChoice('paper', event)"><span class="emoji">🖐</span>보</button>
       </div>
       <div style="height: 12px"></div>
-      <button class="btn-light btn-full" onclick="autoFillChoices()">테스트용: 모든 참가자 랜덤 선택</button>
+      <button class="btn-light btn-full" onclick="window.autoFillChoices()">테스트용: 모든 참가자 랜덤 선택</button>
     </section>
 
     <section class="card hidden" id="screenRoundResult">
@@ -684,8 +684,8 @@
       <div class="participant-list" id="roundResultList"></div>
 
       <div class="footer-actions">
-        <button class="btn-primary btn-full" onclick="nextRound()">다음 라운드 시작</button>
-        <button class="btn-danger btn-full" onclick="endGame()">게임 종료 및 통계 보기</button>
+        <button class="btn-primary btn-full" onclick="window.nextRound()">다음 라운드 시작</button>
+        <button class="btn-danger btn-full" onclick="window.endGame()">게임 종료 및 통계 보기</button>
       </div>
     </section>
 
@@ -706,8 +706,8 @@
         <tbody id="statsTableBody"></tbody>
       </table>
       <div class="footer-actions">
-        <button class="btn-primary btn-full" onclick="resetGameKeepRoom()">같은 방에서 다시 하기</button>
-        <button class="btn-outline btn-full" onclick="goHome()">처음으로</button>
+        <button class="btn-primary btn-full" onclick="window.resetGameKeepRoom()">같은 방에서 다시 하기</button>
+        <button class="btn-outline btn-full" onclick="window.goHome()">처음으로</button>
       </div>
     </section>
   </main>
