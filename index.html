@@ -996,15 +996,26 @@
       const value = $("penaltyInput").value.trim();
       if (!value) { alert("벌칙을 입력해주세요."); return; }
 
+      state.penalty = value;
+      savePenaltyHistory(value);
+      saveState();
+
       if (db) {
-        await db.from('rooms').update({ penalty: value, status: 'penalty_setting' }).eq('id', state.roomCode);
-      } else {
-        state.penalty = value;
-        savePenaltyHistory(value);
-        saveState();
+        try {
+          const { error } = await Promise.race([
+            db.from('rooms').update({ penalty: value, status: 'penalty_setting' }).eq('id', state.roomCode),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+          ]);
+          if (error) throw error;
+        } catch (e) {
+          console.error('벌칙 저장 오류:', e.message);
+          alert('벌칙 저장 중 오류: ' + e.message);
+          return;
+        }
       }
-      alert("벌칙이 참가자 화면에 표시되었습니다.");
+
       renderAll();
+      showPenaltyScreen();
     }
 
     async function startGame() {
@@ -1014,9 +1025,19 @@
       }
 
       if (db) {
-        // 모든 참가자의 선택 초기화
-        await db.from('participants').update({ choice: null }).eq('room_id', state.roomCode);
-        await updateRoomStatus('playing');
+        try {
+          await Promise.race([
+            db.from('participants').update({ choice: null }).eq('room_id', state.roomCode),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+          ]);
+          await Promise.race([
+            updateRoomStatus('playing'),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+          ]);
+        } catch (e) {
+          alert('게임 시작 오류: ' + e.message);
+          return;
+        }
       } else {
         state.participants.forEach(p => p.choice = null);
         saveState();
