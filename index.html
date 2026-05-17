@@ -704,11 +704,7 @@
       </div>
       <h3>참가자 목록</h3>
       <div class="participant-list" id="waitParticipantList"></div>
-      <div class="footer-actions">
-        <button class="btn-light btn-full" onclick="window.showGameScreen()">게임 화면 미리보기</button>
-        <button class="btn-outline btn-full" onclick="window.goHome()">나가기</button>
-      </div>
-      <div style="text-align:center;margin-top:8px">
+      <div style="text-align:center;margin-top:12px">
         <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
       </div>
     </section>
@@ -1462,17 +1458,21 @@
       const myResult = (state.participants.find(p => p.id === state.currentUserId) || {}).lastResult;
       const isFinalLoser = losers.length === 1 && state.currentWinnerIds.length > 0;
 
-      renderRoundResult(allDraw, isFinalLoser);
+      // 복수의 패자 → 자동으로 다음 라운드 진행 (아직 술래 미확정)
+      const multiLoser = !isFinalLoser && !allDraw && losers.length > 1;
+
+      renderRoundResult(allDraw, isFinalLoser, multiLoser);
       showScreen("screenRoundResult");
 
       if (isFinalLoser) {
         setTimeout(() => playFinalFanfare(), 400);
         if (myResult === "win") setTimeout(() => speak("축하합니다! 술래가 결정됐습니다!", 1.4, 1.0), 2200);
         if (myResult === "lose") setTimeout(() => speak("아이고, 술래가 되셨습니다!", 1.4, 1.0), 2200);
+      } else if (multiLoser) {
+        // 호스트가 3초 후 자동으로 다음 라운드 시작
+        if (state.role === "host") setTimeout(() => nextRound(), 3000);
       } else if (!allDraw && myResult === "win" && losers.length > 0 && newWinners.some(w => w.id === state.currentUserId)) {
-        // Feature 4: newly safe winner hears "phew"
         setTimeout(() => speak("휴~ 다행이다", 1.4, 0.9), 800);
-        // Feature 5: winner wait screen shown when "ready" status arrives (via handleRoomUpdate)
       } else if (!allDraw && myResult === "lose") {
         setTimeout(() => playFanfare(), 400);
       }
@@ -1530,7 +1530,7 @@
       return a;
     }
 
-    function renderRoundResult(allDraw, isFinalLoser) {
+    function renderRoundResult(allDraw, isFinalLoser, multiLoser) {
       const current = state.participants.find(p => p.id === state.currentUserId) || state.participants[0];
       const status = current ? current.lastResult || "draw" : "draw";
 
@@ -1566,9 +1566,11 @@
         title.textContent = "패배!";
         title.classList.add("lose");
         emoji.textContent = "😵";
-        message.textContent = "벌칙을 수행하세요.";
-        penaltyText.textContent = state.penalty || "벌칙이 설정되지 않았습니다.";
-        penaltyBox.classList.remove("hidden");
+        message.textContent = multiLoser ? "잠시 후 다음 라운드가 자동으로 시작됩니다..." : "벌칙을 수행하세요.";
+        if (!multiLoser) {
+          penaltyText.textContent = state.penalty || "벌칙이 설정되지 않았습니다.";
+          penaltyBox.classList.remove("hidden");
+        }
       } else {
         title.textContent = "무승부!";
         title.classList.add("draw");
@@ -1594,6 +1596,12 @@
           html += `<button class="btn-primary btn-full" onclick="window.becomeNextHost()">🎮 다음 게임 호스트 시작하기</button>`;
         }
         finalBtns.innerHTML = html;
+      } else if (multiLoser) {
+        // 복수 패자 → 자동 진행, 버튼 모두 숨김
+        $("finalResultBtns").classList.add("hidden");
+        $("finalResultBtns").innerHTML = "";
+        nextBtn.style.display = "none";
+        actionsDiv.style.display = "none";
       } else {
         $("finalResultBtns").classList.add("hidden");
         $("finalResultBtns").innerHTML = "";
@@ -1860,11 +1868,15 @@
       state.participants.forEach(p => {
         const div = document.createElement("div");
         div.className = "ready-row";
-        const isReady = p.is_ready;
-        div.innerHTML = `
-          <strong>${escapeHtml(p.name || p.id)}</strong>
-          <span class="tag ${isReady ? "win" : ""}">${isReady ? "✅ 준비 완료" : "⏳ 대기 중"}</span>
-        `;
+        let badge;
+        if (p.is_host) {
+          badge = `<span class="tag host">👑 호스트</span>`;
+        } else {
+          badge = p.is_ready
+            ? `<span class="tag win">✅ 준비 완료</span>`
+            : `<span class="tag">⏳ 대기 중</span>`;
+        }
+        div.innerHTML = `<strong>${escapeHtml(p.name || p.id)}</strong>${badge}`;
         el.appendChild(div);
       });
       updateMyReadyButton();
