@@ -634,7 +634,7 @@
       <h3>자주 사용한 벌칙</h3>
       <div class="penalty-chip-wrap" id="penaltyChips"></div>
       <div class="grid">
-        <button class="btn-primary btn-full" onclick="window.savePenalty()">벌칙 저장 및 참가자에게 표시</button>
+        <button id="savePenaltyBtn" class="btn-primary btn-full" onclick="window.savePenalty()">벌칙 저장 및 참가자에게 표시</button>
         <button class="btn-success btn-full" onclick="window.startGame()">게임 시작</button>
         <button class="btn-outline btn-full" onclick="window.showHostRoom()">방 화면으로 돌아가기</button>
       </div>
@@ -996,6 +996,10 @@
       const value = $("penaltyInput").value.trim();
       if (!value) { alert("벌칙을 입력해주세요."); return; }
 
+      const btn = $("savePenaltyBtn");
+      btn.disabled = true;
+      btn.textContent = "저장 중...";
+
       state.penalty = value;
       savePenaltyHistory(value);
       saveState();
@@ -1007,15 +1011,27 @@
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
           ]);
           if (error) throw error;
+          btn.textContent = "저장 완료 ✓";
+          setTimeout(() => {
+            btn.disabled = false;
+            btn.textContent = "벌칙 저장 및 참가자에게 표시";
+          }, 2000);
         } catch (e) {
           console.error('벌칙 저장 오류:', e.message);
-          alert('벌칙 저장 중 오류: ' + e.message);
+          btn.disabled = false;
+          btn.textContent = "벌칙 저장 및 참가자에게 표시";
+          alert('저장 오류: ' + e.message);
           return;
         }
+      } else {
+        btn.textContent = "저장 완료 ✓";
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = "벌칙 저장 및 참가자에게 표시";
+        }, 2000);
       }
 
       renderAll();
-      showPenaltyScreen();
     }
 
     async function startGame() {
