@@ -557,8 +557,9 @@
     <section class="card" id="screenHome">
       <h1>친구들과 QR로 바로 참여하는 벌칙 가위바위보</h1>
       <p class="lead">호스트가 방을 만들고 QR코드를 보여주면, 참가자들이 접속해서 함께 가위바위보를 진행합니다.</p>
-      <div class="notice warning">
-        이 파일은 단일 HTML 프로토타입입니다. 실제 여러 휴대폰 간 실시간 동기화는 Firebase, Supabase, WebSocket 같은 백엔드 연결이 필요합니다.
+      <div class="field">
+        <label>내 닉네임</label>
+        <input id="homeNickname" placeholder="예: 민수" maxlength="10" />
       </div>
       <div class="grid">
         <button class="btn-primary btn-full" onclick="window.createRoom()">방 만들기 / 호스트 시작</button>
@@ -736,6 +737,7 @@
       roomUrl: "",
       role: "",
       currentUserId: "",
+      nickname: "",
       penalty: "",
       round: 1,
       status: "waiting",
@@ -857,8 +859,11 @@
     }
 
     async function createRoom() {
-      const code = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const nickname = $("homeNickname").value.trim() || "호스트";
+      state.nickname = nickname;
+      saveNickname(nickname);
 
+      const code = Math.random().toString(36).substring(2, 6).toUpperCase();
       state.roomCode = code;
       state.roomUrl = `${location.origin}${location.pathname}?room=${code}`;
       state.role = "host";
@@ -880,7 +885,7 @@
           const hostId = `h_${Date.now()}`;
           await withTimeout(
             db.from('participants').insert([{
-              id: hostId, room_id: code, name: "호스트", is_host: true
+              id: hostId, room_id: code, name: nickname, is_host: true
             }]),
             5000
           );
@@ -888,11 +893,11 @@
           subscribeToRoom(code);
         } catch (e) {
           console.error("Supabase 연결 실패, 오프라인 모드로 전환:", e.message);
-          state.participants = [createParticipant("host", "호스트", true)];
+          state.participants = [createParticipant("host", nickname, true)];
           saveState();
         }
       } else {
-        state.participants = [createParticipant("host", "호스트", true)];
+        state.participants = [createParticipant("host", nickname, true)];
         saveState();
       }
 
@@ -935,6 +940,8 @@
       if (state.roomCode) {
         $("joinRoomCode").value = state.roomCode;
       }
+      const nickname = $("homeNickname").value.trim() || loadNickname();
+      if (nickname) $("joinName").value = nickname;
       showScreen("screenJoin");
     }
 
@@ -1458,6 +1465,14 @@
       }
     }
 
+    function saveNickname(name) {
+      if (name) localStorage.setItem("rpsNickname", name);
+    }
+
+    function loadNickname() {
+      return localStorage.getItem("rpsNickname") || "";
+    }
+
     function escapeHtml(text) {
       return String(text)
         .replaceAll("&", "&amp;")
@@ -1471,10 +1486,13 @@
       const params = new URLSearchParams(location.search);
       const room = params.get("room");
       loadState();
+      const savedNickname = loadNickname();
+      if (savedNickname) $("homeNickname").value = savedNickname;
       if (room) {
         state.roomCode = room.toUpperCase();
         state.roomUrl = location.href;
         $("joinRoomCode").value = state.roomCode;
+        if (savedNickname) $("joinName").value = savedNickname;
         showScreen("screenJoin");
       } else {
         showScreen("screenHome");
