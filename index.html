@@ -719,9 +719,10 @@
     const SUPABASE_ANON_KEY = "sb_publishable_vLqtQSJz9GRtTiiz84EDGQ_9eVm7L3l";
     let supabase = null;
 
-    if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    }
+    // TODO: sb_publishable_ 키 형식이 JS 클라이언트와 호환 안 됨 - anon JWT 키 확보 후 활성화
+    // if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    //   supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // }
 
     const choiceLabel = {
       scissors: "가위",
