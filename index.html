@@ -1049,7 +1049,8 @@
       confirmedSafeIds: [],
       confirmedLoserIds: [],
       targetLoserCount: 1,
-      gameStarting: false
+      gameStarting: false,
+      finishingRound: false
     };
 
     function parsePenalty(raw) {
@@ -1093,12 +1094,12 @@
       await fetchParticipants(roomCode);
     }
 
-    function handleRoomUpdate(room) {
+    async function handleRoomUpdate(room) {
       if (!room) return;
       state.penalty = room.penalty;
 
-      // Bug fix: reset winner/loser tracking when round resets to 1 (new game started)
-      if (room.round === 1 && state.round !== 1) {
+      // Fix 2: 항상 round=1이면 로컬 상태 리셋 (한번더! 후 참가자 기기 동기화)
+      if (room.round === 1) {
         state.confirmedSafeIds = [];
         state.confirmedLoserIds = [];
         state.targetLoserCount = getTargetLoserCount();
@@ -1113,8 +1114,15 @@
         const iAmConfirmedLoser = state.confirmedLoserIds.includes(state.currentUserId);
 
         if (state.status === "result") {
+          // Fix 1 & 3: result 전환 전 최신 참가자 데이터를 반드시 재조회 후 판정
+          if (db && state.roomCode) {
+            const { data } = await db.from('participants').select('*')
+              .eq('room_id', state.roomCode).order('created_at', { ascending: true });
+            if (data) state.participants = data;
+          }
           finishRoundLocal();
         } else if (state.status === "playing") {
+          state.finishingRound = false;
           if (iAmSafe || iAmConfirmedLoser) {
             runCountdown().catch(() => {});
           } else {
@@ -1498,6 +1506,7 @@
     async function startGame() {
       if (state.gameStarting) return;
       state.gameStarting = true;
+      state.finishingRound = false;
       const btn = $("hostStartBtn");
       const roomBtn = $("startGameBtn");
       if (btn) { btn.disabled = true; btn.textContent = "시작 중..."; }
@@ -1660,6 +1669,8 @@
     }
 
     function finishRoundLocal() {
+      if (state.finishingRound) return; // 중복 실행 방지
+      state.finishingRound = true;
       stopRoundTimers();
       const result = judgeRound(state.participants);
       state.participants.forEach(p => { p.lastResult = result[p.id]; });
@@ -1674,6 +1685,7 @@
       if (allDraw) {
         renderRoundResult("draw", 0, remainingSlots);
         showScreen("screenRoundResult");
+        state.finishingRound = false;
         return;
       }
 
@@ -1682,7 +1694,6 @@
       const myResult = (state.participants.find(p => p.id === state.currentUserId) || {}).lastResult;
 
       if (roundLosers.length === remainingSlots) {
-        // Game over: exactly the right number of losers found
         state.confirmedLoserIds = [...prevLoserIds, ...roundLosers.map(p => p.id)];
         state.confirmedSafeIds = [...prevSafeIds, ...roundWinners.map(p => p.id)];
         renderRoundResult("gameOver", roundLosers.length, remainingSlots);
@@ -1691,17 +1702,12 @@
         if (myResult === "lose") setTimeout(() => speak("아이고, 술래가 되셨습니다!", 1.4, 1.0), 2200);
         else if (myResult === "win") setTimeout(() => speak("축하합니다! 술래가 결정됐습니다!", 1.4, 1.0), 2200);
       } else if (roundLosers.length > remainingSlots) {
-        // Case 4-1: Too many losers → losers battle among themselves next round
-        // Winners from this round become confirmed safe (sit out)
         state.confirmedSafeIds = [...prevSafeIds, ...roundWinners.map(p => p.id)];
-        // confirmedLoserIds unchanged — losers are NOT yet confirmed, they play again
         renderRoundResult("tooMany", roundLosers.length, remainingSlots);
         showScreen("screenRoundResult");
-        if (state.role === "host") setTimeout(() => nextRound(), 3000);
+        if (state.role === "host") setTimeout(() => { state.finishingRound = false; nextRound(); }, 3000);
       } else {
-        // Case 4-2: Too few losers → roundLosers confirmed, winners replay
         state.confirmedLoserIds = [...prevLoserIds, ...roundLosers.map(p => p.id)];
-        // confirmedSafeIds unchanged — winners continue playing
         renderRoundResult("tooFew", roundLosers.length, remainingSlots);
         showScreen("screenRoundResult");
         if (roundLosers.length > 0 && myResult === "lose") {
@@ -1709,8 +1715,9 @@
         } else if (myResult === "win") {
           setTimeout(() => speak("휴~ 다행이다. 계속 진행합니다!", 1.4, 0.9), 800);
         }
-        if (state.role === "host") setTimeout(() => nextRound(), 3000);
+        if (state.role === "host") setTimeout(() => { state.finishingRound = false; nextRound(); }, 3000);
       }
+      state.finishingRound = false;
     }
 
     // 오프라인/프로토타입용 원본 finishRound
@@ -1919,6 +1926,7 @@
       state.confirmedLoserIds = [];
       state.targetLoserCount = getTargetLoserCount();
       state.gameStarting = false;
+      state.finishingRound = false;
       if (db) {
         await db.from('participants').update({
           choice: null, is_ready: false, wins: 0, losses: 0, draws: 0, penalties: 0
