@@ -1877,6 +1877,8 @@
       return new Promise(resolve => {
         if (!window.speechSynthesis) { resolve(); return; }
         speechSynthesis.cancel();
+        // iOS/Android: resume if paused (TTS gets suspended outside user gesture context)
+        if (speechSynthesis.paused) speechSynthesis.resume();
         const u = new SpeechSynthesisUtterance(text);
         u.lang = 'ko-KR';
         u.pitch = pitch;
@@ -1884,6 +1886,8 @@
         u.onend = resolve;
         u.onerror = resolve;
         speechSynthesis.speak(u);
+        // Fallback: mobile browsers may never fire onend when called from WebSocket events
+        setTimeout(resolve, 1500);
       });
     }
 
