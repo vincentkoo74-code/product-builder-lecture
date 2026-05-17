@@ -840,7 +840,8 @@
       remainingSeconds: 5,
       channel: null,
       pollInterval: null,
-      isWaitingAsWinner: false
+      currentWinnerIds: [],
+      gameStarting: false
     };
 
     function $(id) {
@@ -887,19 +888,29 @@
 
       // 상태 변화에 따른 화면 전환
       if (oldStatus !== state.status) {
+        const iAmWinner = state.currentWinnerIds.includes(state.currentUserId);
+
         if (state.status === "result") {
-          state.isWaitingAsWinner = false;
           finishRoundLocal();
-        } else if (state.isWaitingAsWinner && (state.status === "ready" || state.status === "playing")) {
-          // Feature 5: winners stay on wait screen while others play
+        } else if (state.status === "playing") {
+          // Issue 3: all devices run countdown when playing starts
+          if (iAmWinner) {
+            // Winners hear countdown but stay on wait screen
+            runCountdown().catch(() => {});
+          } else {
+            runCountdownThenShowGame();
+          }
+        } else if (state.status === "ready") {
+          // Feature 5: winners go to wait screen, others to ready screen
+          if (iAmWinner) {
+            showScreen("screenWinnerWait");
+          } else {
+            showReadyScreen();
+          }
         } else if (state.status === "waiting") {
           state.role === "host" ? showHostRoom() : showScreen("screenParticipantWait");
         } else if (state.status === "penalty_setting") {
           if (state.role !== "host") showScreen("screenParticipantWait");
-        } else if (state.status === "ready") {
-          showReadyScreen();
-        } else if (state.status === "playing") {
-          showGameScreen();
         } else if (state.status === "stats") {
           showStats();
         }
@@ -913,10 +924,19 @@
         state.participants = data;
         updateSelectedCount();
         renderAll();
-        
-        // 결과 화면에서 모두가 선택했는지 확인 (호스트가 판정 트리거)
-        if (state.role === "host" && state.status === "playing" && data.every(p => p.choice)) {
-          updateRoomStatus("result");
+
+        if (state.role === "host") {
+          // Issue 2: auto-start when all non-winner players have marked ready
+          if (state.status === "ready" && !state.gameStarting && state.currentWinnerIds.length > 0 && data.every(p => p.is_ready)) {
+            startGame();
+          }
+          // Auto-trigger result when all active (non-winner) players have chosen
+          if (state.status === "playing") {
+            const activePlayers = data.filter(p => !state.currentWinnerIds.includes(p.id));
+            if (activePlayers.length > 0 && activePlayers.every(p => p.choice)) {
+              updateRoomStatus("result");
+            }
+          }
         }
       }
     }
@@ -1065,6 +1085,8 @@
     function goHome() {
       stopTimers();
       if (state.channel) db.removeChannel(state.channel);
+      state.currentWinnerIds = [];
+      state.gameStarting = false;
       showScreen("screenHome");
     }
 
@@ -1170,10 +1192,37 @@
     }
 
     async function startGame() {
+      if (state.gameStarting) return;
+      state.gameStarting = true;
       const btn = $("hostStartBtn");
       if (btn) { btn.disabled = true; btn.textContent = "시작 중..."; }
 
-      // 카운트다운 오버레이 표시
+      if (db) {
+        try {
+          await Promise.race([
+            db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+          ]);
+          await Promise.race([
+            updateRoomStatus('playing'),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+          ]);
+          // Countdown + screen transition handled by handleRoomUpdate on all devices
+        } catch (e) {
+          alert('게임 시작 오류: ' + e.message);
+          if (btn) { btn.disabled = false; btn.textContent = "🎮 게임 시작"; }
+          state.gameStarting = false;
+        }
+      } else {
+        state.participants.forEach(p => { p.choice = null; p.is_ready = false; });
+        saveState();
+        await runCountdown();
+        showGameScreen();
+        state.gameStarting = false;
+      }
+    }
+
+    async function runCountdown() {
       const overlay = $("countdownOverlay");
       const numEl = $("countdownNumber");
       const labelEl = $("countdownLabel");
@@ -1202,27 +1251,12 @@
 
       overlay.classList.add("hidden");
       numEl.style.fontSize = "";
+    }
 
-      if (db) {
-        try {
-          await Promise.race([
-            db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-          ]);
-          await Promise.race([
-            updateRoomStatus('playing'),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-          ]);
-        } catch (e) {
-          alert('게임 시작 오류: ' + e.message);
-          if (btn) { btn.disabled = false; btn.textContent = "🎮 게임 시작"; }
-          return;
-        }
-      } else {
-        state.participants.forEach(p => { p.choice = null; p.is_ready = false; });
-        saveState();
-      }
+    async function runCountdownThenShowGame() {
+      await runCountdown();
       showGameScreen();
+      state.gameStarting = false;
     }
 
     function beginRoundTimer() {
@@ -1285,11 +1319,13 @@
 
     async function autoFillChoices() {
       const choices = ["scissors", "rock", "paper"];
+      // Only fill choices for active (non-winner) players
+      const activePlayers = state.participants.filter(p => !state.currentWinnerIds.includes(p.id));
       if (db) {
-        for (const p of state.participants) {
+        for (const p of activePlayers) {
           if (!p.choice) {
-            await db.from('participants').update({ 
-              choice: choices[Math.floor(Math.random() * choices.length)] 
+            await db.from('participants').update({
+              choice: choices[Math.floor(Math.random() * choices.length)]
             }).eq('id', p.id);
           }
         }
@@ -1309,31 +1345,30 @@
       state.participants.forEach(p => { p.lastResult = result[p.id]; });
 
       const losers = state.participants.filter(p => p.lastResult === "lose");
-      const winners = state.participants.filter(p => p.lastResult === "win");
-      const allDraw = state.participants.every(p => p.lastResult === "draw");
+      // newWinners = participants who won this specific round (not previous-round winners)
+      const prevWinnerIds = [...state.currentWinnerIds];
+      const newWinners = state.participants.filter(p => p.lastResult === "win" && !prevWinnerIds.includes(p.id));
+      // Accumulate all winners across rounds
+      state.currentWinnerIds = [...new Set([...prevWinnerIds, ...newWinners.map(p => p.id)])];
+
+      // allDraw = every active player (non-prev-winner) drew this round
+      const activePlayers = state.participants.filter(p => !prevWinnerIds.includes(p.id));
+      const allDraw = activePlayers.length > 0 && activePlayers.every(p => p.lastResult === "draw");
       const myResult = (state.participants.find(p => p.id === state.currentUserId) || {}).lastResult;
-      const isFinalLoser = losers.length === 1 && winners.length > 0;
+      const isFinalLoser = losers.length === 1 && state.currentWinnerIds.length > 0;
 
       renderRoundResult(allDraw, isFinalLoser);
       showScreen("screenRoundResult");
 
       if (isFinalLoser) {
-        // Feature 6: final loser determined - big fanfare + crowd cheers on all devices
         setTimeout(() => playFinalFanfare(), 400);
         if (myResult === "win") setTimeout(() => speak("축하합니다! 술래가 결정됐습니다!", 1.4, 1.0), 2200);
         if (myResult === "lose") setTimeout(() => speak("아이고, 술래가 되셨습니다!", 1.4, 1.0), 2200);
-      } else if (!allDraw && myResult === "win" && losers.length > 0) {
-        // Feature 4: winner when others still losing
+      } else if (!allDraw && myResult === "win" && losers.length > 0 && newWinners.some(w => w.id === state.currentUserId)) {
+        // Feature 4: newly safe winner hears "phew"
         setTimeout(() => speak("휴~ 다행이다", 1.4, 0.9), 800);
-        // Feature 5: transition winner to wait screen after brief result view
-        if (losers.length > 0) {
-          setTimeout(() => {
-            state.isWaitingAsWinner = true;
-            showScreen("screenWinnerWait");
-          }, 3500);
-        }
+        // Feature 5: winner wait screen shown when "ready" status arrives (via handleRoomUpdate)
       } else if (!allDraw && myResult === "lose") {
-        // Feature 2: loser fanfare
         setTimeout(() => playFanfare(), 400);
       }
     }
@@ -1355,11 +1390,20 @@
     }
 
     function judgeRound(participants) {
-      const selectedTypes = [...new Set(participants.map(p => p.choice))];
       const result = {};
+      const prevWinnerIds = state.currentWinnerIds || [];
+
+      // Previous round winners stay as "win" (they didn't play this round)
+      prevWinnerIds.forEach(id => { result[id] = "win"; });
+
+      // Only judge active (non-winner) players
+      const active = participants.filter(p => !prevWinnerIds.includes(p.id));
+      if (active.length === 0) return result;
+
+      const selectedTypes = [...new Set(active.map(p => p.choice))];
 
       if (selectedTypes.length === 1 || selectedTypes.length === 3) {
-        participants.forEach(p => result[p.id] = "draw");
+        active.forEach(p => result[p.id] = "draw");
         return result;
       }
 
@@ -1367,7 +1411,7 @@
       const b = selectedTypes[1];
       const winningChoice = getWinningChoice(a, b);
 
-      participants.forEach(p => {
+      active.forEach(p => {
         result[p.id] = p.choice === winningChoice ? "win" : "lose";
       });
 
@@ -1454,20 +1498,20 @@
     }
 
     async function nextRound() {
+      const winnerIds = state.currentWinnerIds || [];
       if (db) {
+        // Clear choices for everyone; pre-mark winners as ready so only non-winners need to click
         await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
-        await db.from('rooms').update({
-          round: state.round + 1,
-          status: 'ready'
-        }).eq('id', state.roomCode);
+        if (winnerIds.length > 0) {
+          await db.from('participants').update({ is_ready: true }).in('id', winnerIds);
+        }
+        await db.from('rooms').update({ round: state.round + 1, status: 'ready' }).eq('id', state.roomCode);
       } else {
         state.round += 1;
-        state.participants.forEach(p => { p.choice = null; p.lastResult = null; p.is_ready = false; });
+        state.participants.forEach(p => { p.choice = null; p.lastResult = null; p.is_ready = winnerIds.includes(p.id); });
         saveState();
+        showReadyScreen();
       }
-      state.round += 1;
-      state.status = 'ready';
-      showReadyScreen();
     }
 
     function endGame() {
@@ -1477,9 +1521,11 @@
     }
 
     async function resetGameKeepRoom() {
+      state.currentWinnerIds = [];
+      state.gameStarting = false;
       if (db) {
-        await db.from('participants').update({ 
-          choice: null, wins: 0, losses: 0, draws: 0, penalties: 0 
+        await db.from('participants').update({
+          choice: null, wins: 0, losses: 0, draws: 0, penalties: 0
         }).eq('room_id', state.roomCode);
         await db.from('rooms').update({ round: 1, status: 'waiting' }).eq('id', state.roomCode);
       } else {
@@ -1745,19 +1791,20 @@
     }
 
     async function directStartGame() {
-      // Feature 3: skip ready screen, host directly starts next game
+      // Feature 3: all-draw — skip ready screen, set all is_ready so auto-start fires
       if (state.role !== "host") return;
       const btn = $("nextRoundBtn");
       if (btn) { btn.disabled = true; btn.textContent = "시작 중..."; }
       if (db) {
         await db.from('participants').update({ choice: null, is_ready: true }).eq('room_id', state.roomCode);
-        await db.from('rooms').update({ round: state.round + 1 }).eq('id', state.roomCode);
-        state.round += 1;
+        await db.from('rooms').update({ round: state.round + 1, status: 'ready' }).eq('id', state.roomCode);
       } else {
         state.round += 1;
         state.participants.forEach(p => { p.choice = null; p.is_ready = true; });
+        saveState();
+        await runCountdown();
+        showGameScreen();
       }
-      await startGame();
     }
 
     async function leaveRoom() {
