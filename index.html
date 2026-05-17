@@ -596,6 +596,30 @@
         min-height: 82px;
       }
     }
+
+    .popup-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      z-index: 999;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+    .popup-card {
+      background: white;
+      border-radius: var(--radius);
+      padding: 24px;
+      width: 100%;
+      max-width: 380px;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    .popup-card h3 { margin: 0 0 4px; font-size: 18px; }
+    .popup-card p  { font-size: 13px; color: #888; margin: 0 0 16px; }
   </style>
 </head>
 <body>
@@ -758,6 +782,10 @@
         <button class="btn-primary btn-full" id="nextRoundBtn" onclick="window.nextRound()">다음 라운드 시작</button>
         <button class="btn-danger btn-full" onclick="window.endGame()">게임 종료 및 통계 보기</button>
       </div>
+
+      <!-- 최종 결과(술래 확정)일 때만 표시되는 버튼 영역 -->
+      <div id="finalResultBtns" class="hidden" style="margin-top:12px"></div>
+
       <div style="text-align:center;margin-top:12px">
         <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
       </div>
@@ -796,6 +824,39 @@
         <button class="btn-outline btn-full" onclick="window.goHome()">처음으로</button>
       </div>
     </section>
+
+    <!-- 게임 승률 팝업 -->
+    <div id="statsPopup" class="popup-overlay hidden">
+      <div class="popup-card">
+        <h3>🏆 게임 승률</h3>
+        <p>현재 게임방 누적 기록</p>
+        <table style="width:100%;font-size:13px;border-collapse:collapse">
+          <thead>
+            <tr style="border-bottom:1px solid #eee">
+              <th style="padding:6px 4px;text-align:left">참가자</th>
+              <th style="padding:6px 4px">승</th>
+              <th style="padding:6px 4px">패</th>
+              <th style="padding:6px 4px">무</th>
+              <th style="padding:6px 4px">승률</th>
+            </tr>
+          </thead>
+          <tbody id="statsPopupBody"></tbody>
+        </table>
+        <button onclick="window.closeStatsPopup()" class="btn-primary btn-full" style="margin-top:16px">닫기</button>
+      </div>
+    </div>
+
+    <!-- 다음 호스트 선택 팝업 -->
+    <div id="nextHostPopup" class="popup-overlay hidden">
+      <div class="popup-card">
+        <h3>👑 다음 호스트 선택</h3>
+        <p>게임을 이어받을 다음 호스트를 선택해주세요.</p>
+        <div id="nextHostList"></div>
+        <div style="height:8px"></div>
+        <button onclick="window.leaveRoomForce()" class="btn-light btn-full" style="margin-bottom:8px">그냥 나가기</button>
+        <button onclick="window.closeNextHostPopup()" class="btn-outline btn-full">취소</button>
+      </div>
+    </div>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -822,6 +883,7 @@
       "10초 동안 춤추기",
       "웃긴 표정 짓기",
       "물 한 잔 마시기",
+      "다음게임 호스트",
       "다음 게임 호스트 하기"
     ];
 
@@ -923,6 +985,15 @@
     async function fetchParticipants(roomCode) {
       const { data } = await db.from('participants').select('*').eq('room_id', roomCode).order('created_at', { ascending: true });
       if (data) {
+        // 호스트 역할 전환 감지 (transferHostAndLeave / becomeNextHost)
+        const me = data.find(p => p.id === state.currentUserId);
+        if (me) {
+          if (me.is_host && state.role !== "host") {
+            state.role = "host";
+          } else if (!me.is_host && state.role === "host") {
+            state.role = "participant";
+          }
+        }
         state.participants = data;
         updateSelectedCount();
         renderAll();
@@ -1505,16 +1576,39 @@
         message.textContent = "무승부입니다. 다음 게임으로 넘어갑니다.";
       }
 
-      // Feature 3: all-draw → show host a direct-start button
-      if (allDraw && state.role === "host") {
-        nextBtn.textContent = "🎮 다음 게임 바로 시작";
-        nextBtn.onclick = () => window.directStartGame();
+      // 최종 결과일 때: "다음 라운드 시작" 숨기고, 호스트에게 "한번더!" 등 표시
+      if (isFinalLoser) {
+        nextBtn.style.display = "none";
+        actionsDiv.style.display = state.role === "host" ? "" : "none";
+
+        const myResult = (state.participants.find(p => p.id === state.currentUserId) || {}).lastResult;
+        const finalBtns = $("finalResultBtns");
+        finalBtns.classList.remove("hidden");
+        let html = "";
+        if (state.role === "host") {
+          html += `<button class="btn-success btn-full" onclick="window.resetGameKeepRoom()" style="margin-bottom:8px">🎮 한번더!</button>`;
+        }
+        html += `<button class="btn-light btn-full" onclick="window.showStatsPopup()" style="margin-bottom:8px">🏆 게임 승률 보기</button>`;
+        // Feature 3: 벌칙이 "호스트" 유형이고 본인이 술래면 호스트 전환 버튼 표시
+        if (myResult === "lose" && state.penalty && state.penalty.includes("호스트")) {
+          html += `<button class="btn-primary btn-full" onclick="window.becomeNextHost()">🎮 다음 게임 호스트 시작하기</button>`;
+        }
+        finalBtns.innerHTML = html;
       } else {
-        nextBtn.textContent = "다음 라운드 시작";
-        nextBtn.onclick = () => window.nextRound();
+        $("finalResultBtns").classList.add("hidden");
+        $("finalResultBtns").innerHTML = "";
+        nextBtn.style.display = "";
+        // all-draw → host direct-start
+        if (allDraw && state.role === "host") {
+          nextBtn.textContent = "🎮 다음 게임 바로 시작";
+          nextBtn.onclick = () => window.directStartGame();
+        } else {
+          nextBtn.textContent = "다음 라운드 시작";
+          nextBtn.onclick = () => window.nextRound();
+        }
+        // Only host can advance to next round
+        actionsDiv.style.display = state.role === "host" ? "" : "none";
       }
-      // Only host can advance to next round
-      actionsDiv.style.display = state.role === "host" ? "" : "none";
 
       const list = $("roundResultList");
       list.innerHTML = "";
@@ -1860,13 +1954,113 @@
     }
 
     async function leaveRoom() {
+      if (state.role === "host") {
+        const nonHosts = state.participants.filter(p => !p.is_host);
+        if (nonHosts.length > 0) {
+          showNextHostPopup();
+          return;
+        }
+      }
       if (!confirm("게임방에서 나가시겠습니까?")) return;
+      await _doLeaveRoom();
+    }
+
+    async function leaveRoomForce() {
+      closeNextHostPopup();
+      await _doLeaveRoom();
+    }
+
+    async function _doLeaveRoom() {
       if (db && state.currentUserId) {
         await db.from('participants').delete().eq('id', state.currentUserId);
+        if (state.role === "host") {
+          await db.from('rooms').update({ status: 'waiting' }).eq('id', state.roomCode);
+        }
       }
       if (state.pollInterval) { clearInterval(state.pollInterval); state.pollInterval = null; }
       if (state.channel) { state.channel.unsubscribe(); state.channel = null; }
+      state.currentWinnerIds = [];
+      state.gameStarting = false;
       goHome();
+    }
+
+    function showNextHostPopup() {
+      const list = $("nextHostList");
+      list.innerHTML = "";
+      state.participants.filter(p => !p.is_host).forEach(p => {
+        const btn = document.createElement("button");
+        btn.className = "btn-light btn-full";
+        btn.style.marginBottom = "8px";
+        btn.textContent = `👑 ${p.name} 에게 호스트 넘기기`;
+        btn.onclick = () => transferHostAndLeave(p.id);
+        list.appendChild(btn);
+      });
+      $("nextHostPopup").classList.remove("hidden");
+    }
+
+    function closeNextHostPopup() {
+      $("nextHostPopup").classList.add("hidden");
+    }
+
+    async function transferHostAndLeave(newHostId) {
+      closeNextHostPopup();
+      if (db) {
+        await db.from('participants').update({ is_host: true }).eq('id', newHostId);
+        await db.from('participants').delete().eq('id', state.currentUserId);
+        await db.from('rooms').update({ status: 'waiting', round: 1 }).eq('id', state.roomCode);
+      }
+      if (state.pollInterval) { clearInterval(state.pollInterval); state.pollInterval = null; }
+      if (state.channel) { state.channel.unsubscribe(); state.channel = null; }
+      state.currentWinnerIds = [];
+      state.gameStarting = false;
+      goHome();
+    }
+
+    async function becomeNextHost() {
+      if (!db) return;
+      // 기존 호스트의 is_host 해제
+      const oldHost = state.participants.find(p => p.is_host);
+      if (oldHost) {
+        await db.from('participants').update({ is_host: false }).eq('id', oldHost.id);
+      }
+      // 나(술래)를 호스트로 승격
+      await db.from('participants').update({ is_host: true }).eq('id', state.currentUserId);
+      // 모든 참가자 초기화 후 waiting 상태로
+      await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
+      await db.from('rooms').update({ round: 1, status: 'waiting' }).eq('id', state.roomCode);
+      // 로컬 상태 전환
+      state.role = "host";
+      state.currentWinnerIds = [];
+      state.gameStarting = false;
+      showHostRoom();
+    }
+
+    function showStatsPopup() {
+      const tbody = $("statsPopupBody");
+      tbody.innerHTML = "";
+      if (!state.participants.length) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:12px;color:#888">아직 기록이 없습니다.</td></tr>`;
+      } else {
+        state.participants.forEach(p => {
+          const total = (p.wins || 0) + (p.losses || 0);
+          const rate = total === 0 ? 0 : Math.round(((p.wins || 0) / total) * 100);
+          const tr = document.createElement("tr");
+          tr.style.borderBottom = "1px solid #f0f0f0";
+          tr.innerHTML = `
+            <td style="padding:7px 4px">${escapeHtml(p.name)}${p.is_host ? ' 👑' : ''}</td>
+            <td style="padding:7px 4px;text-align:center">${p.wins || 0}</td>
+            <td style="padding:7px 4px;text-align:center">${p.losses || 0}</td>
+            <td style="padding:7px 4px;text-align:center">${p.draws || 0}</td>
+            <td style="padding:7px 4px;text-align:center">${rate}%</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+      $("statsPopup").classList.remove("hidden");
+    }
+
+    function closeStatsPopup() {
+      $("statsPopup").classList.add("hidden");
     }
 
     function playFanfare() {
@@ -1997,6 +2191,13 @@
     window.markReady = markReady;
     window.directStartGame = directStartGame;
     window.leaveRoom = leaveRoom;
+    window.leaveRoomForce = leaveRoomForce;
+    window.showNextHostPopup = showNextHostPopup;
+    window.closeNextHostPopup = closeNextHostPopup;
+    window.transferHostAndLeave = transferHostAndLeave;
+    window.becomeNextHost = becomeNextHost;
+    window.showStatsPopup = showStatsPopup;
+    window.closeStatsPopup = closeStatsPopup;
   </script>
 </body>
 </html>
