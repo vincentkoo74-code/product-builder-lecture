@@ -267,21 +267,11 @@
       width: 210px;
       height: 210px;
       background: white;
-      display: grid;
-      grid-template-columns: repeat(9, 1fr);
-      grid-template-rows: repeat(9, 1fr);
-      gap: 4px;
-      padding: 8px;
-      border: 8px solid #111827;
     }
 
-    .fake-qr span {
-      border-radius: 4px;
-      background: #111827;
-    }
-
-    .fake-qr span.blank {
-      background: transparent;
+    .fake-qr img,
+    .fake-qr canvas {
+      display: block;
     }
 
     .code-text {
@@ -713,6 +703,7 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script>
     const SUPABASE_URL = "https://cmfxhehpreanijwanwrr.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNtZnhoZWhwcmVhbmlqd2Fud3JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5Mjg5MDIsImV4cCI6MjA5NDUwNDkwMn0.v5HUgGyy4ZRhmIdCfx1K4_VtVafgK8L2uBe_3ah3xzI";
@@ -762,7 +753,7 @@
     async function subscribeToRoom(roomCode) {
       if (state.channel) db.removeChannel(state.channel);
 
-      state.channel = supabase
+      state.channel = db
         .channel(`room:${roomCode}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomCode}` }, payload => {
           handleRoomUpdate(payload.new);
@@ -1344,13 +1335,15 @@
     function renderQr() {
       const qr = $("fakeQr");
       qr.innerHTML = "";
-      const seed = state.roomCode || "ROOM";
-      for (let i = 0; i < 81; i++) {
-        const span = document.createElement("span");
-        const value = (seed.charCodeAt(i % seed.length) + i * 7) % 5;
-        if (value < 2) span.className = "blank";
-        qr.appendChild(span);
-      }
+      const url = state.roomUrl || location.href;
+      new QRCode(qr, {
+        text: url,
+        width: 210,
+        height: 210,
+        colorDark: "#111827",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.M
+      });
     }
 
     function copyRoomLink() {
