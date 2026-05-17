@@ -853,7 +853,7 @@
         <p>게임을 이어받을 다음 호스트를 선택해주세요.</p>
         <div id="nextHostList"></div>
         <div style="height:8px"></div>
-        <button onclick="window.leaveRoomForce()" class="btn-light btn-full" style="margin-bottom:8px">그냥 나가기</button>
+        <button onclick="window.leaveRoomForce()" class="btn-light btn-full" style="margin-bottom:8px">랜덤으로 호스트 지명 후 나가기</button>
         <button onclick="window.closeNextHostPopup()" class="btn-outline btn-full">취소</button>
       </div>
     </div>
@@ -1967,6 +1967,14 @@
 
     async function leaveRoomForce() {
       closeNextHostPopup();
+      // 랜덤으로 다음 호스트 자동 지명
+      if (db && state.role === "host") {
+        const nonHosts = state.participants.filter(p => !p.is_host);
+        if (nonHosts.length > 0) {
+          const randomHost = nonHosts[Math.floor(Math.random() * nonHosts.length)];
+          await db.from('participants').update({ is_host: true }).eq('id', randomHost.id);
+        }
+      }
       await _doLeaveRoom();
     }
 
