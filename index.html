@@ -860,34 +860,33 @@
 
     async function createRoom() {
       const code = Math.random().toString(36).substring(2, 6).toUpperCase();
-      
-      if (supabase) {
-        const { error } = await supabase.from('rooms').insert([{ id: code, status: 'waiting' }]);
-        if (error) { alert("방 생성 실패"); return; }
-        
-        const hostId = `h_${Date.now()}`;
-        await supabase.from('participants').insert([{ 
-          id: hostId, 
-          room_id: code, 
-          name: "호스트", 
-          is_host: true 
-        }]);
-
-        state.currentUserId = hostId;
-      }
 
       state.roomCode = code;
       state.roomUrl = `${location.origin}${location.pathname}?room=${code}`;
       state.role = "host";
       state.status = "waiting";
-      
+
       if (supabase) {
-        subscribeToRoom(code);
+        try {
+          const { error } = await supabase.from('rooms').insert([{ id: code, status: 'waiting' }]);
+          if (error) throw new Error(error.message);
+
+          const hostId = `h_${Date.now()}`;
+          await supabase.from('participants').insert([{
+            id: hostId, room_id: code, name: "호스트", is_host: true
+          }]);
+          state.currentUserId = hostId;
+          subscribeToRoom(code);
+        } catch (e) {
+          console.error("Supabase 연결 실패, 오프라인 모드로 전환:", e.message);
+          state.participants = [createParticipant("host", "호스트", true)];
+          saveState();
+        }
       } else {
-        // 오프라인 모드용 초기화
         state.participants = [createParticipant("host", "호스트", true)];
         saveState();
       }
+
       showHostRoom();
     }
 
