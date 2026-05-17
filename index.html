@@ -868,13 +868,24 @@
 
       if (supabase) {
         try {
-          const { error } = await supabase.from('rooms').insert([{ id: code, status: 'waiting' }]);
+          const withTimeout = (promise, ms) => Promise.race([
+            promise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
+          ]);
+
+          const { error } = await withTimeout(
+            supabase.from('rooms').insert([{ id: code, status: 'waiting' }]),
+            5000
+          );
           if (error) throw new Error(error.message);
 
           const hostId = `h_${Date.now()}`;
-          await supabase.from('participants').insert([{
-            id: hostId, room_id: code, name: "호스트", is_host: true
-          }]);
+          await withTimeout(
+            supabase.from('participants').insert([{
+              id: hostId, room_id: code, name: "호스트", is_host: true
+            }]),
+            5000
+          );
           state.currentUserId = hostId;
           subscribeToRoom(code);
         } catch (e) {
