@@ -1403,6 +1403,25 @@
     }
 
     initFromUrl();
+
+    // onclick 속성에서 접근 가능하도록 window에 명시 등록
+    window.createRoom = createRoom;
+    window.showJoinScreen = showJoinScreen;
+    window.showStats = showStats;
+    window.copyRoomLink = copyRoomLink;
+    window.addDemoParticipant = addDemoParticipant;
+    window.showPenaltyScreen = showPenaltyScreen;
+    window.goHome = goHome;
+    window.joinRoom = joinRoom;
+    window.showGameScreen = showGameScreen;
+    window.showHostRoom = showHostRoom;
+    window.savePenalty = savePenalty;
+    window.startGame = startGame;
+    window.selectChoice = selectChoice;
+    window.autoFillChoices = autoFillChoices;
+    window.nextRound = nextRound;
+    window.endGame = endGame;
+    window.resetGameKeepRoom = resetGameKeepRoom;
   </script>
 </body>
 </html>
