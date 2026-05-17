@@ -717,11 +717,11 @@
     // Supabase 설정 (사용자 정보 입력 필요)
     const SUPABASE_URL = "https://cmfxhehpreanijwanwrr.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_vLqtQSJz9GRtTiiz84EDGQ_9eVm7L3l";
-    let supabase = null;
+    let db = null;
 
     // TODO: sb_publishable_ 키 형식이 JS 클라이언트와 호환 안 됨 - anon JWT 키 확보 후 활성화
     // if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    //   supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    //   db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     // }
 
     const choiceLabel = {
@@ -766,7 +766,7 @@
     // --- Supabase 실시간 연동 로직 ---
 
     async function subscribeToRoom(roomCode) {
-      if (state.channel) supabase.removeChannel(state.channel);
+      if (state.channel) db.removeChannel(state.channel);
 
       state.channel = supabase
         .channel(`room:${roomCode}`)
@@ -779,7 +779,7 @@
         .subscribe();
 
       // 초기 데이터 로드
-      const { data: room } = await supabase.from('rooms').select('*').eq('id', roomCode).single();
+      const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
       if (room) handleRoomUpdate(room);
       await fetchParticipants(roomCode);
     }
@@ -810,7 +810,7 @@
     }
 
     async function fetchParticipants(roomCode) {
-      const { data } = await supabase.from('participants').select('*').eq('room_id', roomCode).order('created_at', { ascending: true });
+      const { data } = await db.from('participants').select('*').eq('room_id', roomCode).order('created_at', { ascending: true });
       if (data) {
         state.participants = data;
         updateSelectedCount();
@@ -824,13 +824,13 @@
     }
 
     async function updateRoomStatus(status) {
-      if (!supabase) return;
-      await supabase.from('rooms').update({ status }).eq('id', state.roomCode);
+      if (!db) return;
+      await db.from('rooms').update({ status }).eq('id', state.roomCode);
     }
 
     async function updateParticipantChoice(choice) {
-      if (!supabase) return;
-      await supabase.from('participants').update({ choice }).eq('id', state.currentUserId);
+      if (!db) return;
+      await db.from('participants').update({ choice }).eq('id', state.currentUserId);
     }
 
     // --- 기존 UI 제어 로직 수정 ---
@@ -867,7 +867,7 @@
       state.role = "host";
       state.status = "waiting";
 
-      if (supabase) {
+      if (db) {
         try {
           const withTimeout = (promise, ms) => Promise.race([
             promise,
@@ -875,14 +875,14 @@
           ]);
 
           const { error } = await withTimeout(
-            supabase.from('rooms').insert([{ id: code, status: 'waiting' }]),
+            db.from('rooms').insert([{ id: code, status: 'waiting' }]),
             5000
           );
           if (error) throw new Error(error.message);
 
           const hostId = `h_${Date.now()}`;
           await withTimeout(
-            supabase.from('participants').insert([{
+            db.from('participants').insert([{
               id: hostId, room_id: code, name: "호스트", is_host: true
             }]),
             5000
@@ -946,7 +946,7 @@
 
     function goHome() {
       stopTimers();
-      if (state.channel) supabase.removeChannel(state.channel);
+      if (state.channel) db.removeChannel(state.channel);
       showScreen("screenHome");
     }
 
@@ -962,11 +962,11 @@
       state.currentUserId = id;
       state.roomCode = code;
 
-      if (supabase) {
-        const { data: room } = await supabase.from('rooms').select('*').eq('id', code).single();
+      if (db) {
+        const { data: room } = await db.from('rooms').select('*').eq('id', code).single();
         if (!room) { alert("존재하지 않는 방입니다."); return; }
 
-        await supabase.from('participants').insert([{ id, room_id: code, name, is_host: false }]);
+        await db.from('participants').insert([{ id, room_id: code, name, is_host: false }]);
         subscribeToRoom(code);
       } else {
         state.participants.push(createParticipant(id, name, false));
@@ -980,8 +980,8 @@
       const existing = state.participants.map(p => p.name);
       const nextName = names.find(name => !existing.includes(name)) || `참가자${state.participants.length}`;
       
-      if (supabase) {
-        await supabase.from('participants').insert([{ 
+      if (db) {
+        await db.from('participants').insert([{ 
           id: `demo_${Date.now()}`, 
           room_id: state.roomCode, 
           name: nextName 
@@ -997,8 +997,8 @@
       const value = $("penaltyInput").value.trim();
       if (!value) { alert("벌칙을 입력해주세요."); return; }
 
-      if (supabase) {
-        await supabase.from('rooms').update({ penalty: value, status: 'penalty_setting' }).eq('id', state.roomCode);
+      if (db) {
+        await db.from('rooms').update({ penalty: value, status: 'penalty_setting' }).eq('id', state.roomCode);
       } else {
         state.penalty = value;
         savePenaltyHistory(value);
@@ -1014,9 +1014,9 @@
         if (!ok) return;
       }
 
-      if (supabase) {
+      if (db) {
         // 모든 참가자의 선택 초기화
-        await supabase.from('participants').update({ choice: null }).eq('room_id', state.roomCode);
+        await db.from('participants').update({ choice: null }).eq('room_id', state.roomCode);
         await updateRoomStatus('playing');
       } else {
         state.participants.forEach(p => p.choice = null);
@@ -1061,7 +1061,7 @@
     async function selectChoice(choice, event) {
       if (state.status !== "playing") return;
 
-      if (supabase) {
+      if (db) {
         await updateParticipantChoice(choice);
       } else {
         const userId = state.currentUserId || "host";
@@ -1083,10 +1083,10 @@
 
     async function autoFillChoices() {
       const choices = ["scissors", "rock", "paper"];
-      if (supabase) {
+      if (db) {
         for (const p of state.participants) {
           if (!p.choice) {
-            await supabase.from('participants').update({ 
+            await db.from('participants').update({ 
               choice: choices[Math.floor(Math.random() * choices.length)] 
             }).eq('id', p.id);
           }
@@ -1207,9 +1207,9 @@
     }
 
     async function nextRound() {
-      if (supabase) {
-        await supabase.from('participants').update({ choice: null }).eq('room_id', state.roomCode);
-        await supabase.from('rooms').update({ 
+      if (db) {
+        await db.from('participants').update({ choice: null }).eq('room_id', state.roomCode);
+        await db.from('rooms').update({ 
           round: state.round + 1,
           status: 'playing' 
         }).eq('id', state.roomCode);
@@ -1231,11 +1231,11 @@
     }
 
     async function resetGameKeepRoom() {
-      if (supabase) {
-        await supabase.from('participants').update({ 
+      if (db) {
+        await db.from('participants').update({ 
           choice: null, wins: 0, losses: 0, draws: 0, penalties: 0 
         }).eq('room_id', state.roomCode);
-        await supabase.from('rooms').update({ round: 1, status: 'waiting' }).eq('id', state.roomCode);
+        await db.from('rooms').update({ round: 1, status: 'waiting' }).eq('id', state.roomCode);
       } else {
         state.round = 1;
         state.participants.forEach(p => {
