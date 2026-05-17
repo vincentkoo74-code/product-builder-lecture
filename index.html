@@ -604,7 +604,7 @@
         <input id="joinName" placeholder="예: 영선" />
       </div>
       <div class="grid">
-        <button class="btn-primary btn-full" onclick="window.joinRoom()">참가하기</button>
+        <button id="joinBtn" class="btn-primary btn-full" onclick="window.joinRoom()">참가하기</button>
         <button class="btn-outline btn-full" onclick="window.goHome()">처음으로</button>
       </div>
     </section>
@@ -942,21 +942,34 @@
       if (!code) { alert("방 코드를 입력해주세요."); return; }
       if (!name) { alert("닉네임을 입력해주세요."); return; }
 
-      const id = `p_${Date.now()}`;
-      state.role = "participant";
-      state.currentUserId = id;
-      state.roomCode = code;
+      const btn = $("joinBtn");
+      btn.disabled = true;
+      btn.textContent = "참가 중...";
 
-      if (db) {
-        const { data: room } = await db.from('rooms').select('*').eq('id', code).single();
-        if (!room) { alert("존재하지 않는 방입니다."); return; }
+      try {
+        const id = `p_${Date.now()}`;
+        state.role = "participant";
+        state.currentUserId = id;
+        state.roomCode = code;
 
-        await db.from('participants').insert([{ id, room_id: code, name, is_host: false }]);
-        subscribeToRoom(code);
-      } else {
-        state.participants.push(createParticipant(id, name, false));
-        saveState();
-        showScreen("screenParticipantWait");
+        if (db) {
+          const { data: room } = await db.from('rooms').select('*').eq('id', code).single();
+          if (!room) { alert("존재하지 않는 방입니다."); return; }
+
+          const { data: existing } = await db.from('participants')
+            .select('id').eq('room_id', code).eq('name', name).maybeSingle();
+          if (existing) { alert("이미 같은 닉네임으로 참가 중입니다."); return; }
+
+          await db.from('participants').insert([{ id, room_id: code, name, is_host: false }]);
+          subscribeToRoom(code);
+        } else {
+          state.participants.push(createParticipant(id, name, false));
+          saveState();
+          showScreen("screenParticipantWait");
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "참가하기";
       }
     }
 
