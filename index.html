@@ -1407,10 +1407,12 @@
       const labelEl = $("countdownLabel");
       overlay.classList.remove("hidden");
 
+      const roundLabel = state.round > 1 ? `🔄 ${state.round}번째 재대결!` : "잠시 후 시작!";
+
       for (let i = 3; i >= 1; i--) {
         numEl.className = "";
         numEl.textContent = i;
-        labelEl.textContent = i === 3 ? "잠시 후 시작!" : "";
+        labelEl.textContent = i === 3 ? roundLabel : "";
         void numEl.offsetWidth;
         numEl.className = "count-anim";
         await speak(String(i));
