@@ -586,7 +586,9 @@
       <h3>참가자 목록</h3>
       <div class="participant-list" id="hostParticipantList"></div>
 
-      <div class="footer-actions">
+      <div id="penaltyStatusBox" class="notice hidden" style="margin-top:12px"></div>
+      <div class="footer-actions" style="margin-top:12px">
+        <button id="startGameBtn" class="btn-success btn-full hidden" onclick="window.startGame()">🎮 게임 시작</button>
         <button class="btn-primary btn-full" onclick="window.showPenaltyScreen()">벌칙 설정하기</button>
         <button class="btn-outline btn-full" onclick="window.goHome()">처음으로</button>
       </div>
@@ -904,6 +906,16 @@
     function showHostRoom() {
       showScreen("screenHostRoom");
       renderQr();
+      const penaltyBox = $("penaltyStatusBox");
+      const startBtn = $("startGameBtn");
+      if (state.penalty) {
+        penaltyBox.textContent = `벌칙: ${state.penalty}`;
+        penaltyBox.classList.remove("hidden");
+        startBtn.classList.remove("hidden");
+      } else {
+        penaltyBox.classList.add("hidden");
+        startBtn.classList.add("hidden");
+      }
     }
 
     function showJoinScreen() {
@@ -1015,7 +1027,8 @@
           setTimeout(() => {
             btn.disabled = false;
             btn.textContent = "벌칙 저장 및 참가자에게 표시";
-          }, 2000);
+            showHostRoom();
+          }, 1000);
         } catch (e) {
           console.error('벌칙 저장 오류:', e.message);
           btn.disabled = false;
@@ -1028,7 +1041,8 @@
         setTimeout(() => {
           btn.disabled = false;
           btn.textContent = "벌칙 저장 및 참가자에게 표시";
-        }, 2000);
+          showHostRoom();
+        }, 1000);
       }
 
       renderAll();
