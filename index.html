@@ -705,6 +705,7 @@
       <div class="grid">
         <button id="myReadyBtn" class="btn-primary btn-full" onclick="window.markReady()">✋ 게임 준비</button>
         <button id="hostStartBtn" class="btn-success btn-full hidden" onclick="window.startGame()">🎮 게임 시작</button>
+        <button id="editPenaltyBtn" class="btn-light btn-full hidden" onclick="window.showPenaltyScreen()">✏️ 벌칙 수정</button>
         <button class="btn-outline btn-full" onclick="window.goHome()">나가기</button>
       </div>
     </section>
@@ -1116,7 +1117,7 @@
           setTimeout(() => {
             btn.disabled = false;
             btn.textContent = "벌칙 저장 및 참가자에게 표시";
-            showHostRoom();
+            state.status === "ready" ? showReadyScreen() : showHostRoom();
           }, 1000);
         } catch (e) {
           console.error('벌칙 저장 오류:', e.message);
@@ -1130,7 +1131,7 @@
         setTimeout(() => {
           btn.disabled = false;
           btn.textContent = "벌칙 저장 및 참가자에게 표시";
-          showHostRoom();
+          state.status === "ready" ? showReadyScreen() : showHostRoom();
         }, 1000);
       }
 
@@ -1375,20 +1376,19 @@
 
     async function nextRound() {
       if (db) {
-        await db.from('participants').update({ choice: null }).eq('room_id', state.roomCode);
-        await db.from('rooms').update({ 
+        await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
+        await db.from('rooms').update({
           round: state.round + 1,
-          status: 'playing' 
+          status: 'ready'
         }).eq('id', state.roomCode);
       } else {
         state.round += 1;
-        state.participants.forEach(p => {
-          p.choice = null;
-          p.lastResult = null;
-        });
+        state.participants.forEach(p => { p.choice = null; p.lastResult = null; p.is_ready = false; });
         saveState();
-        showGameScreen();
       }
+      state.round += 1;
+      state.status = 'ready';
+      showReadyScreen();
     }
 
     function endGame() {
@@ -1576,8 +1576,10 @@
       renderReadyList();
       if (state.role === "host") {
         $("hostStartBtn").classList.remove("hidden");
+        $("editPenaltyBtn").classList.remove("hidden");
       } else {
         $("hostStartBtn").classList.add("hidden");
+        $("editPenaltyBtn").classList.add("hidden");
       }
     }
 
