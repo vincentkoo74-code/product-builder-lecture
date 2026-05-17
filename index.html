@@ -1439,7 +1439,7 @@
     }
 
     function beginRoundTimer() {
-      stopTimers();
+      stopRoundTimers();
       state.remainingSeconds = 5;
       $("timerText").textContent = state.remainingSeconds;
       $("roundNumber").textContent = state.round;
@@ -1467,12 +1467,16 @@
       }, 1000);
     }
 
-    function stopTimers() {
+    function stopRoundTimers() {
       if (state.timer) clearInterval(state.timer);
       if (state.animationTimer) clearInterval(state.animationTimer);
-      if (state.pollInterval) clearInterval(state.pollInterval);
       state.timer = null;
       state.animationTimer = null;
+    }
+
+    function stopTimers() {
+      stopRoundTimers();
+      if (state.pollInterval) clearInterval(state.pollInterval);
       state.pollInterval = null;
     }
 
@@ -1526,7 +1530,7 @@
     }
 
     function finishRoundLocal() {
-      stopTimers();
+      stopRoundTimers();
       const result = judgeRound(state.participants);
       state.participants.forEach(p => { p.lastResult = result[p.id]; });
 
@@ -1581,7 +1585,7 @@
 
     // 오프라인/프로토타입용 원본 finishRound
     function finishRound() {
-      stopTimers();
+      stopRoundTimers();
       const result = judgeRound(state.participants);
       state.participants.forEach(p => {
         const status = result[p.id];
@@ -1879,13 +1883,15 @@
       state.participants.forEach(p => {
         const div = document.createElement("div");
         div.className = "participant";
-        div.innerHTML = `
-          <strong>${escapeHtml(p.name)}</strong>
-          ${showReadyBadge
-            ? `<span class="tag ${p.is_ready ? 'win' : ''}">${p.is_ready ? '✅ 준비' : '⏳ 대기'}</span>`
-            : p.isHost ? `<span class="tag host">HOST</span>` : `<span class="tag">참가자</span>`
-          }
-        `;
+        let badge;
+        if (p.is_host) {
+          badge = `<span class="tag host">👑 ${p.id === state.currentUserId ? "나 (호스트)" : "호스트"}</span>`;
+        } else if (showReadyBadge) {
+          badge = `<span class="tag ${p.is_ready ? 'win' : ''}">${p.is_ready ? '✅ 준비' : '⏳ 대기'}</span>`;
+        } else {
+          badge = `<span class="tag">참가자</span>`;
+        }
+        div.innerHTML = `<strong>${escapeHtml(p.name)}</strong>${badge}`;
         el.appendChild(div);
       });
     }
