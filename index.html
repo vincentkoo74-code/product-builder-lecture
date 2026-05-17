@@ -849,10 +849,10 @@
     }
 
     function showScreen(id) {
-      hideAllScreens();
-      $(id).classList.remove("hidden");
-      updateRoomBadge();
-      renderAll();
+      try { hideAllScreens(); } catch(e) { alert('오류 hideAllScreens: ' + e.message); return; }
+      try { $(id).classList.remove("hidden"); } catch(e) { alert('오류 showScreen ' + id + ': ' + e.message); return; }
+      try { updateRoomBadge(); } catch(e) { alert('오류 updateRoomBadge: ' + e.message); }
+      try { renderAll(); } catch(e) { alert('오류 renderAll: ' + e.message); }
     }
 
     function updateRoomBadge() {
