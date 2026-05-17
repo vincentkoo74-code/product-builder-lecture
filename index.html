@@ -962,6 +962,7 @@
 
           await db.from('participants').insert([{ id, room_id: code, name, is_host: false }]);
           subscribeToRoom(code);
+          showScreen("screenParticipantWait");
         } else {
           state.participants.push(createParticipant(id, name, false));
           saveState();
