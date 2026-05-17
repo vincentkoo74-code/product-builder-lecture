@@ -757,8 +757,9 @@
 
       state.channel = db
         .channel(`room:${roomCode}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomCode}` }, payload => {
-          handleRoomUpdate(payload.new);
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomCode}` }, async () => {
+          const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
+          if (room) handleRoomUpdate(room);
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomCode}` }, payload => {
           fetchParticipants(roomCode);
