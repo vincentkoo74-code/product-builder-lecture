@@ -773,8 +773,20 @@
       </div>
       <div class="grid">
         <button class="btn-primary btn-full" onclick="window.createRoom()">방 만들기 / 호스트 시작</button>
+        <button class="btn-success btn-full" onclick="window.showQrScanner()">QR 스캔해서 다시 입장</button>
         <button class="btn-light btn-full" onclick="window.showJoinScreen()">QR코드로 참여한 화면 보기</button>
         <button class="btn-outline btn-full" onclick="window.showStats()">최근 게임 결과 보기</button>
+      </div>
+    </section>
+
+    <section class="card hidden" id="screenQrScanner">
+      <h2>QR 스캔</h2>
+      <p class="lead">호스트 화면의 QR코드를 카메라로 비춰주세요. 카메라가 지원되지 않으면 방코드를 직접 입력할 수 있습니다.</p>
+      <video id="qrScanVideo" playsinline muted style="width:100%;border-radius:18px;background:#111827;aspect-ratio:1/1;object-fit:cover"></video>
+      <div id="qrScanStatus" class="notice" style="margin-top:12px">카메라를 준비 중입니다...</div>
+      <div class="grid">
+        <button class="btn-outline btn-full" onclick="window.stopQrScanner(); window.showJoinScreen()">방코드 직접 입력</button>
+        <button class="btn-light btn-full" onclick="window.stopQrScanner(); window.goHome()">처음으로</button>
       </div>
     </section>
 
@@ -782,18 +794,26 @@
       <h2>호스트 방</h2>
       <p class="lead">이 QR코드 또는 방 코드를 참가자에게 공유하세요.</p>
 
-      <div class="qr-box">
+      <div class="qr-box" id="qrInviteBox">
         <div class="fake-qr" id="fakeQr"></div>
         <div class="code-text" id="roomCodeText">----</div>
         <div class="url-text" id="roomUrlText"></div>
       </div>
-
-      <div class="grid grid-2">
-        <button class="btn-outline" onclick="window.copyRoomLink()">초대 링크 복사</button>
-        <button class="btn-light" onclick="window.addDemoParticipant()">참가자 추가 테스트</button>
+      <div id="roomLockedBox" class="notice hidden" style="text-align:center">
+        <strong>참가 마감</strong><br>
+        모든 참여자가 준비를 완료해서 QR 참여를 닫았습니다.
       </div>
 
-      <div style="height: 16px"></div>
+      <div id="shareUrlBox" class="notice hidden" style="margin-top:12px">
+        <strong>스마트폰 QR 접속 주소</strong>
+        <p style="margin:6px 0 10px;font-size:13px">로컬 테스트 중에는 PC와 스마트폰이 같은 Wi-Fi에 있어야 합니다. 접속이 안 되면 아래 주소의 IP를 PC Wi-Fi IP로 바꿔주세요.</p>
+        <div class="row">
+          <input id="shareBaseInput" placeholder="예: http://192.168.1.6:5173" />
+          <button class="btn-light btn-small" onclick="window.updateShareBaseUrl()">적용</button>
+        </div>
+      </div>
+
+      <div style="height: 4px"></div>
       <h3>참가자 목록</h3>
       <div class="participant-list" id="hostParticipantList"></div>
 
@@ -816,7 +836,8 @@
       <p class="lead">QR코드로 들어온 참가자가 닉네임을 입력하는 화면입니다.</p>
       <div class="field">
         <label>방 코드</label>
-        <input id="joinRoomCode" placeholder="예: A7K2" />
+        <input id="joinRoomCode" placeholder="예: A7K2" list="recentRoomCodes" autocomplete="off" />
+        <datalist id="recentRoomCodes"></datalist>
       </div>
       <div class="field">
         <label>닉네임</label>
@@ -876,8 +897,8 @@
 
     <section class="card hidden" id="screenGame">
       <h2>라운드 <span id="roundNumber">1</span></h2>
-      <p class="lead">가위, 바위, 보 그래픽이 나온 뒤 큰 버튼을 눌러 선택하세요.</p>
-      <div class="choice-anim" id="choiceAnim">✌️</div>
+      <p class="lead">아래 버튼을 눌러 선택하세요.</p>
+      <div class="choice-anim" id="choiceAnim"></div>
       <div class="summary-row">
         <div class="summary-item"><strong id="timerText">5</strong><span>남은 시간</span></div>
         <div class="summary-item"><strong id="selectedCount">0</strong><span>선택 완료</span></div>
@@ -923,9 +944,9 @@
     <section class="card hidden" id="screenWinnerWait">
       <div class="result-hero">
         <div id="winnerWaitEmoji" style="font-size:72px;animation:winnerBounce 0.7s ease-in-out infinite alternate">🎉</div>
-        <div class="result-title win">안전!</div>
-        <p class="lead">최종 술래가 나올때까지 기다려주세요.</p>
-        <p style="color:#888;font-size:14px">다음 게임이 진행 중입니다...</p>
+        <div class="result-title win">우선안전!</div>
+        <p class="lead">이번 재게임에서는 빠지고 최종 술래가 나올 때까지 기다려주세요.</p>
+        <p style="color:#888;font-size:14px">남은 참여자들만 재게임을 진행 중입니다.</p>
       </div>
       <div style="text-align:center;margin-top:12px">
         <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
@@ -949,7 +970,7 @@
         <tbody id="statsTableBody"></tbody>
       </table>
       <div class="footer-actions">
-        <button class="btn-primary btn-full" onclick="window.resetGameKeepRoom()">같은 방에서 다시 하기</button>
+        <button id="statsReplayBtn" class="btn-primary btn-full" onclick="window.inviteForReplay()">같은 방에서 다시 하기</button>
         <button class="btn-outline btn-full" onclick="window.goHome()">처음으로</button>
       </div>
     </section>
@@ -1001,6 +1022,27 @@
         <button onclick="window.closeNextHostPopup()" class="btn-outline btn-full">취소</button>
       </div>
     </div>
+
+    <!-- 게임 신청 팝업 (참가자용) -->
+    <div id="invitePopup" class="popup-overlay hidden">
+      <div class="popup-card">
+        <h3>🎮 새 게임 초대</h3>
+        <p>호스트가 같은 방에서 새 게임을 시작합니다!</p>
+        <button onclick="window.acceptInvite()" class="btn-primary btn-full" style="margin-bottom:8px">수락하기</button>
+        <button onclick="window.declineInvite()" class="btn-outline btn-full">거절하기</button>
+      </div>
+    </div>
+
+    <!-- 게임 초대 대기 팝업 (호스트용) -->
+    <div id="inviteHostPopup" class="popup-overlay hidden">
+      <div class="popup-card">
+        <h3>🎮 게임 초대 중...</h3>
+        <p>참가자들에게 초대를 보냈습니다. 잠시 후 자동으로 시작됩니다.</p>
+        <div id="inviteCountdown" style="font-size:36px;font-weight:700;text-align:center;margin:12px 0;color:var(--primary)"></div>
+        <button onclick="window.startReinviteNow()" class="btn-success btn-full" style="margin-bottom:8px">지금 시작하기</button>
+        <button onclick="window.cancelReinvite()" class="btn-outline btn-full">취소</button>
+      </div>
+    </div>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1008,7 +1050,9 @@
   <script>
     const SUPABASE_URL = "https://cmfxhehpreanijwanwrr.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNtZnhoZWhwcmVhbmlqd2Fud3JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5Mjg5MDIsImV4cCI6MjA5NDUwNDkwMn0.v5HUgGyy4ZRhmIdCfx1K4_VtVafgK8L2uBe_3ah3xzI";
-    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const db = window.supabase
+      ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+      : null;
 
     const choiceLabel = {
       scissors: "가위",
@@ -1034,6 +1078,7 @@
     let state = {
       roomCode: "",
       roomUrl: "",
+      shareBaseUrl: "",
       role: "",
       currentUserId: "",
       nickname: "",
@@ -1046,11 +1091,18 @@
       remainingSeconds: 5,
       channel: null,
       pollInterval: null,
+      onlineParticipantIds: [],
+      presenceReady: false,
       confirmedSafeIds: [],
       confirmedLoserIds: [],
       targetLoserCount: 1,
       gameStarting: false,
-      finishingRound: false
+      finishingRound: false,
+      qrScanStream: null,
+      qrScanTimer: null,
+      cleaningDropped: false,
+      droppedSince: {},
+      fetchParticipantsSeq: 0
     };
 
     function parsePenalty(raw) {
@@ -1064,14 +1116,165 @@
       return document.getElementById(id);
     }
 
+    const LOCAL_DEV_HOST_HINT = "192.168.1.6";
+
+    function isLoopbackHost(host = location.hostname) {
+      return host === "localhost" || host === "127.0.0.1" || host === "::1";
+    }
+
+    function normalizeShareBaseUrl(value) {
+      const raw = String(value || "").trim().replace(/\/+$/, "");
+      if (!raw) return "";
+      if (/^https?:\/\//i.test(raw)) return raw;
+      return `http://${raw}`;
+    }
+
+    function getDefaultShareBaseUrl() {
+      const saved = normalizeShareBaseUrl(localStorage.getItem("rpsShareBaseUrl"));
+      if (saved) return saved;
+      if (isLoopbackHost() && LOCAL_DEV_HOST_HINT) {
+        const port = location.port ? `:${location.port}` : "";
+        return `${location.protocol}//${LOCAL_DEV_HOST_HINT}${port}`;
+      }
+      return location.origin;
+    }
+
+    function buildRoomUrl(roomCode) {
+      const base = normalizeShareBaseUrl(state.shareBaseUrl) || getDefaultShareBaseUrl();
+      const path = location.pathname || "/";
+      return `${base}${path}?room=${encodeURIComponent(roomCode)}`;
+    }
+
+    function refreshRoomUrl() {
+      if (!state.roomCode) return;
+      state.shareBaseUrl = normalizeShareBaseUrl(state.shareBaseUrl) || getDefaultShareBaseUrl();
+      state.roomUrl = buildRoomUrl(state.roomCode);
+      saveState();
+    }
+
+    function getOnlineMode() {
+      return Boolean(db);
+    }
+
+    function clearRealtime() {
+      if (state.pollInterval) {
+        clearInterval(state.pollInterval);
+        state.pollInterval = null;
+      }
+      if (state.channel && db) {
+        db.removeChannel(state.channel);
+      }
+      state.channel = null;
+      state.onlineParticipantIds = [];
+      state.presenceReady = false;
+      state.droppedSince = {};
+    }
+
+    function getRecentRoomCodes() {
+      try {
+        const arr = JSON.parse(localStorage.getItem("rpsRecentRoomCodes") || "[]");
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        return arr.filter(r => r.code && r.ts > cutoff).sort((a, b) => b.ts - a.ts);
+      } catch { return []; }
+    }
+
+    function saveRecentRoomCode(code) {
+      if (!code) return;
+      const recent = getRecentRoomCodes().filter(r => r.code !== code);
+      recent.unshift({ code, ts: Date.now() });
+      localStorage.setItem("rpsRecentRoomCodes", JSON.stringify(recent.slice(0, 20)));
+    }
+
+    function getLastJoinedRoomCode() {
+      const recent = getRecentRoomCodes();
+      return recent.length ? recent[0].code : "";
+    }
+
+    function saveLastJoinedRoomCode(code) {
+      saveRecentRoomCode(code);
+    }
+
+    function getRoomPlayers() {
+      return state.participants.filter(p => !p.is_host);
+    }
+
+    function areAllPlayersReady() {
+      const players = getRoomPlayers();
+      return players.length > 0 && players.every(p => p.is_ready);
+    }
+
+    function isJoinLocked(participants = state.participants, status = state.status) {
+      const players = participants.filter(p => !p.is_host);
+      return status === "playing" || status === "result" || status === "stats" ||
+        (status === "ready" && players.length > 0 && players.every(p => p.is_ready));
+    }
+
+    function isParticipantOnline(id) {
+      if (!state.presenceReady) return true;
+      return state.onlineParticipantIds.includes(id);
+    }
+
+    function isSafeParticipant(id = state.currentUserId) {
+      if (!Boolean(id)) return false;
+      if ((state.confirmedSafeIds || []).includes(id)) return true;
+      // DB 마커로 폴백: 재연결/경쟁 조건 시 로컬 배열이 비어있을 수 있음
+      return (state.participants || []).some(p => p.id === id && p.choice === '__safe__');
+    }
+
+    function isConfirmedLoser(id = state.currentUserId) {
+      if (!Boolean(id)) return false;
+      if ((state.confirmedLoserIds || []).includes(id)) return true;
+      return (state.participants || []).some(p => p.id === id && p.choice === '__loser__');
+    }
+
+    function isCurrentRoundParticipant(id = state.currentUserId) {
+      return Boolean(id) && !isSafeParticipant(id) && !isConfirmedLoser(id);
+    }
+
+    async function cleanupDroppedParticipants() {
+      if (!getOnlineMode() || state.role !== "host" || state.cleaningDropped) return;
+      // "ready" 상태에서는 실행 안 함: 모바일 화면 잠금 시 Presence 끊겨 오탐 발생
+      if (!state.presenceReady || state.status !== "waiting") return;
+      const now = Date.now();
+      state.participants.filter(p => !p.is_host).forEach(p => {
+        if (p.is_host || isParticipantOnline(p.id)) {
+          delete state.droppedSince[p.id];
+        } else if (!state.droppedSince[p.id]) {
+          state.droppedSince[p.id] = now;
+        }
+      });
+      // 5분(300초) 이상 오프라인인 경우에만 드롭 (모바일 비활성 오탐 방지)
+      const dropped = state.participants.filter(p =>
+        !p.is_host &&
+        !isParticipantOnline(p.id) &&
+        state.droppedSince[p.id] &&
+        now - state.droppedSince[p.id] > 300000
+      );
+      if (!dropped.length) return;
+      state.cleaningDropped = true;
+      try {
+        const droppedIds = dropped.map(p => p.id);
+        state.participants = state.participants.filter(p => !droppedIds.includes(p.id));
+        droppedIds.forEach(id => delete state.droppedSince[id]);
+        renderAll();
+        await db.from('participants').delete().in('id', droppedIds);
+      } finally {
+        state.cleaningDropped = false;
+      }
+    }
+
     // --- Supabase 실시간 연동 로직 ---
 
     async function subscribeToRoom(roomCode) {
-      if (state.channel) db.removeChannel(state.channel);
-      if (state.pollInterval) clearInterval(state.pollInterval);
+      if (!db) return;
+      clearRealtime();
+      // 재연결 시 이전 세션의 참가자 목록 초기화 (구독 완료 전 오래된 데이터 표시 방지)
+      state.participants = [];
+      state.fetchParticipantsSeq = 0;
 
+      const presenceKey = state.currentUserId || `guest_${Date.now()}`;
       state.channel = db
-        .channel(`room:${roomCode}`)
+        .channel(`room:${roomCode}`, { config: { presence: { key: presenceKey } } })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomCode}` }, async () => {
           const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
           if (room) handleRoomUpdate(room);
@@ -1079,7 +1282,24 @@
         .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomCode}` }, () => {
           fetchParticipants(roomCode);
         })
-        .subscribe();
+        .on('presence', { event: 'sync' }, () => {
+          const presenceState = state.channel.presenceState();
+          state.onlineParticipantIds = Object.keys(presenceState);
+          state.presenceReady = true;
+          cleanupDroppedParticipants();
+          setTimeout(() => cleanupDroppedParticipants(), 5500);
+          renderAll();
+        })
+        .subscribe(async (status) => {
+          if (status === "SUBSCRIBED") {
+            await state.channel.track({
+              id: presenceKey,
+              name: state.nickname || loadNickname() || "guest",
+              role: state.role || "participant",
+              joinedAt: Date.now()
+            });
+          }
+        });
 
       // 폴링 백업: Realtime이 동작 안 할 경우 3초마다 직접 체크
       state.pollInterval = setInterval(async () => {
@@ -1103,6 +1323,12 @@
         state.confirmedSafeIds = [];
         state.confirmedLoserIds = [];
         state.targetLoserCount = getTargetLoserCount();
+        // DB 구독 순서 경쟁 조건 방지: 로컬 is_ready + 이전 게임 마커도 즉시 초기화
+        // (__safe__/__loser__가 남아있으면 isSafeParticipant()가 오탐해 게임준비 버튼이 안 뜸)
+        state.participants.forEach(p => {
+          p.is_ready = false;
+          if (p.choice === '__safe__' || p.choice === '__loser__') p.choice = null;
+        });
       }
       state.round = room.round;
 
@@ -1110,8 +1336,19 @@
       state.status = room.status;
 
       if (oldStatus !== state.status) {
-        const iAmSafe = state.confirmedSafeIds.includes(state.currentUserId);
-        const iAmConfirmedLoser = state.confirmedLoserIds.includes(state.currentUserId);
+        // "ready" + round > 1: 참가자 DB를 먼저 새로고침해야 __safe__/__loser__ 마커가 있는지 정확히 판단 가능
+        if (state.status === "ready" && state.round > 1 && db && state.roomCode) {
+          const { data: freshParticipants } = await db.from('participants').select('*')
+            .eq('room_id', state.roomCode).order('created_at', { ascending: true });
+          if (freshParticipants) {
+            state.participants = freshParticipants;
+            // 마커에서 로컬 배열도 동기화
+            state.confirmedSafeIds = freshParticipants.filter(p => p.choice === '__safe__').map(p => p.id);
+            state.confirmedLoserIds = freshParticipants.filter(p => p.choice === '__loser__').map(p => p.id);
+          }
+        }
+        const iAmSafe = isSafeParticipant(state.currentUserId);
+        const iAmConfirmedLoser = isConfirmedLoser(state.currentUserId);
 
         if (state.status === "result") {
           // Fix 1 & 3: result 전환 전 최신 참가자 데이터를 반드시 재조회 후 판정
@@ -1123,8 +1360,12 @@
           finishRoundLocal();
         } else if (state.status === "playing") {
           state.finishingRound = false;
-          if (iAmSafe || iAmConfirmedLoser) {
-            runCountdown().catch(() => {});
+          if (iAmSafe) {
+            stopTimers();
+            showScreen("screenWinnerWait");
+          } else if (iAmConfirmedLoser) {
+            stopTimers();
+            showLoserWaitScreen();
           } else {
             runCountdownThenShowGame();
           }
@@ -1133,10 +1374,10 @@
             showLoserWaitScreen();
           } else if (iAmSafe) {
             showScreen("screenWinnerWait");
-          } else if (state.role === "host") {
-            showHostRoom();
+          } else if (state.role === "host" && state.round === 1) {
+            showHostRoom(); // 1라운드 초기 설정은 호스트 방
           } else {
-            showReadyScreen();
+            showReadyScreen(); // 재대결(무승부 포함)은 호스트도 준비화면으로
           }
         } else if (state.status === "waiting") {
           state.role === "host" ? showHostRoom() : showScreen("screenParticipantWait");
@@ -1144,6 +1385,10 @@
           if (state.role !== "host") showScreen("screenParticipantWait");
         } else if (state.status === "stats") {
           showStats();
+        } else if (state.status === "reinviting") {
+          if (state.role !== "host") {
+            $("invitePopup").classList.remove("hidden");
+          }
         }
       }
       renderAll();
@@ -1162,8 +1407,11 @@
     }
 
     async function fetchParticipants(roomCode) {
+      // 시퀀스 번호로 경쟁 조건 방지: 이전 요청의 응답이 늦게 도착해 최신 데이터를 덮어쓰는 문제 차단
+      const mySeq = ++state.fetchParticipantsSeq;
       const { data } = await db.from('participants').select('*').eq('room_id', roomCode).order('created_at', { ascending: true });
-      if (data) {
+      if (!data || mySeq !== state.fetchParticipantsSeq) return;
+      {
         // 호스트 역할 전환 감지 (transferHostAndLeave / becomeNextHost)
         const me = data.find(p => p.id === state.currentUserId);
         if (me) {
@@ -1180,15 +1428,12 @@
         if (state.role === "host") {
           const safeIds = state.confirmedSafeIds || [];
           const loserIds = state.confirmedLoserIds || [];
-          // Auto-start: active (non-host, non-confirmed) players all ready
-          const activePlayers = data.filter(p => !p.is_host && !safeIds.includes(p.id) && !loserIds.includes(p.id));
-          const gameInProgress = safeIds.length > 0 || loserIds.length > 0;
-          if (state.status === "ready" && !state.gameStarting && gameInProgress && activePlayers.length > 0 && activePlayers.every(p => p.is_ready)) {
-            startGame();
-          }
           // Auto-trigger result when all active players have chosen
           if (state.status === "playing") {
-            const activeForRound = data.filter(p => !safeIds.includes(p.id) && !loserIds.includes(p.id));
+            const activeForRound = data.filter(p =>
+              !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
+              p.choice !== '__safe__' && p.choice !== '__loser__'
+            );
             if (activeForRound.length > 0 && activeForRound.every(p => p.choice)) {
               updateRoomStatus("result");
             }
@@ -1202,6 +1447,31 @@
       await db.from('rooms').update({ status }).eq('id', state.roomCode);
     }
 
+    async function triggerReplayIfLastReady() {
+      if (!getOnlineMode() || state.status !== "ready" || state.round <= 1 || state.gameStarting) return;
+
+      const safeIds = state.confirmedSafeIds || [];
+      const loserIds = state.confirmedLoserIds || [];
+      const { data } = await db.from('participants')
+        .select('*')
+        .eq('room_id', state.roomCode)
+        .order('created_at', { ascending: true });
+
+      if (!data) return;
+      state.participants = data;
+      // DB 마커(__safe__/__loser__)와 로컬 배열 모두 확인: 재연결 시 로컬 배열이 비어있어도 올바르게 필터링
+      const activePlayers = data.filter(p =>
+        !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
+        p.choice !== '__safe__' && p.choice !== '__loser__'
+      );
+      const allReady = activePlayers.length > 0 && activePlayers.every(p => p.is_ready);
+      const iAmActive = activePlayers.some(p => p.id === state.currentUserId);
+
+      if (allReady && iAmActive) {
+        await startGame({ trigger: "last-ready" });
+      }
+    }
+
     async function updateParticipantChoice(choice) {
       if (!db) return;
       await db.from('participants').update({ choice }).eq('id', state.currentUserId);
@@ -1213,6 +1483,7 @@
       [
         "screenAuth",
         "screenHome",
+        "screenQrScanner",
         "screenHostRoom",
         "screenJoin",
         "screenParticipantWait",
@@ -1244,11 +1515,13 @@
 
       const code = Math.random().toString(36).substring(2, 6).toUpperCase();
       state.roomCode = code;
-      state.roomUrl = `${location.origin}${location.pathname}?room=${code}`;
+      saveRecentRoomCode(code);
+      state.shareBaseUrl = getDefaultShareBaseUrl();
+      state.roomUrl = buildRoomUrl(code);
       state.role = "host";
       state.status = "waiting";
 
-      if (db) {
+      if (getOnlineMode()) {
         try {
           const withTimeout = (promise, ms) => Promise.race([
             promise,
@@ -1272,10 +1545,12 @@
           subscribeToRoom(code);
         } catch (e) {
           console.error("Supabase 연결 실패, 오프라인 모드로 전환:", e.message);
+          state.currentUserId = "host";
           state.participants = [createParticipant("host", nickname, true)];
           saveState();
         }
       } else {
+        state.currentUserId = "host";
         state.participants = [createParticipant("host", nickname, true)];
         saveState();
       }
@@ -1287,7 +1562,8 @@
       return {
         id,
         name,
-        isHost,
+        is_host: isHost,
+        is_ready: false,
         choice: null,
         lastResult: null,
         wins: 0,
@@ -1299,7 +1575,9 @@
 
     function showHostRoom() {
       showScreen("screenHostRoom");
+      refreshRoomUrl();
       renderQr();
+      renderShareUrlControls();
       updateLoserCountDropdown();
       const penaltyBox = $("penaltyStatusBox");
       const startBtn = $("startGameBtn");
@@ -1358,12 +1636,40 @@
       state.targetLoserCount = parseInt(val, 10) || 1;
     }
 
-    function showJoinScreen() {
-      if (state.roomCode) {
-        $("joinRoomCode").value = state.roomCode;
+    function renderShareUrlControls() {
+      const box = $("shareUrlBox");
+      const input = $("shareBaseInput");
+      if (!box || !input) return;
+      const shouldShow = !isJoinLocked() && (isLoopbackHost() || Boolean(localStorage.getItem("rpsShareBaseUrl")));
+      box.classList.toggle("hidden", !shouldShow);
+      input.value = normalizeShareBaseUrl(state.shareBaseUrl) || getDefaultShareBaseUrl();
+      $("roomUrlText").textContent = state.roomUrl || "";
+    }
+
+    function updateShareBaseUrl() {
+      const input = $("shareBaseInput");
+      const next = normalizeShareBaseUrl(input ? input.value : "");
+      if (!next) {
+        alert("스마트폰에서 열 수 있는 주소를 입력해주세요. 예: http://192.168.1.6:5173");
+        return;
       }
+      state.shareBaseUrl = next;
+      localStorage.setItem("rpsShareBaseUrl", next);
+      refreshRoomUrl();
+      renderQr();
+      renderShareUrlControls();
+      showToast("QR 접속 주소를 업데이트했습니다.");
+    }
+
+    function showJoinScreen() {
+      const joinedRoomCode = getLastJoinedRoomCode();
+      $("joinRoomCode").value = joinedRoomCode || "";
       const nickname = $("homeNickname").value.trim() || loadNickname();
       if (nickname) $("joinName").value = nickname;
+      const datalist = document.getElementById("recentRoomCodes");
+      if (datalist) {
+        datalist.innerHTML = getRecentRoomCodes().map(r => `<option value="${escapeHtml(r.code)}">`).join("");
+      }
       showScreen("screenJoin");
     }
 
@@ -1374,18 +1680,98 @@
     }
 
     function showGameScreen() {
+      if (!isCurrentRoundParticipant()) {
+        if (isSafeParticipant()) showScreen("screenWinnerWait");
+        else if (isConfirmedLoser()) showLoserWaitScreen();
+        return;
+      }
       showScreen("screenGame");
       beginRoundTimer();
     }
 
     function showStats() {
       renderStats();
+      const replayBtn = $("statsReplayBtn");
+      if (replayBtn) replayBtn.style.display = state.role === "host" ? "" : "none";
       showScreen("screenStats");
+    }
+
+    async function showQrScanner() {
+      showScreen("screenQrScanner");
+      const status = $("qrScanStatus");
+      const video = $("qrScanVideo");
+      status.textContent = "카메라를 준비 중입니다...";
+
+      if (!navigator.mediaDevices?.getUserMedia || !window.BarcodeDetector) {
+        status.textContent = "이 브라우저에서는 카메라 QR 스캔을 지원하지 않습니다. 방코드를 직접 입력해주세요.";
+        return;
+      }
+
+      try {
+        const detector = new BarcodeDetector({ formats: ["qr_code"] });
+        state.qrScanStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false
+        });
+        video.srcObject = state.qrScanStream;
+        await video.play();
+        status.textContent = "QR코드를 카메라 중앙에 맞춰주세요.";
+
+        state.qrScanTimer = setInterval(async () => {
+          try {
+            const codes = await detector.detect(video);
+            if (!codes.length) return;
+            const value = codes[0].rawValue || "";
+            const roomCode = extractRoomCodeFromQr(value);
+            if (!roomCode) {
+              status.textContent = "방 QR코드를 찾지 못했습니다. 호스트 화면의 QR을 스캔해주세요.";
+              return;
+            }
+            stopQrScanner();
+            state.roomCode = roomCode;
+            $("joinRoomCode").value = roomCode;
+            const nickname = $("homeNickname").value.trim() || loadNickname();
+            if (nickname) $("joinName").value = nickname;
+            showScreen("screenJoin");
+            showToast("QR에서 방코드를 읽었습니다.");
+          } catch (e) {
+            status.textContent = "QR을 읽는 중입니다...";
+          }
+        }, 700);
+      } catch (e) {
+        status.textContent = "카메라를 열 수 없습니다. 브라우저 권한 또는 HTTPS 설정을 확인하고, 방코드를 직접 입력해주세요.";
+      }
+    }
+
+    function stopQrScanner() {
+      if (state.qrScanTimer) {
+        clearInterval(state.qrScanTimer);
+        state.qrScanTimer = null;
+      }
+      if (state.qrScanStream) {
+        state.qrScanStream.getTracks().forEach(track => track.stop());
+        state.qrScanStream = null;
+      }
+      const video = $("qrScanVideo");
+      if (video) video.srcObject = null;
+    }
+
+    function extractRoomCodeFromQr(value) {
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      try {
+        const url = new URL(raw);
+        const room = url.searchParams.get("room");
+        if (room) return room.toUpperCase();
+      } catch {}
+      const direct = raw.match(/^[A-Za-z0-9]{4,8}$/);
+      return direct ? raw.toUpperCase() : "";
     }
 
     function goHome() {
       stopTimers();
-      if (state.channel) db.removeChannel(state.channel);
+      stopQrScanner();
+      clearRealtime();
       state.confirmedSafeIds = [];
       state.confirmedLoserIds = [];
       state.gameStarting = false;
@@ -1407,21 +1793,44 @@
         const id = `p_${Date.now()}`;
         state.role = "participant";
         state.currentUserId = id;
+        state.nickname = name;
         state.roomCode = code;
+        state.shareBaseUrl = getDefaultShareBaseUrl();
+        state.roomUrl = buildRoomUrl(code);
 
-        if (db) {
+        if (getOnlineMode()) {
           const { data: room } = await db.from('rooms').select('*').eq('id', code).single();
           if (!room) { alert("존재하지 않는 방입니다."); return; }
+          state.penalty = room.penalty || "";
+          state.round = room.round || 1;
 
-          const { data: existing } = await db.from('participants')
-            .select('id').eq('room_id', code).eq('name', name).maybeSingle();
-          if (existing) { alert("이미 같은 닉네임으로 참가 중입니다."); return; }
+          const { data: roomParticipants } = await db.from('participants')
+            .select('*').eq('room_id', code).order('created_at', { ascending: true });
+          const existing = (roomParticipants || []).find(p => p.name === name && !p.is_host);
+          const returningParticipant = getLastJoinedRoomCode() === code && loadNickname() === name;
+          const locked = isJoinLocked(roomParticipants || [], room.status);
+          if (locked && !existing && !returningParticipant) {
+            alert("모든 참여자가 준비를 완료해서 새로 참가할 수 없습니다.");
+            return;
+          }
 
-          await db.from('participants').insert([{ id, room_id: code, name, is_host: false }]);
+          if (existing) {
+            state.currentUserId = existing.id;
+            await db.from('participants').update({ choice: null }).eq('id', existing.id);
+          } else {
+            await db.from('participants').insert([{ id, room_id: code, name, is_host: false }]);
+          }
+          saveNickname(name);
+          saveLastJoinedRoomCode(code);
           subscribeToRoom(code);
-          showScreen("screenParticipantWait");
+          if (room.status === "ready") showReadyScreen();
+          else showScreen("screenParticipantWait");
         } else {
-          state.participants.push(createParticipant(id, name, false));
+          const existing = state.participants.find(p => p.name === name && !p.is_host);
+          if (existing) state.currentUserId = existing.id;
+          else state.participants.push(createParticipant(id, name, false));
+          saveNickname(name);
+          saveLastJoinedRoomCode(code);
           saveState();
           showScreen("screenParticipantWait");
         }
@@ -1432,11 +1841,15 @@
     }
 
     async function addDemoParticipant() {
+      if (isJoinLocked()) {
+        alert("모든 참여자가 준비를 완료해서 새로 참가할 수 없습니다.");
+        return;
+      }
       const names = ["민수", "지훈", "수진", "하나", "도윤", "유나", "태오", "서준"];
       const existing = state.participants.map(p => p.name);
       const nextName = names.find(name => !existing.includes(name)) || `참가자${state.participants.length}`;
       
-      if (db) {
+      if (getOnlineMode()) {
         await db.from('participants').insert([{ 
           id: `demo_${Date.now()}`, 
           room_id: state.roomCode, 
@@ -1464,7 +1877,7 @@
       savePenaltyHistory(textVal);
       saveState();
 
-      if (db) {
+      if (getOnlineMode()) {
         try {
           await Promise.race([
             db.from('participants').update({ is_ready: false }).eq('room_id', state.roomCode),
@@ -1503,7 +1916,8 @@
       renderAll();
     }
 
-    async function startGame() {
+    async function startGame(options = {}) {
+      if (state.round <= 1 && state.role !== "host" && options.trigger !== "last-ready") return;
       if (state.gameStarting) return;
       state.gameStarting = true;
       state.finishingRound = false;
@@ -1512,12 +1926,23 @@
       if (btn) { btn.disabled = true; btn.textContent = "시작 중..."; }
       if (roomBtn) { roomBtn.disabled = true; roomBtn.textContent = "시작 중..."; }
 
-      if (db) {
+      if (getOnlineMode()) {
         try {
+          const safeIds = state.confirmedSafeIds || [];
+          const loserIds = state.confirmedLoserIds || [];
+          const nonActiveIds = [...new Set([...safeIds, ...loserIds])];
           await Promise.race([
             db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
           ]);
+          // choice: null 초기화 후 안전/술래 마커 반드시 재기록
+          // (지우지 않으면 재연결된 기기가 DB에서 복원 시 활성 플레이어로 오판함)
+          if (safeIds.length > 0) {
+            await db.from('participants').update({ choice: '__safe__', is_ready: true }).in('id', safeIds);
+          }
+          if (loserIds.length > 0) {
+            await db.from('participants').update({ choice: '__loser__', is_ready: true }).in('id', loserIds);
+          }
           await Promise.race([
             updateRoomStatus('playing'),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
@@ -1530,10 +1955,12 @@
           state.gameStarting = false;
         }
       } else {
-        state.participants.forEach(p => { p.choice = null; p.is_ready = false; });
+        state.participants.forEach(p => {
+          p.choice = null;
+          p.is_ready = !isCurrentRoundParticipant(p.id);
+        });
         saveState();
-        await runCountdown();
-        showGameScreen();
+        await runCountdownThenShowGame();
         state.gameStarting = false;
       }
     }
@@ -1546,33 +1973,44 @@
 
       const roundLabel = state.round > 1 ? `🔄 ${state.round}번째 재대결!` : "잠시 후 시작!";
 
-      for (let i = 3; i >= 1; i--) {
-        numEl.className = "";
-        numEl.textContent = i;
-        labelEl.textContent = i === 3 ? roundLabel : "";
-        void numEl.offsetWidth;
-        numEl.className = "count-anim";
-        await speak(String(i));
-        await sleep(200);
-      }
+      // 1단계: "안내면 술래"
+      numEl.className = "";
+      numEl.style.fontSize = "54px";
+      numEl.textContent = "안내면 술래";
+      labelEl.textContent = roundLabel;
+      void numEl.offsetWidth;
+      numEl.className = "count-anim";
+      await speak("안내면 술래", 1.4, 1.0);
 
-      for (const [text, emoji] of [["가위", "✌️"], ["바위", "✊"], ["보", "🖐"]]) {
-        numEl.className = "";
-        numEl.textContent = emoji;
-        numEl.style.fontSize = "72px";
-        labelEl.textContent = text + "!";
-        void numEl.offsetWidth;
-        numEl.className = "count-anim";
-        await speak(text, 1.8, 1.6);
-        await sleep(60);
-      }
+      // 2단계: "가위바위 보!" — 보를 크게
+      numEl.className = "";
+      numEl.style.fontSize = "46px";
+      numEl.innerHTML = `가위바위<span style="font-size:2em;vertical-align:middle"> 보!</span>`;
+      labelEl.textContent = "";
+      void numEl.offsetWidth;
+      numEl.className = "count-anim";
+      speak("가위바위보", 1.6, 0.85);
+      await sleep(1800);
 
       overlay.classList.add("hidden");
       numEl.style.fontSize = "";
+      numEl.innerHTML = "";
     }
 
     async function runCountdownThenShowGame() {
+      if (!isCurrentRoundParticipant()) {
+        if (isSafeParticipant()) showScreen("screenWinnerWait");
+        else if (isConfirmedLoser()) showLoserWaitScreen();
+        state.gameStarting = false;
+        return;
+      }
       await runCountdown();
+      if (!isCurrentRoundParticipant()) {
+        if (isSafeParticipant()) showScreen("screenWinnerWait");
+        else if (isConfirmedLoser()) showLoserWaitScreen();
+        state.gameStarting = false;
+        return;
+      }
       showGameScreen();
       state.gameStarting = false;
     }
@@ -1588,13 +2026,7 @@
       $("totalCount").textContent = activeCount;
       updateSelectedCount();
 
-      const animChoices = ["✌️", "✊", "🖐"];
-      let animIndex = 0;
-      $("choiceAnim").textContent = animChoices[animIndex];
-      state.animationTimer = setInterval(() => {
-        animIndex = (animIndex + 1) % animChoices.length;
-        $("choiceAnim").textContent = animChoices[animIndex];
-      }, 450);
+      $("choiceAnim").textContent = "";
 
       state.timer = setInterval(() => {
         state.remainingSeconds -= 1;
@@ -1621,8 +2053,9 @@
 
     async function selectChoice(choice, event) {
       if (state.status !== "playing") return;
+      if (!isCurrentRoundParticipant()) return;
 
-      if (db) {
+      if (getOnlineMode()) {
         await updateParticipantChoice(choice);
       } else {
         const userId = state.currentUserId || "host";
@@ -1635,12 +2068,16 @@
 
       document.querySelectorAll(".choice-button").forEach(btn => btn.classList.remove("selected"));
       if (event && event.currentTarget) event.currentTarget.classList.add("selected");
+      $("choiceAnim").textContent = choiceEmoji[choice] || "";
     }
 
     function updateSelectedCount() {
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
-      const active = state.participants.filter(p => !safeIds.includes(p.id) && !loserIds.includes(p.id));
+      const active = state.participants.filter(p =>
+        !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
+        p.choice !== '__safe__' && p.choice !== '__loser__'
+      );
       const count = active.filter(p => p.choice).length;
       $("selectedCount").textContent = count;
     }
@@ -1649,8 +2086,11 @@
       const choices = ["scissors", "rock", "paper"];
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
-      const activePlayers = state.participants.filter(p => !safeIds.includes(p.id) && !loserIds.includes(p.id));
-      if (db) {
+      const activePlayers = state.participants.filter(p =>
+        !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
+        p.choice !== '__safe__' && p.choice !== '__loser__'
+      );
+      if (getOnlineMode()) {
         for (const p of activePlayers) {
           if (!p.choice) {
             await db.from('participants').update({
@@ -1668,12 +2108,38 @@
       }
     }
 
-    function finishRoundLocal() {
+    async function finishRoundLocal() {
       if (state.finishingRound) return; // 중복 실행 방지
       state.finishingRound = true;
       stopRoundTimers();
+
+      // 재연결/경쟁 조건으로 로컬 배열이 비어있을 경우 DB 마커에서 복원
+      if ((state.confirmedSafeIds || []).length === 0 && (state.confirmedLoserIds || []).length === 0) {
+        state.confirmedSafeIds = (state.participants || []).filter(p => p.choice === '__safe__').map(p => p.id);
+        state.confirmedLoserIds = (state.participants || []).filter(p => p.choice === '__loser__').map(p => p.id);
+      }
+
       const result = judgeRound(state.participants);
       state.participants.forEach(p => { p.lastResult = result[p.id]; });
+      if (getOnlineMode() && state.role === "host") {
+        state.participants.forEach(p => {
+          const status = result[p.id];
+          if (status === "win") p.wins = (p.wins || 0) + 1;
+          if (status === "lose") {
+            p.losses = (p.losses || 0) + 1;
+            p.penalties = (p.penalties || 0) + 1;
+          }
+          if (status === "draw") p.draws = (p.draws || 0) + 1;
+        });
+        await Promise.all(state.participants.map(p =>
+          db.from('participants').update({
+            wins: p.wins || 0,
+            losses: p.losses || 0,
+            draws: p.draws || 0,
+            penalties: p.penalties || 0
+          }).eq('id', p.id)
+        ));
+      }
 
       const prevSafeIds = [...(state.confirmedSafeIds || [])];
       const prevLoserIds = [...(state.confirmedLoserIds || [])];
@@ -1686,6 +2152,8 @@
         renderRoundResult("draw", 0, remainingSlots);
         showScreen("screenRoundResult");
         state.finishingRound = false;
+        // 호스트가 3초 후 nextRound()로 전환 → 모든 기기가 ready 화면에서 준비 누름
+        if (state.role === "host") setTimeout(() => nextRound(), 3000);
         return;
       }
 
@@ -1743,7 +2211,10 @@
       safeIds.forEach(id => { result[id] = "win"; });
       loserIds.forEach(id => { result[id] = "lose"; });
 
-      const active = participants.filter(p => !safeIds.includes(p.id) && !loserIds.includes(p.id));
+      const active = participants.filter(p =>
+        !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
+        p.choice !== '__safe__' && p.choice !== '__loser__'
+      );
       if (active.length === 0) return result;
 
       const selectedTypes = [...new Set(active.map(p => p.choice))];
@@ -1795,11 +2266,9 @@
         title.textContent = "무승부!";
         title.classList.add("draw");
         emoji.textContent = "🤝";
-        message.textContent = "무승부입니다. 다음 라운드로 넘어갑니다.";
-        nextBtn.style.display = "";
-        nextBtn.textContent = "🎮 다시 시작";
-        nextBtn.onclick = () => window.directStartGame();
-        actionsDiv.style.display = state.role === "host" ? "" : "none";
+        message.textContent = "무승부! 3초 후 준비 화면으로 이동합니다. 모두 게임 준비를 눌러주세요.";
+        nextBtn.style.display = "none";
+        actionsDiv.style.display = "none";
 
       } else if (caseType === "gameOver") {
         // 술래 확정 - 게임 종료
@@ -1821,7 +2290,7 @@
         finalBtns.classList.remove("hidden");
         let html = "";
         if (state.role === "host") {
-          html += `<button class="btn-success btn-full" onclick="window.resetGameKeepRoom()" style="margin-bottom:8px">🎮 한번더!</button>`;
+          html += `<button class="btn-success btn-full" onclick="window.inviteForReplay()" style="margin-bottom:8px">🎮 한번더!</button>`;
         }
         html += `<button class="btn-light btn-full" onclick="window.showStatsPopup()" style="margin-bottom:8px">🏆 게임 승률 보기</button>`;
         if (myResult === "lose" && penTxt && penTxt.includes("호스트")) {
@@ -1896,19 +2365,24 @@
     async function nextRound() {
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
-      const nonActiveIds = [...new Set([...safeIds, ...loserIds])];
-      if (db) {
+      if (getOnlineMode()) {
+        // 먼저 모든 참가자 초기화
         await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
-        // 확정된 안전/술래 플레이어는 자동으로 준비 완료 처리 (다시 버튼 안 눌러도 됨)
-        if (nonActiveIds.length > 0) {
-          await db.from('participants').update({ is_ready: true }).in('id', nonActiveIds);
+        // 확정 안전자/술래는 DB 마커로 기록 + 자동 준비 완료 (재연결 후에도 상태 유지됨)
+        if (safeIds.length > 0) {
+          await db.from('participants').update({ choice: '__safe__', is_ready: true }).in('id', safeIds);
+        }
+        if (loserIds.length > 0) {
+          await db.from('participants').update({ choice: '__loser__', is_ready: true }).in('id', loserIds);
         }
         await db.from('rooms').update({ round: state.round + 1, status: 'ready' }).eq('id', state.roomCode);
       } else {
         state.round += 1;
         state.participants.forEach(p => {
-          p.choice = null; p.lastResult = null;
-          p.is_ready = nonActiveIds.includes(p.id);
+          if (safeIds.includes(p.id)) { p.choice = '__safe__'; p.is_ready = true; }
+          else if (loserIds.includes(p.id)) { p.choice = '__loser__'; p.is_ready = true; }
+          else { p.choice = null; p.is_ready = false; }
+          p.lastResult = null;
         });
         saveState();
         showReadyScreen();
@@ -1918,6 +2392,8 @@
     function endGame() {
       renderStats();
       saveState();
+      const replayBtn = $("statsReplayBtn");
+      if (replayBtn) replayBtn.style.display = state.role === "host" ? "" : "none";
       showScreen("screenStats");
     }
 
@@ -1927,9 +2403,9 @@
       state.targetLoserCount = getTargetLoserCount();
       state.gameStarting = false;
       state.finishingRound = false;
-      if (db) {
+      if (getOnlineMode()) {
         await db.from('participants').update({
-          choice: null, is_ready: false, wins: 0, losses: 0, draws: 0, penalties: 0
+          choice: null, is_ready: false
         }).eq('room_id', state.roomCode);
         // 'ready'로 설정: 모든 참가자가 게임준비 버튼을 눌러야 다시 시작 가능
         await db.from('rooms').update({ round: 1, status: 'ready' }).eq('id', state.roomCode);
@@ -1939,15 +2415,74 @@
           p.choice = null;
           p.lastResult = null;
           p.is_ready = false;
-          p.wins = 0;
-          p.losses = 0;
-          p.draws = 0;
-          p.penalties = 0;
         });
         saveState();
         if (state.role === "host") showHostRoom();
         else showReadyScreen();
       }
+    }
+
+    let _inviteCountdownTimer = null;
+
+    async function inviteForReplay() {
+      if (!getOnlineMode()) {
+        await resetGameKeepRoom();
+        return;
+      }
+      // Participants without a host
+      const nonHost = state.participants.filter(p => !p.is_host);
+      if (!nonHost.length) {
+        await resetGameKeepRoom();
+        return;
+      }
+      await db.from('rooms').update({ status: 'reinviting' }).eq('id', state.roomCode);
+      _showInviteHostPopup();
+    }
+
+    function _showInviteHostPopup() {
+      $("inviteHostPopup").classList.remove("hidden");
+      let countdown = 10;
+      $("inviteCountdown").textContent = countdown + "초";
+      if (_inviteCountdownTimer) clearInterval(_inviteCountdownTimer);
+      _inviteCountdownTimer = setInterval(async () => {
+        countdown--;
+        $("inviteCountdown").textContent = countdown + "초";
+        if (countdown <= 0) {
+          clearInterval(_inviteCountdownTimer);
+          _inviteCountdownTimer = null;
+          $("inviteHostPopup").classList.add("hidden");
+          await resetGameKeepRoom();
+        }
+      }, 1000);
+    }
+
+    async function acceptInvite() {
+      $("invitePopup").classList.add("hidden");
+      // is_ready는 resetGameKeepRoom 이후 실제 게임준비 단계에서만 사용
+      // 여기서 true로 쓰면 showReadyScreen 렌더링 시 버튼이 비활성화되는 경쟁 조건 발생
+      showScreen("screenParticipantWait");
+    }
+
+    async function declineInvite() {
+      $("invitePopup").classList.add("hidden");
+      await leaveRoom();
+    }
+
+    async function startReinviteNow() {
+      if (_inviteCountdownTimer) {
+        clearInterval(_inviteCountdownTimer);
+        _inviteCountdownTimer = null;
+      }
+      $("inviteHostPopup").classList.add("hidden");
+      await resetGameKeepRoom();
+    }
+
+    function cancelReinvite() {
+      if (_inviteCountdownTimer) {
+        clearInterval(_inviteCountdownTimer);
+        _inviteCountdownTimer = null;
+      }
+      $("inviteHostPopup").classList.add("hidden");
     }
 
     function renderStats() {
@@ -1986,6 +2521,11 @@
     }
 
     function renderAll() {
+      const joinLocked = isJoinLocked();
+      const qrInviteBox = $("qrInviteBox");
+      const roomLockedBox = $("roomLockedBox");
+      if (qrInviteBox) qrInviteBox.classList.toggle("hidden", joinLocked);
+      if (roomLockedBox) roomLockedBox.classList.toggle("hidden", !joinLocked);
       renderParticipants("hostParticipantList");
       renderParticipants("waitParticipantList");
       renderReadyList();
@@ -2004,7 +2544,22 @@
           startBtn.style.opacity = allReady ? "1" : "0.5";
         }
       }
+      renderShareUrlControls();
       updateLoserCountDropdown();
+    }
+
+    function getParticipantBadge(p, options = {}) {
+      if (p.is_host) {
+        const label = p.id === state.currentUserId ? "나 (호스트)" : "호스트";
+        return `<span class="tag host">👑 ${label}</span>`;
+      }
+      if (!p.is_host && !isParticipantOnline(p.id)) {
+        return `<span class="tag lose">드롭</span>`;
+      }
+      if (p.is_ready) {
+        return `<span class="tag win">✅ 준비</span>`;
+      }
+      return `<span class="tag">${options.waitText || "대기"}</span>`;
     }
 
     function renderParticipants(targetId) {
@@ -2017,18 +2572,10 @@
         return;
       }
 
-      const showReadyBadge = targetId === "hostParticipantList" && state.status === "ready";
       state.participants.forEach(p => {
         const div = document.createElement("div");
         div.className = "participant";
-        let badge;
-        if (p.is_host) {
-          badge = `<span class="tag host">👑 ${p.id === state.currentUserId ? "나 (호스트)" : "호스트"}</span>`;
-        } else if (showReadyBadge) {
-          badge = `<span class="tag ${p.is_ready ? 'win' : ''}">${p.is_ready ? '✅ 준비' : '⏳ 대기'}</span>`;
-        } else {
-          badge = `<span class="tag">참가자</span>`;
-        }
+        const badge = getParticipantBadge(p, { waitText: state.status === "ready" ? "⏳ 대기" : "참가자" });
         div.innerHTML = `<strong>${escapeHtml(p.name)}</strong>${badge}`;
         el.appendChild(div);
       });
@@ -2067,9 +2614,18 @@
     }
 
     function renderQr() {
+      refreshRoomUrl();
       const qr = $("fakeQr");
       qr.innerHTML = "";
       const url = state.roomUrl || location.href;
+      if (!window.QRCode) {
+        qr.textContent = state.roomCode || "QR";
+        qr.style.display = "grid";
+        qr.style.placeItems = "center";
+        qr.style.fontSize = "34px";
+        qr.style.fontWeight = "900";
+        return;
+      }
       new QRCode(qr, {
         text: url,
         width: 210,
@@ -2081,6 +2637,7 @@
     }
 
     function copyRoomLink() {
+      refreshRoomUrl();
       const text = state.roomUrl || location.href;
       navigator.clipboard?.writeText(text)
         .then(() => alert("초대 링크가 복사되었습니다."))
@@ -2091,9 +2648,17 @@
       localStorage.setItem("rpsPartyState", JSON.stringify({
         roomCode: state.roomCode,
         roomUrl: state.roomUrl,
+        shareBaseUrl: state.shareBaseUrl,
+        role: state.role,
+        currentUserId: state.currentUserId,
+        nickname: state.nickname,
+        status: state.status,
         penalty: state.penalty,
         round: state.round,
-        participants: state.participants
+        participants: state.participants,
+        confirmedSafeIds: state.confirmedSafeIds,
+        confirmedLoserIds: state.confirmedLoserIds,
+        targetLoserCount: state.targetLoserCount
       }));
     }
 
@@ -2103,9 +2668,17 @@
         if (!saved) return;
         state.roomCode = saved.roomCode || state.roomCode;
         state.roomUrl = saved.roomUrl || state.roomUrl;
+        state.shareBaseUrl = saved.shareBaseUrl || state.shareBaseUrl;
+        state.role = saved.role || state.role;
+        state.currentUserId = saved.currentUserId || state.currentUserId;
+        state.nickname = saved.nickname || state.nickname;
+        state.status = saved.status || state.status;
         state.penalty = saved.penalty || state.penalty;
         state.round = saved.round || state.round;
         state.participants = saved.participants || state.participants;
+        state.confirmedSafeIds = saved.confirmedSafeIds || state.confirmedSafeIds;
+        state.confirmedLoserIds = saved.confirmedLoserIds || state.confirmedLoserIds;
+        state.targetLoserCount = saved.targetLoserCount || state.targetLoserCount;
       } catch {
         // 저장 데이터가 깨졌을 경우 무시
       }
@@ -2125,7 +2698,8 @@
       showScreen("screenReady");
       $("readyPenaltyBox").textContent = `벌칙: ${getPenaltyText() || "없음"}`;
       renderReadyList();
-      if (state.role === "host") {
+      // 재대결(round > 1)에서는 호스트도 "게임 준비" 버튼 사용 → 호스트 전용 버튼 숨김
+      if (state.role === "host" && state.round === 1) {
         $("hostStartBtn").classList.remove("hidden");
         $("editPenaltyBtn").classList.remove("hidden");
       } else {
@@ -2141,14 +2715,7 @@
       state.participants.forEach(p => {
         const div = document.createElement("div");
         div.className = "ready-row";
-        let badge;
-        if (p.is_host) {
-          badge = `<span class="tag host">👑 호스트</span>`;
-        } else {
-          badge = p.is_ready
-            ? `<span class="tag win">✅ 준비 완료</span>`
-            : `<span class="tag">⏳ 대기 중</span>`;
-        }
+        const badge = getParticipantBadge(p, { waitText: "⏳ 대기 중" });
         div.innerHTML = `<strong>${escapeHtml(p.name || p.id)}</strong>${badge}`;
         el.appendChild(div);
       });
@@ -2160,6 +2727,12 @@
       const btn = $("myReadyBtn");
       if (!btn) return;
       const me = state.participants.find(p => p.id === state.currentUserId);
+      if (!isCurrentRoundParticipant()) {
+        btn.textContent = isSafeParticipant() ? "✅ 우선안전" : "게임 대기";
+        btn.disabled = true;
+        btn.className = "btn-light btn-full";
+        return;
+      }
       if (me && me.is_ready) {
         btn.textContent = "✅ 준비 완료";
         btn.disabled = true;
@@ -2174,15 +2747,14 @@
     function updateHostStartButton() {
       const btn = $("hostStartBtn");
       if (!btn || state.role !== "host") return;
-      const nonHosts = state.participants.filter(p => !p.is_host);
-      const allReady = nonHosts.length > 0 && nonHosts.every(p => p.is_ready);
+      const allReady = areAllPlayersReady();
       btn.disabled = !allReady;
       btn.style.opacity = allReady ? "1" : "0.5";
     }
 
     async function goToReadyScreen() {
       if (!state.penalty) { alert("먼저 벌칙을 설정해주세요."); return; }
-      if (db) {
+      if (getOnlineMode()) {
         try {
           await Promise.race([
             db.from('participants').update({ is_ready: false }).eq('room_id', state.roomCode),
@@ -2201,15 +2773,21 @@
     }
 
     async function markReady() {
+      if (!isCurrentRoundParticipant()) {
+        if (isSafeParticipant()) showScreen("screenWinnerWait");
+        else if (isConfirmedLoser()) showLoserWaitScreen();
+        return;
+      }
       const btn = $("myReadyBtn");
       btn.disabled = true;
       btn.textContent = "준비 중...";
-      if (db) {
+      if (getOnlineMode()) {
         try {
           await Promise.race([
             db.from('participants').update({ is_ready: true }).eq('id', state.currentUserId),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
           ]);
+          await triggerReplayIfLastReady();
         } catch (e) {
           btn.disabled = false;
           btn.textContent = "✋ 게임 준비";
@@ -2226,9 +2804,15 @@
       if (state.role !== "host") return;
       const btn = $("nextRoundBtn");
       if (btn) { btn.disabled = true; btn.textContent = "시작 중..."; }
-      if (db) {
-        await db.from('participants').update({ choice: null, is_ready: true }).eq('room_id', state.roomCode);
-        await db.from('rooms').update({ round: state.round + 1, status: 'ready' }).eq('id', state.roomCode);
+      if (getOnlineMode()) {
+        const safeIds = state.confirmedSafeIds || [];
+        const loserIds = state.confirmedLoserIds || [];
+        const nonActiveIds = [...new Set([...safeIds, ...loserIds])];
+        await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
+        if (nonActiveIds.length > 0) {
+          await db.from('participants').update({ is_ready: true }).in('id', nonActiveIds);
+        }
+        await db.from('rooms').update({ round: state.round + 1, status: 'playing' }).eq('id', state.roomCode);
       } else {
         state.round += 1;
         state.participants.forEach(p => { p.choice = null; p.is_ready = true; });
@@ -2253,7 +2837,7 @@
     async function leaveRoomForce() {
       closeNextHostPopup();
       // 랜덤으로 다음 호스트 자동 지명
-      if (db && state.role === "host") {
+      if (getOnlineMode() && state.role === "host") {
         const nonHosts = state.participants.filter(p => !p.is_host);
         if (nonHosts.length > 0) {
           const randomHost = nonHosts[Math.floor(Math.random() * nonHosts.length)];
@@ -2264,14 +2848,13 @@
     }
 
     async function _doLeaveRoom() {
-      if (db && state.currentUserId) {
+      if (getOnlineMode() && state.currentUserId) {
         await db.from('participants').delete().eq('id', state.currentUserId);
         if (state.role === "host") {
           await db.from('rooms').update({ status: 'waiting' }).eq('id', state.roomCode);
         }
       }
-      if (state.pollInterval) { clearInterval(state.pollInterval); state.pollInterval = null; }
-      if (state.channel) { state.channel.unsubscribe(); state.channel = null; }
+      clearRealtime();
       state.confirmedSafeIds = [];
       state.confirmedLoserIds = [];
       state.gameStarting = false;
@@ -2298,13 +2881,12 @@
 
     async function transferHostAndLeave(newHostId) {
       closeNextHostPopup();
-      if (db) {
+      if (getOnlineMode()) {
         await db.from('participants').update({ is_host: true }).eq('id', newHostId);
         await db.from('participants').delete().eq('id', state.currentUserId);
         await db.from('rooms').update({ status: 'waiting', round: 1 }).eq('id', state.roomCode);
       }
-      if (state.pollInterval) { clearInterval(state.pollInterval); state.pollInterval = null; }
-      if (state.channel) { state.channel.unsubscribe(); state.channel = null; }
+      clearRealtime();
       state.confirmedSafeIds = [];
       state.confirmedLoserIds = [];
       state.gameStarting = false;
@@ -2312,7 +2894,7 @@
     }
 
     async function becomeNextHost() {
-      if (!db) return;
+      if (!getOnlineMode()) return;
       // 기존 호스트의 is_host 해제
       const oldHost = state.participants.find(p => p.is_host);
       if (oldHost) {
@@ -2513,7 +3095,8 @@
       if (room) {
         // QR 스캔으로 진입: 인증 없으면 먼저 auth 화면
         state.roomCode = room.toUpperCase();
-        state.roomUrl = location.href;
+        state.shareBaseUrl = location.origin;
+        state.roomUrl = buildRoomUrl(state.roomCode);
         $("joinRoomCode").value = state.roomCode;
         if (savedNickname) $("joinName").value = savedNickname;
         if (!authState) {
@@ -2536,6 +3119,8 @@
     // onclick 속성에서 접근 가능하도록 window에 명시 등록
     window.createRoom = createRoom;
     window.showJoinScreen = showJoinScreen;
+    window.showQrScanner = showQrScanner;
+    window.stopQrScanner = stopQrScanner;
     window.showStats = showStats;
     window.copyRoomLink = copyRoomLink;
     window.addDemoParticipant = addDemoParticipant;
@@ -2551,6 +3136,11 @@
     window.nextRound = nextRound;
     window.endGame = endGame;
     window.resetGameKeepRoom = resetGameKeepRoom;
+    window.inviteForReplay = inviteForReplay;
+    window.acceptInvite = acceptInvite;
+    window.declineInvite = declineInvite;
+    window.startReinviteNow = startReinviteNow;
+    window.cancelReinvite = cancelReinvite;
     window.goToReadyScreen = goToReadyScreen;
     window.markReady = markReady;
     window.directStartGame = directStartGame;
@@ -2563,6 +3153,7 @@
     window.showStatsPopup = showStatsPopup;
     window.closeStatsPopup = closeStatsPopup;
     window.onLoserCountChange = onLoserCountChange;
+    window.updateShareBaseUrl = updateShareBaseUrl;
     window.showLoserWaitScreen = showLoserWaitScreen;
     window.showAuthScreen = showAuthScreen;
     window.loginWithSns = loginWithSns;
