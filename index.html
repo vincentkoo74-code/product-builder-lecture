@@ -1417,6 +1417,17 @@
           }
         }
       }
+
+      // 안전망: status='ready'인데 참가자가 screenParticipantWait에 남아있으면 준비 화면으로 강제 이동
+      // (oldStatus===state.status로 전환 블록이 건너뛰어진 경우 포함)
+      if (state.status === "ready" && state.role !== "host" &&
+          !isConfirmedLoser() && !isSafeParticipant()) {
+        const waitScreen = $("screenParticipantWait");
+        if (waitScreen && !waitScreen.classList.contains("hidden")) {
+          showReadyScreen();
+        }
+      }
+
       renderAll();
     }
 
@@ -1457,6 +1468,15 @@
         }
         updateSelectedCount();
         renderAll();
+
+        // 안전망: 폴링 응답 후에도 screenParticipantWait 고착 여부 확인
+        if (state.status === "ready" && state.role !== "host" &&
+            !isConfirmedLoser() && !isSafeParticipant()) {
+          const waitScreen = $("screenParticipantWait");
+          if (waitScreen && !waitScreen.classList.contains("hidden")) {
+            showReadyScreen();
+          }
+        }
 
         if (state.role === "host") {
           const safeIds = state.confirmedSafeIds || [];

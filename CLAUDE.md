@@ -129,3 +129,22 @@
 - `fetchParticipants()`에서 `state.participants = data` 이후, `state.status === "ready" && state.round === 1`일 때 `choice !== null`인 참가자를 정규화 (`choice=null, is_ready=false` 강제). `choice`가 null이 아닌 것은 이전 게임 스냅샷의 확실한 증거(새 게임에서 choice는 항상 null). 이후 genuine 준비 완료(`is_ready=true, choice=null`)는 영향 없음
 
 **수정 파일:** `index.html` (line ~1437)
+
+---
+
+### [2026-05-18] 재게임 수락 후 screenParticipantWait 고착 (안전망 추가)
+**브랜치:** `claude/fix-game-ready-button-bl7zf`
+
+**증상:**
+- 참가자가 재게임 초대를 수락하고 대기실로 진입 후 "게임 준비" 버튼이 나타나지 않음 (screenParticipantWait에 머묾)
+- `state.status === "ready"` 임에도 screenReady 전환이 안 됨 (⏳ 대기 배지 표시로 확인)
+
+**원인:**
+`handleRoomUpdate`의 화면 전환은 `if (oldStatus !== state.status)` 블록 안에만 있음. 폴링/WebSocket 경쟁으로 `state.status`가 이미 'ready'로 설정된 뒤 `handleRoomUpdate`가 또 호출되면, `oldStatus === state.status === 'ready'`로 전환 블록 전체를 건너뛰어 `showReadyScreen()`이 실행되지 않음. 참가자가 `acceptInvite()` → `showScreen("screenParticipantWait")`로 이동한 직후 이 경쟁 조건이 발생하면 영구적으로 대기 화면에 갇힘.
+
+**수정:**
+- `handleRoomUpdate` 전환 블록 이후, `fetchParticipants()` 완료 후 각각 안전망 추가
+- `state.status === "ready" && screenParticipantWait가 visible && 참가자 역할`일 때 `showReadyScreen()` 강제 호출
+- 중복 호출은 무해(idempotent)
+
+**수정 파일:** `index.html` (line ~1420, ~1470)
