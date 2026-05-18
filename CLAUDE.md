@@ -151,6 +151,28 @@
 
 ---
 
+### [2026-05-18] 신규 참가자 호스트 화면 미표시 + 게임준비 버튼 깜빡임
+**브랜치:** `claude/fix-game-ready-button-bl7zf`
+**커밋:** `355a656`
+
+**증상:**
+1. QR 스캔 후 참가자가 대기실에 입장해도 호스트 화면 참가자 목록에 나타나지 않음
+2. 참가자가 "게임 준비" 버튼을 누른 후 버튼이 계속 깜빡거림 (준비 완료 → 게임 준비 반복)
+
+**원인:**
+
+1. **participants realtime INSERT seq 경쟁 조건**: `postgres_changes` 콜백이 `fetchParticipants()`를 호출하지만, 폴링(3초 인터벌)과 동시에 발생하면 `fetchParticipantsSeq` 카운터에 의해 드롭됨. 신규 참가자 INSERT가 유실되어 즉시 표시되지 않음.
+
+2. **`markReady()` 로컬 상태 미갱신**: 온라인 브랜치에서 DB `is_ready=true` 업데이트 성공 후 로컬 `state.participants[me].is_ready`를 갱신하지 않음. 이후 WebSocket 이벤트 도착 시 `renderAll()` → `updateMyReadyButton()`이 stale `is_ready=false`로 버튼을 "✋ 게임 준비"로 되돌림.
+
+**수정:**
+- `participants` realtime 콜백에서 `payload.eventType === 'INSERT'`일 때 `payload.new`로 즉시 `state.participants`에 추가 후 `renderAll()` (seq 카운터 우회)
+- `markReady()` 온라인 브랜치에서 DB 업데이트 성공 즉시 `me.is_ready = true; renderAll()` 호출
+
+**수정 파일:** `index.html` (line ~1305, ~2886)
+
+---
+
 ### [2026-05-18] 드롭된 참가자가 ready/reinviting 상태 대기실에서 미제거
 **브랜치:** `claude/fix-game-ready-button-bl7zf`
 **커밋:** `9ce864b`
