@@ -1043,6 +1043,16 @@
         <button onclick="window.cancelReinvite()" class="btn-outline btn-full">취소</button>
       </div>
     </div>
+
+    <!-- 대기 화면 자동 로그아웃 팝업 -->
+    <div id="idleLogoutPopup" class="popup-overlay hidden">
+      <div class="popup-card" style="text-align:center">
+        <h3>⏰ 자동 로그아웃</h3>
+        <p>오랫동안 조작이 없어 자동으로 나가집니다.</p>
+        <div id="idleCountdownNum" style="font-size:56px;font-weight:700;margin:12px 0;color:var(--primary)">5</div>
+        <button onclick="window.cancelIdleLogout()" class="btn-primary btn-full">여기 있어요!</button>
+      </div>
+    </div>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1074,6 +1084,9 @@
       "다음게임 호스트",
       "다음 게임 호스트 하기"
     ];
+
+    let _waitIdleTimer = null;
+    let _waitCountdownTimer = null;
 
     let state = {
       roomCode: "",
@@ -1518,10 +1531,14 @@
     }
 
     function showScreen(id) {
+      _clearWaitIdleTimers();
       hideAllScreens();
       $(id).classList.remove("hidden");
       updateRoomBadge();
       renderAll();
+      if (id === "screenParticipantWait" && state.role !== "host") {
+        startWaitIdleTimer();
+      }
     }
 
     function updateRoomBadge() {
@@ -3198,6 +3215,52 @@
     window.directStartGame = directStartGame;
     window.leaveRoom = leaveRoom;
     window.leaveRoomForce = leaveRoomForce;
+
+    // --- 대기실 자동 로그아웃 ---
+
+    function _clearWaitIdleTimers() {
+      if (_waitIdleTimer) { clearTimeout(_waitIdleTimer); _waitIdleTimer = null; }
+      if (_waitCountdownTimer) { clearInterval(_waitCountdownTimer); _waitCountdownTimer = null; }
+      const popup = $("idleLogoutPopup");
+      if (popup) popup.classList.add("hidden");
+    }
+
+    function startWaitIdleTimer() {
+      _clearWaitIdleTimers();
+      _waitIdleTimer = setTimeout(_startIdleCountdown, 60000);
+    }
+
+    function _startIdleCountdown() {
+      const screen = $("screenParticipantWait");
+      if (!screen || screen.classList.contains("hidden")) return;
+      let remaining = 5;
+      $("idleCountdownNum").textContent = remaining;
+      $("idleLogoutPopup").classList.remove("hidden");
+      _waitCountdownTimer = setInterval(async () => {
+        remaining--;
+        $("idleCountdownNum").textContent = remaining;
+        if (remaining <= 0) {
+          _clearWaitIdleTimers();
+          await _doLeaveRoom();
+        }
+      }, 1000);
+    }
+
+    function cancelIdleLogout() {
+      _clearWaitIdleTimers();
+      startWaitIdleTimer();
+    }
+    window.cancelIdleLogout = cancelIdleLogout;
+
+    // 대기 화면에서 사용자 조작 감지 → 타이머 리셋 (카운트다운 중에는 무시)
+    function _onWaitUserActivity() {
+      const screen = $("screenParticipantWait");
+      if (!screen || screen.classList.contains("hidden")) return;
+      if (_waitCountdownTimer) return; // 카운트다운 진행 중 → 명시적 버튼만 허용
+      if (_waitIdleTimer) startWaitIdleTimer();
+    }
+    document.addEventListener("touchstart", _onWaitUserActivity, { passive: true });
+    document.addEventListener("click", _onWaitUserActivity);
     window.showNextHostPopup = showNextHostPopup;
     window.closeNextHostPopup = closeNextHostPopup;
     window.transferHostAndLeave = transferHostAndLeave;
