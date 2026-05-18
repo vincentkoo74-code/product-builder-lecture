@@ -40,3 +40,26 @@
 - `acceptInvite()`에서 `state.status === "ready"` 여부를 확인해 이미 게임이 시작됐으면 `showReadyScreen()`, 아직 대기 중이면 `showScreen("screenParticipantWait")` 호출
 
 **수정 파일:** `index.html` (line ~1339, ~2464)
+
+---
+
+### [2026-05-18] 게임 시작 시 참가자 단말기에서 "안내면 술래 가위바위보" 맨트 미재생
+**브랜치:** `claude/fix-game-ready-button-bl7zf`
+**커밋:** `4a8cbda`
+
+**증상:**
+- 게임 시작 시 호스트 단말기에서는 카운트다운 TTS("안내면 술래 가위바위보")가 정상 재생되지만, 참가자 단말기에서는 재생되지 않음
+
+**원인:**
+모바일 브라우저(iOS Safari, Android Chrome)의 **사용자 제스처(user gesture) 요구 정책**.
+
+`speak()` 함수 호출 경로: Supabase WebSocket 이벤트 → `handleRoomUpdate` → `runCountdownThenShowGame` → `runCountdown` → `speak()`. 이 경로는 사용자 제스처 없이 실행되므로 모바일 브라우저가 `speechSynthesis.speak()`를 차단함.
+
+- **호스트**: 방금 "게임 시작" 버튼을 클릭(제스처 컨텍스트 유효) → TTS 작동
+- **참가자**: 마지막 제스처("게임 준비" 클릭)로부터 일정 시간이 지나 제스처 컨텍스트 만료 → TTS 차단, 카운트다운 화면은 표시되지만 소리 없음
+
+**수정:**
+- `markReady()`에서 "게임 준비" 버튼 클릭 시점(제스처 컨텍스트)에 빈 발화(`new SpeechSynthesisUtterance('')`)로 `speechSynthesis`를 미리 잠금 해제
+- `speak()`에서 `speechSynthesis.speaking` 상태일 때도 `resume()` 호출하도록 조건 보완
+
+**수정 파일:** `index.html` (line ~2790, ~3014)
