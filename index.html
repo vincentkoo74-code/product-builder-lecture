@@ -1302,7 +1302,14 @@
           const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
           if (room) handleRoomUpdate(room, commitTime);
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomCode}` }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomCode}` }, (payload) => {
+          // INSERT: seq 경쟁 조건 없이 payload.new로 즉시 반영 (호스트 화면 지연 표시 방지)
+          if (payload.eventType === 'INSERT' && payload.new) {
+            if (!state.participants.some(p => p.id === payload.new.id)) {
+              state.participants = [...state.participants, payload.new];
+              renderAll();
+            }
+          }
           fetchParticipants(roomCode);
         })
         .on('presence', { event: 'sync' }, () => {
@@ -2879,6 +2886,11 @@
             db.from('participants').update({ is_ready: true }).eq('id', state.currentUserId),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
           ]);
+          // DB 업데이트 후 로컬 상태 즉시 반영: WebSocket 이벤트 도착 시 renderAll()이
+          // stale is_ready=false로 버튼을 "게임 준비"로 되돌리는 깜빡임 방지
+          const me = state.participants.find(p => p.id === state.currentUserId);
+          if (me) { me.is_ready = true; }
+          renderAll();
           await triggerReplayIfLastReady();
         } catch (e) {
           btn.disabled = false;
