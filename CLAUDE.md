@@ -19,3 +19,24 @@
 - `__safe__/__loser__` 마커 초기화는 `if (room.round === 1)` 블록에 유지 (매 폴링 실행 무해)
 
 **수정 파일:** `index.html` (line ~1321–1341)
+
+---
+
+### [2026-05-18] 재게임 선택 시 참가자 화면에 게임준비 버튼 미표시
+**브랜치:** `claude/fix-game-ready-button-bl7zf`
+**커밋:** `9b7ff2e`
+
+**증상:**
+- 매번 라운드가 끝나고 재게임(한판더) 선택 시 호스트 이외 참가자 화면에 "게임 준비" 버튼이 나타나지 않음
+
+**원인 (복합):**
+
+1. **`invitePopup` 자동 닫힘 미구현**: `inviteForReplay()` → `status="reinviting"` → 참가자에게 "새 게임 초대" 팝업 표시. 이후 10초 카운트다운 종료 시 `resetGameKeepRoom()` → `status="ready"` 전환. `handleRoomUpdate`가 `showReadyScreen()`을 호출하지만, `invitePopup`은 `hideAllScreens()`에 포함되지 않아 팝업이 `screenReady` 위를 덮고 있어 버튼이 보이지 않음.
+
+2. **`acceptInvite()` 화면 전환 오류**: 카운트다운이 이미 끝나 `status="ready"`가 된 후에 참가자가 "수락하기"를 누르면, `acceptInvite()`가 무조건 `showScreen("screenParticipantWait")`을 호출해 `screenReady`를 덮어버림. 이후 폴링은 `oldStatus === "ready"` 동일이라 화면을 다시 바꾸지 않아 참가자가 대기 화면에 영원히 갇힘.
+
+**수정:**
+- `handleRoomUpdate`에서 `status → "ready"` 전환 시 `$("invitePopup").classList.add("hidden")` 추가 (팝업 자동 닫기)
+- `acceptInvite()`에서 `state.status === "ready"` 여부를 확인해 이미 게임이 시작됐으면 `showReadyScreen()`, 아직 대기 중이면 `showScreen("screenParticipantWait")` 호출
+
+**수정 파일:** `index.html` (line ~1339, ~2464)
