@@ -1318,15 +1318,13 @@
       if (!room) return;
       state.penalty = room.penalty;
 
-      // Fix 2: 항상 round=1이면 로컬 상태 리셋 (한번더! 후 참가자 기기 동기화)
+      // round=1이면 이전 게임의 safe/loser 마커 즉시 초기화 (isSafeParticipant() 오탐 방지)
+      // is_ready는 여기서 초기화하지 않음: 폴링(3초) 시마다 반복 리셋돼 대기↔준비 깜빡임 발생
       if (room.round === 1) {
         state.confirmedSafeIds = [];
         state.confirmedLoserIds = [];
         state.targetLoserCount = getTargetLoserCount();
-        // DB 구독 순서 경쟁 조건 방지: 로컬 is_ready + 이전 게임 마커도 즉시 초기화
-        // (__safe__/__loser__가 남아있으면 isSafeParticipant()가 오탐해 게임준비 버튼이 안 뜸)
         state.participants.forEach(p => {
-          p.is_ready = false;
           if (p.choice === '__safe__' || p.choice === '__loser__') p.choice = null;
         });
       }
@@ -1336,6 +1334,11 @@
       state.status = room.status;
 
       if (oldStatus !== state.status) {
+        // "ready"로 전환될 때 한 번만 is_ready 로컬 초기화
+        // (fetchParticipants 응답 전 stale "준비 완료" 표시 방지)
+        if (state.status === "ready") {
+          state.participants.forEach(p => { p.is_ready = false; });
+        }
         // "ready" + round > 1: 참가자 DB를 먼저 새로고침해야 __safe__/__loser__ 마커가 있는지 정확히 판단 가능
         if (state.status === "ready" && state.round > 1 && db && state.roomCode) {
           const { data: freshParticipants } = await db.from('participants').select('*')
