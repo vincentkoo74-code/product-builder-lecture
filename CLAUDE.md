@@ -111,3 +111,21 @@
 - `handleRoomUpdate` "reinviting" 분기: `oldStatus !== "ready"`일 때만 invitePopup 표시 (지연 이벤트로 인한 역행 전환 방지)
 
 **수정 파일:** `index.html` (line ~1217–1228, ~1398–1401)
+
+---
+
+### [2026-05-18] 재게임 후 "게임 준비" 버튼 미표시 (fetchParticipants 스테일 choice 정규화)
+**브랜치:** `claude/fix-game-ready-button-bl7zf`
+
+**증상:**
+- 첫 번째 게임을 마치고 "한번더" 메뉴로 재게임 시작 시, 참가자 디바이스에 "게임 준비" 버튼 대신 비활성 버튼이 표시됨
+
+**원인:**
+`resetGameKeepRoom()`은 두 단계 DB 쓰기를 수행: ① `participants.update({ choice: null, is_ready: false })` → ② `rooms.update({ round: 1, status: 'ready' })`. 3초 폴링의 SELECT가 ① 커밋 **이전**에 시작됐으면 이전 게임의 `choice`(rock/paper/scissors)와 `is_ready=true`가 남아있는 구 스냅샷을 반환. `handleRoomUpdate`("ready")가 로컬 `is_ready=false` 수동 초기화를 수행해도, 뒤늦게 완료된 `fetchParticipants()`가 `state.participants`를 스테일 데이터로 **덮어씀** → `updateMyReadyButton()`이 "준비 완료"(비활성)를 표시.
+
+`isSafeParticipant/isConfirmedLoser` round=1 폴백 수정(이전 커밋)으로 "게임 대기" 오탐은 해결됐으나, `is_ready=true` 스테일 데이터 경로는 여전히 남아있었음.
+
+**수정:**
+- `fetchParticipants()`에서 `state.participants = data` 이후, `state.status === "ready" && state.round === 1`일 때 `choice !== null`인 참가자를 정규화 (`choice=null, is_ready=false` 강제). `choice`가 null이 아닌 것은 이전 게임 스냅샷의 확실한 증거(새 게임에서 choice는 항상 null). 이후 genuine 준비 완료(`is_ready=true, choice=null`)는 영향 없음
+
+**수정 파일:** `index.html` (line ~1437)

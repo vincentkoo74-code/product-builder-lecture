@@ -1435,6 +1435,13 @@
           }
         }
         state.participants = data;
+        // 경쟁 조건 정규화: round=1 ready 상태에서 choice가 null이 아닌 데이터가 도착하면
+        // resetGameKeepRoom() 커밋 이전에 시작된 구 스냅샷 → choice/is_ready 강제 초기화
+        if (state.status === "ready" && state.round === 1) {
+          state.participants.forEach(p => {
+            if (p.choice !== null) { p.choice = null; p.is_ready = false; }
+          });
+        }
         updateSelectedCount();
         renderAll();
 
