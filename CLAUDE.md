@@ -148,3 +148,23 @@
 - 중복 호출은 무해(idempotent)
 
 **수정 파일:** `index.html` (line ~1420, ~1470)
+
+---
+
+### [2026-05-18] 드롭된 참가자가 ready/reinviting 상태 대기실에서 미제거
+**브랜치:** `claude/fix-game-ready-button-bl7zf`
+**커밋:** `9ce864b`
+
+**증상:**
+- 첫 번째 라운드 후 재게임 준비/재초대 상태에서 드롭된 참가자(Supabase Presence 오프라인)가 호스트와 다른 참가자 화면의 대기실에 계속 표시됨
+- 드롭된 참가자가 남아 있으면 "전원 준비" 조건이 충족되지 않아 게임 진행이 불가능
+
+**원인:**
+`cleanupDroppedParticipants()`가 `state.status !== "waiting"` 조건으로 ready/reinviting 상태에서 실행을 건너뜀. 초기 구현 목적은 모바일 화면 잠금으로 인한 Presence 오탐 방지였으나, 재게임 흐름에서는 드롭 정리가 필요함.
+
+**수정:**
+- 실행 허용 상태를 `"waiting"` 단독에서 `["waiting", "ready", "reinviting"]`으로 확장
+- 상태별 grace period 차등 적용: `waiting` = 5분(모바일 오탐 방지), `ready`/`reinviting` = 2분(게임 흐름 위해 빠른 정리)
+- `playing`/`result` 등 게임 진행 중에는 여전히 실행 안 함 (일시 연결 끊김으로 진행 참가자 삭제 방지)
+
+**수정 파일:** `index.html` (line ~1249–1278)
