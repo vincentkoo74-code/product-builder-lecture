@@ -86,3 +86,28 @@
 - TTS는 `await` 없이 병렬 실행(`.speak()` 호출 후 즉시 고정 sleep)하여 음성 길이와 무관하게 타이밍 유지
 
 **수정 파일:** `index.html` (line ~1278–1285, ~1379, ~1977–2040)
+
+---
+
+### [2026-05-18] 재게임 승낙 후 "게임 준비" 버튼 미표시 (경쟁 조건)
+**브랜치:** `claude/fix-game-ready-button-bl7zf`
+
+**증상:**
+- 참가자가 재게임 초대를 "수락하기" 눌러 준비화면에 도달해도 "게임 준비" 버튼 대신 비활성화된 "게임 대기" 상태 유지
+
+**원인 (경쟁 조건):**
+`resetGameKeepRoom()`은 두 단계로 DB를 갱신함:
+1. `participants.update({ choice: null, is_ready: false })` — 이전 게임 마커 초기화
+2. `rooms.update({ round: 1, status: 'ready' })` — 방 상태 전환
+
+폴링(3초 인터벌)의 `fetchParticipants()` SELECT가 단계 1 커밋 **이전**에 시작되면 PostgreSQL Read Committed 격리 수준에 의해 `choice='__loser__'`가 남아있는 구 스냅샷을 읽음. 이후 `handleRoomUpdate`("ready")가 로컬 `state.participants[].choice`를 `null`로 리셋하더라도, 뒤늦게 완료된 `fetchParticipants`가 `state.participants`를 오래된 데이터로 **덮어씀**.
+
+결과: `renderAll()` → `updateMyReadyButton()` → `isConfirmedLoser()` fallback 체크(`p.choice === '__loser__'`)가 `true` 반환 → 버튼이 "게임 대기"(비활성)로 표시됨.
+
+추가로, 이전 게임의 `reinviting` realtime 이벤트가 지연 도착하면 `oldStatus === "ready"` 상태에서도 invitePopup이 다시 열려 준비화면을 덮는 문제도 존재.
+
+**수정:**
+- `isSafeParticipant()` / `isConfirmedLoser()`: `state.round === 1`이면 `p.choice` fallback 체크를 건너뜀. Round 1은 항상 새 게임 시작이므로 이전 게임의 `__safe__`/`__loser__` 마커는 무효
+- `handleRoomUpdate` "reinviting" 분기: `oldStatus !== "ready"`일 때만 invitePopup 표시 (지연 이벤트로 인한 역행 전환 방지)
+
+**수정 파일:** `index.html` (line ~1217–1228, ~1398–1401)

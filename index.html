@@ -1217,13 +1217,16 @@
     function isSafeParticipant(id = state.currentUserId) {
       if (!Boolean(id)) return false;
       if ((state.confirmedSafeIds || []).includes(id)) return true;
-      // DB 마커로 폴백: 재연결/경쟁 조건 시 로컬 배열이 비어있을 수 있음
+      // round=1은 새 게임 시작 — 이전 게임의 __safe__ 마커가 폴링으로 읽힐 수 있어 무시
+      if (state.round === 1) return false;
       return (state.participants || []).some(p => p.id === id && p.choice === '__safe__');
     }
 
     function isConfirmedLoser(id = state.currentUserId) {
       if (!Boolean(id)) return false;
       if ((state.confirmedLoserIds || []).includes(id)) return true;
+      // round=1은 새 게임 시작 — 이전 게임의 __loser__ 마커가 폴링으로 읽힐 수 있어 무시
+      if (state.round === 1) return false;
       return (state.participants || []).some(p => p.id === id && p.choice === '__loser__');
     }
 
@@ -1396,7 +1399,7 @@
         } else if (state.status === "stats") {
           showStats();
         } else if (state.status === "reinviting") {
-          if (state.role !== "host") {
+          if (state.role !== "host" && oldStatus !== "ready") {
             $("invitePopup").classList.remove("hidden");
           }
         }
