@@ -1249,8 +1249,12 @@
 
     async function cleanupDroppedParticipants() {
       if (!getOnlineMode() || state.role !== "host" || state.cleaningDropped) return;
-      // "ready" 상태에서는 실행 안 함: 모바일 화면 잠금 시 Presence 끊겨 오탐 발생
-      if (!state.presenceReady || state.status !== "waiting") return;
+      if (!state.presenceReady) return;
+      // 게임 진행(playing/result/stats) 중에는 실행 안 함: 일시 연결 끊김으로 진행 참가자 삭제 방지
+      if (!["waiting", "ready", "reinviting"].includes(state.status)) return;
+
+      // 대기 중: 5분(모바일 비활성 오탐 방지), 준비/재초대: 2분(게임 흐름 위해 빠른 정리)
+      const gracePeriod = state.status === "waiting" ? 300000 : 120000;
       const now = Date.now();
       state.participants.filter(p => !p.is_host).forEach(p => {
         if (p.is_host || isParticipantOnline(p.id)) {
@@ -1259,12 +1263,11 @@
           state.droppedSince[p.id] = now;
         }
       });
-      // 5분(300초) 이상 오프라인인 경우에만 드롭 (모바일 비활성 오탐 방지)
       const dropped = state.participants.filter(p =>
         !p.is_host &&
         !isParticipantOnline(p.id) &&
         state.droppedSince[p.id] &&
-        now - state.droppedSince[p.id] > 300000
+        now - state.droppedSince[p.id] > gracePeriod
       );
       if (!dropped.length) return;
       state.cleaningDropped = true;
