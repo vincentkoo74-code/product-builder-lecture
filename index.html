@@ -2790,6 +2790,12 @@
       const btn = $("myReadyBtn");
       btn.disabled = true;
       btn.textContent = "준비 중...";
+      // 모바일 TTS 잠금 해제: 사용자 제스처(버튼 클릭) 컨텍스트에서 미리 활성화
+      // 이후 WebSocket 이벤트로 speak()가 호출될 때 브라우저 차단 방지
+      if (window.speechSynthesis) {
+        speechSynthesis.cancel();
+        speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+      }
       if (getOnlineMode()) {
         try {
           await Promise.race([
@@ -3008,8 +3014,8 @@
       return new Promise(resolve => {
         if (!window.speechSynthesis) { resolve(); return; }
         speechSynthesis.cancel();
-        // iOS/Android: resume if paused (TTS gets suspended outside user gesture context)
-        if (speechSynthesis.paused) speechSynthesis.resume();
+        // iOS/Android: resume if suspended (WebSocket 이벤트 등 비제스처 컨텍스트에서 일시정지됨)
+        if (speechSynthesis.paused || speechSynthesis.speaking) speechSynthesis.resume();
         const u = new SpeechSynthesisUtterance(text);
         u.lang = 'ko-KR';
         u.pitch = pitch;
