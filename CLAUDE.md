@@ -63,3 +63,26 @@
 - `speak()`에서 `speechSynthesis.speaking` 상태일 때도 `resume()` 호출하도록 조건 보완
 
 **수정 파일:** `index.html` (line ~2790, ~3014)
+
+---
+
+### [2026-05-18] 게임 시작 시 참가자 화면 간 시차(time lag) 발생
+**브랜치:** `claude/fix-game-ready-button-bl7zf`
+
+**증상:**
+- 게임 시작 후 참가자마다 카운트다운 시작 시점이 달라 일부 기기는 이미 가위바위보 화면인데 다른 기기는 아직 "안내면 술래" 단계에 있음
+
+**원인:**
+1. `handleRoomUpdate()` → `runCountdownThenShowGame()` 호출 경로에서 각 기기마다 네트워크 지연이 달라 Supabase 이벤트 수신 시각이 다름
+2. `runCountdown()` 1단계가 `await speak("안내면 술래", ...)` — TTS 완료를 기다리는 가변 시간 —로 구현되어 기기별 음성합성 속도 차이가 시차를 더 증폭시킴
+
+**수정:**
+- Supabase realtime 이벤트의 `payload.commit_timestamp`(DB 커밋 시각, UTC ISO)를 `handleRoomUpdate(room, commitTimestamp)`로 전달
+- `status === "playing"` 전환 시 `elapsedMs = Date.now() - commitTimestamp`로 각 기기의 경과 시간 계산 후 `runCountdownThenShowGame(elapsedMs)` 호출
+- `runCountdown(elapsedMs = 0)`: 고정 구간(1단계 1500ms + 2단계 1800ms = 3300ms)을 기준으로 `elapsedMs`만큼 건너뜀
+  - 1단계가 남아 있으면 나머지 시간만 sleep 후 2단계 전체(1800ms)
+  - 1단계가 이미 지났으면 2단계 남은 시간만 sleep
+  - 3300ms 초과 시 카운트다운 생략, 즉시 게임 화면으로 진행
+- TTS는 `await` 없이 병렬 실행(`.speak()` 호출 후 즉시 고정 sleep)하여 음성 길이와 무관하게 타이밍 유지
+
+**수정 파일:** `index.html` (line ~1278–1285, ~1379, ~1977–2040)

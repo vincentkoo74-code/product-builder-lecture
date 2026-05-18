@@ -1275,9 +1275,13 @@
       const presenceKey = state.currentUserId || `guest_${Date.now()}`;
       state.channel = db
         .channel(`room:${roomCode}`, { config: { presence: { key: presenceKey } } })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomCode}` }, async () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomCode}` }, async (payload) => {
+          // commit_timestamp: DB 커밋 시각 (UTC ISO), 모든 기기에서 동일 → 카운트다운 동기화 기준점
+          const commitTime = payload.commit_timestamp
+            ? new Date(payload.commit_timestamp).getTime()
+            : null;
           const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
-          if (room) handleRoomUpdate(room);
+          if (room) handleRoomUpdate(room, commitTime);
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomCode}` }, () => {
           fetchParticipants(roomCode);
@@ -1314,7 +1318,7 @@
       await fetchParticipants(roomCode);
     }
 
-    async function handleRoomUpdate(room) {
+    async function handleRoomUpdate(room, commitTimestamp = null) {
       if (!room) return;
       state.penalty = room.penalty;
 
@@ -1372,7 +1376,8 @@
             stopTimers();
             showLoserWaitScreen();
           } else {
-            runCountdownThenShowGame();
+            const elapsedMs = commitTimestamp ? Math.max(0, Date.now() - commitTimestamp) : 0;
+            runCountdownThenShowGame(elapsedMs);
           }
         } else if (state.status === "ready") {
           if (iAmConfirmedLoser) {
@@ -1970,7 +1975,15 @@
       }
     }
 
-    async function runCountdown() {
+    async function runCountdown(elapsedMs = 0) {
+      // 고정 구간: 1500ms(안내면 술래) + 1800ms(가위바위 보) = 3300ms
+      // elapsedMs(커밋 시각 기준 경과시간)만큼 건너뜀 → 기기 간 시차 보정
+      const PHASE1_MS = 1500;
+      const PHASE2_MS = 1800;
+      const TOTAL_MS = PHASE1_MS + PHASE2_MS;
+
+      if (elapsedMs >= TOTAL_MS) return;
+
       const overlay = $("countdownOverlay");
       const numEl = $("countdownNumber");
       const labelEl = $("countdownLabel");
@@ -1978,38 +1991,52 @@
 
       const roundLabel = state.round > 1 ? `🔄 ${state.round}번째 재대결!` : "잠시 후 시작!";
 
-      // 1단계: "안내면 술래"
-      numEl.className = "";
-      numEl.style.fontSize = "54px";
-      numEl.textContent = "안내면 술래";
-      labelEl.textContent = roundLabel;
-      void numEl.offsetWidth;
-      numEl.className = "count-anim";
-      await speak("안내면 술래", 1.4, 1.0);
+      if (elapsedMs < PHASE1_MS) {
+        // 1단계: "안내면 술래" — 남은 시간만큼만 대기
+        numEl.className = "";
+        numEl.style.fontSize = "54px";
+        numEl.textContent = "안내면 술래";
+        labelEl.textContent = roundLabel;
+        void numEl.offsetWidth;
+        numEl.className = "count-anim";
+        speak("안내면 술래", 1.4, 1.0);
+        await sleep(PHASE1_MS - elapsedMs);
 
-      // 2단계: "가위바위 보!" — 보를 크게
-      numEl.className = "";
-      numEl.style.fontSize = "46px";
-      numEl.innerHTML = `가위바위<span style="font-size:2em;vertical-align:middle"> 보!</span>`;
-      labelEl.textContent = "";
-      void numEl.offsetWidth;
-      numEl.className = "count-anim";
-      speak("가위바위보", 1.6, 0.85);
-      await sleep(1800);
+        // 2단계: "가위바위 보!" — 전체 1800ms
+        numEl.className = "";
+        numEl.style.fontSize = "46px";
+        numEl.innerHTML = `가위바위<span style="font-size:2em;vertical-align:middle"> 보!</span>`;
+        labelEl.textContent = "";
+        void numEl.offsetWidth;
+        numEl.className = "count-anim";
+        speak("가위바위보", 1.6, 0.85);
+        await sleep(PHASE2_MS);
+      } else {
+        // 1단계 이미 지남 → 2단계 남은 시간만큼만 대기
+        const phase2Remaining = TOTAL_MS - elapsedMs;
+        numEl.className = "";
+        numEl.style.fontSize = "46px";
+        numEl.innerHTML = `가위바위<span style="font-size:2em;vertical-align:middle"> 보!</span>`;
+        labelEl.textContent = "";
+        void numEl.offsetWidth;
+        numEl.className = "count-anim";
+        speak("가위바위보", 1.6, 0.85);
+        await sleep(phase2Remaining);
+      }
 
       overlay.classList.add("hidden");
       numEl.style.fontSize = "";
       numEl.innerHTML = "";
     }
 
-    async function runCountdownThenShowGame() {
+    async function runCountdownThenShowGame(elapsedMs = 0) {
       if (!isCurrentRoundParticipant()) {
         if (isSafeParticipant()) showScreen("screenWinnerWait");
         else if (isConfirmedLoser()) showLoserWaitScreen();
         state.gameStarting = false;
         return;
       }
-      await runCountdown();
+      await runCountdown(elapsedMs);
       if (!isCurrentRoundParticipant()) {
         if (isSafeParticipant()) showScreen("screenWinnerWait");
         else if (isConfirmedLoser()) showLoserWaitScreen();
