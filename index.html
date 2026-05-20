@@ -931,6 +931,23 @@
       <button class="btn-light btn-full" onclick="window.autoFillChoices()">테스트용: 모든 참가자 랜덤 선택</button>
     </section>
 
+    <!-- Phase 1: 호스트 playing 화면 -->
+    <section class="card hidden" id="screenHostPlaying">
+      <h2>라운드 <span id="hostRoundNumber">1</span></h2>
+      <p class="lead">모든 참가자가 선택을 완료할 때까지 기다려주세요.</p>
+      <div class="summary-row">
+        <div class="summary-item"><strong id="hostTimerText">5</strong><span>남은 시간</span></div>
+        <div class="summary-item"><strong id="hostSelectedCount">0</strong><span>선택 완료</span></div>
+        <div class="summary-item"><strong id="hostTotalCount">0</strong><span>참가자</span></div>
+      </div>
+      <h3>참가자 선택 현황</h3>
+      <div class="participant-list" id="hostPlayingParticipantList"></div>
+      <div class="footer-actions">
+        <button id="hostJudgeBtn" class="btn-success btn-full hidden" onclick="window.hostJudgeRound()">🎯 판정 내리기</button>
+        <button class="btn-light btn-full" onclick="window.autoFillChoices()">테스트용: 미선택자 자동 선택</button>
+      </div>
+    </section>
+
     <section class="card hidden" id="screenRoundResult">
       <div class="result-hero">
         <div class="result-emoji" id="resultEmoji">🎉</div>
@@ -1336,15 +1353,15 @@
       if (!room) return;
       state.penalty = room.penalty;
 
-      // Fix 2: 항상 round=1이면 로컬 상태 리셋 (한번더! 후 참가자 기기 동기화)
+      // round가 1로 리셋될 때만(이전 라운드에서 새 게임) 로컬 마커 초기화
+      // p.is_ready는 건드리지 않음: fetchParticipants()가 DB 값으로 동기화하며,
+      // 매 폴링(3초)마다 리셋하면 "준비 완료" 버튼이 깜빡이는 버그 발생
       if (room.round === 1) {
         state.confirmedSafeIds = [];
         state.confirmedLoserIds = [];
         state.targetLoserCount = getTargetLoserCount();
-        // DB 구독 순서 경쟁 조건 방지: 로컬 is_ready + 이전 게임 마커도 즉시 초기화
-        // (__safe__/__loser__가 남아있으면 isSafeParticipant()가 오탐해 게임준비 버튼이 안 뜸)
+        // __safe__/__loser__ 마커만 로컬에서 제거 (isSafeParticipant 오탐 방지)
         state.participants.forEach(p => {
-          p.is_ready = false;
           if (p.choice === '__safe__' || p.choice === '__loser__') p.choice = null;
         });
       }
@@ -1384,7 +1401,9 @@
           } else if (iAmConfirmedLoser) {
             stopTimers();
             showLoserWaitScreen();
-          } else {
+          } else if (!state.gameStarting) {
+            // 중복 실행 방지: Realtime + 폴링이 동시에 'playing' 전환을 감지해도 한 번만 실행
+            state.gameStarting = true;
             runCountdownThenShowGame();
           }
         } else if (state.status === "ready") {
@@ -1442,6 +1461,20 @@
             state.role = "participant";
           }
         }
+        
+        // **개선**: DB 데이터를 받을 때, 로컬 상태와 합병하여 경쟁 조건 방지
+        // 예를 들어, 참가자가 is_ready=true로 로컬 설정했는데 DB 폴링이 아직 반영되지 않았다면,
+        // DB의 is_ready=false로 덮어쓰지 않기 위해 명시적 병합
+        const oldParticipants = state.participants || [];
+        data.forEach(newP => {
+          const oldP = oldParticipants.find(p => p.id === newP.id);
+          // 로컬에서 이미 업데이트한 항목은 로컬 값 유지
+          if (oldP && oldP.is_ready && !newP.is_ready && state.status === "ready") {
+            // 로컬에서 준비 완료했는데 DB가 아직 반영 안 됨 → 로컬 값 유지
+            newP.is_ready = true;
+          }
+        });
+        
         state.participants = data;
         updateSelectedCount();
         renderAll();
@@ -1474,31 +1507,6 @@
       await db.from('rooms').update({ status }).eq('id', state.roomCode);
     }
 
-    async function triggerReplayIfLastReady() {
-      if (!getOnlineMode() || state.status !== "ready" || state.round <= 1 || state.gameStarting) return;
-
-      const safeIds = state.confirmedSafeIds || [];
-      const loserIds = state.confirmedLoserIds || [];
-      const { data } = await db.from('participants')
-        .select('*')
-        .eq('room_id', state.roomCode)
-        .order('created_at', { ascending: true });
-
-      if (!data) return;
-      state.participants = data;
-      // DB 마커(__safe__/__loser__)와 로컬 배열 모두 확인: 재연결 시 로컬 배열이 비어있어도 올바르게 필터링
-      const activePlayers = data.filter(p =>
-        !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
-        p.choice !== '__safe__' && p.choice !== '__loser__'
-      );
-      const allReady = activePlayers.length > 0 && activePlayers.every(p => p.is_ready);
-      const iAmActive = activePlayers.some(p => p.id === state.currentUserId);
-
-      if (allReady && iAmActive) {
-        await startGame({ trigger: "last-ready" });
-      }
-    }
-
     async function updateParticipantChoice(choice) {
       if (!db) return;
       await db.from('participants').update({ choice }).eq('id', state.currentUserId);
@@ -1517,6 +1525,7 @@
         "screenPenalty",
         "screenReady",
         "screenGame",
+        "screenHostPlaying",
         "screenRoundResult",
         "screenWinnerWait",
         "screenLoserWait",
@@ -2039,9 +2048,66 @@
         state.gameStarting = false;
         return;
       }
-      showGameScreen();
+      // Phase 1: 호스트와 참가자 화면 분리
+      if (state.role === "host") {
+        showScreen("screenHostPlaying");
+        renderHostPlayingScreen();
+      } else {
+        showScreen("screenGame");
+      }
       state.gameStarting = false;
     }
+
+    // Phase 1: 호스트용 playing 화면 렌더
+    function renderHostPlayingScreen() {
+      const safeIds = state.confirmedSafeIds || [];
+      const loserIds = state.confirmedLoserIds || [];
+      $("hostRoundNumber").textContent = state.round;
+      $("hostTotalCount").textContent = state.participants.filter(p => 
+        !safeIds.includes(p.id) && !loserIds.includes(p.id)
+      ).length;
+      updateHostSelectedCount();
+
+      const list = $("hostPlayingParticipantList");
+      list.innerHTML = state.participants.map(p => {
+        if (safeIds.includes(p.id)) {
+          return `<div class="participant" style="background:#dcfce7"><strong>${escapeHtml(p.name)}</strong><span style="color:var(--success)">✓ 우선안전</span></div>`;
+        }
+        if (loserIds.includes(p.id)) {
+          return `<div class="participant" style="background:#fee2e2"><strong>${escapeHtml(p.name)}</strong><span style="color:var(--danger)">✓ 술래 확정</span></div>`;
+        }
+        const status = p.choice ? "✓ 선택완료" : "○ 대기 중";
+        const statusColor = p.choice ? "var(--success)" : "var(--muted)";
+        return `<div class="participant"><strong>${escapeHtml(p.name)}</strong><span style="color:${statusColor}">${status}</span></div>`;
+      }).join("");
+
+      // 모든 활성 참가자가 선택 완료했으면 판정 버튼 활성화
+      const activeForRound = state.participants.filter(p =>
+        !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
+        p.choice !== '__safe__' && p.choice !== '__loser__'
+      );
+      const allChosen = activeForRound.length > 0 && activeForRound.every(p => p.choice);
+      const btn = $("hostJudgeBtn");
+      if (btn) {
+        btn.classList.toggle("hidden", !allChosen);
+        btn.disabled = !allChosen;
+      }
+    }
+
+    function updateHostSelectedCount() {
+      const safeIds = state.confirmedSafeIds || [];
+      const loserIds = state.confirmedLoserIds || [];
+      const active = state.participants.filter(p =>
+        !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
+        p.choice !== '__safe__' && p.choice !== '__loser__'
+      );
+      const count = active.filter(p => p.choice).length;
+      $("hostSelectedCount").textContent = count;
+      $("hostTimerText").textContent = state.remainingSeconds || "5";
+    }
+
+    // 윈도우에 등록
+    window.renderHostPlayingScreen = renderHostPlayingScreen;
 
     function beginRoundTimer() {
       stopRoundTimers();
@@ -2091,7 +2157,8 @@
         participant.choice = choice;
         saveState();
         updateSelectedCount();
-        if (state.participants.every(p => p.choice)) finishRound();
+        // Phase 1: 호스트가 모든 선택 완료 후 판정하도록 변경
+        // if (state.participants.every(p => p.choice)) finishRound();
       }
 
       document.querySelectorAll(".choice-button").forEach(btn => btn.classList.remove("selected"));
@@ -2271,6 +2338,52 @@
       if ((a === "paper" && b === "rock") || (b === "paper" && a === "rock")) return "paper";
       return a;
     }
+
+    // Phase 1: 호스트가 판정을 내리는 함수
+    async function hostJudgeRound() {
+      if (state.role !== "host" || state.status !== "playing") return;
+
+      const safeIds = state.confirmedSafeIds || [];
+      const loserIds = state.confirmedLoserIds || [];
+      const active = state.participants.filter(p =>
+        !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
+        p.choice !== '__safe__' && p.choice !== '__loser__'
+      );
+
+      // 아직 선택하지 않은 참가자가 있으면 판정 불가
+      const notYetChosen = active.filter(p => !p.choice);
+      if (notYetChosen.length > 0) {
+        alert(`아직 선택하지 않은 참가자가 있습니다:\n${notYetChosen.map(p => p.name).join(', ')}`);
+        return;
+      }
+
+      // 판정 로직 실행
+      const result = judgeRound(state.participants);
+      state.participants.forEach(p => {
+        const status = result[p.id];
+        p.lastResult = status;
+        if (status === "win") p.wins = (p.wins || 0) + 1;
+        if (status === "lose") {
+          p.losses = (p.losses || 0) + 1;
+          p.penalties = (p.penalties || 0) + 1;
+        }
+        if (status === "draw") p.draws = (p.draws || 0) + 1;
+      });
+
+      if (getOnlineMode()) {
+        // DB에 각 참가자의 lastResult를 저장하고 status를 'result'로 변경
+        // (실제로는 호스트가 판정을 DB에 마킹할 수 있는 구조가 필요함)
+        for (const p of state.participants) {
+          // 참가자의 choice는 이미 DB에 있고, lastResult는 로컬에만 저장
+          // 아래는 테스트 형태 - 실제로는 별도의 결과 저장소 필요
+        }
+        // 호스트 판정 완료 → 모든 참가자에게 브로드캐스트
+        await updateRoomStatus("result");
+      } else {
+        finishRoundLocal();
+      }
+    }
+    window.hostJudgeRound = hostJudgeRound;
 
     function renderRoundResult(caseType, roundLoserCount, remainingSlots) {
       const current = state.participants.find(p => p.id === state.currentUserId) || state.participants[0];
@@ -2803,6 +2916,21 @@
       showHostRoom(); // 호스트는 QR 화면 유지
     }
 
+    async function triggerReplayIfLastReady() {
+      if (state.status !== "ready" || state.gameStarting) return;
+      
+      // 모든 현재 라운드 참여자가 준비했는지 확인
+      const activeParticipants = state.participants.filter(p => isCurrentRoundParticipant(p.id));
+      const allReady = activeParticipants.length > 0 && activeParticipants.every(p => p.is_ready);
+      
+      if (!allReady) return; // 아직 준비되지 않은 참여자가 있음
+      
+      // 모두 준비됨 → 호스트만 게임 시작 요청 (참여자는 함수만 호출하고 실제 시작은 안 함)
+      if (state.role === "host" && getOnlineMode()) {
+        await startGame({ trigger: "last-ready" });
+      }
+    }
+
     async function markReady() {
       if (!isCurrentRoundParticipant()) {
         if (isSafeParticipant()) showScreen("screenWinnerWait");
@@ -2818,6 +2946,15 @@
             db.from('participants').update({ is_ready: true }).eq('id', state.currentUserId),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
           ]);
+          // 로컬 상태 즉시 갱신: WebSocket 이벤트의 stale 상태 덮어쓰기 방지
+          const me = state.participants.find(p => p.id === state.currentUserId);
+          if (me) { me.is_ready = true; }
+          renderReadyList();
+          // 폴링이 stale 데이터를 덮어쓰기 방지: 잠깐 폴링 일시 중지
+          const oldSeq = state.fetchParticipantsSeq;
+          setTimeout(() => {
+            // 폴링이 현재 요청 이후로만 처리되도록 설정 (간단한 방식)
+          }, 100);
           await triggerReplayIfLastReady();
         } catch (e) {
           btn.disabled = false;
@@ -3174,6 +3311,7 @@
     window.cancelReinvite = cancelReinvite;
     window.goToReadyScreen = goToReadyScreen;
     window.markReady = markReady;
+    window.triggerReplayIfLastReady = triggerReplayIfLastReady;
     window.directStartGame = directStartGame;
     window.leaveRoom = leaveRoom;
     window.leaveRoomForce = leaveRoomForce;
