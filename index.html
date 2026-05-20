@@ -1311,10 +1311,12 @@
       state.channel = db
         .channel(`room:${roomCode}`, { config: { presence: { key: presenceKey } } })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomCode}` }, async () => {
+          console.log('[RT-rooms] 실시간 rooms 변경 감지');
           const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
           if (room) handleRoomUpdate(room);
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomCode}` }, () => {
+          console.log('[RT-participants] 실시간 participants 변경 감지');
           fetchParticipants(roomCode);
         })
         .on('presence', { event: 'sync' }, () => {
@@ -1339,9 +1341,11 @@
       // 폴링 백업: Realtime이 동작 안 할 경우 3초마다 직접 체크
       // participants를 먼저 await해야 handleRoomUpdate→renderAll() 시 최신 is_ready 값 사용 가능
       state.pollInterval = setInterval(async () => {
+        console.log('[POLL] 폴링 시작 status='+state.status+' role='+state.role);
         await fetchParticipants(roomCode);
         const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
         if (room) await handleRoomUpdate(room);
+        console.log('[POLL] 폴링 완료');
       }, 3000);
 
       // 초기 데이터 로드
@@ -1352,6 +1356,8 @@
 
     async function handleRoomUpdate(room) {
       if (!room) return;
+      const _src = new Error().stack?.split('\n')[2]?.trim().slice(0,60) || '?';
+      console.log('[handleRoomUpdate] 진입 oldStatus='+state.status+' newStatus='+room.status+' round='+room.round+' | src:'+_src);
       state.penalty = room.penalty;
 
       // round가 1로 리셋될 때만(이전 라운드에서 새 게임) 로컬 마커 초기화
@@ -1372,6 +1378,7 @@
       state.status = room.status;
 
       if (oldStatus !== state.status) {
+        console.log('[handleRoomUpdate] ★상태변경★ '+oldStatus+'→'+state.status+' role='+state.role+' round='+state.round);
         // "ready" + round > 1: 참가자 DB를 먼저 새로고침해야 __safe__/__loser__ 마커가 있는지 정확히 판단 가능
         if (state.status === "ready" && state.round > 1 && db && state.roomCode) {
           const { data: freshParticipants } = await db.from('participants').select('*')
@@ -1450,8 +1457,12 @@
     async function fetchParticipants(roomCode) {
       // 시퀀스 번호로 경쟁 조건 방지: 이전 요청의 응답이 늦게 도착해 최신 데이터를 덮어쓰는 문제 차단
       const mySeq = ++state.fetchParticipantsSeq;
+      const _src2 = new Error().stack?.split('\n')[2]?.trim().slice(0,60) || '?';
       const { data } = await db.from('participants').select('*').eq('room_id', roomCode).order('created_at', { ascending: true });
-      if (!data || mySeq !== state.fetchParticipantsSeq) return;
+      if (!data || mySeq !== state.fetchParticipantsSeq) {
+        console.log('[fetchParticipants] seq='+mySeq+' 폐기(최신='+state.fetchParticipantsSeq+') | src:'+_src2);
+        return;
+      }
       {
         // 호스트 역할 전환 감지 (transferHostAndLeave / becomeNextHost)
         const me = data.find(p => p.id === state.currentUserId);
@@ -1472,10 +1483,13 @@
           // 로컬에서 이미 업데이트한 항목은 로컬 값 유지
           if (oldP && oldP.is_ready && !newP.is_ready && (state.status === "ready" || state.status === "lobby")) {
             // 로컬에서 준비 완료했는데 DB가 아직 반영 안 됨 → 로컬 값 유지
+            console.log('[fetchParticipants] 병합적용 id='+newP.id+' DB=false→local=true status='+state.status);
             newP.is_ready = true;
           }
         });
-        
+        const meAfter = data.find(p => p.id === state.currentUserId);
+        console.log('[fetchParticipants] seq='+mySeq+' 완료 me.is_ready='+meAfter?.is_ready+' status='+state.status+' | src:'+_src2);
+
         state.participants = data;
         updateSelectedCount();
         renderAll();
