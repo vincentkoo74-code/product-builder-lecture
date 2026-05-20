@@ -1466,15 +1466,15 @@
           }
         }
         
-        // **개선**: DB 데이터를 받을 때, 로컬 상태와 합병하여 경쟁 조건 방지
-        // 예를 들어, 참가자가 is_ready=true로 로컬 설정했는데 DB 폴링이 아직 반영되지 않았다면,
-        // DB의 is_ready=false로 덮어쓰지 않기 위해 명시적 병합
+        // 로컬에서 방금 본인이 "준비" 누른 직후의 DB 전파 지연만 보호 (자신 + 2초 이내)
+        // 다른 참가자나 시간 경과 후에는 DB 값을 신뢰 (호스트의 벌칙 수정 시 전원 reset 정상 반영)
         const oldParticipants = state.participants || [];
+        const recentlyMarkedReady = Date.now() - (state.myReadyLocallySetAt || 0) < 2000;
         data.forEach(newP => {
+          if (newP.id !== state.currentUserId) return;
+          if (!recentlyMarkedReady) return;
           const oldP = oldParticipants.find(p => p.id === newP.id);
-          // 로컬에서 이미 업데이트한 항목은 로컬 값 유지
           if (oldP && oldP.is_ready && !newP.is_ready && (state.status === "ready" || state.status === "lobby")) {
-            // 로컬에서 준비 완료했는데 DB가 아직 반영 안 됨 → 로컬 값 유지
             newP.is_ready = true;
           }
         });
@@ -2702,6 +2702,9 @@
       }
       renderShareUrlControls();
       updateLoserCountDropdown();
+      // screenReady 벌칙 박스 동기화 (호스트가 벌칙 수정 시 참가자 화면에 반영되어야 함)
+      const readyPenaltyBoxEl = $("readyPenaltyBox");
+      if (readyPenaltyBoxEl) readyPenaltyBoxEl.textContent = `벌칙: ${getPenaltyText() || "없음"}`;
       if (!$("screenLobby").classList.contains("hidden")) renderLobby();
     }
 
@@ -2960,6 +2963,7 @@
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
           ]);
           // 로컬 상태 즉시 갱신: WebSocket 이벤트의 stale 상태 덮어쓰기 방지
+          state.myReadyLocallySetAt = Date.now();
           const me = state.participants.find(p => p.id === state.currentUserId);
           if (me) { me.is_ready = true; }
           renderReadyList();
@@ -3393,6 +3397,7 @@
 
       try {
         await db.from('participants').update({ is_ready: true }).eq('id', me.id);
+        state.myReadyLocallySetAt = Date.now();
         me.is_ready = true;
         renderLobby();
         // 온라인: fetchParticipants 구독이 전원 준비 감지 후 startFromLobby() 호출
