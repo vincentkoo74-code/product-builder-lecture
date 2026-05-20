@@ -2451,7 +2451,7 @@
         finalBtns.classList.remove("hidden");
         let html = "";
         if (state.role === "host") {
-          html += `<button class="btn-success btn-full" onclick="window.returnToLobbyAfterGame()" style="margin-bottom:8px">🎮 한번더! (로비로)</button>`;
+          html += `<button class="btn-success btn-full" onclick="window.returnToLobbyAfterGame()" style="margin-bottom:8px">🎮 한번더! (호스트 설정)</button>`;
         }
         html += `<button class="btn-light btn-full" onclick="window.showStatsPopup()" style="margin-bottom:8px">🏆 게임 승률 보기</button>`;
         if (myResult === "lose" && penTxt && penTxt.includes("호스트")) {
@@ -3493,35 +3493,45 @@
       }
     }
 
-    // 게임 완료 후 로비로 전환 (호스트가 호출 → DB 업데이트 → 모든 기기 subscribeToRoom으로 수신)
+    // 게임 완료 후 호스트 화면으로 복귀 (호스트가 호출 → DB 업데이트 → 모든 기기 subscribeToRoom으로 수신)
+    // status='waiting' → 호스트는 screenHostRoom(벌칙 수정/게임 시작 가능), 참가자는 screenParticipantWait
     async function returnToLobbyAfterGame() {
-      // 패자가 그 사이에 다음 호스트로 전환한 경우(status가 result→waiting로 바뀜) 자동 복귀 취소
-      if (state.role !== "host" || state.status !== "result") return;
+      if (state.role !== "host") return;
+      // 수동 클릭 시 자동 타이머 정리
+      if (state.gameOverTimeout) { clearTimeout(state.gameOverTimeout); state.gameOverTimeout = null; }
       stopGameOverCountdown();
-      stopRoundTimers();  // 라운드 타이머만 중지 (realtime 연결은 유지)
-
-      state.confirmedSafeIds = [];
-      state.confirmedLoserIds = [];
-      state.gameStarting = false;
-      state.finishingRound = false;
+      stopRoundTimers();
 
       if (getOnlineMode()) {
         try {
+          // DB 체크: 패자가 그 사이에 다음 호스트로 전환했다면 status가 'result'→'waiting'으로 바뀐 상태 → 자동 복귀 취소
+          // (로컬 state.status는 real-time 도착 지연으로 아직 'result'일 수 있으므로 DB를 직접 조회)
+          const { data: currentRoom } = await db.from('rooms').select('status').eq('id', state.roomCode).single();
+          if (!currentRoom || currentRoom.status !== 'result') return;
+
+          state.confirmedSafeIds = [];
+          state.confirmedLoserIds = [];
+          state.gameStarting = false;
+          state.finishingRound = false;
+
           await db.from('participants').update({
             choice: null,
             is_ready: false
           }).eq('room_id', state.roomCode);
-          // status='lobby' → handleRoomUpdate가 모든 기기에서 screenLobby를 표시
-          await db.from('rooms').update({ round: 1, status: 'lobby' }).eq('id', state.roomCode);
+          // status='waiting' → 호스트는 screenHostRoom (벌칙 수정/게임 시작 버튼), 참가자는 screenParticipantWait
+          await db.from('rooms').update({ round: 1, status: 'waiting' }).eq('id', state.roomCode);
         } catch (e) {
           console.error("returnToLobbyAfterGame error:", e);
         }
       } else {
+        state.confirmedSafeIds = [];
+        state.confirmedLoserIds = [];
+        state.gameStarting = false;
+        state.finishingRound = false;
         state.round = 1;
         state.participants.forEach(p => { p.is_ready = false; p.choice = null; });
         saveState();
-        showScreen("screenLobby");
-        renderLobby();
+        showHostRoom();
       }
     }
 
