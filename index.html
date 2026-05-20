@@ -2269,8 +2269,11 @@
         setTimeout(() => playFinalFanfare(), 400);
         if (myResult === "lose") setTimeout(() => speak("아이고, 술래가 되셨습니다!", 1.4, 1.0), 2200);
         else if (myResult === "win") setTimeout(() => speak("축하합니다! 술래가 결정됐습니다!", 1.4, 1.0), 2200);
-        // 3초 후 모든 기기가 로비로 자동 복귀 (호스트가 DB 업데이트, 나머지는 구독으로 수신)
-        if (state.role === "host") setTimeout(() => returnToLobbyAfterGame(), 3000);
+        // 5초 후 모든 기기가 로비로 자동 복귀. 5초 안에 패자가 "다음 게임 호스트" 클릭하면 host 전환 (returnToLobbyAfterGame은 status 체크로 무시됨)
+        if (state.role === "host") {
+          if (state.gameOverTimeout) clearTimeout(state.gameOverTimeout);
+          state.gameOverTimeout = setTimeout(() => returnToLobbyAfterGame(), 5000);
+        }
       } else if (roundLosers.length > remainingSlots) {
         state.confirmedSafeIds = [...prevSafeIds, ...roundWinners.map(p => p.id)];
         renderRoundResult("tooMany", roundLosers.length, remainingSlots);
@@ -2452,9 +2455,13 @@
         }
         html += `<button class="btn-light btn-full" onclick="window.showStatsPopup()" style="margin-bottom:8px">🏆 게임 승률 보기</button>`;
         if (myResult === "lose" && penTxt && penTxt.includes("호스트")) {
-          html += `<button class="btn-primary btn-full" onclick="window.becomeNextHost()" style="margin-top:8px">🎮 다음 게임 호스트 시작하기</button>`;
+          html += `<button id="becomeNextHostBtn" class="btn-primary btn-full" onclick="window.becomeNextHost()" style="margin-top:8px">🎮 다음 게임 호스트 시작 (5초)</button>`;
         }
         finalBtns.innerHTML = html;
+        // 패자 호스트 인계 버튼에 5초 카운트다운 표시
+        if (myResult === "lose" && penTxt && penTxt.includes("호스트")) {
+          startGameOverCountdown(5);
+        }
 
       } else if (caseType === "tooMany") {
         // 4-1: 패자가 너무 많음 → 패자들끼리 재대결
@@ -3087,6 +3094,9 @@
 
     async function becomeNextHost() {
       if (!getOnlineMode()) return;
+      // 로컬 카운트다운/자동 복귀 타이머 취소
+      stopGameOverCountdown();
+      if (state.gameOverTimeout) { clearTimeout(state.gameOverTimeout); state.gameOverTimeout = null; }
       // 기존 호스트의 is_host 해제
       const oldHost = state.participants.find(p => p.is_host);
       if (oldHost) {
@@ -3101,6 +3111,34 @@
       state.confirmedLoserIds = [];
       state.gameStarting = false;
       showHostRoom();
+    }
+
+    function startGameOverCountdown(seconds) {
+      stopGameOverCountdown();
+      let remaining = seconds;
+      const btn = document.getElementById("becomeNextHostBtn");
+      if (!btn) return;
+      btn.textContent = `🎮 다음 게임 호스트 시작 (${remaining}초)`;
+      state.gameOverCountdownTimer = setInterval(() => {
+        remaining -= 1;
+        const b = document.getElementById("becomeNextHostBtn");
+        if (!b) { stopGameOverCountdown(); return; }
+        if (remaining > 0) {
+          b.textContent = `🎮 다음 게임 호스트 시작 (${remaining}초)`;
+        } else {
+          b.disabled = true;
+          b.textContent = "⏱ 시간 초과";
+          b.style.opacity = "0.5";
+          stopGameOverCountdown();
+        }
+      }, 1000);
+    }
+
+    function stopGameOverCountdown() {
+      if (state.gameOverCountdownTimer) {
+        clearInterval(state.gameOverCountdownTimer);
+        state.gameOverCountdownTimer = null;
+      }
     }
 
     function showStatsPopup() {
@@ -3457,6 +3495,9 @@
 
     // 게임 완료 후 로비로 전환 (호스트가 호출 → DB 업데이트 → 모든 기기 subscribeToRoom으로 수신)
     async function returnToLobbyAfterGame() {
+      // 패자가 그 사이에 다음 호스트로 전환한 경우(status가 result→waiting로 바뀜) 자동 복귀 취소
+      if (state.role !== "host" || state.status !== "result") return;
+      stopGameOverCountdown();
       stopRoundTimers();  // 라운드 타이머만 중지 (realtime 연결은 유지)
 
       state.confirmedSafeIds = [];
