@@ -1337,10 +1337,11 @@
         });
 
       // 폴링 백업: Realtime이 동작 안 할 경우 3초마다 직접 체크
+      // participants를 먼저 await해야 handleRoomUpdate→renderAll() 시 최신 is_ready 값 사용 가능
       state.pollInterval = setInterval(async () => {
+        await fetchParticipants(roomCode);
         const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
-        if (room) handleRoomUpdate(room);
-        fetchParticipants(roomCode);
+        if (room) await handleRoomUpdate(room);
       }, 3000);
 
       // 초기 데이터 로드
@@ -1469,7 +1470,7 @@
         data.forEach(newP => {
           const oldP = oldParticipants.find(p => p.id === newP.id);
           // 로컬에서 이미 업데이트한 항목은 로컬 값 유지
-          if (oldP && oldP.is_ready && !newP.is_ready && state.status === "ready") {
+          if (oldP && oldP.is_ready && !newP.is_ready && (state.status === "ready" || state.status === "lobby")) {
             // 로컬에서 준비 완료했는데 DB가 아직 반영 안 됨 → 로컬 값 유지
             newP.is_ready = true;
           }
@@ -1984,7 +1985,9 @@
             updateRoomStatus('playing'),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
           ]);
-          // Countdown + screen transition handled by handleRoomUpdate on all devices
+          // 호스트는 state.gameStarting=true 상태라 handleRoomUpdate의 카운트다운 블록이 실행되지 않음
+          // → 호스트가 직접 카운트다운 실행 (다른 기기는 handleRoomUpdate로 처리)
+          await runCountdownThenShowGame();
         } catch (e) {
           alert('게임 시작 오류: ' + e.message);
           if (btn) { btn.disabled = false; btn.textContent = "🎮 게임 시작"; }
@@ -3401,7 +3404,9 @@
         try {
           await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
           await db.from('rooms').update({ round: 1, status: 'playing' }).eq('id', state.roomCode);
-          // handleRoomUpdate가 모든 기기에서 카운트다운 + 게임화면 처리
+          // 호스트는 state.gameStarting=true 상태라 handleRoomUpdate의 카운트다운 블록이 실행되지 않음
+          // → 호스트가 직접 카운트다운 실행 (다른 기기는 handleRoomUpdate로 처리)
+          await runCountdownThenShowGame();
         } catch (e) {
           console.error("startFromLobby error:", e);
           state.gameStarting = false;
