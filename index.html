@@ -2253,8 +2253,7 @@
         renderRoundResult("draw", 0, remainingSlots);
         showScreen("screenRoundResult");
         state.finishingRound = false;
-        // 호스트가 3초 후 nextRound()로 전환 → 모든 기기가 ready 화면에서 준비 누름
-        if (state.role === "host") setTimeout(() => nextRound(), 3000);
+        // 자동 진행 제거: 호스트가 "다음 라운드 시작" 버튼을 눌러야 다음 라운드로 진행 (renderRoundResult에서 처리)
         return;
       }
 
@@ -2415,9 +2414,19 @@
         title.textContent = "무승부!";
         title.classList.add("draw");
         emoji.textContent = "🤝";
-        message.textContent = "무승부! 3초 후 준비 화면으로 이동합니다. 모두 게임 준비를 눌러주세요.";
-        nextBtn.style.display = "none";
-        actionsDiv.style.display = "none";
+        if (state.role === "host") {
+          message.textContent = "무승부! 다음 라운드를 시작하려면 아래 버튼을 눌러주세요.";
+          actionsDiv.style.display = "";
+          nextBtn.style.display = "";
+          nextBtn.disabled = false;
+          nextBtn.textContent = "🔄 다음 라운드 시작";
+          nextBtn.className = "btn-primary btn-full";
+          nextBtn.onclick = () => window.nextRound();
+        } else {
+          message.textContent = "무승부! 호스트가 다음 라운드를 시작할 때까지 기다려주세요.";
+          actionsDiv.style.display = "none";
+          nextBtn.style.display = "none";
+        }
 
       } else if (caseType === "gameOver") {
         // 술래 확정 - 게임 종료
