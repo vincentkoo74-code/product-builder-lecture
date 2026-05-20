@@ -1263,7 +1263,10 @@
     }
 
     function isCurrentRoundParticipant(id = state.currentUserId) {
-      return Boolean(id) && !isSafeParticipant(id) && !isConfirmedLoser(id);
+      if (!id) return false;
+      const p = (state.participants || []).find(x => x.id === id);
+      if (p?.is_host) return false; // 호스트는 가위바위보에 참여하지 않음 (판정 역할)
+      return !isSafeParticipant(id) && !isConfirmedLoser(id);
     }
 
     async function cleanupDroppedParticipants() {
@@ -1486,6 +1489,7 @@
           // Auto-trigger result when all active players have chosen
           if (state.status === "playing") {
             const activeForRound = data.filter(p =>
+              !p.is_host &&
               !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
               p.choice !== '__safe__' && p.choice !== '__loser__'
             );
@@ -2066,13 +2070,13 @@
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
       $("hostRoundNumber").textContent = state.round;
-      $("hostTotalCount").textContent = state.participants.filter(p => 
-        !safeIds.includes(p.id) && !loserIds.includes(p.id)
+      $("hostTotalCount").textContent = state.participants.filter(p =>
+        !p.is_host && !safeIds.includes(p.id) && !loserIds.includes(p.id)
       ).length;
       updateHostSelectedCount();
 
       const list = $("hostPlayingParticipantList");
-      list.innerHTML = state.participants.map(p => {
+      list.innerHTML = state.participants.filter(p => !p.is_host).map(p => {
         if (safeIds.includes(p.id)) {
           return `<div class="participant" style="background:#dcfce7"><strong>${escapeHtml(p.name)}</strong><span style="color:var(--success)">✓ 우선안전</span></div>`;
         }
@@ -2086,6 +2090,7 @@
 
       // 모든 활성 참가자가 선택 완료했으면 판정 버튼 활성화
       const activeForRound = state.participants.filter(p =>
+        !p.is_host &&
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
         p.choice !== '__safe__' && p.choice !== '__loser__'
       );
@@ -2101,6 +2106,7 @@
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
       const active = state.participants.filter(p =>
+        !p.is_host &&
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
         p.choice !== '__safe__' && p.choice !== '__loser__'
       );
@@ -2119,7 +2125,7 @@
       $("roundNumber").textContent = state.round;
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
-      const activeCount = state.participants.filter(p => !safeIds.includes(p.id) && !loserIds.includes(p.id)).length;
+      const activeCount = state.participants.filter(p => !p.is_host && !safeIds.includes(p.id) && !loserIds.includes(p.id)).length;
       $("totalCount").textContent = activeCount;
       updateSelectedCount();
 
@@ -2173,6 +2179,7 @@
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
       const active = state.participants.filter(p =>
+        !p.is_host &&
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
         p.choice !== '__safe__' && p.choice !== '__loser__'
       );
@@ -2185,6 +2192,7 @@
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
       const activePlayers = state.participants.filter(p =>
+        !p.is_host &&
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
         p.choice !== '__safe__' && p.choice !== '__loser__'
       );
@@ -2241,7 +2249,7 @@
 
       const prevSafeIds = [...(state.confirmedSafeIds || [])];
       const prevLoserIds = [...(state.confirmedLoserIds || [])];
-      const activePlayers = state.participants.filter(p => !prevSafeIds.includes(p.id) && !prevLoserIds.includes(p.id));
+      const activePlayers = state.participants.filter(p => !p.is_host && !prevSafeIds.includes(p.id) && !prevLoserIds.includes(p.id));
       const targetCount = getTargetLoserCount();
       const remainingSlots = targetCount - prevLoserIds.length;
       const allDraw = activePlayers.length > 0 && activePlayers.every(p => p.lastResult === "draw");
@@ -2312,6 +2320,7 @@
       loserIds.forEach(id => { result[id] = "lose"; });
 
       const active = participants.filter(p =>
+        !p.is_host &&
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
         p.choice !== '__safe__' && p.choice !== '__loser__'
       );
@@ -2349,6 +2358,7 @@
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
       const active = state.participants.filter(p =>
+        !p.is_host &&
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
         p.choice !== '__safe__' && p.choice !== '__loser__'
       );
