@@ -2042,26 +2042,29 @@
     }
 
     async function runCountdownThenShowGame() {
-      if (!isCurrentRoundParticipant()) {
+      const isHost = state.role === "host";
+      // 호스트는 가위바위보에 참여 안 하지만 판정 화면 + 타이머는 진행해야 함
+      if (!isHost && !isCurrentRoundParticipant()) {
         if (isSafeParticipant()) showScreen("screenWinnerWait");
         else if (isConfirmedLoser()) showLoserWaitScreen();
         state.gameStarting = false;
         return;
       }
       await runCountdown();
-      if (!isCurrentRoundParticipant()) {
+      if (!isHost && !isCurrentRoundParticipant()) {
         if (isSafeParticipant()) showScreen("screenWinnerWait");
         else if (isConfirmedLoser()) showLoserWaitScreen();
         state.gameStarting = false;
         return;
       }
       // Phase 1: 호스트와 참가자 화면 분리
-      if (state.role === "host") {
+      if (isHost) {
         showScreen("screenHostPlaying");
         renderHostPlayingScreen();
       } else {
         showScreen("screenGame");
       }
+      beginRoundTimer();
       state.gameStarting = false;
     }
 
@@ -2121,19 +2124,26 @@
     function beginRoundTimer() {
       stopRoundTimers();
       state.remainingSeconds = 5;
-      $("timerText").textContent = state.remainingSeconds;
-      $("roundNumber").textContent = state.round;
+      const setTimerText = (v) => {
+        const t1 = $("timerText"); if (t1) t1.textContent = v;
+        const t2 = $("hostTimerText"); if (t2) t2.textContent = v;
+      };
+      setTimerText(state.remainingSeconds);
+      const rn = $("roundNumber"); if (rn) rn.textContent = state.round;
+      const hrn = $("hostRoundNumber"); if (hrn) hrn.textContent = state.round;
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
       const activeCount = state.participants.filter(p => !p.is_host && !safeIds.includes(p.id) && !loserIds.includes(p.id)).length;
-      $("totalCount").textContent = activeCount;
+      const tc = $("totalCount"); if (tc) tc.textContent = activeCount;
+      const htc = $("hostTotalCount"); if (htc) htc.textContent = activeCount;
       updateSelectedCount();
+      if (state.role === "host") updateHostSelectedCount();
 
-      $("choiceAnim").textContent = "";
+      const ca = $("choiceAnim"); if (ca) ca.textContent = "";
 
       state.timer = setInterval(() => {
         state.remainingSeconds -= 1;
-        $("timerText").textContent = state.remainingSeconds;
+        setTimerText(state.remainingSeconds);
         if (state.remainingSeconds <= 0) {
           stopTimers();
           if (state.role === "host") autoFillChoices();
@@ -2706,6 +2716,11 @@
       const readyPenaltyBoxEl = $("readyPenaltyBox");
       if (readyPenaltyBoxEl) readyPenaltyBoxEl.textContent = `벌칙: ${getPenaltyText() || "없음"}`;
       if (!$("screenLobby").classList.contains("hidden")) renderLobby();
+      // 호스트가 플레이 화면에 있을 때 참가자 선택 진행 상황 실시간 반영
+      const hostPlayingEl = $("screenHostPlaying");
+      if (state.role === "host" && hostPlayingEl && !hostPlayingEl.classList.contains("hidden")) {
+        renderHostPlayingScreen();
+      }
     }
 
     function getParticipantBadge(p, options = {}) {
