@@ -1263,10 +1263,7 @@
     }
 
     function isCurrentRoundParticipant(id = state.currentUserId) {
-      if (!id) return false;
-      const p = (state.participants || []).find(x => x.id === id);
-      if (p?.is_host) return false; // 호스트는 가위바위보에 참여하지 않음 (판정 역할)
-      return !isSafeParticipant(id) && !isConfirmedLoser(id);
+      return Boolean(id) && !isSafeParticipant(id) && !isConfirmedLoser(id);
     }
 
     async function cleanupDroppedParticipants() {
@@ -1489,7 +1486,6 @@
           // Auto-trigger result when all active players have chosen
           if (state.status === "playing") {
             const activeForRound = data.filter(p =>
-              !p.is_host &&
               !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
               p.choice !== '__safe__' && p.choice !== '__loser__'
             );
@@ -2042,28 +2038,21 @@
     }
 
     async function runCountdownThenShowGame() {
-      const isHost = state.role === "host";
-      // 호스트는 가위바위보에 참여 안 하지만 판정 화면 + 타이머는 진행해야 함
-      if (!isHost && !isCurrentRoundParticipant()) {
+      // 호스트도 가위바위보에 참여하는 일반 플레이어이므로 동일한 게임 화면 사용
+      if (!isCurrentRoundParticipant()) {
         if (isSafeParticipant()) showScreen("screenWinnerWait");
         else if (isConfirmedLoser()) showLoserWaitScreen();
         state.gameStarting = false;
         return;
       }
       await runCountdown();
-      if (!isHost && !isCurrentRoundParticipant()) {
+      if (!isCurrentRoundParticipant()) {
         if (isSafeParticipant()) showScreen("screenWinnerWait");
         else if (isConfirmedLoser()) showLoserWaitScreen();
         state.gameStarting = false;
         return;
       }
-      // Phase 1: 호스트와 참가자 화면 분리
-      if (isHost) {
-        showScreen("screenHostPlaying");
-        renderHostPlayingScreen();
-      } else {
-        showScreen("screenGame");
-      }
+      showScreen("screenGame");
       beginRoundTimer();
       state.gameStarting = false;
     }
@@ -2074,12 +2063,12 @@
       const loserIds = state.confirmedLoserIds || [];
       $("hostRoundNumber").textContent = state.round;
       $("hostTotalCount").textContent = state.participants.filter(p =>
-        !p.is_host && !safeIds.includes(p.id) && !loserIds.includes(p.id)
+        !safeIds.includes(p.id) && !loserIds.includes(p.id)
       ).length;
       updateHostSelectedCount();
 
       const list = $("hostPlayingParticipantList");
-      list.innerHTML = state.participants.filter(p => !p.is_host).map(p => {
+      list.innerHTML = state.participants.map(p => {
         if (safeIds.includes(p.id)) {
           return `<div class="participant" style="background:#dcfce7"><strong>${escapeHtml(p.name)}</strong><span style="color:var(--success)">✓ 우선안전</span></div>`;
         }
@@ -2093,7 +2082,6 @@
 
       // 모든 활성 참가자가 선택 완료했으면 판정 버튼 활성화
       const activeForRound = state.participants.filter(p =>
-        !p.is_host &&
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
         p.choice !== '__safe__' && p.choice !== '__loser__'
       );
@@ -2109,7 +2097,6 @@
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
       const active = state.participants.filter(p =>
-        !p.is_host &&
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
         p.choice !== '__safe__' && p.choice !== '__loser__'
       );
@@ -2133,7 +2120,7 @@
       const hrn = $("hostRoundNumber"); if (hrn) hrn.textContent = state.round;
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
-      const activeCount = state.participants.filter(p => !p.is_host && !safeIds.includes(p.id) && !loserIds.includes(p.id)).length;
+      const activeCount = state.participants.filter(p => !safeIds.includes(p.id) && !loserIds.includes(p.id)).length;
       const tc = $("totalCount"); if (tc) tc.textContent = activeCount;
       const htc = $("hostTotalCount"); if (htc) htc.textContent = activeCount;
       updateSelectedCount();
@@ -2189,7 +2176,6 @@
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
       const active = state.participants.filter(p =>
-        !p.is_host &&
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
         p.choice !== '__safe__' && p.choice !== '__loser__'
       );
@@ -2202,7 +2188,6 @@
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
       const activePlayers = state.participants.filter(p =>
-        !p.is_host &&
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
         p.choice !== '__safe__' && p.choice !== '__loser__'
       );
@@ -2259,7 +2244,7 @@
 
       const prevSafeIds = [...(state.confirmedSafeIds || [])];
       const prevLoserIds = [...(state.confirmedLoserIds || [])];
-      const activePlayers = state.participants.filter(p => !p.is_host && !prevSafeIds.includes(p.id) && !prevLoserIds.includes(p.id));
+      const activePlayers = state.participants.filter(p => !prevSafeIds.includes(p.id) && !prevLoserIds.includes(p.id));
       const targetCount = getTargetLoserCount();
       const remainingSlots = targetCount - prevLoserIds.length;
       const allDraw = activePlayers.length > 0 && activePlayers.every(p => p.lastResult === "draw");
@@ -2330,7 +2315,6 @@
       loserIds.forEach(id => { result[id] = "lose"; });
 
       const active = participants.filter(p =>
-        !p.is_host &&
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
         p.choice !== '__safe__' && p.choice !== '__loser__'
       );
@@ -2368,7 +2352,6 @@
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
       const active = state.participants.filter(p =>
-        !p.is_host &&
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
         p.choice !== '__safe__' && p.choice !== '__loser__'
       );
