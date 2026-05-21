@@ -879,24 +879,6 @@
       </div>
     </section>
 
-    <!-- Phase 2: 로비 화면 (게임 완료 후) -->
-    <section class="card hidden" id="screenLobby">
-      <h2>🎮 게임 로비</h2>
-      <div class="notice" style="margin-bottom:14px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <span style="font-weight:700">👑 호스트</span>
-          <span id="lobbyHostName" style="color:var(--primary);font-weight:700">-</span>
-        </div>
-        <div style="font-size:12px;color:var(--muted)">방 코드: <strong id="lobbyRoomCode">ABCD</strong></div>
-      </div>
-      <h3>참여자 목록 (<span id="lobbyParticipantCount">0</span>명)</h3>
-      <div class="participant-list" id="lobbyParticipantList"></div>
-      <div class="grid" style="margin-top:16px">
-        <button id="lobbyReadyBtn" class="btn-primary btn-full" onclick="window.markReadyFromLobby()">🎮 게임 준비</button>
-        <button class="btn-outline btn-full" onclick="window.leaveRoom()">🚪 방 나가기</button>
-      </div>
-    </section>
-
     <section class="card hidden" id="screenReady">
       <h2>🎮 게임 준비</h2>
       <div class="notice" id="readyPenaltyBox" style="margin-bottom:14px"></div>
@@ -1418,14 +1400,22 @@
             showReadyScreen(); // 재대결(무승부 포함)은 호스트도 준비화면으로
           }
         } else if (state.status === "waiting") {
+          // 호스트 전환(becomeNextHost / transferHostAndLeave) 시 participants 업데이트가
+          // rooms 업데이트와 별개 채널이라 도착 순서가 뒤바뀔 수 있음 → DB 재조회로 최신 is_host를 먼저 반영
+          if (db && state.roomCode) {
+            const { data } = await db.from('participants').select('*')
+              .eq('room_id', state.roomCode).order('created_at', { ascending: true });
+            if (data) {
+              state.participants = data;
+              const me = data.find(p => p.id === state.currentUserId);
+              if (me) state.role = me.is_host ? "host" : "participant";
+            }
+          }
           state.role === "host" ? showHostRoom() : showScreen("screenParticipantWait");
         } else if (state.status === "penalty_setting") {
           if (state.role !== "host") showScreen("screenParticipantWait");
         } else if (state.status === "stats") {
           showStats();
-        } else if (state.status === "lobby") {
-          showScreen("screenLobby");
-          renderLobby();
         } else if (state.status === "reinviting") {
           if (state.role !== "host") {
             $("invitePopup").classList.remove("hidden");
@@ -1471,7 +1461,7 @@
           if (newP.id !== state.currentUserId) return;
           if (!recentlyMarkedReady) return;
           const oldP = oldParticipants.find(p => p.id === newP.id);
-          if (oldP && oldP.is_ready && !newP.is_ready && (state.status === "ready" || state.status === "lobby")) {
+          if (oldP && oldP.is_ready && !newP.is_ready && state.status === "ready") {
             newP.is_ready = true;
           }
         });
@@ -1491,12 +1481,6 @@
             );
             if (activeForRound.length > 0 && activeForRound.every(p => p.choice)) {
               updateRoomStatus("result");
-            }
-          }
-          // Auto-start game when all lobby participants are ready
-          if (state.status === "lobby" && !state.gameStarting) {
-            if (data.length > 0 && data.every(p => p.is_ready)) {
-              startFromLobby();
             }
           }
           // Auto-start replay when all active participants are ready (round > 1, e.g. after draw/tooMany/tooFew)
@@ -1541,8 +1525,7 @@
         "screenRoundResult",
         "screenWinnerWait",
         "screenLoserWait",
-        "screenStats",
-        "screenLobby"
+        "screenStats"
       ].forEach(id => $(id).classList.add("hidden"));
     }
 
@@ -2725,7 +2708,6 @@
       // screenReady 벌칙 박스 동기화 (호스트가 벌칙 수정 시 참가자 화면에 반영되어야 함)
       const readyPenaltyBoxEl = $("readyPenaltyBox");
       if (readyPenaltyBoxEl) readyPenaltyBoxEl.textContent = `벌칙: ${getPenaltyText() || "없음"}`;
-      if (!$("screenLobby").classList.contains("hidden")) renderLobby();
       // 호스트가 플레이 화면에 있을 때 참가자 선택 진행 상황 실시간 반영
       const hostPlayingEl = $("screenHostPlaying");
       if (state.role === "host" && hostPlayingEl && !hostPlayingEl.classList.contains("hidden")) {
@@ -2992,11 +2974,6 @@
           const me = state.participants.find(p => p.id === state.currentUserId);
           if (me) { me.is_ready = true; }
           renderReadyList();
-          // 폴링이 stale 데이터를 덮어쓰기 방지: 잠깐 폴링 일시 중지
-          const oldSeq = state.fetchParticipantsSeq;
-          setTimeout(() => {
-            // 폴링이 현재 요청 이후로만 처리되도록 설정 (간단한 방식)
-          }, 100);
           await triggerReplayIfLastReady();
         } catch (e) {
           btn.disabled = false;
@@ -3401,109 +3378,6 @@
     window.loginWithSns = loginWithSns;
     window.playAsGuest = playAsGuest;
 
-    // ===== Phase 2: 게임 루프 + 로비 관리 =====
-
-    // 로비 화면 렌더링
-    function renderLobby() {
-      const host = state.participants.find(p => p.is_host);
-      $("lobbyHostName").textContent = host?.name || "불명";
-      $("lobbyRoomCode").textContent = state.roomCode || "----";
-      $("lobbyParticipantCount").textContent = state.participants.length;
-
-      const me = state.participants.find(p => p.id === state.currentUserId);
-      const btn = $("lobbyReadyBtn");
-      if (btn && me) {
-        btn.disabled = me.is_ready;
-        btn.textContent = me.is_ready ? "✅ 준비 완료" : "🎮 게임 준비";
-        btn.className = me.is_ready ? "btn-light btn-full" : "btn-primary btn-full";
-      }
-
-      const list = $("lobbyParticipantList");
-      list.innerHTML = state.participants.map(p => {
-        const isMe = p.id === state.currentUserId;
-        const ready = p.is_ready ? "✓ 준비 완료" : "○ 준비 대기";
-        const hostBadge = p.is_host ? " 👑" : "";
-        return `
-          <div class="participant" style="${isMe ? "background:#eef2ff;border:1px solid #c7d2fe" : ""}">
-            <strong>${escapeHtml(p.name)}${hostBadge}</strong>
-            <span style="color:${p.is_ready ? "var(--success)" : "var(--muted)"}">${ready}</span>
-          </div>
-        `;
-      }).join("");
-    }
-
-    // 로비에서 게임 준비
-    async function markReadyFromLobby() {
-      const me = state.participants.find(p => p.id === state.currentUserId);
-      if (!me || me.is_ready) return;
-
-      const btn = $("lobbyReadyBtn");
-      if (btn) { btn.disabled = true; btn.textContent = "준비 중..."; }
-
-      if (!getOnlineMode()) {
-        me.is_ready = true;
-        saveState();
-        renderLobby();
-        // 오프라인: 로컬에서 전원 준비 확인 후 바로 시작
-        if (state.participants.every(p => p.is_ready) && state.role === "host") {
-          setTimeout(() => startFromLobby(), 500);
-        }
-        return;
-      }
-
-      try {
-        await db.from('participants').update({ is_ready: true }).eq('id', me.id);
-        state.myReadyLocallySetAt = Date.now();
-        me.is_ready = true;
-        renderLobby();
-        // 온라인: fetchParticipants 구독이 전원 준비 감지 후 startFromLobby() 호출
-      } catch (e) {
-        console.error("markReadyFromLobby error:", e);
-        if (btn) { btn.disabled = false; btn.textContent = "🎮 게임 준비"; }
-      }
-    }
-
-    // 로비에서 신규 게임 시작 (항상 round=1로 시작)
-    async function startFromLobby() {
-      if (state.role !== "host" || state.gameStarting) return;
-      state.gameStarting = true;
-      state.confirmedSafeIds = [];
-      state.confirmedLoserIds = [];
-      state.finishingRound = false;
-
-      if (getOnlineMode()) {
-        try {
-          await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
-          await db.from('rooms').update({ round: 1, status: 'playing' }).eq('id', state.roomCode);
-          // 호스트는 state.gameStarting=true 상태라 handleRoomUpdate의 카운트다운 블록이 실행되지 않음
-          // → 호스트가 직접 카운트다운 실행 (다른 기기는 handleRoomUpdate로 처리)
-          await runCountdownThenShowGame();
-        } catch (e) {
-          console.error("startFromLobby error:", e);
-          state.gameStarting = false;
-        }
-      } else {
-        state.round = 1;
-        state.participants.forEach(p => { p.choice = null; p.is_ready = false; });
-        saveState();
-        await runCountdownThenShowGame();
-        state.gameStarting = false;
-      }
-    }
-
-    // 호스트 자동 재선택 (참여자 퇴장 시)
-    async function ensureHostExists() {
-      if (!getOnlineMode()) return;
-      const hasHost = state.participants.some(p => p.is_host);
-      if (!hasHost && state.participants.length > 0) {
-        const newHost = state.participants[0];
-        await db.from('participants').update({ is_host: true }).eq('id', newHost.id);
-        if (newHost.id === state.currentUserId) {
-          state.role = "host";
-        }
-      }
-    }
-
     // 게임 완료 후 호스트 화면으로 복귀 (호스트가 호출 → DB 업데이트 → 모든 기기 subscribeToRoom으로 수신)
     // status='waiting' → 호스트는 screenHostRoom(벌칙 수정/게임 시작 가능), 참가자는 screenParticipantWait
     async function returnToLobbyAfterGame() {
@@ -3546,10 +3420,6 @@
       }
     }
 
-    window.markReadyFromLobby = markReadyFromLobby;
-    window.renderLobby = renderLobby;
-    window.ensureHostExists = ensureHostExists;
-    window.startFromLobby = startFromLobby;
     window.returnToLobbyAfterGame = returnToLobbyAfterGame;
   </script>
 </body>
