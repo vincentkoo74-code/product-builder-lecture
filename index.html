@@ -4,20 +4,30 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>QR 가위바위보 파티 게임</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #f4f6fb;
-      --card: #ffffff;
-      --text: #1f2937;
-      --muted: #6b7280;
-      --primary: #4f46e5;
-      --primary-dark: #3730a3;
-      --success: #16a34a;
-      --danger: #dc2626;
-      --warning: #f59e0b;
-      --line: #e5e7eb;
-      --shadow: 0 18px 50px rgba(15, 23, 42, 0.12);
-      --radius: 24px;
+      --bg: #07071A;
+      --bg-deep: #03030F;
+      --card: rgba(255, 255, 255, 0.07);
+      --card-border: rgba(255, 255, 255, 0.12);
+      --text: #FFFFFF;
+      --muted: #AAAAC8;
+      --primary: #FF3366;
+      --primary-dark: #FF6B35;
+      --secondary: #7B5CFF;
+      --accent: #FFD84D;
+      --success: #00D68F;
+      --danger: #FF4D4D;
+      --warning: #FFD84D;
+      --line: rgba(255, 255, 255, 0.12);
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+      --shadow-glow: 0 10px 36px rgba(255, 51, 102, 0.35);
+      --radius: 22px;
+      --font-display: 'Black Han Sans', sans-serif;
+      --font-body: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
     * {
@@ -28,16 +38,23 @@
       margin: 0;
       width: 100vw;
       height: 100vh;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: var(--font-body);
       background:
-        radial-gradient(circle at top left, #dbeafe 0, transparent 30%),
-        radial-gradient(circle at bottom right, #ede9fe 0, transparent 28%),
+        radial-gradient(ellipse at 20% 10%, rgba(123, 92, 255, 0.33) 0%, transparent 55%),
+        radial-gradient(ellipse at 85% 85%, rgba(255, 51, 102, 0.27) 0%, transparent 55%),
         var(--bg);
+      background-attachment: fixed;
       color: var(--text);
       display: flex;
       justify-content: center;
       align-items: center;
       overflow: hidden;
+    }
+
+    h1, h2 {
+      font-family: var(--font-display);
+      font-weight: 400;
+      letter-spacing: -0.5px;
     }
 
     .app {
@@ -68,25 +85,29 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      font-weight: 900;
-      font-size: 20px;
+      font-family: var(--font-display);
+      font-weight: 400;
+      font-size: 22px;
+      color: var(--text);
     }
 
     .brand-icon {
       width: 42px;
       height: 42px;
       border-radius: 14px;
-      background: linear-gradient(135deg, #4f46e5, #9333ea);
+      background: linear-gradient(135deg, var(--secondary), var(--primary));
       display: grid;
       place-items: center;
       color: white;
       font-size: 22px;
-      box-shadow: var(--shadow);
+      box-shadow: 0 8px 24px rgba(123, 92, 255, 0.4);
     }
 
     .room-badge {
-      background: white;
-      border: 1px solid var(--line);
+      background: var(--card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
       border-radius: 999px;
       padding: 8px 12px;
       font-size: 12px;
@@ -94,13 +115,15 @@
     }
 
     .card {
-      background: rgba(255, 255, 255, 0.92);
-      backdrop-filter: blur(14px);
-      border: 1px solid rgba(255, 255, 255, 0.7);
+      background: var(--card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      padding: 22px;
-      margin-bottom: 16px;
+      padding: 20px;
+      margin-bottom: 14px;
+      color: var(--text);
     }
 
     h1, h2, h3, p {
@@ -130,9 +153,9 @@
     }
 
     .notice {
-      background: #eef2ff;
-      border: 1px solid #c7d2fe;
-      color: #312e81;
+      background: rgba(123, 92, 255, 0.12);
+      border: 1px solid rgba(123, 92, 255, 0.33);
+      color: var(--text);
       padding: 12px 14px;
       border-radius: 16px;
       line-height: 1.5;
@@ -141,9 +164,9 @@
     }
 
     .warning {
-      background: #fff7ed;
-      border-color: #fed7aa;
-      color: #9a3412;
+      background: rgba(255, 216, 77, 0.12);
+      border-color: rgba(255, 216, 77, 0.4);
+      color: var(--accent);
     }
 
     .row {
@@ -166,45 +189,53 @@
 
     button {
       border: 0;
-      border-radius: 18px;
+      border-radius: 16px;
       padding: 15px 16px;
-      font-weight: 800;
+      font-family: var(--font-body);
+      font-weight: 700;
+      font-size: 15px;
       cursor: pointer;
-      transition: 0.18s ease;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
     }
 
     button:active {
-      transform: translateY(1px) scale(0.99);
+      transform: translateY(1px) scale(0.97);
     }
 
     .btn-primary {
-      background: var(--primary);
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
       color: white;
+      box-shadow: var(--shadow-glow);
     }
 
     .btn-primary:hover {
-      background: var(--primary-dark);
+      filter: brightness(1.08);
     }
 
     .btn-light {
-      background: #f3f4f6;
-      color: #111827;
+      background: var(--card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      color: var(--text);
     }
 
     .btn-outline {
-      background: white;
-      border: 1px solid var(--line);
-      color: #111827;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--card-border);
+      color: var(--text);
     }
 
     .btn-danger {
-      background: var(--danger);
+      background: linear-gradient(135deg, var(--danger), #B33);
       color: white;
+      box-shadow: 0 10px 36px rgba(255, 77, 77, 0.3);
     }
 
     .btn-success {
-      background: var(--success);
+      background: linear-gradient(135deg, var(--success), #00A26C);
       color: white;
+      box-shadow: 0 10px 36px rgba(0, 214, 143, 0.3);
     }
 
     .btn-full {
@@ -219,12 +250,17 @@
 
     input, textarea, select {
       width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 16px;
+      border: 1px solid rgba(255, 51, 102, 0.4);
+      border-radius: 12px;
       padding: 14px 15px;
-      background: white;
+      background: rgba(255, 255, 255, 0.06);
       outline: none;
       color: var(--text);
+      font-family: var(--font-body);
+    }
+
+    input::placeholder, textarea::placeholder {
+      color: rgba(255, 255, 255, 0.35);
     }
 
     textarea {
@@ -234,7 +270,12 @@
 
     input:focus, textarea:focus, select:focus {
       border-color: var(--primary);
-      box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.12);
+      box-shadow: 0 0 0 4px rgba(255, 51, 102, 0.18);
+    }
+
+    select option {
+      background: var(--bg);
+      color: var(--text);
     }
 
     label {
@@ -299,22 +340,23 @@
       justify-content: space-between;
       align-items: center;
       padding: 11px 12px;
-      border: 1px solid var(--line);
-      background: white;
+      border: 1px solid var(--card-border);
+      background: rgba(255, 255, 255, 0.04);
       border-radius: 14px;
       margin-bottom: 8px;
     }
 
-    .ready-row strong { font-size: 14px; }
+    .ready-row strong { font-size: 14px; color: var(--text); }
 
     .qr-box {
       background: white;
-      border: 1px solid var(--line);
-      border-radius: 22px;
-      padding: 16px;
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      padding: 14px;
       display: grid;
       place-items: center;
       margin: 14px 0;
+      box-shadow: 0 0 50px rgba(255, 51, 102, 0.33);
     }
 
     .fake-qr {
@@ -330,10 +372,12 @@
 
     .code-text {
       text-align: center;
-      font-size: 32px;
-      font-weight: 900;
-      letter-spacing: 3px;
+      font-family: var(--font-display);
+      font-size: 38px;
+      letter-spacing: 6px;
       margin: 8px 0 0;
+      color: var(--primary);
+      text-shadow: 0 0 24px rgba(255, 51, 102, 0.5);
     }
 
     .url-text {
@@ -354,9 +398,10 @@
       justify-content: space-between;
       align-items: center;
       padding: 11px 12px;
-      border: 1px solid var(--line);
-      background: white;
+      border: 1px solid var(--card-border);
+      background: rgba(255, 255, 255, 0.04);
       border-radius: 14px;
+      color: var(--text);
     }
 
     .participant strong {
@@ -369,31 +414,36 @@
       justify-content: center;
       min-width: 54px;
       border-radius: 999px;
-      padding: 5px 9px;
+      padding: 5px 11px;
       font-size: 12px;
-      font-weight: 800;
-      background: #f3f4f6;
-      color: #374151;
+      font-weight: 700;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--card-border);
+      color: var(--text);
     }
 
     .tag.host {
-      background: #ede9fe;
-      color: #5b21b6;
+      background: rgba(255, 216, 77, 0.13);
+      border-color: rgba(255, 216, 77, 0.33);
+      color: var(--accent);
     }
 
     .tag.win {
-      background: #dcfce7;
-      color: #166534;
+      background: rgba(0, 214, 143, 0.13);
+      border-color: rgba(0, 214, 143, 0.33);
+      color: var(--success);
     }
 
     .tag.lose {
-      background: #fee2e2;
-      color: #991b1b;
+      background: rgba(255, 77, 77, 0.13);
+      border-color: rgba(255, 77, 77, 0.33);
+      color: var(--danger);
     }
 
     .tag.draw {
-      background: #fef3c7;
-      color: #92400e;
+      background: rgba(255, 216, 77, 0.13);
+      border-color: rgba(255, 216, 77, 0.33);
+      color: var(--accent);
     }
 
     .penalty-chip-wrap {
@@ -404,41 +454,54 @@
     }
 
     .penalty-chip {
-      background: white;
-      border: 1px solid var(--line);
+      background: var(--card);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--card-border);
       border-radius: 999px;
-      padding: 9px 12px;
+      padding: 9px 14px;
       font-size: 13px;
+      color: var(--text);
       cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .penalty-chip:hover {
+      border-color: rgba(255, 51, 102, 0.55);
+      background: rgba(255, 51, 102, 0.1);
     }
 
     .penalty-box {
-      background: #111827;
-      color: white;
-      border-radius: 20px;
+      background: linear-gradient(135deg, rgba(123, 92, 255, 0.18), rgba(255, 51, 102, 0.18));
+      border: 1px solid rgba(255, 51, 102, 0.35);
+      color: var(--text);
+      border-radius: 18px;
       padding: 18px;
       margin: 14px 0;
     }
 
     .penalty-box small {
-      color: #cbd5e1;
+      color: var(--muted);
       display: block;
       margin-bottom: 8px;
     }
 
     .penalty-box strong {
-      font-size: 22px;
+      font-family: var(--font-display);
+      font-size: 24px;
       line-height: 1.35;
       display: block;
+      color: var(--text);
     }
 
     .countdown {
       height: 120px;
       display: grid;
       place-items: center;
-      font-size: 70px;
-      font-weight: 900;
+      font-family: var(--font-display);
+      font-size: 80px;
       color: var(--primary);
+      text-shadow: 0 0 40px rgba(255, 51, 102, 0.55);
       margin: 14px 0;
     }
 
@@ -447,9 +510,11 @@
       display: grid;
       place-items: center;
       font-size: 72px;
-      background: white;
-      border: 1px solid var(--line);
-      border-radius: 24px;
+      background: var(--card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 22px;
       margin-bottom: 16px;
     }
 
@@ -460,13 +525,19 @@
     }
 
     .choice-button {
-      background: white;
-      border: 1px solid var(--line);
+      background: var(--card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      color: var(--text);
       min-height: 116px;
       display: grid;
       place-items: center;
       gap: 4px;
       font-size: 16px;
+      font-weight: 700;
+      border-radius: 22px;
+      transition: all 0.2s ease;
     }
 
     .choice-button .emoji {
@@ -475,10 +546,11 @@
     }
 
     .choice-button.selected {
-      border-color: var(--primary);
-      background: #eef2ff;
-      color: #312e81;
-      box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.12);
+      border: 2px solid var(--primary);
+      background: rgba(255, 51, 102, 0.2);
+      color: var(--text);
+      box-shadow: 0 10px 32px rgba(255, 51, 102, 0.4);
+      transform: scale(1.04);
     }
 
     .result-hero {
@@ -489,24 +561,30 @@
     .result-emoji {
       font-size: 84px;
       margin-bottom: 12px;
+      filter: drop-shadow(0 0 40px rgba(255, 255, 255, 0.35));
     }
 
     .result-title {
-      font-size: 42px;
-      font-weight: 900;
+      font-family: var(--font-display);
+      font-size: 48px;
+      font-weight: 400;
       margin-bottom: 10px;
+      letter-spacing: -1px;
     }
 
     .result-title.win {
       color: var(--success);
+      text-shadow: 0 0 40px rgba(0, 214, 143, 0.55);
     }
 
     .result-title.lose {
       color: var(--danger);
+      text-shadow: 0 0 40px rgba(255, 77, 77, 0.55);
     }
 
     .result-title.draw {
       color: var(--warning);
+      text-shadow: 0 0 40px rgba(255, 216, 77, 0.55);
     }
 
     .summary-row {
@@ -517,16 +595,21 @@
     }
 
     .summary-item {
-      background: white;
-      border: 1px solid var(--line);
+      background: var(--card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
       border-radius: 16px;
       padding: 12px;
       text-align: center;
+      color: var(--text);
     }
 
     .summary-item strong {
       display: block;
-      font-size: 24px;
+      font-family: var(--font-display);
+      font-size: 26px;
+      font-weight: 400;
     }
 
     .summary-item span {
@@ -539,21 +622,24 @@
       border-collapse: collapse;
       overflow: hidden;
       border-radius: 16px;
-      background: white;
-      border: 1px solid var(--line);
+      background: var(--card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      color: var(--text);
     }
 
     th, td {
       padding: 12px 9px;
-      border-bottom: 1px solid var(--line);
+      border-bottom: 1px solid var(--card-border);
       text-align: center;
       font-size: 13px;
     }
 
     th {
       color: var(--muted);
-      background: #f9fafb;
-      font-weight: 800;
+      background: rgba(255, 255, 255, 0.04);
+      font-weight: 700;
     }
 
     tr:last-child td {
@@ -563,7 +649,9 @@
     .footer-actions {
       position: sticky;
       bottom: 0;
-      background: linear-gradient(180deg, transparent, rgba(244, 246, 251, 0.95) 20%);
+      background: linear-gradient(180deg, transparent, rgba(7, 7, 26, 0.92) 22%);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
       padding-top: 18px;
       display: grid;
       gap: 10px;
@@ -609,17 +697,21 @@
       box-sizing: border-box;
     }
     .popup-card {
-      background: white;
+      background: rgba(20, 20, 40, 0.92);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--card-border);
       border-radius: var(--radius);
       padding: 24px;
       width: 100%;
       max-width: 380px;
       max-height: 80vh;
       overflow-y: auto;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+      color: var(--text);
     }
-    .popup-card h3 { margin: 0 0 4px; font-size: 18px; }
-    .popup-card p  { font-size: 13px; color: #888; margin: 0 0 16px; }
+    .popup-card h3 { margin: 0 0 4px; font-size: 18px; color: var(--text); }
+    .popup-card p  { font-size: 13px; color: var(--muted); margin: 0 0 16px; }
 
     .sns-btn {
       display: flex;
@@ -659,8 +751,10 @@
       display: flex;
       align-items: center;
       gap: 5px;
-      background: rgba(255,255,255,0.9);
-      border: 1px solid var(--line);
+      background: var(--card);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 51, 102, 0.4);
       border-radius: 999px;
       padding: 6px 12px;
       font-size: 12px;
@@ -669,13 +763,14 @@
       cursor: pointer;
       transition: 0.15s;
     }
-    .guest-login-btn:hover { background: #eef2ff; }
+    .guest-login-btn:hover { background: rgba(255, 51, 102, 0.15); }
 
     .sns-badge {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      background: #eef2ff;
+      background: rgba(255, 51, 102, 0.13);
+      border: 1px solid rgba(255, 51, 102, 0.33);
       color: var(--primary);
       border-radius: 999px;
       padding: 4px 10px;
@@ -688,8 +783,11 @@
       bottom: 24px;
       left: 50%;
       transform: translateX(-50%) translateY(20px);
-      background: #1f2937;
-      color: white;
+      background: rgba(20, 20, 40, 0.95);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      color: var(--text);
       padding: 12px 20px;
       border-radius: 999px;
       font-size: 14px;
@@ -759,7 +857,7 @@
       <button class="btn-outline btn-full" onclick="window.playAsGuest()" style="margin-bottom:8px">
         🎮 로그인 없이 게임하기
       </button>
-      <p style="text-align:center;font-size:12px;color:#9ca3af;margin:0">
+      <p style="text-align:center;font-size:12px;color:var(--muted);margin:0">
         게스트 모드에서는 게임 기록이 저장되지 않습니다
       </p>
     </section>
@@ -819,7 +917,7 @@
 
       <div id="loserCountBox" class="notice" style="margin-top:12px;display:flex;align-items:center;justify-content:space-between">
         <span style="font-weight:700">🎯 술래 숫자</span>
-        <select id="loserCountSelect" onchange="window.onLoserCountChange(this.value)" style="padding:5px 10px;border-radius:8px;border:1px solid #c7d2fe;background:white;font-size:14px;font-weight:700;color:#312e81">
+        <select id="loserCountSelect" onchange="window.onLoserCountChange(this.value)" style="padding:5px 10px;border-radius:10px;border:1px solid rgba(123,92,255,0.4);background:rgba(123,92,255,0.13);font-size:14px;font-weight:700;color:var(--text)">
           <option value="1">1명</option>
         </select>
       </div>
@@ -859,7 +957,7 @@
       <h3>참가자 목록</h3>
       <div class="participant-list" id="waitParticipantList"></div>
       <div style="text-align:center;margin-top:12px">
-        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
+        <button onclick="window.leaveRoom()" style="color:var(--muted);background:rgba(255,255,255,0.04);border:1px solid var(--card-border);padding:8px 16px;border-radius:10px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
       </div>
     </section>
 
@@ -891,7 +989,7 @@
         <button class="btn-outline btn-full" onclick="window.goHome()">나가기</button>
       </div>
       <div style="text-align:center;margin-top:8px">
-        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
+        <button onclick="window.leaveRoom()" style="color:var(--muted);background:rgba(255,255,255,0.04);border:1px solid var(--card-border);padding:8px 16px;border-radius:10px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
       </div>
     </section>
 
@@ -954,7 +1052,7 @@
       <div id="finalResultBtns" class="hidden" style="margin-top:12px"></div>
 
       <div style="text-align:center;margin-top:12px">
-        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
+        <button onclick="window.leaveRoom()" style="color:var(--muted);background:rgba(255,255,255,0.04);border:1px solid var(--card-border);padding:8px 16px;border-radius:10px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
       </div>
     </section>
 
@@ -963,10 +1061,10 @@
         <div id="winnerWaitEmoji" style="font-size:72px;animation:winnerBounce 0.7s ease-in-out infinite alternate">🎉</div>
         <div class="result-title win">우선안전!</div>
         <p class="lead">이번 재게임에서는 빠지고 최종 술래가 나올 때까지 기다려주세요.</p>
-        <p style="color:#888;font-size:14px">남은 참여자들만 재게임을 진행 중입니다.</p>
+        <p style="color:var(--muted);font-size:14px">남은 참여자들만 재게임을 진행 중입니다.</p>
       </div>
       <div style="text-align:center;margin-top:12px">
-        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
+        <button onclick="window.leaveRoom()" style="color:var(--muted);background:rgba(255,255,255,0.04);border:1px solid var(--card-border);padding:8px 16px;border-radius:10px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
       </div>
     </section>
 
@@ -1003,7 +1101,7 @@
         <strong id="loserWaitPenaltyText"></strong>
       </div>
       <div style="text-align:center;margin-top:12px">
-        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
+        <button onclick="window.leaveRoom()" style="color:var(--muted);background:rgba(255,255,255,0.04);border:1px solid var(--card-border);padding:8px 16px;border-radius:10px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
       </div>
     </section>
 
@@ -1014,7 +1112,7 @@
         <p>현재 게임방 누적 기록</p>
         <table style="width:100%;font-size:13px;border-collapse:collapse">
           <thead>
-            <tr style="border-bottom:1px solid #eee">
+            <tr style="border-bottom:1px solid var(--card-border)">
               <th style="padding:6px 4px;text-align:left">참가자</th>
               <th style="padding:6px 4px">승</th>
               <th style="padding:6px 4px">패</th>
@@ -2064,10 +2162,10 @@
       const list = $("hostPlayingParticipantList");
       list.innerHTML = state.participants.map(p => {
         if (safeIds.includes(p.id)) {
-          return `<div class="participant" style="background:#dcfce7"><strong>${escapeHtml(p.name)}</strong><span style="color:var(--success)">✓ 우선안전</span></div>`;
+          return `<div class="participant" style="background:rgba(0,214,143,0.13);border-color:rgba(0,214,143,0.33)"><strong>${escapeHtml(p.name)}</strong><span style="color:var(--success)">✓ 우선안전</span></div>`;
         }
         if (loserIds.includes(p.id)) {
-          return `<div class="participant" style="background:#fee2e2"><strong>${escapeHtml(p.name)}</strong><span style="color:var(--danger)">✓ 술래 확정</span></div>`;
+          return `<div class="participant" style="background:rgba(255,77,77,0.13);border-color:rgba(255,77,77,0.33)"><strong>${escapeHtml(p.name)}</strong><span style="color:var(--danger)">✓ 술래 확정</span></div>`;
         }
         const status = p.choice ? "✓ 선택완료" : "○ 대기 중";
         const statusColor = p.choice ? "var(--success)" : "var(--muted)";
@@ -3133,7 +3231,7 @@
       const tbody = $("statsPopupBody");
       tbody.innerHTML = "";
       if (!state.participants.length) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:12px;color:#888">아직 기록이 없습니다.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:12px;color:var(--muted)">아직 기록이 없습니다.</td></tr>`;
       } else {
         state.participants.forEach(p => {
           const total = (p.wins || 0) + (p.losses || 0);
