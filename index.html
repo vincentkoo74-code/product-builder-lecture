@@ -466,6 +466,30 @@
       transition: all 0.15s ease;
     }
 
+    .game-type-chip {
+      flex: 1;
+      min-width: 70px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .game-type-chip:hover {
+      border-color: rgba(123, 92, 255, 0.55);
+      background: rgba(123, 92, 255, 0.12);
+    }
+    .game-type-chip.selected {
+      background: linear-gradient(135deg, var(--secondary), var(--primary));
+      border-color: transparent;
+      color: white;
+      box-shadow: 0 6px 20px rgba(123, 92, 255, 0.4);
+    }
+
     .penalty-chip:hover {
       border-color: rgba(255, 51, 102, 0.55);
       background: rgba(255, 51, 102, 0.1);
@@ -921,6 +945,14 @@
           <option value="1">1명</option>
         </select>
       </div>
+      <div id="gameTypeBox" class="notice" style="margin-top:12px">
+        <div style="font-weight:700;margin-bottom:8px">🎮 게임 방식</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="game-type-chip" data-type="single" onclick="window.onGameTypeChange('single')">단판</button>
+          <button type="button" class="game-type-chip" data-type="bestOf3" onclick="window.onGameTypeChange('bestOf3')">삼세판</button>
+          <button type="button" class="game-type-chip" data-type="bestOf5" onclick="window.onGameTypeChange('bestOf5')">5판3승</button>
+        </div>
+      </div>
       <div id="penaltyStatusBox" class="notice hidden" style="margin-top:12px"></div>
       <div class="footer-actions" style="margin-top:12px">
         <button id="startGameBtn" class="btn-success btn-full hidden" onclick="window.goToReadyScreen()">🎮 게임 준비하기</button>
@@ -1220,12 +1252,44 @@
       fetchParticipantsSeq: 0
     };
 
+    // 게임 타입 → 필요한 세트 수
+    function getRequiredSetCount(gameType) {
+      if (gameType === "bestOf3") return 3;
+      if (gameType === "bestOf5") return 5;
+      return 1; // single
+    }
+    function getGameTypeLabel(gameType) {
+      if (gameType === "bestOf3") return "삼세판";
+      if (gameType === "bestOf5") return "5판3승";
+      return "단판";
+    }
+
     function parsePenalty(raw) {
-      try { const p = JSON.parse(raw); if (p && typeof p === "object" && p.text !== undefined) return p; } catch {}
-      return { text: raw || "", loserCount: 1 };
+      try {
+        const p = JSON.parse(raw);
+        if (p && typeof p === "object" && p.text !== undefined) {
+          return {
+            text: p.text || "",
+            loserCount: p.loserCount || 1,
+            gameType: p.gameType || "single",
+            currentSetIndex: p.currentSetIndex || 1,
+            setResults: Array.isArray(p.setResults) ? p.setResults : []
+          };
+        }
+      } catch {}
+      return { text: raw || "", loserCount: 1, gameType: "single", currentSetIndex: 1, setResults: [] };
     }
     function getPenaltyText() { return parsePenalty(state.penalty).text; }
     function getTargetLoserCount() { return parsePenalty(state.penalty).loserCount || state.targetLoserCount || 1; }
+    function getGameType() { return parsePenalty(state.penalty).gameType || "single"; }
+    function getCurrentSetIndex() { return parsePenalty(state.penalty).currentSetIndex || 1; }
+    function getSetResults() { return parsePenalty(state.penalty).setResults || []; }
+
+    // penalty JSON에서 특정 필드만 업데이트하고 직렬화
+    function buildPenaltyJson(overrides) {
+      const cur = parsePenalty(state.penalty);
+      return JSON.stringify({ ...cur, ...overrides });
+    }
 
     function $(id) {
       return document.getElementById(id);
@@ -1492,10 +1556,10 @@
             showLoserWaitScreen();
           } else if (iAmSafe) {
             showScreen("screenWinnerWait");
-          } else if (state.role === "host" && state.round === 1) {
-            showHostRoom(); // 1라운드 초기 설정은 호스트 방
+          } else if (state.role === "host" && state.round === 1 && getCurrentSetIndex() === 1) {
+            showHostRoom(); // 1세트 1라운드 초기 설정은 호스트 방
           } else {
-            showReadyScreen(); // 재대결(무승부 포함)은 호스트도 준비화면으로
+            showReadyScreen(); // 재대결(무승부) 또는 2세트 이후는 호스트도 준비화면으로
           }
         } else if (state.status === "waiting") {
           // 호스트 전환(becomeNextHost / transferHostAndLeave) 시 participants 업데이트가
@@ -1581,9 +1645,11 @@
               updateRoomStatus("result");
             }
           }
-          // Auto-start replay when all active participants are ready (round > 1, e.g. after draw/tooMany/tooFew)
+          // Auto-start replay when all active participants are ready
+          // - round > 1: 무승부/tooMany/tooFew 후 같은 세트 재경기
+          // - 2세트 이후 (currentSetIndex > 1): round=1이어도 다음 세트 시작
           // 호스트가 먼저 ready를 눌러도 마지막 참가자의 변경을 호스트가 감지해 자동 시작
-          if (state.status === "ready" && state.round > 1 && !state.gameStarting) {
+          if (state.status === "ready" && !state.gameStarting && (state.round > 1 || getCurrentSetIndex() > 1)) {
             const activeForReady = data.filter(p =>
               !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
               p.choice !== '__safe__' && p.choice !== '__loser__'
@@ -1709,6 +1775,7 @@
       renderQr();
       renderShareUrlControls();
       updateLoserCountDropdown();
+      updateGameTypeChips();
       const penaltyBox = $("penaltyStatusBox");
       const startBtn = $("startGameBtn");
       const penaltyBtn = $("penaltySetBtn");
@@ -1764,6 +1831,36 @@
 
     function onLoserCountChange(val) {
       state.targetLoserCount = parseInt(val, 10) || 1;
+    }
+
+    function updateGameTypeChips() {
+      const cur = getGameType();
+      document.querySelectorAll('.game-type-chip').forEach(btn => {
+        btn.classList.toggle('selected', btn.dataset.type === cur);
+        btn.disabled = (state.status === "ready" || state.status === "playing" || state.status === "result");
+      });
+    }
+
+    async function onGameTypeChange(type) {
+      if (!["single", "bestOf3", "bestOf5"].includes(type)) return;
+      if (state.status === "ready" || state.status === "playing" || state.status === "result") {
+        showToast("게임 진행 중에는 변경할 수 없습니다.");
+        return;
+      }
+      // 새 세트 카운트 / 진행 상태 초기화하고 gameType만 업데이트
+      const value = buildPenaltyJson({ gameType: type, currentSetIndex: 1, setResults: [] });
+      state.penalty = value;
+      updateGameTypeChips();
+      renderAll();
+      if (getOnlineMode() && state.role === "host" && state.roomCode) {
+        try {
+          await db.from('rooms').update({ penalty: value }).eq('id', state.roomCode);
+        } catch (e) {
+          console.error('게임 방식 저장 오류:', e.message);
+        }
+      } else {
+        saveState();
+      }
     }
 
     function renderShareUrlControls() {
@@ -1997,7 +2094,8 @@
       if (!textVal) { alert("벌칙을 입력해주세요."); return; }
 
       const loserCount = state.targetLoserCount || 1;
-      const value = JSON.stringify({ text: textVal, loserCount });
+      // gameType과 setResults/currentSetIndex는 보존
+      const value = buildPenaltyJson({ text: textVal, loserCount });
 
       const btn = $("savePenaltyBtn");
       btn.disabled = true;
@@ -2354,17 +2452,59 @@
       const myResult = (state.participants.find(p => p.id === state.currentUserId) || {}).lastResult;
 
       if (roundLosers.length === remainingSlots) {
-        state.confirmedLoserIds = [...prevLoserIds, ...roundLosers.map(p => p.id)];
+        const allTaggerIds = [...prevLoserIds, ...roundLosers.map(p => p.id)];
+        state.confirmedLoserIds = allTaggerIds;
         state.confirmedSafeIds = [...prevSafeIds, ...roundWinners.map(p => p.id)];
-        renderRoundResult("gameOver", roundLosers.length, remainingSlots);
-        showScreen("screenRoundResult");
-        setTimeout(() => playFinalFanfare(), 400);
-        if (myResult === "lose") setTimeout(() => speak("아이고, 술래가 되셨습니다!", 1.4, 1.0), 2200);
-        else if (myResult === "win") setTimeout(() => speak("축하합니다! 술래가 결정됐습니다!", 1.4, 1.0), 2200);
-        // 5초 후 모든 기기가 로비로 자동 복귀. 5초 안에 패자가 "다음 게임 호스트" 클릭하면 host 전환 (returnToLobbyAfterGame은 status 체크로 무시됨)
-        if (state.role === "host") {
-          if (state.gameOverTimeout) clearTimeout(state.gameOverTimeout);
-          state.gameOverTimeout = setTimeout(() => returnToLobbyAfterGame(), 5000);
+
+        // 세트 결과 누적
+        const gameType = getGameType();
+        const requiredSets = getRequiredSetCount(gameType);
+        const curSetIdx = getCurrentSetIndex();
+        const prevSetResults = getSetResults();
+        const newSetResult = {
+          setIndex: curSetIdx,
+          taggerIds: allTaggerIds,
+          winnerIds: state.participants.filter(p => !allTaggerIds.includes(p.id)).map(p => p.id),
+        };
+        const updatedSetResults = [...prevSetResults, newSetResult];
+        const isFinalSet = curSetIdx >= requiredSets;
+        const overrides = isFinalSet
+          ? { setResults: updatedSetResults }
+          : { setResults: updatedSetResults, currentSetIndex: curSetIdx + 1 };
+        const updatedPenalty = buildPenaltyJson(overrides);
+
+        // 모든 기기가 로컬 state.penalty를 즉시 업데이트해서 결과 화면이 최신 setResults를 본다
+        // (호스트는 추가로 DB에 반영. 참가자 기기는 곧 realtime으로 동일 값을 받음)
+        state.penalty = updatedPenalty;
+        if (getOnlineMode() && state.role === "host") {
+          try {
+            await db.from('rooms').update({ penalty: updatedPenalty }).eq('id', state.roomCode);
+          } catch (e) {
+            console.error("세트 결과 저장 오류:", e.message);
+          }
+        } else if (!getOnlineMode()) {
+          saveState();
+        }
+
+        if (isFinalSet) {
+          renderRoundResult("gameOver", roundLosers.length, remainingSlots);
+          showScreen("screenRoundResult");
+          setTimeout(() => playFinalFanfare(), 400);
+          if (myResult === "lose") setTimeout(() => speak("아이고, 술래가 되셨습니다!", 1.4, 1.0), 2200);
+          else if (myResult === "win") setTimeout(() => speak("축하합니다! 술래가 결정됐습니다!", 1.4, 1.0), 2200);
+          // 5초 후 자동 복귀. 패자가 "다음 게임 호스트" 클릭 시 가드됨
+          if (state.role === "host") {
+            if (state.gameOverTimeout) clearTimeout(state.gameOverTimeout);
+            state.gameOverTimeout = setTimeout(() => returnToLobbyAfterGame(), 5000);
+          }
+        } else {
+          // 세트 종료 → 다음 세트 시작
+          renderRoundResult("setEnd", roundLosers.length, remainingSlots);
+          showScreen("screenRoundResult");
+          if (state.role === "host") {
+            if (state.gameOverTimeout) clearTimeout(state.gameOverTimeout);
+            state.gameOverTimeout = setTimeout(() => startNextSet(), 5000);
+          }
         }
       } else if (roundLosers.length > remainingSlots) {
         state.confirmedSafeIds = [...prevSafeIds, ...roundWinners.map(p => p.id)];
@@ -2485,6 +2625,40 @@
     }
     window.hostJudgeRound = hostJudgeRound;
 
+    // 세트 시리즈에서 내 최종 결과 계산 (세트 승리 수 기반)
+    function computeMyFinalSeriesResult() {
+      const setResults = getSetResults();
+      const requiredSets = getRequiredSetCount(getGameType());
+      // 우승 임계: 단판=1, 삼세판=2, 5판3승=3
+      const winThreshold = requiredSets === 5 ? 3 : (requiredSets === 3 ? 2 : 1);
+      const myId = state.currentUserId;
+      const myWins = setResults.filter(r => Array.isArray(r.winnerIds) && r.winnerIds.includes(myId)).length;
+      return myWins >= winThreshold ? "winner" : "loser";
+    }
+
+    // 시리즈 진행 요약 HTML (세트별 술래 표시)
+    function renderSeriesProgressHtml() {
+      const gameType = getGameType();
+      if (gameType === "single") return "";
+      const setResults = getSetResults();
+      if (setResults.length === 0) return "";
+      const requiredSets = getRequiredSetCount(gameType);
+      const rows = setResults.map(r => {
+        const taggers = (r.taggerIds || [])
+          .map(id => (state.participants.find(p => p.id === id) || {}).name || "?")
+          .map(escapeHtml)
+          .join(", ");
+        return `<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0">
+          <span style="color:var(--muted)">${r.setIndex}세트 술래</span>
+          <span style="color:var(--text)">${taggers || "—"}</span>
+        </div>`;
+      }).join("");
+      return `<div style="margin-top:14px;padding:12px;background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:14px;text-align:left">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">시리즈 진행 (${setResults.length}/${requiredSets})</div>
+        ${rows}
+      </div>`;
+    }
+
     function renderRoundResult(caseType, roundLoserCount, remainingSlots) {
       const current = state.participants.find(p => p.id === state.currentUserId) || state.participants[0];
       const myResult = current ? current.lastResult || "draw" : "draw";
@@ -2523,20 +2697,66 @@
           nextBtn.style.display = "none";
         }
 
-      } else if (caseType === "gameOver") {
-        // 술래 확정 - 게임 종료
-        if (myResult === "lose") {
-          title.textContent = `술래 확정! (${state.confirmedLoserIds.length}/${getTargetLoserCount()}명)`;
+      } else if (caseType === "setEnd") {
+        // 세트 종료 → 다음 세트로 진행 (단판이 아닌 경우에만)
+        const curSet = getCurrentSetIndex();  // 이미 +1 된 상태 (다음 세트 인덱스)
+        const requiredSets = getRequiredSetCount(getGameType());
+        const finishedSet = curSet - 1;
+        if (myResult === "lose" || iAmConfirmedLoser) {
+          title.textContent = `${finishedSet}세트 술래!`;
           title.classList.add("lose");
-          emoji.textContent = "🎺";
-          message.textContent = "축하합니다(?) 벌칙을 수행하세요!";
-          penaltyTextEl.textContent = penTxt || "벌칙이 설정되지 않았습니다.";
-          penaltyBox.classList.remove("hidden");
+          emoji.textContent = "😵";
         } else {
-          title.textContent = "생존!";
+          title.textContent = `${finishedSet}세트 생존!`;
           title.classList.add("win");
-          emoji.textContent = "🥳";
-          message.textContent = `술래 ${getTargetLoserCount()}명이 모두 결정됐습니다!`;
+          emoji.textContent = "🎯";
+        }
+        const seriesSummary = renderSeriesProgressHtml();
+        message.innerHTML = `${getGameTypeLabel(getGameType())} ${finishedSet}/${requiredSets} 세트 완료<br><span style="color:var(--muted);font-size:13px">잠시 후 다음 세트가 시작됩니다.</span>${seriesSummary}`;
+        nextBtn.style.display = "none";
+        actionsDiv.style.display = "none";
+        finalBtns.classList.remove("hidden");
+        finalBtns.innerHTML = state.role === "host"
+          ? `<button class="btn-primary btn-full" onclick="window.startNextSet()">▶️ 다음 세트 지금 시작</button>`
+          : `<div style="text-align:center;color:var(--muted);font-size:13px">호스트가 다음 세트를 시작할 때까지 기다려주세요.</div>`;
+
+      } else if (caseType === "gameOver") {
+        // 최종 게임 종료
+        const gameType = getGameType();
+        const isSeries = gameType !== "single";
+        if (isSeries) {
+          // 시리즈 (삼세판/5판3승): 세트 승리 수 기준
+          const myFinal = computeMyFinalSeriesResult();
+          if (myFinal === "winner") {
+            title.textContent = "🏆 최종 우승!";
+            title.classList.add("win");
+            emoji.textContent = "👑";
+            message.textContent = `${getGameTypeLabel(gameType)} 시리즈 우승!`;
+          } else {
+            title.textContent = "최종 패자";
+            title.classList.add("lose");
+            emoji.textContent = "🎺";
+            message.textContent = `${getGameTypeLabel(gameType)} 시리즈 종료. 벌칙을 수행하세요!`;
+            penaltyTextEl.textContent = penTxt || "벌칙이 설정되지 않았습니다.";
+            penaltyBox.classList.remove("hidden");
+          }
+          // 시리즈 누적 요약 표시
+          message.innerHTML += renderSeriesProgressHtml();
+        } else {
+          // 단판
+          if (myResult === "lose") {
+            title.textContent = `술래 확정! (${state.confirmedLoserIds.length}/${getTargetLoserCount()}명)`;
+            title.classList.add("lose");
+            emoji.textContent = "🎺";
+            message.textContent = "축하합니다(?) 벌칙을 수행하세요!";
+            penaltyTextEl.textContent = penTxt || "벌칙이 설정되지 않았습니다.";
+            penaltyBox.classList.remove("hidden");
+          } else {
+            title.textContent = "생존!";
+            title.classList.add("win");
+            emoji.textContent = "🥳";
+            message.textContent = `술래 ${getTargetLoserCount()}명이 모두 결정됐습니다!`;
+          }
         }
         nextBtn.style.display = "none";
         actionsDiv.style.display = "none";
@@ -2545,13 +2765,16 @@
         if (state.role === "host") {
           html += `<button class="btn-success btn-full" onclick="window.returnToLobbyAfterGame()" style="margin-bottom:8px">🎮 한번더! (호스트 설정)</button>`;
         }
-        html += `<button class="btn-light btn-full" onclick="window.showStatsPopup()" style="margin-bottom:8px">🏆 게임 승률 보기</button>`;
-        if (myResult === "lose" && penTxt && penTxt.includes("호스트")) {
+        html += `<button class="btn-light btn-full" onclick="window.showStatsPopup()" style="margin-bottom:8px">🏆 세트별 결과 보기</button>`;
+        // 시리즈에서는 최종 패자/패자들에게만 "다음 게임 호스트" 옵션 제공
+        const showNextHostBtn = isSeries
+          ? (computeMyFinalSeriesResult() === "loser" && penTxt && penTxt.includes("호스트"))
+          : (myResult === "lose" && penTxt && penTxt.includes("호스트"));
+        if (showNextHostBtn) {
           html += `<button id="becomeNextHostBtn" class="btn-primary btn-full" onclick="window.becomeNextHost()" style="margin-top:8px">🎮 다음 게임 호스트 시작 (5초)</button>`;
         }
         finalBtns.innerHTML = html;
-        // 패자 호스트 인계 버튼에 5초 카운트다운 표시
-        if (myResult === "lose" && penTxt && penTxt.includes("호스트")) {
+        if (showNextHostBtn) {
           startGameOverCountdown(5);
         }
 
@@ -2803,6 +3026,7 @@
       }
       renderShareUrlControls();
       updateLoserCountDropdown();
+      updateGameTypeChips();
       // screenReady 벌칙 박스 동기화 (호스트가 벌칙 수정 시 참가자 화면에 반영되어야 함)
       const readyPenaltyBoxEl = $("readyPenaltyBox");
       if (readyPenaltyBoxEl) readyPenaltyBoxEl.textContent = `벌칙: ${getPenaltyText() || "없음"}`;
@@ -2963,8 +3187,10 @@
       showScreen("screenReady");
       $("readyPenaltyBox").textContent = `벌칙: ${getPenaltyText() || "없음"}`;
       renderReadyList();
-      // 재대결(round > 1)에서는 호스트도 "게임 준비" 버튼 사용 → 호스트 전용 버튼 숨김
-      if (state.role === "host" && state.round === 1) {
+      // 호스트 전용 시작/벌칙수정 버튼은 1세트 1라운드에만 노출.
+      // 재대결(round > 1) 또는 2세트 이후에는 호스트도 "게임 준비" 버튼만 사용 (auto-start)
+      const isFirstSetFirstRound = state.role === "host" && state.round === 1 && getCurrentSetIndex() === 1;
+      if (isFirstSetFirstRound) {
         $("hostStartBtn").classList.remove("hidden");
         $("editPenaltyBtn").classList.remove("hidden");
       } else {
@@ -3229,15 +3455,62 @@
 
     function showStatsPopup() {
       const tbody = $("statsPopupBody");
+      const thead = tbody.parentElement.querySelector("thead");
       tbody.innerHTML = "";
+      const gameType = getGameType();
+      const setResults = getSetResults();
+      const isSeries = gameType !== "single" && setResults.length > 0;
+
       if (!state.participants.length) {
         tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:12px;color:var(--muted)">아직 기록이 없습니다.</td></tr>`;
+      } else if (isSeries) {
+        // 시리즈 모드: 세트 승리 / 세트 술래 / 승률 / 최종 결과
+        if (thead) {
+          thead.innerHTML = `<tr>
+            <th style="padding:7px 4px;text-align:left">이름</th>
+            <th style="padding:7px 4px">세트승</th>
+            <th style="padding:7px 4px">세트술래</th>
+            <th style="padding:7px 4px">승률</th>
+            <th style="padding:7px 4px">최종</th>
+          </tr>`;
+        }
+        const requiredSets = getRequiredSetCount(gameType);
+        const winThreshold = requiredSets === 5 ? 3 : (requiredSets === 3 ? 2 : 1);
+        state.participants.forEach(p => {
+          const winCount = setResults.filter(r => Array.isArray(r.winnerIds) && r.winnerIds.includes(p.id)).length;
+          const tagCount = setResults.filter(r => Array.isArray(r.taggerIds) && r.taggerIds.includes(p.id)).length;
+          const rate = setResults.length === 0 ? 0 : Math.round((winCount / setResults.length) * 100);
+          const isWinner = winCount >= winThreshold;
+          const finalLabel = isWinner
+            ? `<span class="tag win">🏆 우승</span>`
+            : `<span class="tag lose">패자</span>`;
+          const tr = document.createElement("tr");
+          tr.style.borderBottom = "1px solid var(--card-border)";
+          tr.innerHTML = `
+            <td style="padding:7px 4px">${escapeHtml(p.name)}${p.is_host ? ' 👑' : ''}</td>
+            <td style="padding:7px 4px;text-align:center">${winCount}</td>
+            <td style="padding:7px 4px;text-align:center">${tagCount}</td>
+            <td style="padding:7px 4px;text-align:center">${rate}%</td>
+            <td style="padding:7px 4px;text-align:center">${finalLabel}</td>
+          `;
+          tbody.appendChild(tr);
+        });
       } else {
+        // 단판/구버전 모드: 라운드 승/패/무 통계
+        if (thead) {
+          thead.innerHTML = `<tr>
+            <th style="padding:7px 4px;text-align:left">이름</th>
+            <th style="padding:7px 4px">승</th>
+            <th style="padding:7px 4px">패</th>
+            <th style="padding:7px 4px">무</th>
+            <th style="padding:7px 4px">승률</th>
+          </tr>`;
+        }
         state.participants.forEach(p => {
           const total = (p.wins || 0) + (p.losses || 0);
           const rate = total === 0 ? 0 : Math.round(((p.wins || 0) / total) * 100);
           const tr = document.createElement("tr");
-          tr.style.borderBottom = "1px solid #f0f0f0";
+          tr.style.borderBottom = "1px solid var(--card-border)";
           tr.innerHTML = `
             <td style="padding:7px 4px">${escapeHtml(p.name)}${p.is_host ? ' 👑' : ''}</td>
             <td style="padding:7px 4px;text-align:center">${p.wins || 0}</td>
@@ -3470,6 +3743,7 @@
     window.showStatsPopup = showStatsPopup;
     window.closeStatsPopup = closeStatsPopup;
     window.onLoserCountChange = onLoserCountChange;
+    window.onGameTypeChange = onGameTypeChange;
     window.updateShareBaseUrl = updateShareBaseUrl;
     window.showLoserWaitScreen = showLoserWaitScreen;
     window.showAuthScreen = showAuthScreen;
@@ -3484,6 +3758,10 @@
       if (state.gameOverTimeout) { clearTimeout(state.gameOverTimeout); state.gameOverTimeout = null; }
       stopGameOverCountdown();
       stopRoundTimers();
+
+      // 다음 게임을 위해 세트 진행 상태 리셋 (gameType/loserCount/penalty text는 보존)
+      const freshPenalty = buildPenaltyJson({ currentSetIndex: 1, setResults: [] });
+      state.penalty = freshPenalty;
 
       if (getOnlineMode()) {
         try {
@@ -3502,7 +3780,7 @@
             is_ready: false
           }).eq('room_id', state.roomCode);
           // status='waiting' → 호스트는 screenHostRoom (벌칙 수정/게임 시작 버튼), 참가자는 screenParticipantWait
-          await db.from('rooms').update({ round: 1, status: 'waiting' }).eq('id', state.roomCode);
+          await db.from('rooms').update({ penalty: freshPenalty, round: 1, status: 'waiting' }).eq('id', state.roomCode);
         } catch (e) {
           console.error("returnToLobbyAfterGame error:", e);
         }
@@ -3518,7 +3796,43 @@
       }
     }
 
+    // 세트 종료 후 다음 세트로 진행 (status='ready' 로 전환 → 전원 재준비 후 시작)
+    async function startNextSet() {
+      if (state.role !== "host") return;
+      if (state.gameOverTimeout) { clearTimeout(state.gameOverTimeout); state.gameOverTimeout = null; }
+      stopGameOverCountdown();
+      stopRoundTimers();
+
+      state.confirmedSafeIds = [];
+      state.confirmedLoserIds = [];
+      state.gameStarting = false;
+      state.finishingRound = false;
+
+      if (getOnlineMode()) {
+        try {
+          // DB 가드: 이미 호스트 인계 등으로 status가 바뀌었으면 스킵
+          const { data: currentRoom } = await db.from('rooms').select('status').eq('id', state.roomCode).single();
+          if (!currentRoom || currentRoom.status !== 'result') return;
+
+          await db.from('participants').update({
+            choice: null,
+            is_ready: false
+          }).eq('room_id', state.roomCode);
+          // round=1로 리셋. status='ready' → 모두 다시 준비. (현재 세트 인덱스는 이미 penalty JSON에 저장됨)
+          await db.from('rooms').update({ round: 1, status: 'ready' }).eq('id', state.roomCode);
+        } catch (e) {
+          console.error("startNextSet error:", e);
+        }
+      } else {
+        state.round = 1;
+        state.participants.forEach(p => { p.is_ready = false; p.choice = null; p.lastResult = null; });
+        saveState();
+        showReadyScreen();
+      }
+    }
+
     window.returnToLobbyAfterGame = returnToLobbyAfterGame;
+    window.startNextSet = startNextSet;
   </script>
 </body>
 </html>
