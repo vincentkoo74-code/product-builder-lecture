@@ -1,5 +1,5 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!ASSETS/|mockups/).*)", "destination": "/index.html" }
   ]
 }
