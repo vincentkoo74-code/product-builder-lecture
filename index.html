@@ -3,20 +3,37 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>QR 가위바위보 파티 게임</title>
+  <title>마루의 가위바위보 · K-파티 게임</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gowun+Dodum&family=Noto+Sans+KR:wght@500;700;900&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #f4f6fb;
+      /* 마루 팔레트 — 캐릭터에서 추출한 따뜻한 톤 */
+      --cream: #FFF8EC;
+      --cream-2: #FFEFD3;
+      --orange: #F5A356;
+      --orange-deep: #E48638;
+      --pink: #FFB8C7;
+      --gold: #FFC93C;
+      --lime: #7ED957;
+      --sky: #4DB8FF;
+      --maru-red: #E63946;
+      --maru-indigo: #2E3192;
+      --maru-purple: #A05FBF;
+
+      /* 기존 토큰 — 마루 톤으로 재매핑 */
+      --bg: #FFF8EC;
       --card: #ffffff;
-      --text: #1f2937;
-      --muted: #6b7280;
-      --primary: #4f46e5;
-      --primary-dark: #3730a3;
+      --text: #3D2B1F;
+      --muted: #8C7563;
+      --primary: #F5A356;
+      --primary-dark: #E48638;
       --success: #16a34a;
       --danger: #dc2626;
       --warning: #f59e0b;
-      --line: #e5e7eb;
-      --shadow: 0 18px 50px rgba(15, 23, 42, 0.12);
+      --line: #F0E4D0;
+      --shadow: 0 18px 40px rgba(228, 134, 56, 0.18);
       --radius: 24px;
     }
 
@@ -28,10 +45,10 @@
       margin: 0;
       width: 100vw;
       height: 100vh;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background:
-        radial-gradient(circle at top left, #dbeafe 0, transparent 30%),
-        radial-gradient(circle at bottom right, #ede9fe 0, transparent 28%),
+        radial-gradient(circle at 20% 0%, #FFE7C2 0, transparent 40%),
+        radial-gradient(circle at 80% 100%, #FFD8E0 0, transparent 40%),
         var(--bg);
       color: var(--text);
       display: flex;
@@ -703,14 +720,226 @@
       opacity: 1;
       transform: translateX(-50%) translateY(0);
     }
+
+    /* ===== 마루 시안 (Auth + Home) ===== */
+    /* 색동 시그니처 — 7색 무지개 띠 */
+    .saekdong-edge{
+      height:6px;display:flex;margin:0 -24px 12px;
+    }
+    .saekdong-edge.bottom{margin:18px -24px 0}
+    .saekdong-edge span{flex:1}
+    .saekdong-edge span:nth-child(1){background:#E63946}
+    .saekdong-edge span:nth-child(2){background:#F5A356}
+    .saekdong-edge span:nth-child(3){background:#FFC93C}
+    .saekdong-edge span:nth-child(4){background:#7ED957}
+    .saekdong-edge span:nth-child(5){background:#4DB8FF}
+    .saekdong-edge span:nth-child(6){background:#2E3192}
+    .saekdong-edge span:nth-child(7){background:#A05FBF}
+
+    .saekdong-v{
+      position:absolute;left:0;top:0;bottom:0;width:6px;
+      display:flex;flex-direction:column;
+      border-radius:var(--radius) 0 0 var(--radius);
+      overflow:hidden;
+    }
+    .saekdong-v span{flex:1}
+    .saekdong-v span:nth-child(1){background:#E63946}
+    .saekdong-v span:nth-child(2){background:#F5A356}
+    .saekdong-v span:nth-child(3){background:#FFC93C}
+    .saekdong-v span:nth-child(4){background:#7ED957}
+    .saekdong-v span:nth-child(5){background:#4DB8FF}
+    .saekdong-v span:nth-child(6){background:#2E3192}
+    .saekdong-v span:nth-child(7){background:#A05FBF}
+
+    .saekdong-under{
+      height:4px;width:120px;display:flex;border-radius:2px;overflow:hidden;
+      margin:6px 0 10px;
+    }
+    .saekdong-under span{flex:1}
+    .saekdong-under span:nth-child(1){background:#E63946}
+    .saekdong-under span:nth-child(2){background:#FFC93C}
+    .saekdong-under span:nth-child(3){background:#7ED957}
+    .saekdong-under span:nth-child(4){background:#4DB8FF}
+    .saekdong-under span:nth-child(5){background:#2E3192}
+
+    /* 마루 히어로 */
+    .maru-hero{position:relative;text-align:center;padding-top:8px}
+    .maru-hero-bg{
+      position:absolute;top:-30px;left:50%;
+      transform:translateX(-50%);
+      width:340px;height:200px;
+      background:radial-gradient(ellipse at center, var(--cream-2) 0, transparent 70%);
+      pointer-events:none;
+    }
+    .maru-hero img{
+      position:relative;
+      width:200px;height:200px;
+      object-fit:contain;
+      filter:drop-shadow(0 10px 20px rgba(245,163,86,.25));
+    }
+    .maru-hero.lg img{width:240px;height:240px}
+
+    /* K-PARTY 도장 */
+    .kparty-stamp{
+      position:absolute;top:18px;right:18px;
+      width:64px;height:64px;border-radius:50%;
+      background:var(--maru-red);color:#fff;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      font-family:"Black Han Sans",sans-serif;line-height:1;
+      transform:rotate(-12deg);
+      box-shadow:0 6px 14px rgba(230,57,70,.35);
+      border:2px dashed rgba(255,255,255,.45);
+      z-index:2;
+    }
+    .kparty-stamp .top{font-size:9px;letter-spacing:1px;margin-bottom:3px;opacity:.9}
+    .kparty-stamp .mid{font-size:18px;letter-spacing:.5px}
+    .kparty-stamp .bot{font-size:8px;letter-spacing:.8px;margin-top:3px;opacity:.9}
+
+    .stamp-ribbon{
+      position:absolute;top:64px;right:30px;
+      display:flex;gap:4px;z-index:1;
+    }
+    .stamp-ribbon .tail{
+      width:8px;height:48px;
+      background:linear-gradient(180deg,#E63946 0 14%,#FFC93C 14% 28%,#7ED957 28% 42%,#4DB8FF 42% 56%,#2E3192 56% 70%,#A05FBF 70% 100%);
+      border-radius:0 0 4px 4px;
+      box-shadow:0 4px 8px rgba(0,0,0,.15);
+      transform-origin:top center;
+    }
+    .stamp-ribbon .tail:nth-child(1){transform:rotate(8deg);height:54px}
+    .stamp-ribbon .tail:nth-child(2){transform:rotate(-6deg)}
+
+    /* K-culture 칩 */
+    .kculture-tag{
+      display:inline-flex;align-items:center;gap:6px;
+      background:linear-gradient(135deg,#1A1A1A,#2E3192);
+      color:#fff;
+      font-family:"Black Han Sans",sans-serif;
+      font-size:11px;
+      padding:5px 12px 4px;
+      border-radius:999px;
+      letter-spacing:1.5px;
+      margin-bottom:10px;
+      box-shadow:0 4px 10px rgba(46,49,146,.25);
+    }
+    .kculture-tag .dot{
+      width:6px;height:6px;border-radius:50%;
+      background:var(--maru-red);
+      box-shadow:0 0 8px var(--maru-red);
+      animation:maru-pulse 1.5s infinite;
+    }
+    @keyframes maru-pulse{
+      0%,100%{opacity:1;transform:scale(1)}
+      50%{opacity:.6;transform:scale(1.3)}
+    }
+
+    /* 예능 자막 */
+    .vrshow-cap{
+      display:inline-block;
+      background:var(--gold);color:#3D2B1F;
+      font-family:"Black Han Sans",sans-serif;
+      font-size:14px;padding:4px 12px 3px;
+      border-radius:8px;transform:rotate(-2deg);
+      box-shadow:0 4px 0 var(--orange-deep);
+      margin-bottom:8px;letter-spacing:.5px;
+    }
+
+    .maru-title{
+      font-family:"Black Han Sans",sans-serif;
+      font-size:26px;font-weight:400;margin:6px 0 4px;
+      letter-spacing:-0.5px;line-height:1.25;
+    }
+    .maru-title em{
+      font-style:normal;
+      background:linear-gradient(135deg,var(--maru-red),var(--orange));
+      -webkit-background-clip:text;background-clip:text;color:transparent;
+    }
+    .maru-tagline{
+      font-family:"Gowun Dodum",sans-serif;
+      font-size:12px;color:var(--muted);
+      margin:0 0 14px;letter-spacing:.3px;
+    }
+    .maru-tagline b{color:var(--maru-red);font-weight:700}
+    .maru-subtitle{
+      color:var(--muted);font-size:13.5px;
+      margin:0 0 18px;line-height:1.55;
+      font-family:"Gowun Dodum",sans-serif;
+    }
+
+    /* 마루 카드 (좌측 색동 위해 padding 좀 더) */
+    .maru-card{
+      position:relative;
+      padding-left:30px !important;
+      overflow:hidden;
+    }
+
+    /* K-파티 CTA — 좌측 색동 액센트 */
+    .btn-kparty{
+      width:100%;padding:15px;border:none;border-radius:18px;
+      font-size:15px;font-weight:900;cursor:pointer;
+      display:flex;align-items:center;justify-content:center;gap:10px;
+      margin-bottom:10px;transition:transform .15s;
+      background:linear-gradient(135deg,var(--orange),var(--orange-deep));
+      color:#fff;
+      box-shadow:0 8px 18px rgba(245,163,86,.35);
+      position:relative;overflow:hidden;
+      font-family:"Noto Sans KR",sans-serif;
+    }
+    .btn-kparty:active{transform:scale(.97)}
+    .btn-kparty::before{
+      content:"";position:absolute;left:0;top:0;bottom:0;width:8px;
+      background:linear-gradient(180deg,#E63946 0 14%,#FFC93C 14% 28%,#7ED957 28% 42%,#4DB8FF 42% 56%,#2E3192 56% 70%,#A05FBF 70% 100%);
+    }
+    .btn-kparty .go-pill{
+      position:absolute;right:14px;top:50%;transform:translateY(-50%);
+      background:#fff;color:var(--orange-deep);
+      font-family:"Black Han Sans",sans-serif;
+      font-size:11px;padding:3px 8px;border-radius:6px;letter-spacing:.5px;
+    }
+
+    /* 푸터 K-stamp */
+    .maru-footer{
+      text-align:center;margin-top:14px;
+      font-family:"Gowun Dodum",sans-serif;
+      font-size:11px;color:var(--muted);letter-spacing:.5px;
+    }
+    .maru-footer b{
+      font-family:"Black Han Sans",sans-serif;
+      color:var(--maru-red);font-weight:400;letter-spacing:1px;
+    }
+
+    /* 마루 인사 */
+    .maru-greeting{
+      font-size:13px;color:var(--muted);
+      margin:-4px 0 8px 46px;
+      font-family:"Gowun Dodum",sans-serif;
+    }
+    .maru-greeting b{color:var(--text);font-weight:700}
+
+    /* 빠른 액션 2칸 그리드 */
+    .quick-row{display:flex;gap:10px;margin-top:6px}
+    .quick-btn{
+      flex:1;
+      background:#FFFAF1;
+      border:1.5px solid var(--line);
+      border-radius:14px;
+      padding:12px 8px;
+      font-size:12px;font-weight:700;color:var(--muted);
+      cursor:pointer;
+      display:flex;flex-direction:column;align-items:center;gap:4px;
+      transition:all .15s;
+      font-family:"Noto Sans KR",sans-serif;
+    }
+    .quick-btn:hover{border-color:var(--orange);color:var(--orange-deep);background:#fff}
+    .quick-btn .icon{font-size:18px}
   </style>
 </head>
 <body>
   <main class="app">
     <div class="topbar">
       <div class="brand">
-        <div class="brand-icon">✊</div>
-        <div>QR 가위바위보</div>
+        <div class="brand-icon" style="background:linear-gradient(135deg,var(--orange),var(--gold));color:#fff">🐾</div>
+        <div style="font-family:'Black Han Sans',sans-serif;font-weight:400;letter-spacing:.5px">마루의 가위바위보</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
         <button id="guestLoginTopBtn" class="guest-login-btn hidden" onclick="window.showAuthScreen()">
@@ -727,16 +956,21 @@
       <div id="countdownLabel">잠시 후 시작!</div>
     </div>
 
-    <section class="card" id="screenAuth">
-      <div style="text-align:center;padding:8px 0 16px">
-        <div style="font-size:52px;margin-bottom:4px">✊</div>
-        <h2 style="margin:0 0 6px">QR 가위바위보</h2>
-        <p class="lead" style="margin:0">친구들과 함께하는 벌칙 가위바위보 게임</p>
+    <section class="card maru-card" id="screenAuth">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="maru-hero">
+        <div class="maru-hero-bg"></div>
+        <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
       </div>
 
-      <div class="notice" style="text-align:center;margin-bottom:20px">
-        <strong>SNS 계정으로 로그인하면</strong><br>
-        <span style="font-size:13px">게임 기록과 승률이 저장되어 언제든 다시 확인할 수 있습니다. 🏆</span>
+      <h1 class="maru-title">친구들과 <em>한 판?</em></h1>
+      <p class="maru-subtitle">QR로 모이고, 마루랑 같이 가위바위보!<br/>진 사람이 벌칙 🎁</p>
+
+      <div class="notice" style="text-align:center;margin-bottom:18px">
+        <strong>🔐 로그인하면 좋아요</strong><br>
+        <span style="font-size:13px">승률·벌칙 기록이 저장돼서 마루가 너의 전적을 기억해줘 🏆</span>
       </div>
 
       <div class="grid" style="gap:10px;margin-bottom:4px">
@@ -757,26 +991,67 @@
       <div class="auth-divider"><span>또는</span></div>
 
       <button class="btn-outline btn-full" onclick="window.playAsGuest()" style="margin-bottom:8px">
-        🎮 로그인 없이 게임하기
+        🐱 로그인 없이 마루랑 놀기
       </button>
-      <p style="text-align:center;font-size:12px;color:#9ca3af;margin:0">
+      <p style="text-align:center;font-size:12px;color:var(--muted);margin:0">
         게스트 모드에서는 게임 기록이 저장되지 않습니다
       </p>
     </section>
 
-    <section class="card" id="screenHome">
-      <h1>친구들과 QR로 바로 참여하는 벌칙 가위바위보</h1>
-      <p class="lead">호스트가 방을 만들고 QR코드를 보여주면, 참가자들이 접속해서 함께 가위바위보를 진행합니다.</p>
+    <section class="card maru-card" id="screenHome">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="stamp-ribbon">
+        <div class="tail"></div>
+        <div class="tail"></div>
+      </div>
+      <div class="kparty-stamp">
+        <div class="top">★ K-PARTY ★</div>
+        <div class="mid">K놀이</div>
+        <div class="bot">CERTIFIED</div>
+      </div>
+
+      <div class="maru-hero lg">
+        <div class="maru-hero-bg"></div>
+        <img src="ASSETS/rps/scenes/cat-decision-waiting.png" alt="마루" />
+      </div>
+
+      <div class="kculture-tag">
+        <span class="dot"></span>
+        <span>K-CULTURE × PARTY GAME</span>
+      </div>
+      <div class="vrshow-cap">오늘의 한 판!</div>
+      <div class="saekdong-under"><span></span><span></span><span></span><span></span><span></span></div>
+      <h1 class="maru-title">한국식 <em>가위바위보</em><br/>K-파티 시작 🎉</h1>
+      <p class="maru-tagline">🇰🇷 한국에서 시작된 <b>모바일 잔칫집</b> 게임</p>
+      <p class="maru-subtitle">호스트가 방 만들면 QR로 친구 입장!<br/>진 사람이 벌칙 — 한국식 잔칫집 룰입니다.</p>
+
       <div class="field">
         <label>내 닉네임</label>
         <input id="homeNickname" placeholder="예: 민수" maxlength="10" />
       </div>
-      <div class="grid">
-        <button class="btn-primary btn-full" onclick="window.createRoom()">방 만들기 / 호스트 시작</button>
-        <button class="btn-success btn-full" onclick="window.showQrScanner()">QR 스캔해서 다시 입장</button>
-        <button class="btn-light btn-full" onclick="window.showJoinScreen()">QR코드로 참여한 화면 보기</button>
-        <button class="btn-outline btn-full" onclick="window.showStats()">최근 게임 결과 보기</button>
+
+      <button class="btn-kparty" onclick="window.createRoom()">
+        🏠 방 만들기 / 호스트 시작
+        <span class="go-pill">GO</span>
+      </button>
+      <button class="btn-light btn-full" onclick="window.showQrScanner()" style="margin-bottom:10px">
+        📷 QR 스캔해서 입장
+      </button>
+
+      <div class="quick-row">
+        <button class="quick-btn" onclick="window.showJoinScreen()">
+          <span class="icon">📱</span>
+          QR로 참여한 화면
+        </button>
+        <button class="quick-btn" onclick="window.showStats()">
+          <span class="icon">📊</span>
+          최근 게임 결과
+        </button>
       </div>
+
+      <div class="maru-footer"><b>K놀이 #001</b> · 한국 파티 문화의 새 챕터 🇰🇷</div>
     </section>
 
     <section class="card hidden" id="screenQrScanner">
