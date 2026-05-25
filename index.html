@@ -781,6 +781,178 @@
     .maru-hero.lg{margin-bottom:-40px}
     .maru-hero.lg img{width:320px;height:320px}
     .maru-hero.lg .maru-hero-bg{width:380px;height:260px;top:-20px}
+    /* 작은 헤로 (보조 화면용) */
+    .maru-hero.md img{width:150px;height:150px}
+    .maru-hero.md .maru-hero-bg{width:240px;height:150px;top:-10px}
+    .maru-hero.sm{margin-bottom:-12px}
+    .maru-hero.sm img{width:110px;height:110px}
+    .maru-hero.sm .maru-hero-bg{width:180px;height:110px;top:-6px}
+
+    /* 코너 마스코트 (헤더 우상단) */
+    .maru-corner{
+      position:absolute;top:14px;right:14px;
+      width:64px;height:64px;
+      pointer-events:none;z-index:1;
+    }
+    .maru-corner img{
+      width:100%;height:100%;object-fit:contain;
+      filter:drop-shadow(0 4px 8px rgba(245,163,86,.3));
+    }
+    /* 큰 코너 마스코트 (호스트방 등) - 3배 확대 */
+    .maru-corner.maru-corner-lg{
+      width:192px;height:192px;
+      top:-10px;right:-20px;
+    }
+    .maru-corner.maru-corner-lg img{
+      filter:drop-shadow(0 8px 16px rgba(245,163,86,.4));
+    }
+    /* 중간 코너 마스코트 (관전 화면 등) */
+    .maru-corner.maru-corner-md{
+      width:120px;height:120px;
+      top:-2px;right:-6px;
+    }
+    .maru-corner.maru-corner-md img{
+      filter:drop-shadow(0 6px 12px rgba(245,163,86,.35));
+    }
+    /* 큰 마스코트가 있는 화면: 부제/h2 텍스트만 마스코트 영역 피하기 */
+    .maru-card .maru-corner-lg ~ .maru-section-sub,
+    .maru-card .maru-corner-lg ~ h2{
+      max-width:calc(100% - 170px);
+    }
+    .maru-card .maru-corner-md ~ .maru-section-sub,
+    .maru-card .maru-corner-md ~ h2{
+      max-width:calc(100% - 110px);
+    }
+    /* 캡션 자체는 자동 폭 (한 줄로 유지) */
+    .maru-card .vrshow-cap-lg{
+      display:inline-block;white-space:nowrap;
+    }
+
+    /* 큰 예능 자막 */
+    .vrshow-cap.vrshow-cap-lg{
+      font-size:24px;
+      padding:8px 18px 6px;
+      box-shadow:0 6px 0 var(--orange-deep);
+      margin-bottom:10px;
+      letter-spacing:.8px;
+    }
+
+    /* 술래 숫자 select - 좁은 폭 + 큰 가운데 정렬 텍스트 */
+    select.loser-count-select{
+      width:96px;
+      padding:8px 28px 8px 12px;
+      border-radius:12px;
+      border:1.5px solid #F5D8A8;
+      background:white;
+      font-size:18px;
+      font-weight:900;
+      color:var(--orange-deep);
+      text-align:center;
+      text-align-last:center;
+      font-family:"Black Han Sans",sans-serif;
+      letter-spacing:.5px;
+      cursor:pointer;
+    }
+    select.loser-count-select option{
+      text-align:center;
+      font-size:16px;
+      font-family:"Noto Sans KR",sans-serif;
+    }
+
+    /* 개발자 전용 (?debug=1 일 때만 표시) */
+    .dev-only{display:none}
+    body.debug-mode .dev-only{display:block}
+
+    /* 게임 버튼 안의 마루 핸드 사인 이미지 */
+    .choice-button{position:relative;overflow:hidden}
+    .choice-button .maru-hand{
+      width:64px;height:64px;object-fit:contain;display:block;
+      filter:drop-shadow(0 4px 8px rgba(245,163,86,.25));
+    }
+    .choice-button.selected .maru-hand{
+      filter:drop-shadow(0 6px 12px rgba(228,134,56,.45));
+    }
+    .choice-anim img.maru-hand-lg{
+      width:96px;height:96px;object-fit:contain;
+      filter:drop-shadow(0 6px 12px rgba(245,163,86,.3));
+    }
+    /* 참가자 리스트 안의 미니 마루 손 (가위/바위/보 결과 표시) */
+    .maru-hand-mini{
+      width:28px;height:28px;object-fit:contain;
+      vertical-align:middle;display:inline-block;
+      margin-right:4px;
+      filter:drop-shadow(0 2px 4px rgba(245,163,86,.2));
+    }
+
+    /* 결과 화면 마루 (이모지 대체) */
+    .result-maru{
+      width:170px;height:170px;
+      margin:0 auto 8px;display:block;
+      object-fit:contain;
+      filter:drop-shadow(0 10px 20px rgba(245,163,86,.25));
+    }
+    .result-maru.lose{filter:drop-shadow(0 10px 20px rgba(220,38,38,.25))}
+    .result-maru.draw{filter:drop-shadow(0 10px 20px rgba(245,158,11,.25))}
+
+    /* 화면 카드 상단 보조 타이틀 (마루 톤) */
+    .maru-section-title{
+      font-family:"Black Han Sans",sans-serif;
+      font-size:22px;font-weight:400;margin:6px 0 4px;
+      letter-spacing:-0.3px;line-height:1.25;color:var(--text);
+    }
+    .maru-section-sub{
+      color:var(--muted);font-size:13px;line-height:1.55;
+      font-family:"Gowun Dodum",sans-serif;
+      margin:0 0 14px;
+    }
+
+    /* 마루 톤 알림 박스 */
+    .maru-notice{
+      background:linear-gradient(135deg,#FFF4E0,#FFE7C2);
+      border:1px solid #F5D8A8;
+      color:#7A4A1F;
+      padding:11px 12px;
+      border-radius:16px;
+      line-height:1.5;font-size:14px;
+      margin-bottom:14px;
+    }
+    .maru-notice strong{color:var(--maru-red)}
+
+    /* 호스트룸 컨트롤 영역 — 4개 요소 통일 (벌칙 표시 + 3개 버튼) */
+    #screenHostRoom #penaltyStatusBox{
+      text-align:center;
+      padding:15px 16px;
+      font-size:15px;
+      font-weight:800;
+      font-family:"Noto Sans KR",sans-serif;
+      border-radius:18px;
+      margin-bottom:10px;
+      line-height:1.25;
+    }
+    #screenHostRoom .footer-actions button{
+      padding:15px 16px;
+      font-size:15px;
+      font-weight:800;
+      font-family:"Noto Sans KR",sans-serif;
+      border-radius:18px;
+      text-align:center;
+      line-height:1.25;
+    }
+    /* startGameBtn: 호스트룸에서는 GO pill 제거하고 통일 (CTA 강조는 색상으로) */
+    #screenHostRoom #startGameBtn{
+      padding:15px 16px;
+      display:flex;align-items:center;justify-content:center;gap:0;
+    }
+    #screenHostRoom #startGameBtn .go-pill{display:none}
+
+    /* 팝업 카드도 마루 톤 (좌측 색동) */
+    .popup-card.maru-popup{
+      position:relative;padding-left:30px;
+    }
+    .popup-card.maru-popup .saekdong-v{
+      border-radius:var(--radius) 0 0 var(--radius);
+      z-index:2;
+    }
 
     /* K-PARTY 도장 */
     .kparty-stamp{
@@ -878,7 +1050,7 @@
 
     /* K-파티 CTA — 좌측 색동 액센트 */
     .btn-kparty{
-      width:100%;padding:15px;border:none;border-radius:18px;
+      width:100%;padding:15px 70px 15px 24px;border:none;border-radius:18px;
       font-size:15px;font-weight:900;cursor:pointer;
       display:flex;align-items:center;justify-content:center;gap:10px;
       margin-bottom:10px;transition:transform .15s;
@@ -887,6 +1059,7 @@
       box-shadow:0 8px 18px rgba(245,163,86,.35);
       position:relative;overflow:hidden;
       font-family:"Noto Sans KR",sans-serif;
+      text-align:center;line-height:1.25;
     }
     .btn-kparty:active{transform:scale(.97)}
     .btn-kparty::before{
@@ -969,12 +1142,7 @@
       </div>
 
       <h1 class="maru-title">친구들과 <em>한 판?</em></h1>
-      <p class="maru-subtitle">QR로 모이고, 마루랑 같이 가위바위보!<br/>진 사람이 벌칙 🎁</p>
-
-      <div class="notice" style="text-align:center;margin-bottom:18px">
-        <strong>🔐 로그인하면 좋아요</strong><br>
-        <span style="font-size:13px">승률·벌칙 기록이 저장돼서 마루가 너의 전적을 기억해줘 🏆</span>
-      </div>
+      <p class="maru-subtitle">QR로 모이고, 마루랑 같이 가위바위보!<br/>로그인하면 <b>승률·벌칙 기록</b>이 저장돼요 🏆</p>
 
       <div class="grid" style="gap:10px;margin-bottom:4px">
         <button class="sns-btn sns-btn-kakao" onclick="window.loginWithSns('kakao')">
@@ -1014,11 +1182,8 @@
         <span class="dot"></span>
         <span>K-CULTURE × PARTY GAME</span>
       </div>
-      <div class="vrshow-cap">오늘의 한 판!</div>
-      <div class="saekdong-under"><span></span><span></span><span></span><span></span><span></span></div>
       <h1 class="maru-title" style="font-size:46px;line-height:1.1;margin:10px 0 6px"><em>가위바위보!</em></h1>
-      <p class="maru-tagline">🇰🇷 한국에서 시작된 <b>모바일 잔칫집</b> 게임</p>
-      <p class="maru-subtitle">호스트가 방 만들면 QR로 친구 입장!<br/>진 사람이 벌칙 — 한국식 잔칫집 룰입니다.</p>
+      <p class="maru-subtitle">QR로 모이고 마루랑 한 판 🐾<br/>진 사람이 벌칙!</p>
 
       <div class="field">
         <label>내 닉네임</label>
@@ -1047,32 +1212,45 @@
       <div class="maru-footer"><b>K놀이 #001</b> · 한국 파티 문화의 새 챕터 🇰🇷</div>
     </section>
 
-    <section class="card hidden" id="screenQrScanner">
-      <h2>QR 스캔</h2>
-      <p class="lead">호스트 화면의 QR코드를 카메라로 비춰주세요. 카메라가 지원되지 않으면 방코드를 직접 입력할 수 있습니다.</p>
+    <section class="card maru-card hidden" id="screenQrScanner">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="maru-hero sm">
+        <div class="maru-hero-bg"></div>
+        <img src="ASSETS/rps/scenes/cat-waiting.png" alt="마루" />
+      </div>
+      <div class="vrshow-cap vrshow-cap-lg">QR 스캔!</div>
+      <p class="maru-section-sub" style="margin-top:6px">호스트 화면의 QR코드를 카메라로 비춰주세요.<br/>지원 안 되면 방코드를 직접 입력할 수 있어요.</p>
       <video id="qrScanVideo" playsinline muted style="width:100%;border-radius:18px;background:#111827;aspect-ratio:1/1;object-fit:cover"></video>
-      <div id="qrScanStatus" class="notice" style="margin-top:12px">카메라를 준비 중입니다...</div>
+      <div id="qrScanStatus" class="maru-notice" style="margin-top:12px">📷 카메라를 준비 중입니다...</div>
       <div class="grid">
         <button class="btn-outline btn-full" onclick="window.stopQrScanner(); window.showJoinScreen()">방코드 직접 입력</button>
         <button class="btn-light btn-full" onclick="window.stopQrScanner(); window.goHome()">처음으로</button>
       </div>
     </section>
 
-    <section class="card hidden" id="screenHostRoom">
-      <h2>호스트 방</h2>
-      <p class="lead">이 QR코드 또는 방 코드를 참가자에게 공유하세요.</p>
+    <section class="card maru-card hidden" id="screenHostRoom">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="maru-corner maru-corner-lg">
+        <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
+      </div>
+      <div class="vrshow-cap vrshow-cap-lg">방장 모드!</div>
+      <p class="maru-section-sub" style="margin-top:6px">QR이나 방 코드를 친구한테 보여주세요.<br/>마루가 입장을 기다리고 있어요 🐾</p>
 
       <div class="qr-box" id="qrInviteBox">
         <div class="fake-qr" id="fakeQr"></div>
         <div class="code-text" id="roomCodeText">----</div>
-        <div class="url-text" id="roomUrlText"></div>
+        <div class="url-text dev-only" id="roomUrlText"></div>
       </div>
-      <div id="roomLockedBox" class="notice hidden" style="text-align:center">
+      <div id="roomLockedBox" class="maru-notice hidden" style="text-align:center">
         <strong>참가 마감</strong><br>
         모든 참여자가 준비를 완료해서 QR 참여를 닫았습니다.
       </div>
 
-      <div id="shareUrlBox" class="notice hidden" style="margin-top:12px">
+      <div id="shareUrlBox" class="maru-notice hidden" style="margin-top:12px">
         <strong>스마트폰 QR 접속 주소</strong>
         <p style="margin:6px 0 10px;font-size:13px">로컬 테스트 중에는 PC와 스마트폰이 같은 Wi-Fi에 있어야 합니다. 접속이 안 되면 아래 주소의 IP를 PC Wi-Fi IP로 바꿔주세요.</p>
         <div class="row">
@@ -1085,23 +1263,34 @@
       <h3>참가자 목록</h3>
       <div class="participant-list" id="hostParticipantList"></div>
 
-      <div id="loserCountBox" class="notice" style="margin-top:12px;display:flex;align-items:center;justify-content:space-between">
+      <div id="loserCountBox" class="maru-notice" style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:12px">
         <span style="font-weight:700">🎯 술래 숫자</span>
-        <select id="loserCountSelect" onchange="window.onLoserCountChange(this.value)" style="padding:5px 10px;border-radius:8px;border:1px solid #c7d2fe;background:white;font-size:14px;font-weight:700;color:#312e81">
+        <select id="loserCountSelect" onchange="window.onLoserCountChange(this.value)" class="loser-count-select">
           <option value="1">1명</option>
         </select>
       </div>
-      <div id="penaltyStatusBox" class="notice hidden" style="margin-top:12px"></div>
+      <div id="penaltyStatusBox" class="maru-notice hidden" style="margin-top:12px"></div>
       <div class="footer-actions" style="margin-top:12px">
-        <button id="startGameBtn" class="btn-success btn-full hidden" onclick="window.goToReadyScreen()">🎮 게임 준비하기</button>
+        <button id="startGameBtn" class="btn-kparty hidden" onclick="window.goToReadyScreen()">
+          🎮 게임 준비하기
+          <span class="go-pill">GO</span>
+        </button>
         <button id="penaltySetBtn" class="btn-primary btn-full" onclick="window.showPenaltyScreen()">벌칙 설정하기</button>
         <button class="btn-outline btn-full" onclick="window.goHome()">처음으로</button>
       </div>
     </section>
 
-    <section class="card hidden" id="screenJoin">
-      <h2>게임방 참여</h2>
-      <p class="lead">QR코드로 들어온 참가자가 닉네임을 입력하는 화면입니다.</p>
+    <section class="card maru-card hidden" id="screenJoin">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="maru-hero sm">
+        <div class="maru-hero-bg"></div>
+        <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
+      </div>
+      <div class="vrshow-cap vrshow-cap-lg">참가!</div>
+      <h2 class="maru-section-title" style="margin-top:6px">게임방 참여</h2>
+      <p class="maru-section-sub">방 코드랑 닉네임 알려줘! <br/>마루가 자리 잡아둘게 🐾</p>
       <div class="field">
         <label>방 코드</label>
         <input id="joinRoomCode" placeholder="예: A7K2" list="recentRoomCodes" autocomplete="off" />
@@ -1112,14 +1301,23 @@
         <input id="joinName" placeholder="예: 영선" />
       </div>
       <div class="grid">
-        <button id="joinBtn" class="btn-primary btn-full" onclick="window.joinRoom()">참가하기</button>
+        <button id="joinBtn" class="btn-kparty" onclick="window.joinRoom()">
+          🎉 참가하기
+          <span class="go-pill">GO</span>
+        </button>
         <button class="btn-outline btn-full" onclick="window.goHome()">처음으로</button>
       </div>
     </section>
 
-    <section class="card hidden" id="screenParticipantWait">
-      <h2>참가 완료</h2>
-      <p class="lead">호스트가 벌칙을 정하고 게임을 시작할 때까지 기다려주세요.</p>
+    <section class="card maru-card hidden" id="screenParticipantWait">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="maru-corner maru-corner-lg">
+        <img src="ASSETS/rps/scenes/cat-waiting.png" alt="마루" />
+      </div>
+      <div class="vrshow-cap vrshow-cap-lg">대기 중!</div>
+      <p class="maru-section-sub" style="margin-top:6px">호스트가 벌칙 정하고 시작할 때까지<br/>잠깐만 기다려줘 🍵</p>
       <div class="penalty-box">
         <small>이번 게임 벌칙</small>
         <strong id="waitPenaltyText">아직 벌칙이 설정되지 않았습니다.</strong>
@@ -1131,9 +1329,17 @@
       </div>
     </section>
 
-    <section class="card hidden" id="screenPenalty">
-      <h2>벌칙 설정</h2>
-      <p class="lead">호스트가 입력한 벌칙은 참가자 화면에 표시됩니다.</p>
+    <section class="card maru-card hidden" id="screenPenalty">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="maru-hero sm">
+        <div class="maru-hero-bg"></div>
+        <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
+      </div>
+      <div class="vrshow-cap vrshow-cap-lg">벌칙 갓!</div>
+      <h2 class="maru-section-title" style="margin-top:6px">벌칙 설정</h2>
+      <p class="maru-section-sub">진 사람이 뭘 할까? <b>마루가 적어둔다 📝</b></p>
       <div class="field">
         <label>이번 게임 벌칙</label>
         <textarea id="penaltyInput" placeholder="예: 오늘 커피 사기"></textarea>
@@ -1141,37 +1347,59 @@
       <h3>자주 사용한 벌칙</h3>
       <div class="penalty-chip-wrap" id="penaltyChips"></div>
       <div class="grid">
-        <button id="savePenaltyBtn" class="btn-primary btn-full" onclick="window.savePenalty()">벌칙 저장 및 참가자에게 표시</button>
-        <button class="btn-success btn-full" onclick="window.startGame()">게임 시작</button>
+        <button id="savePenaltyBtn" class="btn-kparty" onclick="window.savePenalty()">
+          💾 벌칙 저장하기
+          <span class="go-pill">SAVE</span>
+        </button>
         <button class="btn-outline btn-full" onclick="window.showHostRoom()">방 화면으로 돌아가기</button>
       </div>
     </section>
 
     <!-- Phase 2: 로비 화면 (게임 완료 후) -->
-    <section class="card hidden" id="screenLobby">
-      <h2>🎮 게임 로비</h2>
-      <div class="notice" style="margin-bottom:14px">
+    <section class="card maru-card hidden" id="screenLobby">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="maru-corner maru-corner-lg">
+        <img src="ASSETS/rps/scenes/cat-decision-waiting.png" alt="마루" />
+      </div>
+      <div class="vrshow-cap vrshow-cap-lg">한 판 더?</div>
+      <p class="maru-section-sub" style="margin-top:6px">친구들 다 모이면<br/>마루가 새 판! 🐾</p>
+      <div class="maru-notice" style="margin-bottom:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <span style="font-weight:700">👑 호스트</span>
-          <span id="lobbyHostName" style="color:var(--primary);font-weight:700">-</span>
+          <span id="lobbyHostName" style="color:var(--maru-red);font-weight:700">-</span>
         </div>
         <div style="font-size:12px;color:var(--muted)">방 코드: <strong id="lobbyRoomCode">ABCD</strong></div>
       </div>
       <h3>참여자 목록 (<span id="lobbyParticipantCount">0</span>명)</h3>
       <div class="participant-list" id="lobbyParticipantList"></div>
       <div class="grid" style="margin-top:16px">
-        <button id="lobbyReadyBtn" class="btn-primary btn-full" onclick="window.markReadyFromLobby()">🎮 게임 준비</button>
+        <button id="lobbyReadyBtn" class="btn-kparty" onclick="window.markReadyFromLobby()">
+          🎮 게임 준비
+          <span class="go-pill">READY</span>
+        </button>
         <button class="btn-outline btn-full" onclick="window.leaveRoom()">🚪 방 나가기</button>
       </div>
     </section>
 
-    <section class="card hidden" id="screenReady">
-      <h2>🎮 게임 준비</h2>
-      <div class="notice" id="readyPenaltyBox" style="margin-bottom:14px"></div>
+    <section class="card maru-card hidden" id="screenReady">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="maru-corner maru-corner-lg">
+        <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
+      </div>
+      <div class="vrshow-cap vrshow-cap-lg">레디!</div>
+      <p class="maru-section-sub" style="margin-top:6px">모두 ✋ 누르면<br/>마루가 시작 신호!</p>
+      <div class="maru-notice" id="readyPenaltyBox" style="margin-bottom:14px"></div>
       <h3>참가자 준비 현황</h3>
       <div id="readyParticipantList" style="margin-bottom:16px"></div>
       <div class="grid">
-        <button id="myReadyBtn" class="btn-primary btn-full" onclick="window.markReady()">✋ 게임 준비</button>
+        <button id="myReadyBtn" class="btn-kparty" onclick="window.markReady()">
+          ✋ 게임 준비
+          <span class="go-pill">READY</span>
+        </button>
         <button id="hostStartBtn" class="btn-success btn-full hidden" onclick="window.startGame()">🎮 게임 시작</button>
         <button id="editPenaltyBtn" class="btn-light btn-full hidden" onclick="window.showPenaltyScreen()">✏️ 벌칙 수정</button>
         <button class="btn-outline btn-full" onclick="window.goHome()">나가기</button>
@@ -1181,9 +1409,13 @@
       </div>
     </section>
 
-    <section class="card hidden" id="screenGame">
-      <h2>라운드 <span id="roundNumber">1</span></h2>
-      <p class="lead">아래 버튼을 눌러 선택하세요.</p>
+    <section class="card maru-card hidden" id="screenGame">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="vrshow-cap vrshow-cap-lg">자, 가위바위보!</div>
+      <h2 class="maru-section-title" style="margin-top:6px">라운드 <span id="roundNumber">1</span></h2>
+      <p class="maru-section-sub">마루를 따라 하나만 선택해 ✊✌️🖐</p>
       <div class="choice-anim" id="choiceAnim"></div>
       <div class="summary-row">
         <div class="summary-item"><strong id="timerText">5</strong><span>남은 시간</span></div>
@@ -1191,18 +1423,34 @@
         <div class="summary-item"><strong id="totalCount">0</strong><span>참가자</span></div>
       </div>
       <div class="choice-buttons">
-        <button class="choice-button" onclick="window.selectChoice('scissors', event)"><span class="emoji">✌️</span>가위</button>
-        <button class="choice-button" onclick="window.selectChoice('rock', event)"><span class="emoji">✊</span>바위</button>
-        <button class="choice-button" onclick="window.selectChoice('paper', event)"><span class="emoji">🖐</span>보</button>
+        <button class="choice-button" onclick="window.selectChoice('scissors', event)">
+          <img class="maru-hand" src="ASSETS/rps/scenes/cat-scissors-ko.png" alt="가위" />
+          가위
+        </button>
+        <button class="choice-button" onclick="window.selectChoice('rock', event)">
+          <img class="maru-hand" src="ASSETS/rps/scenes/cat-rock-ko.png" alt="바위" />
+          바위
+        </button>
+        <button class="choice-button" onclick="window.selectChoice('paper', event)">
+          <img class="maru-hand" src="ASSETS/rps/scenes/cat-paper-ko.png" alt="보" />
+          보
+        </button>
       </div>
       <div style="height: 12px"></div>
-      <button class="btn-light btn-full" onclick="window.autoFillChoices()">테스트용: 모든 참가자 랜덤 선택</button>
+      <button class="btn-light btn-full dev-only" onclick="window.autoFillChoices()">테스트용: 모든 참가자 랜덤 선택</button>
     </section>
 
     <!-- Phase 1: 호스트 playing 화면 -->
-    <section class="card hidden" id="screenHostPlaying">
-      <h2>라운드 <span id="hostRoundNumber">1</span></h2>
-      <p class="lead">모든 참가자가 선택을 완료할 때까지 기다려주세요.</p>
+    <section class="card maru-card hidden" id="screenHostPlaying">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="maru-corner maru-corner-md">
+        <img src="ASSETS/rps/scenes/cat-waiting.png" alt="마루" />
+      </div>
+      <div class="vrshow-cap vrshow-cap-lg">관전 중!</div>
+      <h2 class="maru-section-title" style="margin-top:4px">라운드 <span id="hostRoundNumber">1</span></h2>
+      <p class="maru-section-sub">모두 선택할 때까지<br/>마루랑 같이 지켜봐 👀</p>
       <div class="summary-row">
         <div class="summary-item"><strong id="hostTimerText">5</strong><span>남은 시간</span></div>
         <div class="summary-item"><strong id="hostSelectedCount">0</strong><span>선택 완료</span></div>
@@ -1211,14 +1459,21 @@
       <h3>참가자 선택 현황</h3>
       <div class="participant-list" id="hostPlayingParticipantList"></div>
       <div class="footer-actions">
-        <button id="hostJudgeBtn" class="btn-success btn-full hidden" onclick="window.hostJudgeRound()">🎯 판정 내리기</button>
-        <button class="btn-light btn-full" onclick="window.autoFillChoices()">테스트용: 미선택자 자동 선택</button>
+        <button id="hostJudgeBtn" class="btn-kparty hidden" onclick="window.hostJudgeRound()">
+          🎯 판정 내리기
+          <span class="go-pill">JUDGE</span>
+        </button>
+        <button class="btn-light btn-full dev-only" onclick="window.autoFillChoices()">테스트용: 미선택자 자동 선택</button>
       </div>
     </section>
 
-    <section class="card hidden" id="screenRoundResult">
+    <section class="card maru-card hidden" id="screenRoundResult">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
       <div class="result-hero">
-        <div class="result-emoji" id="resultEmoji">🎉</div>
+        <img class="result-maru" id="resultMaru" src="ASSETS/rps/scenes/cat-win-happy.png" alt="결과" />
+        <div class="vrshow-cap vrshow-cap-lg" id="resultCap" style="margin-bottom:6px">결과 발표!</div>
         <div class="result-title" id="resultTitle">승리!</div>
         <p class="lead" id="resultMessage">다음 라운드를 기다려주세요.</p>
       </div>
@@ -1232,7 +1487,10 @@
       <div class="participant-list" id="roundResultList"></div>
 
       <div class="footer-actions" id="roundResultActions">
-        <button class="btn-primary btn-full" id="nextRoundBtn" onclick="window.nextRound()">다음 라운드 시작</button>
+        <button class="btn-kparty" id="nextRoundBtn" onclick="window.nextRound()">
+          다음 라운드 시작
+          <span class="go-pill">NEXT</span>
+        </button>
         <button class="btn-danger btn-full" onclick="window.endGame()">게임 종료 및 통계 보기</button>
       </div>
 
@@ -1244,21 +1502,33 @@
       </div>
     </section>
 
-    <section class="card hidden" id="screenWinnerWait">
+    <section class="card maru-card hidden" id="screenWinnerWait">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
       <div class="result-hero">
-        <div id="winnerWaitEmoji" style="font-size:72px;animation:winnerBounce 0.7s ease-in-out infinite alternate">🎉</div>
+        <img id="winnerWaitMaru" class="result-maru" src="ASSETS/rps/scenes/cat-win-happy.png" alt="우선안전!" style="animation:winnerBounce 0.7s ease-in-out infinite alternate" />
+        <div class="vrshow-cap vrshow-cap-lg" style="margin-bottom:6px">세이프!</div>
         <div class="result-title win">우선안전!</div>
         <p class="lead">이번 재게임에서는 빠지고 최종 술래가 나올 때까지 기다려주세요.</p>
-        <p style="color:#888;font-size:14px">남은 참여자들만 재게임을 진행 중입니다.</p>
+        <p style="color:#888;font-size:14px">남은 참여자들만 재게임을 진행 중입니다 🍵</p>
       </div>
       <div style="text-align:center;margin-top:12px">
         <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
       </div>
     </section>
 
-    <section class="card hidden" id="screenStats">
-      <h2>최종 결과</h2>
-      <p class="lead">참가자별 승률과 벌칙 횟수를 확인합니다.</p>
+    <section class="card maru-card hidden" id="screenStats">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="maru-hero sm">
+        <div class="maru-hero-bg"></div>
+        <img src="ASSETS/rps/scenes/cat-win-happy.png" alt="마루" />
+      </div>
+      <div class="vrshow-cap vrshow-cap-lg">통계 발표!</div>
+      <h2 class="maru-section-title" style="margin-top:6px">최종 결과</h2>
+      <p class="maru-section-sub">참가자별 승률·벌칙 횟수를<br/>마루가 정리했어 📊</p>
       <table>
         <thead>
           <tr>
@@ -1273,14 +1543,21 @@
         <tbody id="statsTableBody"></tbody>
       </table>
       <div class="footer-actions">
-        <button id="statsReplayBtn" class="btn-primary btn-full" onclick="window.inviteForReplay()">같은 방에서 다시 하기</button>
+        <button id="statsReplayBtn" class="btn-kparty" onclick="window.inviteForReplay()">
+          같은 방에서 다시 하기
+          <span class="go-pill">AGAIN</span>
+        </button>
         <button class="btn-outline btn-full" onclick="window.goHome()">처음으로</button>
       </div>
     </section>
 
-    <section class="card hidden" id="screenLoserWait">
+    <section class="card maru-card hidden" id="screenLoserWait">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
       <div class="result-hero">
-        <div style="font-size:72px">🎺</div>
+        <img class="result-maru lose" src="ASSETS/rps/scenes/cat-lost-tired.png" alt="술래 확정!" />
+        <div class="vrshow-cap vrshow-cap-lg" style="margin-bottom:6px">아이고~</div>
         <div class="result-title lose">술래 확정!</div>
         <p class="lead" id="loserWaitMessage">벌칙을 준비하세요. 게임이 계속 진행 중입니다...</p>
       </div>
@@ -1295,9 +1572,12 @@
 
     <!-- 게임 승률 팝업 -->
     <div id="statsPopup" class="popup-overlay hidden">
-      <div class="popup-card">
-        <h3>🏆 게임 승률</h3>
-        <p>현재 게임방 누적 기록</p>
+      <div class="popup-card maru-popup">
+        <div class="saekdong-v">
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px">🏆 게임 승률</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px">현재 게임방 누적 기록</p>
         <table style="width:100%;font-size:13px;border-collapse:collapse">
           <thead>
             <tr style="border-bottom:1px solid #eee">
@@ -1310,15 +1590,21 @@
           </thead>
           <tbody id="statsPopupBody"></tbody>
         </table>
-        <button onclick="window.closeStatsPopup()" class="btn-primary btn-full" style="margin-top:16px">닫기</button>
+        <button onclick="window.closeStatsPopup()" class="btn-kparty" style="margin-top:16px">
+          닫기
+          <span class="go-pill">OK</span>
+        </button>
       </div>
     </div>
 
     <!-- 다음 호스트 선택 팝업 -->
     <div id="nextHostPopup" class="popup-overlay hidden">
-      <div class="popup-card">
-        <h3>👑 다음 호스트 선택</h3>
-        <p>게임을 이어받을 다음 호스트를 선택해주세요.</p>
+      <div class="popup-card maru-popup">
+        <div class="saekdong-v">
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px">👑 다음 호스트 선택</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px">게임을 이어받을 다음 호스트를 선택해주세요.</p>
         <div id="nextHostList"></div>
         <div style="height:8px"></div>
         <button onclick="window.leaveRoomForce()" class="btn-light btn-full" style="margin-bottom:8px">랜덤으로 호스트 지명 후 나가기</button>
@@ -1328,20 +1614,37 @@
 
     <!-- 게임 신청 팝업 (참가자용) -->
     <div id="invitePopup" class="popup-overlay hidden">
-      <div class="popup-card">
-        <h3>🎮 새 게임 초대</h3>
-        <p>호스트가 같은 방에서 새 게임을 시작합니다!</p>
-        <button onclick="window.acceptInvite()" class="btn-primary btn-full" style="margin-bottom:8px">수락하기</button>
+      <div class="popup-card maru-popup">
+        <div class="saekdong-v">
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="maru-hero sm" style="margin-bottom:4px">
+          <div class="maru-hero-bg"></div>
+          <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
+        </div>
+        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px;text-align:center">🎮 새 게임 초대</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px;text-align:center">호스트가 같은 방에서 새 게임을 시작합니다!</p>
+        <button onclick="window.acceptInvite()" class="btn-kparty" style="margin-bottom:8px">
+          수락하기
+          <span class="go-pill">JOIN</span>
+        </button>
         <button onclick="window.declineInvite()" class="btn-outline btn-full">거절하기</button>
       </div>
     </div>
 
     <!-- 게임 초대 대기 팝업 (호스트용) -->
     <div id="inviteHostPopup" class="popup-overlay hidden">
-      <div class="popup-card">
-        <h3>🎮 게임 초대 중...</h3>
-        <p>참가자들에게 초대를 보냈습니다. 잠시 후 자동으로 시작됩니다.</p>
-        <div id="inviteCountdown" style="font-size:36px;font-weight:700;text-align:center;margin:12px 0;color:var(--primary)"></div>
+      <div class="popup-card maru-popup">
+        <div class="saekdong-v">
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="maru-hero sm" style="margin-bottom:4px">
+          <div class="maru-hero-bg"></div>
+          <img src="ASSETS/rps/scenes/cat-waiting.png" alt="마루" />
+        </div>
+        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px;text-align:center">🎮 게임 초대 중...</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px;text-align:center">참가자들에게 초대를 보냈습니다. 잠시 후 자동으로 시작됩니다.</p>
+        <div id="inviteCountdown" style="font-size:36px;font-weight:700;text-align:center;margin:12px 0;color:var(--orange-deep);font-family:'Black Han Sans',sans-serif"></div>
         <button onclick="window.startReinviteNow()" class="btn-success btn-full" style="margin-bottom:8px">지금 시작하기</button>
         <button onclick="window.cancelReinvite()" class="btn-outline btn-full">취소</button>
       </div>
@@ -2209,13 +2512,13 @@
           btn.textContent = "저장 완료 ✓";
           setTimeout(() => {
             btn.disabled = false;
-            btn.textContent = "벌칙 저장 및 참가자에게 표시";
+            btn.textContent = "💾 벌칙 저장하기";
             showHostRoom();
           }, 800);
         } catch (e) {
           console.error('벌칙 저장 오류:', e.message);
           btn.disabled = false;
-          btn.textContent = "벌칙 저장 및 참가자에게 표시";
+          btn.textContent = "💾 벌칙 저장하기";
           alert('저장 오류: ' + e.message);
           return;
         }
@@ -2225,7 +2528,7 @@
         btn.textContent = "저장 완료 ✓";
         setTimeout(() => {
           btn.disabled = false;
-          btn.textContent = "벌칙 저장 및 참가자에게 표시";
+          btn.textContent = "💾 벌칙 저장하기";
           showHostRoom();
         }, 800);
       }
@@ -2448,7 +2751,13 @@
 
       document.querySelectorAll(".choice-button").forEach(btn => btn.classList.remove("selected"));
       if (event && event.currentTarget) event.currentTarget.classList.add("selected");
-      $("choiceAnim").textContent = choiceEmoji[choice] || "";
+      const ca = $("choiceAnim");
+      if (ca) {
+        const handImg = { scissors: "cat-scissors-ko.png", rock: "cat-rock-ko.png", paper: "cat-paper-ko.png" }[choice];
+        ca.innerHTML = handImg
+          ? `<img class="maru-hand-lg" src="ASSETS/rps/scenes/${handImg}" alt="${choiceLabel[choice]||''}" />`
+          : "";
+      }
     }
 
     function updateSelectedCount() {
@@ -2678,7 +2987,8 @@
       const iAmConfirmedLoser = state.confirmedLoserIds.includes(state.currentUserId);
 
       const title = $("resultTitle");
-      const emoji = $("resultEmoji");
+      const maruImg = $("resultMaru");
+      const resultCap = $("resultCap");
       const message = $("resultMessage");
       const penaltyBox = $("resultPenaltyBox");
       const penaltyTextEl = $("resultPenaltyText");
@@ -2686,6 +2996,14 @@
       const actionsDiv = $("roundResultActions");
       const finalBtns = $("finalResultBtns");
       const penTxt = getPenaltyText();
+
+      const setMaru = (file, tone) => {
+        if (maruImg) {
+          maruImg.src = `ASSETS/rps/scenes/${file}`;
+          maruImg.className = "result-maru" + (tone ? " " + tone : "");
+        }
+      };
+      const setCap = (text) => { if (resultCap) resultCap.textContent = text; };
 
       title.className = "result-title";
       penaltyBox.classList.add("hidden");
@@ -2695,7 +3013,8 @@
       if (caseType === "draw") {
         title.textContent = "무승부!";
         title.classList.add("draw");
-        emoji.textContent = "🤝";
+        setMaru("cat-draw-confused.png", "draw");
+        setCap("어라?");
         if (state.role === "host") {
           message.textContent = "무승부! 다음 라운드를 시작하려면 아래 버튼을 눌러주세요.";
           actionsDiv.style.display = "";
@@ -2715,14 +3034,16 @@
         if (myResult === "lose") {
           title.textContent = `술래 확정! (${state.confirmedLoserIds.length}/${getTargetLoserCount()}명)`;
           title.classList.add("lose");
-          emoji.textContent = "🎺";
+          setMaru("cat-lost-tired.png", "lose");
+          setCap("아이고~");
           message.textContent = "축하합니다(?) 벌칙을 수행하세요!";
           penaltyTextEl.textContent = penTxt || "벌칙이 설정되지 않았습니다.";
           penaltyBox.classList.remove("hidden");
         } else {
           title.textContent = "생존!";
           title.classList.add("win");
-          emoji.textContent = "🥳";
+          setMaru("cat-win-happy.png", "");
+          setCap("야호~!");
           message.textContent = `술래 ${getTargetLoserCount()}명이 모두 결정됐습니다!`;
         }
         nextBtn.style.display = "none";
@@ -2747,12 +3068,14 @@
         if (myResult === "lose") {
           title.textContent = "패배!";
           title.classList.add("lose");
-          emoji.textContent = "😵";
+          setMaru("cat-lost-tired.png", "lose");
+          setCap("저런...");
           message.textContent = `패자 ${roundLoserCount}명 중 ${remainingSlots}명만 술래! 잠시 후 패자들끼리 재대결...`;
         } else {
           title.textContent = "일단 안전!";
           title.classList.add("win");
-          emoji.textContent = "😅";
+          setMaru("cat-waiting.png", "");
+          setCap("휴~ 다행");
           message.textContent = "패자들끼리 다음 라운드가 자동으로 시작됩니다...";
         }
         nextBtn.style.display = "none";
@@ -2764,14 +3087,16 @@
         if (iAmConfirmedLoser && myResult === "lose") {
           title.textContent = "술래 확정!";
           title.classList.add("lose");
-          emoji.textContent = "🎺";
+          setMaru("cat-lost-tired.png", "lose");
+          setCap("아이고~");
           message.textContent = `술래 확정 (${state.confirmedLoserIds.length}/${getTargetLoserCount()}명). 벌칙 준비!`;
           penaltyTextEl.textContent = penTxt || "벌칙이 설정되지 않았습니다.";
           penaltyBox.classList.remove("hidden");
         } else {
           title.textContent = myResult === "win" ? "계속 진행!" : "무승부!";
           title.classList.add(myResult === "win" ? "win" : "draw");
-          emoji.textContent = "🔄";
+          setMaru(myResult === "win" ? "cat-win-happy.png" : "cat-draw-confused.png", myResult === "win" ? "" : "draw");
+          setCap(myResult === "win" ? "휴~ 살았다" : "어라?");
           message.textContent = `술래 ${newlyConfirmed}명 확정. ${remainingSlots - newlyConfirmed}명 더 필요! 잠시 후 재대결...`;
         }
         nextBtn.style.display = "none";
@@ -2798,9 +3123,11 @@
         } else {
           tagClass = "draw"; tagText = "무승부";
         }
+        const handImg = { scissors: "cat-scissors-ko.png", rock: "cat-rock-ko.png", paper: "cat-paper-ko.png" }[p.choice];
+        const handHtml = handImg ? `<img class="maru-hand-mini" src="ASSETS/rps/scenes/${handImg}" alt="${choiceLabel[p.choice]||''}" />` : "";
         div.innerHTML = `
           <strong>${escapeHtml(p.name)} ${p.is_host ? "<span class='tag host'>HOST</span>" : ""}</strong>
-          <span>${choiceEmoji[p.choice] || ""} ${choiceLabel[p.choice] || ""} <span class="tag ${tagClass}">${tagText}</span></span>
+          <span>${handHtml}${choiceLabel[p.choice] || ""} <span class="tag ${tagClass}">${tagText}</span></span>
         `;
         list.appendChild(div);
       });
@@ -3594,6 +3921,9 @@
     function initFromUrl() {
       const params = new URLSearchParams(location.search);
       const room = params.get("room");
+      if (params.get("debug") === "1" || localStorage.getItem("rpsDebugMode") === "1") {
+        document.body.classList.add("debug-mode");
+      }
       loadState();
       const savedNickname = loadNickname();
       if (savedNickname) $("homeNickname").value = savedNickname;
