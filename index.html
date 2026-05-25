@@ -7,6 +7,16 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gowun+Dodum&family=Noto+Sans+KR:wght@500;700;900&display=swap" rel="stylesheet">
+  <!-- 마루 캐릭터 preload (Home/Auth 화면 즉시 표시용) -->
+  <link rel="preload" as="image" href="ASSETS/rps/scenes/cat-decision-waiting.png" fetchpriority="high">
+  <link rel="preload" as="image" href="ASSETS/rps/scenes/cat-ready-idea.png" fetchpriority="high">
+  <link rel="preload" as="image" href="ASSETS/rps/scenes/cat-waiting.png">
+  <link rel="preload" as="image" href="ASSETS/rps/scenes/cat-win-happy.png">
+  <link rel="preload" as="image" href="ASSETS/rps/scenes/cat-lost-tired.png">
+  <link rel="preload" as="image" href="ASSETS/rps/scenes/cat-draw-confused.png">
+  <link rel="preload" as="image" href="ASSETS/rps/scenes/cat-rock-ko.png">
+  <link rel="preload" as="image" href="ASSETS/rps/scenes/cat-paper-ko.png">
+  <link rel="preload" as="image" href="ASSETS/rps/scenes/cat-scissors-ko.png">
   <style>
     :root {
       /* 마루 팔레트 — 캐릭터에서 추출한 따뜻한 톤 */
@@ -1345,7 +1355,7 @@
         <textarea id="penaltyInput" placeholder="예: 오늘 커피 사기"></textarea>
       </div>
       <h3>자주 사용한 벌칙</h3>
-      <div class="penalty-chip-wrap" id="penaltyChips"></div>
+      <div class="penalty-chip-wrap" id="penaltyChips" style="margin-bottom:18px"></div>
       <div class="grid">
         <button id="savePenaltyBtn" class="btn-kparty" onclick="window.savePenalty()">
           💾 벌칙 저장하기
@@ -1372,6 +1382,10 @@
         </div>
         <div style="font-size:12px;color:var(--muted)">방 코드: <strong id="lobbyRoomCode">ABCD</strong></div>
       </div>
+      <div id="lobbyPenaltyBox" class="penalty-box" style="margin-bottom:12px">
+        <small>이번 게임 벌칙</small>
+        <strong id="lobbyPenaltyText">아직 벌칙이 설정되지 않았습니다.</strong>
+      </div>
       <h3>참여자 목록 (<span id="lobbyParticipantCount">0</span>명)</h3>
       <div class="participant-list" id="lobbyParticipantList"></div>
       <div class="grid" style="margin-top:16px">
@@ -1379,6 +1393,7 @@
           🎮 게임 준비
           <span class="go-pill">READY</span>
         </button>
+        <button id="lobbyEditPenaltyBtn" class="btn-light btn-full hidden" onclick="window.showPenaltyScreen()">✏️ 벌칙 수정</button>
         <button class="btn-outline btn-full" onclick="window.leaveRoom()">🚪 방 나가기</button>
       </div>
     </section>
@@ -2499,21 +2514,27 @@
 
       if (getOnlineMode()) {
         try {
-          await Promise.race([
-            db.from('participants').update({ is_ready: false }).eq('room_id', state.roomCode),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-          ]);
+          // is_ready를 reset하지 않음 — 호스트 벌칙 수정이 게임 시작 가능 상태를 깨지 않도록.
+          // 참가자는 현재 화면에서 새 벌칙 텍스트를 자동 갱신해서 인지함.
+          // status='lobby' 인 경우 lobby 유지, 'ready'/'waiting'에서 들어왔으면 'ready'로 통일
+          const nextStatus = state.status === "lobby" ? "lobby" : "ready";
           const { error } = await Promise.race([
-            db.from('rooms').update({ penalty: value, status: 'ready' }).eq('id', state.roomCode),
+            db.from('rooms').update({ penalty: value, status: nextStatus }).eq('id', state.roomCode),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
           ]);
           if (error) throw error;
-          state.status = "ready";
+          state.status = nextStatus;
           btn.textContent = "저장 완료 ✓";
           setTimeout(() => {
             btn.disabled = false;
             btn.textContent = "💾 벌칙 저장하기";
-            showHostRoom();
+            // 로비에서 들어온 경우 로비로 복귀, 그 외엔 호스트 방
+            if (nextStatus === "lobby") {
+              showScreen("screenLobby");
+              renderLobby();
+            } else {
+              showHostRoom();
+            }
           }, 800);
         } catch (e) {
           console.error('벌칙 저장 오류:', e.message);
@@ -2523,13 +2544,19 @@
           return;
         }
       } else {
-        state.status = "ready";
-        state.participants.forEach(p => { p.is_ready = false; });
+        // 오프라인: is_ready 유지 (참가자 자동 인지) + lobby 컨텍스트 유지
+        const nextStatus = state.status === "lobby" ? "lobby" : "ready";
+        state.status = nextStatus;
         btn.textContent = "저장 완료 ✓";
         setTimeout(() => {
           btn.disabled = false;
           btn.textContent = "💾 벌칙 저장하기";
-          showHostRoom();
+          if (nextStatus === "lobby") {
+            showScreen("screenLobby");
+            renderLobby();
+          } else {
+            showHostRoom();
+          }
         }, 800);
       }
 
@@ -2604,14 +2631,16 @@
       numEl.className = "count-anim";
       await speak("안내면 술래", 1.4, 1.0);
 
-      // 2단계: "가위바위 보!" — 보를 크게
+      // 2단계: "가위바위 보!" — 보를 크게, "보"에서 피치 업
       numEl.className = "";
       numEl.style.fontSize = "46px";
       numEl.innerHTML = `가위바위<span style="font-size:2em;vertical-align:middle"> 보!</span>`;
       labelEl.textContent = "";
       void numEl.offsetWidth;
       numEl.className = "count-anim";
-      speak("가위바위보", 1.6, 0.85);
+      // "가위바위" 기본 톤, "보!"는 높은 톤으로 분리 호출
+      speak("가위바위", 1.6, 0.85);
+      setTimeout(() => speak("보!", 2.2, 0.95), 750);
       await sleep(1800);
 
       overlay.classList.add("hidden");
@@ -2866,7 +2895,9 @@
         state.confirmedSafeIds = [...prevSafeIds, ...roundWinners.map(p => p.id)];
         renderRoundResult("tooMany", roundLosers.length, remainingSlots);
         showScreen("screenRoundResult");
-        if (state.role === "host") setTimeout(() => { state.finishingRound = false; nextRound(); }, 3000);
+        // 1.5초간 결과 표시 → 호스트가 nextRound() 호출해 다음 라운드 준비 화면으로 전환
+        // 그 후엔 패자(active)들이 "✋ 게임 준비" 누르면 자동 시작 (fetchParticipants 자동 시작 게이트가 처리)
+        if (state.role === "host") setTimeout(() => { state.finishingRound = false; nextRound(); }, 1500);
       } else {
         state.confirmedLoserIds = [...prevLoserIds, ...roundLosers.map(p => p.id)];
         renderRoundResult("tooFew", roundLosers.length, remainingSlots);
@@ -2876,7 +2907,7 @@
         } else if (myResult === "win") {
           setTimeout(() => speak("휴~ 다행이다. 계속 진행합니다!", 1.4, 0.9), 800);
         }
-        if (state.role === "host") setTimeout(() => { state.finishingRound = false; nextRound(); }, 3000);
+        if (state.role === "host") setTimeout(() => { state.finishingRound = false; nextRound(); }, 1500);
       }
       state.finishingRound = false;
     }
@@ -3070,13 +3101,13 @@
           title.classList.add("lose");
           setMaru("cat-lost-tired.png", "lose");
           setCap("저런...");
-          message.textContent = `패자 ${roundLoserCount}명 중 ${remainingSlots}명만 술래! 잠시 후 패자들끼리 재대결...`;
+          message.textContent = `패자 ${roundLoserCount}명 중 ${remainingSlots}명만 술래!\n잠시 후 ✋ 게임 준비를 눌러주세요.`;
         } else {
-          title.textContent = "일단 안전!";
+          title.textContent = "안전!";
           title.classList.add("win");
-          setMaru("cat-waiting.png", "");
-          setCap("휴~ 다행");
-          message.textContent = "패자들끼리 다음 라운드가 자동으로 시작됩니다...";
+          setMaru("cat-win-happy.png", "");
+          setCap("야호~!");
+          message.textContent = "당신은 안전! 패자들이 준비되면 자동으로 재경기가 시작됩니다.";
         }
         nextBtn.style.display = "none";
         actionsDiv.style.display = "none";
@@ -4008,13 +4039,22 @@
       $("lobbyRoomCode").textContent = state.roomCode || "----";
       $("lobbyParticipantCount").textContent = state.participants.length;
 
+      // 벌칙 표시 (전 라운드에서 카리오버된 벌칙)
+      const penTxt = getPenaltyText();
+      const penEl = $("lobbyPenaltyText");
+      if (penEl) penEl.textContent = penTxt || "아직 벌칙이 설정되지 않았습니다.";
+
       const me = state.participants.find(p => p.id === state.currentUserId);
       const btn = $("lobbyReadyBtn");
       if (btn && me) {
         btn.disabled = me.is_ready;
         btn.textContent = me.is_ready ? "✅ 준비 완료" : "🎮 게임 준비";
-        btn.className = me.is_ready ? "btn-light btn-full" : "btn-primary btn-full";
+        btn.className = me.is_ready ? "btn-light btn-full" : "btn-kparty";
       }
+
+      // 호스트만 벌칙 수정 버튼 노출
+      const editBtn = $("lobbyEditPenaltyBtn");
+      if (editBtn) editBtn.classList.toggle("hidden", state.role !== "host");
 
       const list = $("lobbyParticipantList");
       list.innerHTML = state.participants.map(p => {
@@ -4022,7 +4062,7 @@
         const ready = p.is_ready ? "✓ 준비 완료" : "○ 준비 대기";
         const hostBadge = p.is_host ? " 👑" : "";
         return `
-          <div class="participant" style="${isMe ? "background:#eef2ff;border:1px solid #c7d2fe" : ""}">
+          <div class="participant" style="${isMe ? "background:#FFF4E0;border:1px solid #F5D8A8" : ""}">
             <strong>${escapeHtml(p.name)}${hostBadge}</strong>
             <span style="color:${p.is_ready ? "var(--success)" : "var(--muted)"}">${ready}</span>
           </div>
@@ -4127,8 +4167,9 @@
             choice: null,
             is_ready: false
           }).eq('room_id', state.roomCode);
-          // status='waiting' → 호스트는 screenHostRoom (벌칙 수정/게임 시작 버튼), 참가자는 screenParticipantWait
-          await db.from('rooms').update({ round: 1, status: 'waiting' }).eq('id', state.roomCode);
+          // status='lobby' → 모든 클라이언트가 screenLobby로 이동 (호스트+참가자 모두 "게임 준비" 버튼)
+          // 전원 ready → fetchParticipants가 startFromLobby() 자동 호출
+          await db.from('rooms').update({ round: 1, status: 'lobby' }).eq('id', state.roomCode);
         } catch (e) {
           console.error("returnToLobbyAfterGame error:", e);
         }
