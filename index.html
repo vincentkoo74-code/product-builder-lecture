@@ -1796,6 +1796,26 @@
       </div>
     </div>
 
+    <!-- 인앱 브라우저 (위챗/카카오톡/페북 등) 안내 팝업 -->
+    <div id="inAppBrowserPopup" class="popup-overlay hidden">
+      <div class="popup-card maru-popup">
+        <div class="saekdong-v">
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="maru-hero sm" style="margin-bottom:4px">
+          <div class="maru-hero-bg"></div>
+          <img src="ASSETS/rps/scenes/cat-draw-confused.png" alt="마루" />
+        </div>
+        <h3 id="inAppPopupTitle" class="maru-section-title" style="font-size:18px;margin:0 0 4px;text-align:center">외부 브라우저에서 열어주세요</h3>
+        <p id="inAppPopupMsg" style="font-size:13px;color:var(--muted);margin:0 0 12px;text-align:center;white-space:pre-line"></p>
+        <p id="inAppGuestHint" style="font-size:12px;color:var(--muted);margin:0 0 12px;text-align:center;font-style:italic"></p>
+        <button id="inAppCopyBtn" class="btn-kparty" style="margin-bottom:8px">
+          <span data-i18n="popup.inAppCopyUrl">📋 URL 복사하기</span>
+        </button>
+        <button id="inAppDismissBtn" class="btn-outline btn-full" data-i18n="popup.inAppDismiss">닫기</button>
+      </div>
+    </div>
+
     <!-- 공용 confirm 팝업 (네이티브 confirm 대체) -->
     <div id="confirmPopup" class="popup-overlay hidden">
       <div class="popup-card maru-popup">
@@ -2028,6 +2048,12 @@
         "popup.confirmLeaveTitle": "정말 나가시겠어요?",
         "popup.confirmLeaveMsg": "게임방을 나가면 진행 중인 게임에서 빠지게 됩니다 🐾",
         "popup.confirmLeaveOk": "🚪 나가기",
+        "popup.inAppTitle": "외부 브라우저에서 열어주세요",
+        "popup.inAppMsg": "{app} 내장 브라우저에서는 SNS 로그인이 안 돼요.\n우상단 메뉴(⋯) → \"다른 브라우저로 열기\" / \"Safari·Chrome으로 열기\"를 선택해주세요.",
+        "popup.inAppCopyUrl": "📋 URL 복사하기",
+        "popup.inAppDismiss": "닫기",
+        "popup.inAppGuestHint": "또는 게스트 모드로 바로 시작 가능 🐱",
+        "toast.urlCopiedSimple": "📋 URL 복사 완료! 외부 브라우저에 붙여넣기 하세요.",
         // tags
         "tag.host": "HOST",
         "tag.win": "승리",
@@ -2264,6 +2290,12 @@
         "popup.confirmLeaveTitle": "Leave the room?",
         "popup.confirmLeaveMsg": "Leaving the room drops you from the current game 🐾",
         "popup.confirmLeaveOk": "🚪 Exit",
+        "popup.inAppTitle": "Please open in an external browser",
+        "popup.inAppMsg": "Social sign-in doesn't work inside {app}'s in-app browser.\nTap the ⋯ menu (top right) → \"Open in Safari/Chrome\".",
+        "popup.inAppCopyUrl": "📋 Copy URL",
+        "popup.inAppDismiss": "Close",
+        "popup.inAppGuestHint": "Or play as guest right away 🐱",
+        "toast.urlCopiedSimple": "📋 URL copied! Paste it in an external browser.",
         "tag.host": "HOST",
         "tag.win": "Win",
         "tag.lose": "Lose",
@@ -2495,6 +2527,12 @@
         "popup.confirmLeaveTitle": "本当に出ますか？",
         "popup.confirmLeaveMsg": "部屋を出ると進行中のゲームから抜けます 🐾",
         "popup.confirmLeaveOk": "🚪 出る",
+        "popup.inAppTitle": "外部ブラウザで開いてください",
+        "popup.inAppMsg": "{app}の内蔵ブラウザではSNSログインができません。\n右上の⋯メニュー → 「Safari/Chromeで開く」を選んでください。",
+        "popup.inAppCopyUrl": "📋 URLをコピー",
+        "popup.inAppDismiss": "閉じる",
+        "popup.inAppGuestHint": "またはゲストモードですぐ遊べます 🐱",
+        "toast.urlCopiedSimple": "📋 URLをコピーしました。外部ブラウザに貼り付けてください。",
         "tag.host": "ホスト",
         "tag.win": "勝",
         "tag.lose": "負",
@@ -4963,10 +5001,69 @@
       updateRoomBadge();
     }
 
+    // 인앱 브라우저 감지 — OAuth가 차단되는 환경 (Google 정책)
+    function detectInAppBrowser() {
+      const ua = navigator.userAgent || "";
+      const patterns = [
+        { re: /MicroMessenger/i, name: "WeChat" },
+        { re: /KAKAOTALK/i,      name: "KakaoTalk" },
+        { re: /Line\//i,         name: "LINE" },
+        { re: /Instagram/i,      name: "Instagram" },
+        { re: /FB[AI]V/i,        name: "Facebook" },
+        { re: /FBAN/i,           name: "Facebook" },
+        { re: /Twitter/i,        name: "X / Twitter" },
+        { re: /NAVER\(inapp/i,   name: "Naver" },
+        { re: /Snapchat/i,       name: "Snapchat" },
+        { re: /(TikTok|BytedanceWebview|musical_ly)/i, name: "TikTok" },
+        { re: /Daum\/inapp/i,    name: "Daum" },
+      ];
+      for (const p of patterns) if (p.re.test(ua)) return p.name;
+      return null;
+    }
+
+    function showInAppBrowserPopup(appName) {
+      const overlay = $("inAppBrowserPopup");
+      if (!overlay) return;
+      const titleEl = $("inAppPopupTitle");
+      const msgEl = $("inAppPopupMsg");
+      const hintEl = $("inAppGuestHint");
+      const copyBtn = $("inAppCopyBtn");
+      const dismissBtn = $("inAppDismissBtn");
+
+      if (titleEl) titleEl.textContent = t("popup.inAppTitle");
+      if (msgEl) msgEl.textContent = t("popup.inAppMsg", { app: appName });
+      if (hintEl) hintEl.textContent = t("popup.inAppGuestHint");
+
+      const close = () => overlay.classList.add("hidden");
+      copyBtn.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(location.href);
+          showToast(t("toast.urlCopiedSimple"));
+        } catch (e) {
+          // clipboard 차단 환경: textarea fallback
+          const ta = document.createElement("textarea");
+          ta.value = location.href;
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand("copy"); showToast(t("toast.urlCopiedSimple")); }
+          catch { showToast(location.href, 6000); }
+          ta.remove();
+        }
+      };
+      dismissBtn.onclick = close;
+      overlay.classList.remove("hidden");
+    }
+
     async function loginWithSns(provider) {
       const providerName = t("sns." + provider) || provider;
       // Google / Apple은 Supabase 네이티브 지원
       if ((provider === "google" || provider === "apple") && db?.auth) {
+        // 인앱 브라우저 감지 — OAuth 시도 전에 차단해서 친절히 안내
+        const inApp = detectInAppBrowser();
+        if (inApp) {
+          showInAppBrowserPopup(inApp);
+          return;
+        }
         try {
           const { error } = await db.auth.signInWithOAuth({
             provider,
@@ -4976,7 +5073,6 @@
             }
           });
           if (error) showToast(t("toast.error", { msg: error.message }));
-          // 성공 시: 브라우저가 Google/Apple로 리다이렉트됨 (이 함수 이후 코드 실행 안 됨)
         } catch (e) {
           showToast(t("toast.error", { msg: e.message || String(e) }));
         }
@@ -4985,6 +5081,8 @@
       // Kakao / LINE은 Supabase 공식 지원 안 됨 — 추후 Edge Function 연동
       showToast(t("toast.snsComingSoon", { provider: providerName }));
     }
+    window.detectInAppBrowser = detectInAppBrowser;
+    window.showInAppBrowserPopup = showInAppBrowserPopup;
 
     function playAsGuest() {
       setAuthState("guest");
