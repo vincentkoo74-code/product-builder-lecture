@@ -4963,8 +4963,26 @@
       updateRoomBadge();
     }
 
-    function loginWithSns(provider) {
+    async function loginWithSns(provider) {
       const providerName = t("sns." + provider) || provider;
+      // Google / Apple은 Supabase 네이티브 지원
+      if ((provider === "google" || provider === "apple") && db?.auth) {
+        try {
+          const { error } = await db.auth.signInWithOAuth({
+            provider,
+            options: {
+              redirectTo: location.origin + location.pathname,
+              ...(provider === "google" ? { queryParams: { prompt: "select_account" } } : {}),
+            }
+          });
+          if (error) showToast(t("toast.error", { msg: error.message }));
+          // 성공 시: 브라우저가 Google/Apple로 리다이렉트됨 (이 함수 이후 코드 실행 안 됨)
+        } catch (e) {
+          showToast(t("toast.error", { msg: e.message || String(e) }));
+        }
+        return;
+      }
+      // Kakao / LINE은 Supabase 공식 지원 안 됨 — 추후 Edge Function 연동
       showToast(t("toast.snsComingSoon", { provider: providerName }));
     }
 
@@ -4984,7 +5002,7 @@
       }
     }
 
-    function initFromUrl() {
+    async function initFromUrl() {
       const params = new URLSearchParams(location.search);
       const room = params.get("room");
       if (params.get("debug") === "1" || localStorage.getItem("rpsDebugMode") === "1") {
@@ -4997,6 +5015,43 @@
       // Mute 버튼 상태 동기화
       const muteBtn = $("muteToggleBtn");
       if (muteBtn) muteBtn.textContent = isMuted() ? "🔇" : "🔊";
+
+      // Supabase OAuth 세션 처리 — Google/Apple 로그인 후 돌아왔을 때 세션 자동 감지
+      if (db?.auth) {
+        try {
+          const { data: { session } } = await db.auth.getSession();
+          if (session?.user) {
+            setAuthState("authed");
+            const meta = session.user.user_metadata || {};
+            const oauthName = meta.full_name || meta.name || meta.preferred_username
+              || (session.user.email || "").split("@")[0] || "";
+            if (oauthName && !loadNickname()) {
+              saveNickname(oauthName);
+            }
+            // OAuth callback 후 URL 파라미터 정리 (해시 + 쿼리)
+            if (location.hash.includes("access_token") || params.get("code")) {
+              history.replaceState({}, "", location.pathname + (room ? `?room=${room}` : ""));
+            }
+            showToast(`✨ ${oauthName || "OAuth"} 로그인 완료`);
+          }
+          // 상태 변화 구독
+          db.auth.onAuthStateChange((event, sess) => {
+            if (event === "SIGNED_IN" && sess?.user) {
+              setAuthState("authed");
+              const meta = sess.user.user_metadata || {};
+              const oauthName = meta.full_name || meta.name || meta.preferred_username || "";
+              if (oauthName && !loadNickname()) saveNickname(oauthName);
+            }
+            if (event === "SIGNED_OUT") {
+              localStorage.removeItem("rpsAuthState");
+              updateAuthTopbar();
+            }
+          });
+        } catch (e) {
+          console.warn("Auth session check failed:", e.message);
+        }
+      }
+
       loadState();
       const savedNickname = loadNickname();
       if (savedNickname) $("homeNickname").value = savedNickname;
@@ -5005,7 +5060,6 @@
       const authState = getAuthState();
 
       if (room) {
-        // QR 스캔으로 진입: 인증 없으면 먼저 auth 화면
         state.roomCode = room.toUpperCase();
         state.shareBaseUrl = location.origin;
         state.roomUrl = buildRoomUrl(state.roomCode);
@@ -5017,7 +5071,6 @@
           showScreen("screenJoin");
         }
       } else {
-        // 일반 진입: 처음 방문이면 auth 화면, 이미 선택했으면 홈
         if (!authState) {
           showAuthScreen();
         } else {
