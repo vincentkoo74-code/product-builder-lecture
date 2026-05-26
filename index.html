@@ -1298,11 +1298,11 @@
       <div class="maru-corner maru-corner-lg">
         <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
       </div>
-      <div class="vrshow-cap vrshow-cap-lg">방장 모드!</div>
-      <p class="maru-section-sub" style="margin-top:6px">QR이나 방 코드를 친구한테 보여주세요.<br/>마루가 입장을 기다리고 있어요 🐾</p>
+      <div class="vrshow-cap vrshow-cap-lg" data-i18n="hostRoom.cap">방장 모드!</div>
+      <p class="maru-section-sub" style="margin-top:6px" data-i18n-html="hostRoom.subtitle">QR이나 방 코드를 친구한테 보여주세요.<br/>마루가 입장을 기다리고 있어요 🐾</p>
 
       <div id="penaltyStatusBox" class="penalty-box hidden" style="margin:14px 0">
-        <small>이번 게임 벌칙</small>
+        <small data-i18n="hostRoom.penaltyBoxLabel">이번 게임 벌칙</small>
         <strong id="hostPenaltyText"></strong>
       </div>
 
@@ -1312,36 +1312,36 @@
         <div class="url-text dev-only" id="roomUrlText"></div>
       </div>
       <div id="roomLockedBox" class="maru-notice hidden" style="text-align:center">
-        <strong>참가 마감</strong><br>
-        모든 참여자가 준비를 완료해서 QR 참여를 닫았습니다.
+        <strong data-i18n="hostRoom.locked">참가 마감</strong><br>
+        <span data-i18n="hostRoom.lockedDesc">모든 참여자가 준비를 완료해서 QR 참여를 닫았습니다.</span>
       </div>
 
       <div id="shareUrlBox" class="maru-notice hidden" style="margin-top:12px">
-        <strong>스마트폰 QR 접속 주소</strong>
-        <p style="margin:6px 0 10px;font-size:13px">로컬 테스트 중에는 PC와 스마트폰이 같은 Wi-Fi에 있어야 합니다. 접속이 안 되면 아래 주소의 IP를 PC Wi-Fi IP로 바꿔주세요.</p>
+        <strong data-i18n="hostRoom.shareUrlTitle">스마트폰 QR 접속 주소</strong>
+        <p style="margin:6px 0 10px;font-size:13px" data-i18n="hostRoom.shareUrlHelp">로컬 테스트 중에는 PC와 스마트폰이 같은 Wi-Fi에 있어야 합니다. 접속이 안 되면 아래 주소의 IP를 PC Wi-Fi IP로 바꿔주세요.</p>
         <div class="row">
           <input id="shareBaseInput" placeholder="예: http://192.168.1.6:5173" />
-          <button class="btn-light btn-small" onclick="window.updateShareBaseUrl()">적용</button>
+          <button class="btn-light btn-small" onclick="window.updateShareBaseUrl()" data-i18n="hostRoom.shareApply">적용</button>
         </div>
       </div>
 
       <div style="height: 4px"></div>
-      <h3>참가자 목록</h3>
+      <h3 data-i18n="hostRoom.participants">참가자 목록</h3>
       <div class="participant-list" id="hostParticipantList"></div>
 
       <div id="loserCountBox" class="maru-notice" style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:12px">
-        <span style="font-weight:700">🎯 술래 숫자</span>
+        <span style="font-weight:700" data-i18n="hostRoom.loserCount">🎯 술래 숫자</span>
         <select id="loserCountSelect" onchange="window.onLoserCountChange(this.value)" class="loser-count-select">
           <option value="1">1명</option>
         </select>
       </div>
       <div class="footer-actions" style="margin-top:12px">
         <button id="startGameBtn" class="btn-kparty hidden" onclick="window.goToReadyScreen()">
-          🎮 게임 준비하기
+          <span data-i18n="hostRoom.prepareGameLabel">🎮 게임 준비하기</span>
           <span class="go-pill">GO</span>
         </button>
-        <button id="penaltySetBtn" class="btn-primary btn-full" onclick="window.showPenaltyScreen()">벌칙 설정하기</button>
-        <button class="btn-outline btn-full" onclick="window.goHome()">처음으로</button>
+        <button id="penaltySetBtn" class="btn-primary btn-full" onclick="window.showPenaltyScreen()" data-i18n="hostRoom.penaltySetBtn">벌칙 설정하기</button>
+        <button class="btn-outline btn-full" onclick="window.goHome()" data-i18n="common.home">처음으로</button>
       </div>
     </section>
 
@@ -1549,26 +1549,26 @@
       </div>
 
       <div class="penalty-box hidden" id="resultPenaltyBox">
-        <small>이번 벌칙</small>
+        <small data-i18n="result.penaltyBoxLabel">이번 벌칙</small>
         <strong id="resultPenaltyText"></strong>
       </div>
 
-      <h3>라운드 결과</h3>
+      <h3 data-i18n="result.roundResultsH3">라운드 결과</h3>
       <div class="participant-list" id="roundResultList"></div>
 
       <div class="footer-actions" id="roundResultActions">
         <button class="btn-kparty" id="nextRoundBtn" onclick="window.nextRound()">
-          다음 라운드 시작
+          <span data-i18n="result.nextRoundBtn">다음 라운드 시작</span>
           <span class="go-pill">NEXT</span>
         </button>
-        <button class="btn-danger btn-full" onclick="window.endGame()">게임 종료 및 통계 보기</button>
+        <button class="btn-danger btn-full" onclick="window.endGame()" data-i18n="result.endGameBtn">게임 종료 및 통계 보기</button>
       </div>
 
       <!-- 최종 결과(술래 확정)일 때만 표시되는 버튼 영역 -->
       <div id="finalResultBtns" class="hidden" style="margin-top:12px"></div>
 
       <div style="text-align:center;margin-top:12px">
-        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
+        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
       </div>
     </section>
 
@@ -1578,13 +1578,13 @@
       </div>
       <div class="result-hero">
         <img id="winnerWaitMaru" class="result-maru" src="ASSETS/rps/scenes/cat-win-happy.png" alt="우선안전!" style="animation:winnerBounce 0.7s ease-in-out infinite alternate" />
-        <div class="vrshow-cap vrshow-cap-lg" style="margin-bottom:6px">세이프!</div>
-        <div class="result-title win">우선안전!</div>
-        <p class="lead">이번 재게임에서는 빠지고 최종 술래가 나올 때까지 기다려주세요.</p>
-        <p style="color:#888;font-size:14px">남은 참여자들만 재게임을 진행 중입니다 🍵</p>
+        <div class="vrshow-cap vrshow-cap-lg" style="margin-bottom:6px" data-i18n="winnerWait.cap">세이프!</div>
+        <div class="result-title win" data-i18n="winnerWait.title">우선안전!</div>
+        <p class="lead" data-i18n="winnerWait.message">이번 재게임에서는 빠지고 최종 술래가 나올 때까지 기다려주세요.</p>
+        <p style="color:#888;font-size:14px" data-i18n="winnerWait.hint">남은 참여자들만 재게임을 진행 중입니다 🍵</p>
       </div>
       <div style="text-align:center;margin-top:12px">
-        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
+        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
       </div>
     </section>
 
@@ -1596,28 +1596,28 @@
         <div class="maru-hero-bg"></div>
         <img src="ASSETS/rps/scenes/cat-win-happy.png" alt="마루" />
       </div>
-      <div class="vrshow-cap vrshow-cap-lg">통계 발표!</div>
-      <h2 class="maru-section-title" style="margin-top:6px">최종 결과</h2>
-      <p class="maru-section-sub">참가자별 승률·벌칙 횟수를<br/>마루가 정리했어 📊</p>
+      <div class="vrshow-cap vrshow-cap-lg" data-i18n="stats.cap">통계 발표!</div>
+      <h2 class="maru-section-title" style="margin-top:6px" data-i18n="stats.title">최종 결과</h2>
+      <p class="maru-section-sub" data-i18n-html="stats.subtitle">참가자별 승률·벌칙 횟수를<br/>마루가 정리했어 📊</p>
       <table>
         <thead>
           <tr>
-            <th>참가자</th>
-            <th>승</th>
-            <th>패</th>
-            <th>무</th>
-            <th>승률</th>
-            <th>벌칙</th>
+            <th data-i18n="stats.thParticipant">참가자</th>
+            <th data-i18n="stats.thWin">승</th>
+            <th data-i18n="stats.thLose">패</th>
+            <th data-i18n="stats.thDraw">무</th>
+            <th data-i18n="stats.thRate">승률</th>
+            <th data-i18n="stats.thPenalty">벌칙</th>
           </tr>
         </thead>
         <tbody id="statsTableBody"></tbody>
       </table>
       <div class="footer-actions">
         <button id="statsReplayBtn" class="btn-kparty" onclick="window.inviteForReplay()">
-          같은 방에서 다시 하기
+          <span data-i18n="stats.replayBtn">같은 방에서 다시 하기</span>
           <span class="go-pill">AGAIN</span>
         </button>
-        <button class="btn-outline btn-full" onclick="window.goHome()">처음으로</button>
+        <button class="btn-outline btn-full" onclick="window.goHome()" data-i18n="common.home">처음으로</button>
       </div>
     </section>
 
@@ -1627,16 +1627,16 @@
       </div>
       <div class="result-hero">
         <img class="result-maru lose" src="ASSETS/rps/scenes/cat-lost-tired.png" alt="술래 확정!" />
-        <div class="vrshow-cap vrshow-cap-lg" style="margin-bottom:6px">아이고~</div>
-        <div class="result-title lose">술래 확정!</div>
-        <p class="lead" id="loserWaitMessage">벌칙을 준비하세요. 게임이 계속 진행 중입니다...</p>
+        <div class="vrshow-cap vrshow-cap-lg" style="margin-bottom:6px" data-i18n="loserWait.cap">아이고~</div>
+        <div class="result-title lose" data-i18n="loserWait.title">술래 확정!</div>
+        <p class="lead" id="loserWaitMessage" data-i18n="loserWait.messageDefault">벌칙을 준비하세요. 게임이 계속 진행 중입니다...</p>
       </div>
       <div class="penalty-box" id="loserWaitPenaltyBox">
-        <small>이번 벌칙</small>
+        <small data-i18n="result.penaltyBoxLabel">이번 벌칙</small>
         <strong id="loserWaitPenaltyText"></strong>
       </div>
       <div style="text-align:center;margin-top:12px">
-        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
+        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
       </div>
     </section>
 
@@ -1646,22 +1646,22 @@
         <div class="saekdong-v">
           <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
         </div>
-        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px">🏆 게임 승률</h3>
-        <p style="font-size:13px;color:var(--muted);margin:0 0 16px">현재 게임방 누적 기록</p>
+        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px" data-i18n="popup.statsTitle">🏆 게임 승률</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px" data-i18n="popup.statsSubtitle">현재 게임방 누적 기록</p>
         <table style="width:100%;font-size:13px;border-collapse:collapse">
           <thead>
             <tr style="border-bottom:1px solid #eee">
-              <th style="padding:6px 4px;text-align:left">참가자</th>
-              <th style="padding:6px 4px">승</th>
-              <th style="padding:6px 4px">패</th>
-              <th style="padding:6px 4px">무</th>
-              <th style="padding:6px 4px">승률</th>
+              <th style="padding:6px 4px;text-align:left" data-i18n="stats.thParticipant">참가자</th>
+              <th style="padding:6px 4px" data-i18n="stats.thWin">승</th>
+              <th style="padding:6px 4px" data-i18n="stats.thLose">패</th>
+              <th style="padding:6px 4px" data-i18n="stats.thDraw">무</th>
+              <th style="padding:6px 4px" data-i18n="stats.thRate">승률</th>
             </tr>
           </thead>
           <tbody id="statsPopupBody"></tbody>
         </table>
         <button onclick="window.closeStatsPopup()" class="btn-kparty" style="margin-top:16px">
-          닫기
+          <span data-i18n="popup.statsClose">닫기</span>
           <span class="go-pill">OK</span>
         </button>
       </div>
@@ -1673,12 +1673,12 @@
         <div class="saekdong-v">
           <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
         </div>
-        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px">👑 다음 호스트 선택</h3>
-        <p style="font-size:13px;color:var(--muted);margin:0 0 16px">게임을 이어받을 다음 호스트를 선택해주세요.</p>
+        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px" data-i18n="popup.nextHostTitle">👑 다음 호스트 선택</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px" data-i18n="popup.nextHostSubtitle">게임을 이어받을 다음 호스트를 선택해주세요.</p>
         <div id="nextHostList"></div>
         <div style="height:8px"></div>
-        <button onclick="window.leaveRoomForce()" class="btn-light btn-full" style="margin-bottom:8px">랜덤으로 호스트 지명 후 나가기</button>
-        <button onclick="window.closeNextHostPopup()" class="btn-outline btn-full">취소</button>
+        <button onclick="window.leaveRoomForce()" class="btn-light btn-full" style="margin-bottom:8px" data-i18n="popup.nextHostRandom">랜덤으로 호스트 지명 후 나가기</button>
+        <button onclick="window.closeNextHostPopup()" class="btn-outline btn-full" data-i18n="common.cancel">취소</button>
       </div>
     </div>
 
@@ -1692,13 +1692,13 @@
           <div class="maru-hero-bg"></div>
           <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
         </div>
-        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px;text-align:center">🎮 새 게임 초대</h3>
-        <p style="font-size:13px;color:var(--muted);margin:0 0 16px;text-align:center">호스트가 같은 방에서 새 게임을 시작합니다!</p>
+        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px;text-align:center" data-i18n="popup.inviteTitle">🎮 새 게임 초대</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px;text-align:center" data-i18n="popup.inviteSubtitle">호스트가 같은 방에서 새 게임을 시작합니다!</p>
         <button onclick="window.acceptInvite()" class="btn-kparty" style="margin-bottom:8px">
-          수락하기
+          <span data-i18n="popup.inviteAccept">수락하기</span>
           <span class="go-pill">JOIN</span>
         </button>
-        <button onclick="window.declineInvite()" class="btn-outline btn-full">거절하기</button>
+        <button onclick="window.declineInvite()" class="btn-outline btn-full" data-i18n="popup.inviteDecline">거절하기</button>
       </div>
     </div>
 
@@ -1712,11 +1712,11 @@
           <div class="maru-hero-bg"></div>
           <img src="ASSETS/rps/scenes/cat-waiting.png" alt="마루" />
         </div>
-        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px;text-align:center">🎮 게임 초대 중...</h3>
-        <p style="font-size:13px;color:var(--muted);margin:0 0 16px;text-align:center">참가자들에게 초대를 보냈습니다. 잠시 후 자동으로 시작됩니다.</p>
-        <div id="inviteCountdown" style="font-size:36px;font-weight:700;text-align:center;margin:12px 0;color:var(--orange-deep);font-family:'Black Han Sans',sans-serif"></div>
-        <button onclick="window.startReinviteNow()" class="btn-success btn-full" style="margin-bottom:8px">지금 시작하기</button>
-        <button onclick="window.cancelReinvite()" class="btn-outline btn-full">취소</button>
+        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px;text-align:center" data-i18n="popup.inviteHostTitle">🎮 게임 초대 중...</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px;text-align:center" data-i18n="popup.inviteHostSubtitle">참가자들에게 초대를 보냈습니다. 잠시 후 자동으로 시작됩니다.</p>
+        <div id="inviteCountdown" style="font-size:36px;font-weight:700;text-align:center;margin:12px 0;color:var(--orange-deep);font-family:var(--font-display)"></div>
+        <button onclick="window.startReinviteNow()" class="btn-success btn-full" style="margin-bottom:8px" data-i18n="popup.inviteHostStart">지금 시작하기</button>
+        <button onclick="window.cancelReinvite()" class="btn-outline btn-full" data-i18n="popup.inviteHostCancel">취소</button>
       </div>
     </div>
 
