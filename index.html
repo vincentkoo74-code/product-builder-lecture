@@ -148,7 +148,16 @@
       gap: 10px;
       font-weight: 900;
       font-size: 20px;
+      white-space: nowrap;
     }
+    .brand > div:last-child {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    /* 일본어 Reggae One은 x-height가 커서 같은 px도 한 줄에 안 들어감 → 축소 */
+    body[data-locale="ja"] .brand { font-size: 16px; }
+    body[data-locale="en"] .brand { font-size: 22px; }
 
     .brand-icon {
       width: 42px;
@@ -760,8 +769,12 @@
       color:var(--text);
       cursor:pointer;
       font-family:var(--font-body);
-      appearance:none;-webkit-appearance:none;
+      appearance:none;-webkit-appearance:none;-moz-appearance:none;
       background-image:none;
+      width:auto;
+      min-width:0;
+      text-align:center;
+      text-align-last:center;
     }
     .lang-select:hover{background:#fff;border-color:var(--orange)}
     .mute-btn{
@@ -924,6 +937,23 @@
       margin-bottom:10px;
       letter-spacing:.8px;
     }
+    /* 일본어 Reggae One은 x-height가 커서 한국어와 동일 시각 크기로 보이도록 축소 + 볼드 효과 */
+    body[data-locale="ja"] .vrshow-cap.vrshow-cap-lg{
+      font-size:17px;
+      padding:6px 14px 4px;
+      letter-spacing:.3px;
+      -webkit-text-stroke:0.4px currentColor;
+    }
+    body[data-locale="ja"] .vrshow-cap{
+      font-size:11px;
+      -webkit-text-stroke:0.3px currentColor;
+    }
+    /* 일본어 maru-section-title (h2) 도 동일 톤 — 한국어 디스플레이 폰트 대비 시각 크기 맞춤 */
+    body[data-locale="ja"] .maru-section-title{
+      font-size:18px;
+      -webkit-text-stroke:0.3px currentColor;
+    }
+    /* 영어 Bebas Neue는 condensed라 일관성 위해 동일 유지 */
 
     /* 술래 숫자 select - 좁은 폭 + 큰 가운데 정렬 텍스트 */
     select.loser-count-select{
@@ -4327,15 +4357,20 @@
       });
     }
 
+    // 벌칙 history를 locale별로 분리 저장 — 다른 언어 벌칙이 섞이지 않도록
+    function getPenaltyHistoryKey() {
+      return `rpsPenaltyHistory_${currentLocale}`;
+    }
+
     function savePenaltyHistory(text) {
       const history = getPenaltyHistory();
       const next = [text, ...history.filter(item => item !== text)].slice(0, 8);
-      localStorage.setItem("rpsPenaltyHistory", JSON.stringify(next));
+      localStorage.setItem(getPenaltyHistoryKey(), JSON.stringify(next));
     }
 
     function getPenaltyHistory() {
       try {
-        return JSON.parse(localStorage.getItem("rpsPenaltyHistory")) || [];
+        return JSON.parse(localStorage.getItem(getPenaltyHistoryKey())) || [];
       } catch {
         return [];
       }
