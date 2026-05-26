@@ -1281,13 +1281,13 @@
         <div class="maru-hero-bg"></div>
         <img src="ASSETS/rps/scenes/cat-waiting.png" alt="마루" />
       </div>
-      <div class="vrshow-cap vrshow-cap-lg">QR 스캔!</div>
-      <p class="maru-section-sub" style="margin-top:6px">호스트 화면의 QR코드를 카메라로 비춰주세요.<br/>지원 안 되면 방코드를 직접 입력할 수 있어요.</p>
+      <div class="vrshow-cap vrshow-cap-lg" data-i18n="qrScanner.cap">QR 스캔!</div>
+      <p class="maru-section-sub" style="margin-top:6px" data-i18n-html="qrScanner.subtitle">호스트 화면의 QR코드를 카메라로 비춰주세요.<br/>지원 안 되면 방코드를 직접 입력할 수 있어요.</p>
       <video id="qrScanVideo" playsinline muted style="width:100%;border-radius:18px;background:#111827;aspect-ratio:1/1;object-fit:cover"></video>
-      <div id="qrScanStatus" class="maru-notice" style="margin-top:12px">📷 카메라를 준비 중입니다...</div>
+      <div id="qrScanStatus" class="maru-notice" style="margin-top:12px" data-i18n="qrScanner.loading">📷 카메라를 준비 중입니다...</div>
       <div class="grid">
-        <button class="btn-outline btn-full" onclick="window.stopQrScanner(); window.showJoinScreen()">방코드 직접 입력</button>
-        <button class="btn-light btn-full" onclick="window.stopQrScanner(); window.goHome()">처음으로</button>
+        <button class="btn-outline btn-full" onclick="window.stopQrScanner(); window.showJoinScreen()" data-i18n="qrScanner.inputCode">방코드 직접 입력</button>
+        <button class="btn-light btn-full" onclick="window.stopQrScanner(); window.goHome()" data-i18n="common.home">처음으로</button>
       </div>
     </section>
 
@@ -1353,24 +1353,24 @@
         <div class="maru-hero-bg"></div>
         <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
       </div>
-      <div class="vrshow-cap vrshow-cap-lg">참가!</div>
-      <h2 class="maru-section-title" style="margin-top:6px">게임방 참여</h2>
-      <p class="maru-section-sub">방 코드랑 닉네임 알려줘! <br/>마루가 자리 잡아둘게 🐾</p>
+      <div class="vrshow-cap vrshow-cap-lg" data-i18n="join.cap">참가!</div>
+      <h2 class="maru-section-title" style="margin-top:6px" data-i18n="join.title">게임방 참여</h2>
+      <p class="maru-section-sub" data-i18n-html="join.subtitle">방 코드랑 닉네임 알려줘! <br/>마루가 자리 잡아둘게 🐾</p>
       <div class="field">
-        <label>방 코드</label>
-        <input id="joinRoomCode" placeholder="예: A7K2" list="recentRoomCodes" autocomplete="off" />
+        <label data-i18n="join.codeLabel">방 코드</label>
+        <input id="joinRoomCode" placeholder="예: A7K2" data-i18n-placeholder="join.codePlaceholder" list="recentRoomCodes" autocomplete="off" />
         <datalist id="recentRoomCodes"></datalist>
       </div>
       <div class="field">
-        <label>닉네임</label>
-        <input id="joinName" placeholder="예: 영선" />
+        <label data-i18n="join.nameLabel">닉네임</label>
+        <input id="joinName" placeholder="예: 영선" data-i18n-placeholder="join.namePlaceholder" />
       </div>
       <div class="grid">
         <button id="joinBtn" class="btn-kparty" onclick="window.joinRoom()">
-          🎉 참가하기
+          <span data-i18n="join.joinBtn">🎉 참가하기</span>
           <span class="go-pill">GO</span>
         </button>
-        <button class="btn-outline btn-full" onclick="window.goHome()">처음으로</button>
+        <button class="btn-outline btn-full" onclick="window.goHome()" data-i18n="common.home">처음으로</button>
       </div>
     </section>
 
@@ -1381,16 +1381,16 @@
       <div class="maru-corner maru-corner-lg">
         <img src="ASSETS/rps/scenes/cat-waiting.png" alt="마루" />
       </div>
-      <div class="vrshow-cap vrshow-cap-lg">대기 중!</div>
-      <p class="maru-section-sub" style="margin-top:6px">호스트가 벌칙 정하고 시작할 때까지<br/>잠깐만 기다려줘 🍵</p>
+      <div class="vrshow-cap vrshow-cap-lg" data-i18n="participantWait.cap">대기 중!</div>
+      <p class="maru-section-sub" style="margin-top:6px" data-i18n-html="participantWait.subtitle">호스트가 벌칙 정하고 시작할 때까지<br/>잠깐만 기다려줘 🍵</p>
       <div class="penalty-box">
-        <small>이번 게임 벌칙</small>
-        <strong id="waitPenaltyText">아직 벌칙이 설정되지 않았습니다.</strong>
+        <small data-i18n="participantWait.penaltyBoxLabel">이번 게임 벌칙</small>
+        <strong id="waitPenaltyText" data-i18n="participantWait.penaltyEmpty">아직 벌칙이 설정되지 않았습니다.</strong>
       </div>
-      <h3>참가자 목록</h3>
+      <h3 data-i18n="participantWait.participants">참가자 목록</h3>
       <div class="participant-list" id="waitParticipantList"></div>
       <div style="text-align:center;margin-top:12px">
-        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer">게임방에서 나가기</button>
+        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
       </div>
     </section>
 
@@ -1402,21 +1402,21 @@
         <div class="maru-hero-bg"></div>
         <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
       </div>
-      <div class="vrshow-cap vrshow-cap-lg">벌칙 갓!</div>
-      <h2 class="maru-section-title" style="margin-top:6px">벌칙 설정</h2>
-      <p class="maru-section-sub">진 사람이 뭘 할까? <b>마루가 적어둔다 📝</b></p>
+      <div class="vrshow-cap vrshow-cap-lg" data-i18n="penalty.cap">벌칙 갓!</div>
+      <h2 class="maru-section-title" style="margin-top:6px" data-i18n="penalty.title">벌칙 설정</h2>
+      <p class="maru-section-sub" data-i18n-html="penalty.subtitle">진 사람이 뭘 할까? <b>마루가 적어둔다 📝</b></p>
       <div class="field">
-        <label>이번 게임 벌칙</label>
-        <textarea id="penaltyInput" placeholder="예: 오늘 커피 사기"></textarea>
+        <label data-i18n="penalty.inputLabel">이번 게임 벌칙</label>
+        <textarea id="penaltyInput" placeholder="예: 오늘 커피 사기" data-i18n-placeholder="penalty.inputPlaceholder"></textarea>
       </div>
-      <h3>자주 사용한 벌칙</h3>
+      <h3 data-i18n="penalty.frequentTitle">자주 사용한 벌칙</h3>
       <div class="penalty-chip-wrap" id="penaltyChips" style="margin-bottom:18px"></div>
       <div class="grid">
         <button id="savePenaltyBtn" class="btn-kparty" onclick="window.savePenalty()">
-          💾 벌칙 저장하기
+          <span data-i18n="penalty.saveBtn">💾 벌칙 저장하기</span>
           <span class="go-pill">SAVE</span>
         </button>
-        <button class="btn-outline btn-full" onclick="window.showHostRoom()">방 화면으로 돌아가기</button>
+        <button class="btn-outline btn-full" onclick="window.showHostRoom()" data-i18n="penalty.returnBtn">방 화면으로 돌아가기</button>
       </div>
     </section>
 
