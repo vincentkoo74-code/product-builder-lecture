@@ -934,8 +934,9 @@
     }
     .maru-notice strong{color:var(--maru-red)}
 
-    /* 호스트룸 푸터 액션 버튼 통일 (벌칙 박스는 검정 .penalty-box로 분리되어 위로 이동) */
-    #screenHostRoom .footer-actions button{
+    /* 호스트룸 / 로비 푸터 액션 버튼 통일 — 동일 폰트·크기·패딩·중앙정렬·간격 */
+    #screenHostRoom .footer-actions button,
+    #screenLobby .grid > button{
       padding:15px 16px;
       font-size:15px;
       font-weight:800;
@@ -943,13 +944,16 @@
       border-radius:18px;
       text-align:center;
       line-height:1.25;
+      margin-bottom:0;
     }
-    /* startGameBtn: 호스트룸에서는 GO pill 제거하고 통일 (CTA 강조는 색상으로) */
-    #screenHostRoom #startGameBtn{
+    /* btn-kparty: 통일 컨텍스트에서는 GO pill 숨김 + 정확한 중앙정렬 (CTA 강조는 색상으로) */
+    #screenHostRoom #startGameBtn,
+    #screenLobby #lobbyReadyBtn{
       padding:15px 16px;
-      display:flex;align-items:center;justify-content:center;gap:0;
+      display:flex;align-items:center;justify-content:center;gap:8px;
     }
-    #screenHostRoom #startGameBtn .go-pill{display:none}
+    #screenHostRoom #startGameBtn .go-pill,
+    #screenLobby #lobbyReadyBtn .go-pill{display:none}
 
     /* 팝업 카드도 마루 톤 (좌측 색동) */
     .popup-card.maru-popup{
