@@ -1668,6 +1668,23 @@
         <button onclick="window.cancelReinvite()" class="btn-outline btn-full">취소</button>
       </div>
     </div>
+
+    <!-- 공용 confirm 팝업 (네이티브 confirm 대체) -->
+    <div id="confirmPopup" class="popup-overlay hidden">
+      <div class="popup-card maru-popup">
+        <div class="saekdong-v">
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="maru-hero sm" style="margin-bottom:4px">
+          <div class="maru-hero-bg"></div>
+          <img id="confirmPopupImg" src="ASSETS/rps/scenes/cat-draw-confused.png" alt="마루" />
+        </div>
+        <h3 id="confirmPopupTitle" class="maru-section-title" style="font-size:18px;margin:0 0 4px;text-align:center">정말 나가시겠어요?</h3>
+        <p id="confirmPopupMsg" style="font-size:13px;color:var(--muted);margin:0 0 16px;text-align:center">게임방을 나가면 다시 들어올 수 없을 수도 있어요 🐾</p>
+        <button id="confirmPopupOk" class="btn-danger btn-full" style="margin-bottom:8px">나가기</button>
+        <button id="confirmPopupCancel" class="btn-outline btn-full">취소</button>
+      </div>
+    </div>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -2290,7 +2307,7 @@
       const input = $("shareBaseInput");
       const next = normalizeShareBaseUrl(input ? input.value : "");
       if (!next) {
-        alert("스마트폰에서 열 수 있는 주소를 입력해주세요. 예: http://192.168.1.6:5173");
+        showToast("스마트폰에서 열 수 있는 주소를 입력해주세요. 예: http://192.168.1.6:5173");
         return;
       }
       state.shareBaseUrl = next;
@@ -2422,8 +2439,8 @@
       const code = $("joinRoomCode").value.trim().toUpperCase();
       const name = $("joinName").value.trim();
 
-      if (!code) { alert("방 코드를 입력해주세요."); return; }
-      if (!name) { alert("닉네임을 입력해주세요."); return; }
+      if (!code) { showToast("방 코드를 입력해주세요."); return; }
+      if (!name) { showToast("닉네임을 입력해주세요."); return; }
 
       const btn = $("joinBtn");
       btn.disabled = true;
@@ -2440,7 +2457,7 @@
 
         if (getOnlineMode()) {
           const { data: room } = await db.from('rooms').select('*').eq('id', code).single();
-          if (!room) { alert("존재하지 않는 방입니다."); return; }
+          if (!room) { showToast("존재하지 않는 방입니다."); return; }
           state.penalty = room.penalty || "";
           state.round = room.round || 1;
 
@@ -2450,7 +2467,7 @@
           const returningParticipant = getLastJoinedRoomCode() === code && loadNickname() === name;
           const locked = isJoinLocked(roomParticipants || [], room.status);
           if (locked && !existing && !returningParticipant) {
-            alert("모든 참여자가 준비를 완료해서 새로 참가할 수 없습니다.");
+            showToast("모든 참여자가 준비를 완료해서 새로 참가할 수 없습니다.");
             return;
           }
 
@@ -2482,7 +2499,7 @@
 
     async function addDemoParticipant() {
       if (isJoinLocked()) {
-        alert("모든 참여자가 준비를 완료해서 새로 참가할 수 없습니다.");
+        showToast("모든 참여자가 준비를 완료해서 새로 참가할 수 없습니다.");
         return;
       }
       const names = ["민수", "지훈", "수진", "하나", "도윤", "유나", "태오", "서준"];
@@ -2504,7 +2521,7 @@
 
     async function savePenalty() {
       const textVal = $("penaltyInput").value.trim();
-      if (!textVal) { alert("벌칙을 입력해주세요."); return; }
+      if (!textVal) { showToast("벌칙을 입력해주세요."); return; }
 
       const loserCount = state.targetLoserCount || 1;
       const value = JSON.stringify({ text: textVal, loserCount });
@@ -2545,7 +2562,7 @@
           console.error('벌칙 저장 오류:', e.message);
           btn.disabled = false;
           btn.textContent = "💾 벌칙 저장하기";
-          alert('저장 오류: ' + e.message);
+          showToast('저장 오류: ' + e.message);
           return;
         }
       } else {
@@ -2603,7 +2620,7 @@
           // → 호스트가 직접 카운트다운 실행 (다른 기기는 handleRoomUpdate로 처리)
           await runCountdownThenShowGame();
         } catch (e) {
-          alert('게임 시작 오류: ' + e.message);
+          showToast('게임 시작 오류: ' + e.message);
           if (btn) { btn.disabled = false; btn.textContent = "🎮 게임 시작"; }
           if (roomBtn) { roomBtn.disabled = false; roomBtn.textContent = "🚀 게임 시작!"; }
           state.gameStarting = false;
@@ -2985,7 +3002,7 @@
       // 아직 선택하지 않은 참가자가 있으면 판정 불가
       const notYetChosen = active.filter(p => !p.choice);
       if (notYetChosen.length > 0) {
-        alert(`아직 선택하지 않은 참가자가 있습니다:\n${notYetChosen.map(p => p.name).join(', ')}`);
+        showToast(`아직 선택하지 않은 참가자: ${notYetChosen.map(p => p.name).join(', ')}`);
         return;
       }
 
@@ -3456,8 +3473,8 @@
       refreshRoomUrl();
       const text = state.roomUrl || location.href;
       navigator.clipboard?.writeText(text)
-        .then(() => alert("초대 링크가 복사되었습니다."))
-        .catch(() => alert(text));
+        .then(() => showToast("📋 초대 링크가 복사되었어요"))
+        .catch(() => showToast(`복사 실패: ${text}`, 5000));
     }
 
     function saveState() {
@@ -3569,7 +3586,7 @@
     }
 
     async function goToReadyScreen() {
-      if (!state.penalty) { alert("먼저 벌칙을 설정해주세요."); return; }
+      if (!state.penalty) { showToast("먼저 벌칙을 설정해주세요."); return; }
       if (getOnlineMode()) {
         try {
           await Promise.race([
@@ -3580,7 +3597,7 @@
             updateRoomStatus('ready'),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
           ]);
-        } catch (e) { alert("오류: " + e.message); return; }
+        } catch (e) { showToast("오류: " + e.message); return; }
       } else {
         state.participants.forEach(p => p.is_ready = false);
       }
@@ -3632,7 +3649,7 @@
         } catch (e) {
           btn.disabled = false;
           btn.textContent = "✋ 게임 준비";
-          alert("오류: " + e.message);
+          showToast("오류: " + e.message);
         }
       } else {
         const me = state.participants.find(p => p.id === state.currentUserId);
@@ -3663,6 +3680,37 @@
       }
     }
 
+    // 공용 마루 톤 confirm 팝업 — 네이티브 confirm() 대체
+    function showConfirmPopup({ title, message, okText = "확인", cancelText = "취소", okClass = "btn-danger btn-full", img = "cat-draw-confused.png" } = {}) {
+      return new Promise(resolve => {
+        const overlay = $("confirmPopup");
+        const titleEl = $("confirmPopupTitle");
+        const msgEl = $("confirmPopupMsg");
+        const okBtn = $("confirmPopupOk");
+        const cancelBtn = $("confirmPopupCancel");
+        const imgEl = $("confirmPopupImg");
+        if (!overlay) return resolve(false);
+
+        titleEl.textContent = title || "확인";
+        msgEl.textContent = message || "";
+        okBtn.textContent = okText;
+        okBtn.className = okClass;
+        cancelBtn.textContent = cancelText;
+        if (imgEl && img) imgEl.src = `ASSETS/rps/scenes/${img}`;
+
+        const cleanup = (val) => {
+          overlay.classList.add("hidden");
+          okBtn.onclick = null;
+          cancelBtn.onclick = null;
+          resolve(val);
+        };
+        okBtn.onclick = () => cleanup(true);
+        cancelBtn.onclick = () => cleanup(false);
+        overlay.classList.remove("hidden");
+      });
+    }
+    window.showConfirmPopup = showConfirmPopup;
+
     async function leaveRoom() {
       if (state.role === "host") {
         const nonHosts = state.participants.filter(p => !p.is_host);
@@ -3671,7 +3719,14 @@
           return;
         }
       }
-      if (!confirm("게임방에서 나가시겠습니까?")) return;
+      const ok = await showConfirmPopup({
+        title: "정말 나가시겠어요?",
+        message: "게임방을 나가면 진행 중인 게임에서 빠지게 됩니다 🐾",
+        okText: "🚪 나가기",
+        cancelText: "취소",
+        img: "cat-draw-confused.png"
+      });
+      if (!ok) return;
       await _doLeaveRoom();
     }
 
