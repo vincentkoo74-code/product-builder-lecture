@@ -2522,14 +2522,29 @@
       paper: "🖐"
     };
 
-    const defaultPenalties = [
-      "오늘 커피 사기",
-      "10초 동안 춤추기",
-      "웃긴 표정 짓기",
-      "물 한 잔 마시기",
-      "다음게임 호스트",
-      "다음 게임 호스트 하기"
-    ];
+    // locale에 따라 5개 디폴트 벌칙 반환 (i18n 카탈로그에서 가져옴)
+    function getDefaultPenalties() {
+      return [
+        t("defaultPenalty.coffee"),
+        t("defaultPenalty.dance"),
+        t("defaultPenalty.funnyFace"),
+        t("defaultPenalty.water"),
+        t("defaultPenalty.nextHost"),
+      ];
+    }
+    // 하위 호환: 기존 const 참조 코드용 getter
+    const defaultPenalties = new Proxy([], {
+      get(_t, key) {
+        if (key === "length" || /^\d+$/.test(key)) return getDefaultPenalties()[key];
+        if (key === Symbol.iterator) return getDefaultPenalties()[Symbol.iterator].bind(getDefaultPenalties());
+        if (key === "includes") return v => getDefaultPenalties().includes(v);
+        if (key === "indexOf") return v => getDefaultPenalties().indexOf(v);
+        if (key === "map" || key === "filter" || key === "forEach" || key === "slice") {
+          return (...args) => getDefaultPenalties()[key](...args);
+        }
+        return getDefaultPenalties()[key];
+      }
+    });
 
     let state = {
       roomCode: "",
@@ -2859,12 +2874,12 @@
     function showLoserWaitScreen() {
       showScreen("screenLoserWait");
       const penaltyText = getPenaltyText();
-      $("loserWaitPenaltyText").textContent = penaltyText || "벌칙이 설정되지 않았습니다.";
+      $("loserWaitPenaltyText").textContent = penaltyText || t("result.penaltyEmpty");
       const remaining = getTargetLoserCount() - state.confirmedLoserIds.length;
       if (remaining > 0) {
-        $("loserWaitMessage").textContent = `벌칙을 준비하세요. 술래 ${remaining}명을 더 찾는 중...`;
+        $("loserWaitMessage").textContent = t("loserWait.messageWaiting", { n: remaining });
       } else {
-        $("loserWaitMessage").textContent = "벌칙을 준비하세요. 게임이 끝났습니다!";
+        $("loserWaitMessage").textContent = t("loserWait.messageDone");
       }
     }
 
@@ -2975,7 +2990,15 @@
     }
 
     function updateRoomBadge() {
-      $("roomBadge").textContent = state.roomCode ? `방 ${state.roomCode}` : "방 없음";
+      const el = $("roomBadge");
+      if (!el) return;
+      if (state.roomCode) {
+        el.textContent = t("topbar.room", { code: state.roomCode });
+        el.removeAttribute("data-i18n");
+      } else {
+        el.setAttribute("data-i18n", "topbar.noRoom");
+        el.textContent = t("topbar.noRoom");
+      }
     }
 
     async function createRoom() {
@@ -3055,13 +3078,14 @@
       const penaltyBtn = $("penaltySetBtn");
       const penaltyTxt = getPenaltyText();
 
+      const startBtnLabel = startBtn ? startBtn.querySelector("span:not(.go-pill)") : null;
       if (state.status === "ready") {
         if (penaltyTextEl) penaltyTextEl.textContent = penaltyTxt;
         penaltyBox.classList.remove("hidden");
-        startBtn.textContent = "🚀 게임 시작!";
+        if (startBtnLabel) startBtnLabel.textContent = t("hostRoom.startGameLabel");
         startBtn.onclick = () => window.startGame();
         startBtn.classList.remove("hidden");
-        penaltyBtn.textContent = "✏️ 벌칙 수정";
+        penaltyBtn.textContent = t("hostRoom.penaltyEditBtn");
         const safeIds = state.confirmedSafeIds || [];
         const loserIds = state.confirmedLoserIds || [];
         const activePlayers = state.participants.filter(p => !p.is_host && !safeIds.includes(p.id) && !loserIds.includes(p.id));
@@ -3071,18 +3095,18 @@
       } else if (penaltyTxt) {
         if (penaltyTextEl) penaltyTextEl.textContent = penaltyTxt;
         penaltyBox.classList.remove("hidden");
-        startBtn.textContent = "🎮 게임 준비하기";
+        if (startBtnLabel) startBtnLabel.textContent = t("hostRoom.prepareGameLabel");
         startBtn.onclick = () => window.goToReadyScreen();
         startBtn.classList.remove("hidden");
         startBtn.disabled = false;
         startBtn.style.opacity = "1";
-        penaltyBtn.textContent = "벌칙 바꾸기";
+        penaltyBtn.textContent = t("hostRoom.penaltyChangeBtn");
       } else {
         penaltyBox.classList.add("hidden");
         startBtn.classList.add("hidden");
         startBtn.disabled = false;
         startBtn.style.opacity = "1";
-        penaltyBtn.textContent = "벌칙 설정하기";
+        penaltyBtn.textContent = t("hostRoom.penaltySetBtn");
       }
     }
 
@@ -3517,12 +3541,12 @@
       const list = $("hostPlayingParticipantList");
       list.innerHTML = state.participants.map(p => {
         if (safeIds.includes(p.id)) {
-          return `<div class="participant" style="background:#dcfce7"><strong>${escapeHtml(p.name)}</strong><span style="color:var(--success)">✓ 우선안전</span></div>`;
+          return `<div class="participant" style="background:#dcfce7"><strong>${escapeHtml(p.name)}</strong><span style="color:var(--success)">✓ ${t("tag.safe")}</span></div>`;
         }
         if (loserIds.includes(p.id)) {
-          return `<div class="participant" style="background:#fee2e2"><strong>${escapeHtml(p.name)}</strong><span style="color:var(--danger)">✓ 술래 확정</span></div>`;
+          return `<div class="participant" style="background:#fee2e2"><strong>${escapeHtml(p.name)}</strong><span style="color:var(--danger)">✓ ${t("tag.loserConfirmed")}</span></div>`;
         }
-        const status = p.choice ? "✓ 선택완료" : "○ 대기 중";
+        const status = p.choice ? t("tag.chosenDone") : t("tag.chosenWaiting");
         const statusColor = p.choice ? "var(--success)" : "var(--muted)";
         return `<div class="participant"><strong>${escapeHtml(p.name)}</strong><span style="color:${statusColor}">${status}</span></div>`;
       }).join("");
@@ -3878,93 +3902,93 @@
       finalBtns.innerHTML = "";
 
       if (caseType === "draw") {
-        title.textContent = "무승부!";
+        title.textContent = t("result.titleDraw");
         title.classList.add("draw");
         setMaru("cat-draw-confused.png", "draw");
-        setCap("어라?");
+        setCap(t("result.capDraw"));
         if (state.role === "host") {
-          message.textContent = "무승부! 다음 라운드를 시작하려면 아래 버튼을 눌러주세요.";
+          message.textContent = t("result.msgDrawHost");
           actionsDiv.style.display = "";
           nextBtn.style.display = "";
           nextBtn.disabled = false;
-          nextBtn.textContent = "🔄 다음 라운드 시작";
+          const lbl = nextBtn.querySelector("span:not(.go-pill)");
+          if (lbl) lbl.textContent = t("result.nextRoundBtn");
           nextBtn.className = "btn-primary btn-full";
           nextBtn.onclick = () => window.nextRound();
         } else {
-          message.textContent = "무승부! 호스트가 다음 라운드를 시작할 때까지 기다려주세요.";
+          message.textContent = t("result.msgDrawGuest");
           actionsDiv.style.display = "none";
           nextBtn.style.display = "none";
         }
 
       } else if (caseType === "gameOver") {
-        // 술래 확정 - 게임 종료
         if (myResult === "lose") {
-          title.textContent = `술래 확정! (${state.confirmedLoserIds.length}/${getTargetLoserCount()}명)`;
+          title.textContent = t("result.titleLoserConfirmedCount", { done: state.confirmedLoserIds.length, target: getTargetLoserCount() });
           title.classList.add("lose");
           setMaru("cat-lost-tired.png", "lose");
-          setCap("아이고~");
-          message.textContent = "축하합니다(?) 벌칙을 수행하세요!";
-          penaltyTextEl.textContent = penTxt || "벌칙이 설정되지 않았습니다.";
+          setCap(t("result.capLost"));
+          message.textContent = t("result.msgGameOverLose");
+          penaltyTextEl.textContent = penTxt || t("result.penaltyEmpty");
           penaltyBox.classList.remove("hidden");
         } else {
-          title.textContent = "생존!";
+          title.textContent = t("result.titleSurvived");
           title.classList.add("win");
           setMaru("cat-win-happy.png", "");
-          setCap("야호~!");
-          message.textContent = `술래 ${getTargetLoserCount()}명이 모두 결정됐습니다!`;
+          setCap(t("result.capWin"));
+          message.textContent = t("result.msgGameOverWin", { target: getTargetLoserCount() });
         }
         nextBtn.style.display = "none";
         actionsDiv.style.display = "none";
         finalBtns.classList.remove("hidden");
         let html = "";
         if (state.role === "host") {
-          html += `<button class="btn-success btn-full" onclick="window.returnToLobbyAfterGame()" style="margin-bottom:8px">🎮 한번더! (호스트 설정)</button>`;
+          html += `<button class="btn-success btn-full" onclick="window.returnToLobbyAfterGame()" style="margin-bottom:8px">${t("result.hostSettingsBtn")}</button>`;
         }
-        html += `<button class="btn-light btn-full" onclick="window.showStatsPopup()" style="margin-bottom:8px">🏆 게임 승률 보기</button>`;
-        if (myResult === "lose" && penTxt && penTxt.includes("호스트")) {
-          html += `<button id="becomeNextHostBtn" class="btn-primary btn-full" onclick="window.becomeNextHost()" style="margin-top:8px">🎮 다음 게임 호스트 시작 (5초)</button>`;
+        html += `<button class="btn-light btn-full" onclick="window.showStatsPopup()" style="margin-bottom:8px">${t("result.viewStatsBtn")}</button>`;
+        // "다음 게임 호스트" 벌칙은 모든 locale에서 defaultPenalty.nextHost 값과 비교
+        const nextHostKeywords = [t("defaultPenalty.nextHost"), "호스트", "Host", "host", "ホスト"];
+        const isNextHostPenalty = nextHostKeywords.some(k => penTxt && penTxt.includes(k));
+        if (myResult === "lose" && isNextHostPenalty) {
+          html += `<button id="becomeNextHostBtn" class="btn-primary btn-full" onclick="window.becomeNextHost()" style="margin-top:8px">${t("result.becomeNextHostBtn", { n: 5 })}</button>`;
         }
         finalBtns.innerHTML = html;
-        // 패자 호스트 인계 버튼에 5초 카운트다운 표시
-        if (myResult === "lose" && penTxt && penTxt.includes("호스트")) {
+        if (myResult === "lose" && isNextHostPenalty) {
           startGameOverCountdown(5);
         }
 
       } else if (caseType === "tooMany") {
-        // 4-1: 패자가 너무 많음 → 패자들끼리 재대결
         if (myResult === "lose") {
-          title.textContent = "패배!";
+          title.textContent = t("result.titleLose");
           title.classList.add("lose");
           setMaru("cat-lost-tired.png", "lose");
-          setCap("저런...");
-          message.textContent = `패자 ${roundLoserCount}명 중 ${remainingSlots}명만 술래!\n잠시 후 ✋ 게임 준비를 눌러주세요.`;
+          setCap(t("result.capLost"));
+          message.textContent = t("result.msgTooManyLose", { round: roundLoserCount, target: remainingSlots });
         } else {
-          title.textContent = "안전!";
+          title.textContent = t("result.titleSafeNow");
           title.classList.add("win");
           setMaru("cat-win-happy.png", "");
-          setCap("야호~!");
-          message.textContent = "당신은 안전! 패자들이 준비되면 자동으로 재경기가 시작됩니다.";
+          setCap(t("result.capWin"));
+          message.textContent = t("result.msgTooManySafe");
         }
         nextBtn.style.display = "none";
         actionsDiv.style.display = "none";
 
       } else if (caseType === "tooFew") {
-        // 4-2: 패자가 부족 → 일부 술래 확정, 나머지 재대결
         const newlyConfirmed = roundLoserCount;
         if (iAmConfirmedLoser && myResult === "lose") {
-          title.textContent = "술래 확정!";
+          title.textContent = t("result.titleLoserConfirmed");
           title.classList.add("lose");
           setMaru("cat-lost-tired.png", "lose");
-          setCap("아이고~");
-          message.textContent = `술래 확정 (${state.confirmedLoserIds.length}/${getTargetLoserCount()}명). 벌칙 준비!`;
-          penaltyTextEl.textContent = penTxt || "벌칙이 설정되지 않았습니다.";
+          setCap(t("result.capLost"));
+          message.textContent = t("result.msgTooFewLoser", { done: state.confirmedLoserIds.length, target: getTargetLoserCount() });
+          penaltyTextEl.textContent = penTxt || t("result.penaltyEmpty");
           penaltyBox.classList.remove("hidden");
         } else {
-          title.textContent = myResult === "win" ? "계속 진행!" : "무승부!";
+          title.textContent = myResult === "win" ? t("result.titleContinue") : t("result.titleDraw");
           title.classList.add(myResult === "win" ? "win" : "draw");
           setMaru(myResult === "win" ? "cat-win-happy.png" : "cat-draw-confused.png", myResult === "win" ? "" : "draw");
-          setCap(myResult === "win" ? "휴~ 살았다" : "어라?");
-          message.textContent = `술래 ${newlyConfirmed}명 확정. ${remainingSlots - newlyConfirmed}명 더 필요! 잠시 후 재대결...`;
+          setCap(myResult === "win" ? t("result.capSafe") : t("result.capDraw"));
+          message.textContent = t("result.msgTooFewOther", { newlyConfirmed, remaining: remainingSlots - newlyConfirmed });
         }
         nextBtn.style.display = "none";
         actionsDiv.style.display = "none";
@@ -3980,21 +4004,22 @@
         div.className = "participant";
         let tagClass, tagText;
         if (loserIds.includes(p.id)) {
-          tagClass = "lose"; tagText = "술래 확정";
+          tagClass = "lose"; tagText = t("tag.loserConfirmed");
         } else if (safeIds.includes(p.id)) {
-          tagClass = "win"; tagText = "안전";
+          tagClass = "win"; tagText = t("tag.safe");
         } else if (p.lastResult === "win") {
-          tagClass = "win"; tagText = "승리";
+          tagClass = "win"; tagText = t("tag.win");
         } else if (p.lastResult === "lose") {
-          tagClass = "lose"; tagText = "패배";
+          tagClass = "lose"; tagText = t("tag.lose");
         } else {
-          tagClass = "draw"; tagText = "무승부";
+          tagClass = "draw"; tagText = t("tag.draw");
         }
-        const handImg = { scissors: "cat-scissors-ko.png", rock: "cat-rock-ko.png", paper: "cat-paper-ko.png" }[p.choice];
-        const handHtml = handImg ? `<img class="maru-hand-mini" src="ASSETS/rps/scenes/${handImg}" alt="${choiceLabel[p.choice]||''}" />` : "";
+        const handFile = p.choice ? `cat-${p.choice}-${currentLocale}.png` : null;
+        const handHtml = handFile ? `<img class="maru-hand-mini" src="ASSETS/rps/scenes/${handFile}" alt="${t("choice." + p.choice) || ""}" />` : "";
+        const choiceText = p.choice ? t("choice." + p.choice) : "";
         div.innerHTML = `
-          <strong>${escapeHtml(p.name)} ${p.is_host ? "<span class='tag host'>HOST</span>" : ""}</strong>
-          <span>${handHtml}${choiceLabel[p.choice] || ""} <span class="tag ${tagClass}">${tagText}</span></span>
+          <strong>${escapeHtml(p.name)} ${p.is_host ? `<span class='tag host'>${t("tag.host")}</span>` : ""}</strong>
+          <span>${handHtml}${choiceText} <span class="tag ${tagClass}">${tagText}</span></span>
         `;
         list.appendChild(div);
       });
@@ -4186,7 +4211,7 @@
       updateLoserCountDropdown();
       // screenReady 벌칙 박스 동기화 (호스트가 벌칙 수정 시 참가자 화면에 반영되어야 함)
       const readyPenaltyBoxEl = $("readyPenaltyBox");
-      if (readyPenaltyBoxEl) readyPenaltyBoxEl.textContent = `벌칙: ${getPenaltyText() || "없음"}`;
+      if (readyPenaltyBoxEl) readyPenaltyBoxEl.textContent = `${t("participantWait.penaltyBoxLabel")}: ${getPenaltyText() || t("lobby.penaltyEmpty")}`;
       if (!$("screenLobby").classList.contains("hidden")) renderLobby();
       // 호스트가 플레이 화면에 있을 때 참가자 선택 진행 상황 실시간 반영
       const hostPlayingEl = $("screenHostPlaying");
@@ -4197,16 +4222,16 @@
 
     function getParticipantBadge(p, options = {}) {
       if (p.is_host) {
-        const label = p.id === state.currentUserId ? "나 (호스트)" : "호스트";
+        const label = p.id === state.currentUserId ? t("tag.meHost") : t("tag.host");
         return `<span class="tag host">👑 ${label}</span>`;
       }
       if (!p.is_host && !isParticipantOnline(p.id)) {
-        return `<span class="tag lose">드롭</span>`;
+        return `<span class="tag lose">${t("tag.lose")}</span>`;
       }
       if (p.is_ready) {
-        return `<span class="tag win">✅ 준비</span>`;
+        return `<span class="tag win">${t("tag.readyDone")}</span>`;
       }
-      return `<span class="tag">${options.waitText || "대기"}</span>`;
+      return `<span class="tag">${options.waitText || t("tag.readyWaiting")}</span>`;
     }
 
     function renderParticipants(targetId) {
@@ -4215,14 +4240,14 @@
       el.innerHTML = "";
 
       if (!state.participants.length) {
-        el.innerHTML = `<div class="mini">아직 참가자가 없습니다.</div>`;
+        el.innerHTML = `<div class="mini">${t("participantWait.penaltyEmpty")}</div>`;
         return;
       }
 
       state.participants.forEach(p => {
         const div = document.createElement("div");
         div.className = "participant";
-        const badge = getParticipantBadge(p, { waitText: state.status === "ready" ? "⏳ 대기" : "참가자" });
+        const badge = getParticipantBadge(p, { waitText: state.status === "ready" ? t("tag.readyWaiting") : t("tag.readyWaiting") });
         div.innerHTML = `<strong>${escapeHtml(p.name)}</strong>${badge}`;
         el.appendChild(div);
       });
@@ -4534,10 +4559,10 @@
         }
       }
       const ok = await showConfirmPopup({
-        title: "정말 나가시겠어요?",
-        message: "게임방을 나가면 진행 중인 게임에서 빠지게 됩니다 🐾",
-        okText: "🚪 나가기",
-        cancelText: "취소",
+        title: t("popup.confirmLeaveTitle"),
+        message: t("popup.confirmLeaveMsg"),
+        okText: t("popup.confirmLeaveOk"),
+        cancelText: t("common.cancel"),
         img: "cat-draw-confused.png"
       });
       if (!ok) return;
@@ -4629,16 +4654,16 @@
       let remaining = seconds;
       const btn = document.getElementById("becomeNextHostBtn");
       if (!btn) return;
-      btn.textContent = `🎮 다음 게임 호스트 시작 (${remaining}초)`;
+      btn.textContent = t("result.becomeNextHostBtn", { n: remaining });
       state.gameOverCountdownTimer = setInterval(() => {
         remaining -= 1;
         const b = document.getElementById("becomeNextHostBtn");
         if (!b) { stopGameOverCountdown(); return; }
         if (remaining > 0) {
-          b.textContent = `🎮 다음 게임 호스트 시작 (${remaining}초)`;
+          b.textContent = t("result.becomeNextHostBtn", { n: remaining });
         } else {
           b.disabled = true;
-          b.textContent = "⏱ 시간 초과";
+          b.textContent = "⏱ " + (i18n[currentLocale]["common.timeUp"] || "시간 초과");
           b.style.opacity = "0.5";
           stopGameOverCountdown();
         }
@@ -4913,31 +4938,35 @@
     // 로비 화면 렌더링
     function renderLobby() {
       const host = state.participants.find(p => p.is_host);
-      $("lobbyHostName").textContent = host?.name || "불명";
-      $("lobbyRoomCode").textContent = state.roomCode || "----";
-      $("lobbyParticipantCount").textContent = state.participants.length;
+      $("lobbyHostName").textContent = host?.name || t("lobby.hostUnknown");
+      // "방 코드: ABCD" 줄 통째로 갱신
+      const codeLine = $("lobbyRoomCodeLine");
+      if (codeLine) codeLine.innerHTML = t("lobby.roomCodeLabel", { code: state.roomCode || "----" });
+      // 참여자 목록 헤딩 ("참여자 목록 (N명)")
+      const heading = $("lobbyParticipantHeading");
+      if (heading) heading.textContent = t("lobby.participantCount", { n: state.participants.length });
 
-      // 벌칙 표시 (전 라운드에서 카리오버된 벌칙)
+      // 벌칙 표시
       const penTxt = getPenaltyText();
       const penEl = $("lobbyPenaltyText");
-      if (penEl) penEl.textContent = penTxt || "아직 벌칙이 설정되지 않았습니다.";
+      if (penEl) penEl.textContent = penTxt || t("lobby.penaltyEmpty");
 
       const me = state.participants.find(p => p.id === state.currentUserId);
       const btn = $("lobbyReadyBtn");
+      const btnLabel = btn ? btn.querySelector("span:not(.go-pill)") : null;
       if (btn && me) {
         btn.disabled = me.is_ready;
-        btn.textContent = me.is_ready ? "✅ 준비 완료" : "🎮 게임 준비";
+        if (btnLabel) btnLabel.textContent = me.is_ready ? t("lobby.readyDone") : t("lobby.readyBtn");
         btn.className = me.is_ready ? "btn-light btn-full" : "btn-kparty";
       }
 
-      // 호스트만 벌칙 수정 버튼 노출
       const editBtn = $("lobbyEditPenaltyBtn");
       if (editBtn) editBtn.classList.toggle("hidden", state.role !== "host");
 
       const list = $("lobbyParticipantList");
       list.innerHTML = state.participants.map(p => {
         const isMe = p.id === state.currentUserId;
-        const ready = p.is_ready ? "✓ 준비 완료" : "○ 준비 대기";
+        const ready = p.is_ready ? t("tag.readyDone") : t("tag.readyWaiting");
         const hostBadge = p.is_host ? " 👑" : "";
         return `
           <div class="participant" style="${isMe ? "background:#FFF4E0;border:1px solid #F5D8A8" : ""}">
