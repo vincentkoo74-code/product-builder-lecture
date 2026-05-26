@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>마루의 가위바위보 · K-파티 게임</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -127,6 +127,11 @@
       overflow-y: auto;
       overflow-x: hidden;
       padding: 24px;
+      /* 모바일 노치/다이내믹 아일랜드/펀치홀 안전영역 패딩 (iOS PWA standalone, 안드 fullscreen 대응) */
+      padding-top: max(20px, calc(env(safe-area-inset-top, 0px) + 12px));
+      padding-left: max(24px, env(safe-area-inset-left, 0px));
+      padding-right: max(24px, env(safe-area-inset-right, 0px));
+      padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
       box-sizing: border-box;
       scrollbar-width: none;
     }
@@ -1820,6 +1825,9 @@
         "common.leaveRoom": "🚪 방 나가기",
         "common.leaveRoomShort": "게임방에서 나가기",
         "common.next": "다음",
+        "common.starting": "시작 중...",
+        "common.joining": "참가 중...",
+        "common.timeUp": "⏱ 시간 초과",
         // countdown
         "countdown.intro": "안내면 술래",
         "countdown.go": "가위바위 보!",
@@ -2068,6 +2076,9 @@
         "common.leaveRoom": "🚪 Exit Room",
         "common.leaveRoomShort": "Exit Room",
         "common.next": "Next",
+        "common.starting": "Starting...",
+        "common.joining": "Joining...",
+        "common.timeUp": "⏱ Time's up",
         "countdown.intro": "Ready!",
         "countdown.go": "Rock, paper, scissors, shoot!",
         "countdown.roundLabel": "Starting soon!",
@@ -2294,6 +2305,9 @@
         "common.leaveRoom": "🚪 部屋を出る",
         "common.leaveRoomShort": "部屋を出る",
         "common.next": "次へ",
+        "common.starting": "開始中...",
+        "common.joining": "参加中...",
+        "common.timeUp": "⏱ 時間切れ",
         "countdown.intro": "最初はグー",
         "countdown.go": "じゃんけんぽん！",
         "countdown.roundLabel": "まもなく開始！",
@@ -2567,6 +2581,16 @@
     }
     window.setLocale = setLocale;
     window.t = t;
+
+    // button 안에 <span data-i18n> 자식이 있으면 그 텍스트만 변경 (go-pill 등 보존),
+    // 없으면 button.textContent 직접 설정. 진행 상태 라벨 갱신용 유틸.
+    function setBtnText(btn, text) {
+      if (!btn) return;
+      const span = btn.querySelector("span:not(.go-pill)");
+      if (span) span.textContent = text;
+      else btn.textContent = text;
+    }
+    window.setBtnText = setBtnText;
 
     // Initial locale (즉시 적용 — body[data-locale]은 폰트 스택에 사용됨)
     currentLocale = detectLocale();
@@ -3194,7 +3218,7 @@
       for (let i = 1; i <= max; i++) {
         const opt = document.createElement("option");
         opt.value = i;
-        opt.textContent = `${i}명`;
+        opt.textContent = t("hostRoom.loserCountOption", { n: i });
         if (i === current) opt.selected = true;
         sel.appendChild(opt);
       }
@@ -3356,7 +3380,7 @@
 
       const btn = $("joinBtn");
       btn.disabled = true;
-      btn.textContent = "참가 중...";
+      setBtnText(btn, t("join.joining"));
 
       try {
         const id = `p_${Date.now()}`;
@@ -3405,7 +3429,7 @@
         }
       } finally {
         btn.disabled = false;
-        btn.textContent = "참가하기";
+        setBtnText(btn, t("join.joinBtn"));
       }
     }
 
@@ -3440,7 +3464,7 @@
 
       const btn = $("savePenaltyBtn");
       btn.disabled = true;
-      btn.textContent = "저장 중...";
+      setBtnText(btn, t("penalty.saving"));
 
       state.penalty = value;
       savePenaltyHistory(textVal);
@@ -3448,9 +3472,6 @@
 
       if (getOnlineMode()) {
         try {
-          // is_ready를 reset하지 않음 — 호스트 벌칙 수정이 게임 시작 가능 상태를 깨지 않도록.
-          // 참가자는 현재 화면에서 새 벌칙 텍스트를 자동 갱신해서 인지함.
-          // status='lobby' 인 경우 lobby 유지, 'ready'/'waiting'에서 들어왔으면 'ready'로 통일
           const nextStatus = state.status === "lobby" ? "lobby" : "ready";
           const { error } = await Promise.race([
             db.from('rooms').update({ penalty: value, status: nextStatus }).eq('id', state.roomCode),
@@ -3458,11 +3479,10 @@
           ]);
           if (error) throw error;
           state.status = nextStatus;
-          btn.textContent = "저장 완료 ✓";
+          setBtnText(btn, t("penalty.saved"));
           setTimeout(() => {
             btn.disabled = false;
-            btn.textContent = "💾 벌칙 저장하기";
-            // 로비에서 들어온 경우 로비로 복귀, 그 외엔 호스트 방
+            setBtnText(btn, t("penalty.saveBtn"));
             if (nextStatus === "lobby") {
               showScreen("screenLobby");
               renderLobby();
@@ -3473,18 +3493,17 @@
         } catch (e) {
           console.error('벌칙 저장 오류:', e.message);
           btn.disabled = false;
-          btn.textContent = "💾 벌칙 저장하기";
-          showToast('저장 오류: ' + e.message);
+          setBtnText(btn, t("penalty.saveBtn"));
+          showToast(t("toast.saveError", { msg: e.message }));
           return;
         }
       } else {
-        // 오프라인: is_ready 유지 (참가자 자동 인지) + lobby 컨텍스트 유지
         const nextStatus = state.status === "lobby" ? "lobby" : "ready";
         state.status = nextStatus;
-        btn.textContent = "저장 완료 ✓";
+        setBtnText(btn, t("penalty.saved"));
         setTimeout(() => {
           btn.disabled = false;
-          btn.textContent = "💾 벌칙 저장하기";
+          setBtnText(btn, t("penalty.saveBtn"));
           if (nextStatus === "lobby") {
             showScreen("screenLobby");
             renderLobby();
@@ -3504,8 +3523,8 @@
       state.finishingRound = false;
       const btn = $("hostStartBtn");
       const roomBtn = $("startGameBtn");
-      if (btn) { btn.disabled = true; btn.textContent = "시작 중..."; }
-      if (roomBtn) { roomBtn.disabled = true; roomBtn.textContent = "시작 중..."; }
+      if (btn) { btn.disabled = true; setBtnText(btn, t("common.starting")); }
+      if (roomBtn) { roomBtn.disabled = true; setBtnText(roomBtn, t("common.starting")); }
 
       if (getOnlineMode()) {
         try {
@@ -3533,7 +3552,7 @@
           await runCountdownThenShowGame();
         } catch (e) {
           showToast('게임 시작 오류: ' + e.message);
-          if (btn) { btn.disabled = false; btn.textContent = "🎮 게임 시작"; }
+          if (btn) { btn.disabled = false; setBtnText(btn, t("ready.hostStart")); }
           if (roomBtn) { roomBtn.disabled = false; roomBtn.textContent = "🚀 게임 시작!"; }
           state.gameStarting = false;
         }
@@ -4497,11 +4516,11 @@
         return;
       }
       if (me && me.is_ready) {
-        btn.textContent = "✅ 준비 완료";
+        setBtnText(btn, t("lobby.readyDone"));
         btn.disabled = true;
         btn.className = "btn-light btn-full";
       } else {
-        btn.textContent = "✋ 게임 준비";
+        setBtnText(btn, t("ready.myReady"));
         btn.disabled = false;
         btn.className = "btn-primary btn-full";
       }
@@ -4558,28 +4577,24 @@
       }
       const btn = $("myReadyBtn");
       btn.disabled = true;
-      btn.textContent = "준비 중...";
+      setBtnText(btn, t("lobby.readyPreparing"));
       if (getOnlineMode()) {
         try {
           await Promise.race([
             db.from('participants').update({ is_ready: true }).eq('id', state.currentUserId),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
           ]);
-          // 로컬 상태 즉시 갱신: WebSocket 이벤트의 stale 상태 덮어쓰기 방지
           state.myReadyLocallySetAt = Date.now();
           const me = state.participants.find(p => p.id === state.currentUserId);
           if (me) { me.is_ready = true; }
           renderReadyList();
-          // 폴링이 stale 데이터를 덮어쓰기 방지: 잠깐 폴링 일시 중지
           const oldSeq = state.fetchParticipantsSeq;
-          setTimeout(() => {
-            // 폴링이 현재 요청 이후로만 처리되도록 설정 (간단한 방식)
-          }, 100);
+          setTimeout(() => {}, 100);
           await triggerReplayIfLastReady();
         } catch (e) {
           btn.disabled = false;
-          btn.textContent = "✋ 게임 준비";
-          showToast("오류: " + e.message);
+          setBtnText(btn, t("ready.myReady"));
+          showToast(t("toast.error", { msg: e.message }));
         }
       } else {
         const me = state.participants.find(p => p.id === state.currentUserId);
@@ -5091,13 +5106,12 @@
       if (!me || me.is_ready) return;
 
       const btn = $("lobbyReadyBtn");
-      if (btn) { btn.disabled = true; btn.textContent = "준비 중..."; }
+      if (btn) { btn.disabled = true; setBtnText(btn, t("lobby.readyPreparing")); }
 
       if (!getOnlineMode()) {
         me.is_ready = true;
         saveState();
         renderLobby();
-        // 오프라인: 로컬에서 전원 준비 확인 후 바로 시작
         if (state.participants.every(p => p.is_ready) && state.role === "host") {
           setTimeout(() => startFromLobby(), 500);
         }
@@ -5109,10 +5123,9 @@
         state.myReadyLocallySetAt = Date.now();
         me.is_ready = true;
         renderLobby();
-        // 온라인: fetchParticipants 구독이 전원 준비 감지 후 startFromLobby() 호출
       } catch (e) {
         console.error("markReadyFromLobby error:", e);
-        if (btn) { btn.disabled = false; btn.textContent = "🎮 게임 준비"; }
+        if (btn) { btn.disabled = false; setBtnText(btn, t("lobby.readyBtn")); }
       }
     }
 
