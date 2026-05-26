@@ -6,7 +6,8 @@
   <title>마루의 가위바위보 · K-파티 게임</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gowun+Dodum&family=Noto+Sans+KR:wght@500;700;900&display=swap" rel="stylesheet">
+  <!-- 한글 + 영어 + 일본어 폰트 -->
+  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;700;900&family=Bowlby+One&family=Inter:wght@400;500;700;900&family=Reggae+One&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
   <!-- 마루 캐릭터 preload (Home/Auth 화면 즉시 표시용) -->
   <link rel="preload" as="image" href="ASSETS/rps/scenes/cat-decision-waiting.png" fetchpriority="high">
   <link rel="preload" as="image" href="ASSETS/rps/scenes/cat-ready-idea.png" fetchpriority="high">
@@ -51,11 +52,28 @@
       box-sizing: border-box;
     }
 
+    /* === Locale-aware font stack ===
+       각 locale 변형은 body[data-locale="..."] 셀렉터로 변경 */
+    :root{
+      --font-display: "Black Han Sans", sans-serif;
+      --font-body: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-sub: "Gowun Dodum", sans-serif;
+    }
+    body[data-locale="en"]{
+      --font-display: "Bowlby One", "Black Han Sans", sans-serif;
+      --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-sub: "Inter", sans-serif;
+    }
+    body[data-locale="ja"]{
+      --font-display: "Reggae One", "Black Han Sans", sans-serif;
+      --font-body: "Noto Sans JP", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-sub: "Noto Sans JP", sans-serif;
+    }
     body {
       margin: 0;
       width: 100vw;
       height: 100vh;
-      font-family: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: var(--font-body);
       background:
         radial-gradient(circle at 20% 0%, #FFE7C2 0, transparent 40%),
         radial-gradient(circle at 80% 100%, #FFD8E0 0, transparent 40%),
@@ -861,14 +879,14 @@
       color:var(--orange-deep);
       text-align:center;
       text-align-last:center;
-      font-family:"Black Han Sans",sans-serif;
+      font-family:var(--font-display);
       letter-spacing:.5px;
       cursor:pointer;
     }
     select.loser-count-select option{
       text-align:center;
       font-size:16px;
-      font-family:"Noto Sans KR",sans-serif;
+      font-family:var(--font-body);
     }
 
     /* 개발자 전용 (?debug=1 일 때만 표시) */
@@ -912,13 +930,13 @@
 
     /* 화면 카드 상단 보조 타이틀 (마루 톤) */
     .maru-section-title{
-      font-family:"Black Han Sans",sans-serif;
+      font-family:var(--font-display);
       font-size:22px;font-weight:400;margin:6px 0 4px;
       letter-spacing:-0.3px;line-height:1.25;color:var(--text);
     }
     .maru-section-sub{
       color:var(--muted);font-size:13px;line-height:1.55;
-      font-family:"Gowun Dodum",sans-serif;
+      font-family:var(--font-sub);
       margin:0 0 14px;
     }
 
@@ -940,7 +958,7 @@
       padding:15px 16px;
       font-size:15px;
       font-weight:800;
-      font-family:"Noto Sans KR",sans-serif;
+      font-family:var(--font-body);
       border-radius:18px;
       text-align:center;
       line-height:1.25;
@@ -970,7 +988,7 @@
       width:64px;height:64px;border-radius:50%;
       background:var(--maru-red);color:#fff;
       display:flex;flex-direction:column;align-items:center;justify-content:center;
-      font-family:"Black Han Sans",sans-serif;line-height:1;
+      font-family:var(--font-display);line-height:1;
       transform:rotate(-12deg);
       box-shadow:0 6px 14px rgba(230,57,70,.35);
       border:2px dashed rgba(255,255,255,.45);
@@ -999,7 +1017,7 @@
       display:inline-flex;align-items:center;gap:6px;
       background:linear-gradient(135deg,#1A1A1A,#2E3192);
       color:#fff;
-      font-family:"Black Han Sans",sans-serif;
+      font-family:var(--font-display);
       font-size:11px;
       padding:5px 12px 4px;
       border-radius:999px;
@@ -1022,7 +1040,7 @@
     .vrshow-cap{
       display:inline-block;
       background:var(--gold);color:#3D2B1F;
-      font-family:"Black Han Sans",sans-serif;
+      font-family:var(--font-display);
       font-size:14px;padding:4px 12px 3px;
       border-radius:8px;transform:rotate(-2deg);
       box-shadow:0 4px 0 var(--orange-deep);
@@ -1030,7 +1048,7 @@
     }
 
     .maru-title{
-      font-family:"Black Han Sans",sans-serif;
+      font-family:var(--font-display);
       font-size:26px;font-weight:400;margin:6px 0 4px;
       letter-spacing:-0.5px;line-height:1.25;
     }
@@ -1040,7 +1058,7 @@
       -webkit-background-clip:text;background-clip:text;color:transparent;
     }
     .maru-tagline{
-      font-family:"Gowun Dodum",sans-serif;
+      font-family:var(--font-sub);
       font-size:12px;color:var(--muted);
       margin:0 0 14px;letter-spacing:.3px;
     }
@@ -1048,7 +1066,7 @@
     .maru-subtitle{
       color:var(--muted);font-size:13.5px;
       margin:0 0 18px;line-height:1.55;
-      font-family:"Gowun Dodum",sans-serif;
+      font-family:var(--font-sub);
     }
 
     /* 마루 카드 (좌측 색동 위해 padding 좀 더) */
@@ -1068,7 +1086,7 @@
       color:#fff;
       box-shadow:0 8px 18px rgba(245,163,86,.35);
       position:relative;overflow:hidden;
-      font-family:"Noto Sans KR",sans-serif;
+      font-family:var(--font-body);
       text-align:center;line-height:1.25;
     }
     .btn-kparty:active{transform:scale(.97)}
@@ -1079,18 +1097,18 @@
     .btn-kparty .go-pill{
       position:absolute;right:14px;top:50%;transform:translateY(-50%);
       background:#fff;color:var(--orange-deep);
-      font-family:"Black Han Sans",sans-serif;
+      font-family:var(--font-display);
       font-size:11px;padding:3px 8px;border-radius:6px;letter-spacing:.5px;
     }
 
     /* 푸터 K-stamp */
     .maru-footer{
       text-align:center;margin-top:14px;
-      font-family:"Gowun Dodum",sans-serif;
+      font-family:var(--font-sub);
       font-size:11px;color:var(--muted);letter-spacing:.5px;
     }
     .maru-footer b{
-      font-family:"Black Han Sans",sans-serif;
+      font-family:var(--font-display);
       color:var(--maru-red);font-weight:400;letter-spacing:1px;
     }
 
@@ -1098,7 +1116,7 @@
     .maru-greeting{
       font-size:13px;color:var(--muted);
       margin:-4px 0 8px 46px;
-      font-family:"Gowun Dodum",sans-serif;
+      font-family:var(--font-sub);
     }
     .maru-greeting b{color:var(--text);font-weight:700}
 
@@ -1114,7 +1132,7 @@
       cursor:pointer;
       display:flex;flex-direction:column;align-items:center;gap:4px;
       transition:all .15s;
-      font-family:"Noto Sans KR",sans-serif;
+      font-family:var(--font-body);
     }
     .quick-btn:hover{border-color:var(--orange);color:var(--orange-deep);background:#fff}
     .quick-btn .icon{font-size:18px}
@@ -1690,6 +1708,769 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script>
+    // ========== i18n 메시지 카탈로그 (ko / en / ja) ==========
+    const i18n = {
+      ko: {
+        // app/topbar
+        "app.title": "마루의 가위바위보",
+        "app.brand": "마루의 가위바위보",
+        "topbar.snsLogin": "👤 SNS 로그인",
+        "topbar.noRoom": "방 없음",
+        "topbar.room": "방 {code}",
+        "topbar.muteOn": "🔊",
+        "topbar.muteOff": "🔇",
+        // common
+        "common.cancel": "취소",
+        "common.confirm": "확인",
+        "common.home": "처음으로",
+        "common.leaveRoom": "🚪 방 나가기",
+        "common.leaveRoomShort": "게임방에서 나가기",
+        "common.next": "다음",
+        // countdown
+        "countdown.intro": "안내면 술래",
+        "countdown.go": "가위바위 보!",
+        "countdown.roundLabel": "잠시 후 시작!",
+        "countdown.replay": "🔄 {n}번째 재대결!",
+        // voice (TTS 텍스트)
+        "voice.intro": "안내면 술래",
+        "voice.go1": "가위바위",
+        "voice.go2": "보!",
+        "voice.becameLoser": "아이고, 술래가 되셨습니다!",
+        "voice.gameOver": "축하합니다! 술래가 결정됐습니다!",
+        "voice.continue": "휴~ 다행이다. 계속 진행합니다!",
+        // auth
+        "auth.title": "친구들과 <em>한 판?</em>",
+        "auth.subtitle": "QR로 모이고, 마루랑 같이 가위바위보!<br/>로그인하면 <b>승률·벌칙 기록</b>이 저장돼요 🏆",
+        "auth.snsKakao": "카카오톡으로 로그인",
+        "auth.snsLine": "라인으로 로그인",
+        "auth.snsWechat": "위쳇으로 로그인",
+        "auth.dividerOr": "또는",
+        "auth.guestPlay": "🐱 로그인 없이 마루랑 놀기",
+        "auth.guestHint": "게스트 모드에서는 게임 기록이 저장되지 않습니다",
+        // home
+        "home.kcultureTag": "K-CULTURE × PARTY GAME",
+        "home.title": "<em>가위바위보!</em>",
+        "home.subtitle": "QR로 모이고 마루랑 한 판 🐾<br/>진 사람이 벌칙!",
+        "home.nicknameLabel": "내 닉네임",
+        "home.nicknamePlaceholder": "예: 민수",
+        "home.createBtn": "🏠 방 만들기 / 호스트 시작",
+        "home.scanBtn": "📷 QR 스캔해서 입장",
+        "home.quickJoin": "QR로 참여한 화면",
+        "home.quickStats": "최근 게임 결과",
+        "home.footer": "<b>K놀이 #001</b> · 한국 파티 문화의 새 챕터 🇰🇷",
+        // qrScanner
+        "qrScanner.cap": "QR 스캔!",
+        "qrScanner.subtitle": "호스트 화면의 QR코드를 카메라로 비춰주세요.<br/>지원 안 되면 방코드를 직접 입력할 수 있어요.",
+        "qrScanner.loading": "📷 카메라를 준비 중입니다...",
+        "qrScanner.inputCode": "방코드 직접 입력",
+        // hostRoom
+        "hostRoom.cap": "방장 모드!",
+        "hostRoom.subtitle": "QR이나 방 코드를 친구한테 보여주세요.<br/>마루가 입장을 기다리고 있어요 🐾",
+        "hostRoom.penaltyBoxLabel": "이번 게임 벌칙",
+        "hostRoom.shareUrlTitle": "스마트폰 QR 접속 주소",
+        "hostRoom.shareUrlHelp": "로컬 테스트 중에는 PC와 스마트폰이 같은 Wi-Fi에 있어야 합니다. 접속이 안 되면 아래 주소의 IP를 PC Wi-Fi IP로 바꿔주세요.",
+        "hostRoom.shareApply": "적용",
+        "hostRoom.locked": "참가 마감",
+        "hostRoom.lockedDesc": "모든 참여자가 준비를 완료해서 QR 참여를 닫았습니다.",
+        "hostRoom.participants": "참가자 목록",
+        "hostRoom.loserCount": "🎯 술래 숫자",
+        "hostRoom.loserCountOption": "{n}명",
+        "hostRoom.startGameLabel": "🚀 게임 시작!",
+        "hostRoom.prepareGameLabel": "🎮 게임 준비하기",
+        "hostRoom.penaltySetBtn": "벌칙 설정하기",
+        "hostRoom.penaltyEditBtn": "✏️ 벌칙 수정",
+        "hostRoom.penaltyChangeBtn": "벌칙 바꾸기",
+        // join
+        "join.cap": "참가!",
+        "join.title": "게임방 참여",
+        "join.subtitle": "방 코드랑 닉네임 알려줘! <br/>마루가 자리 잡아둘게 🐾",
+        "join.codeLabel": "방 코드",
+        "join.codePlaceholder": "예: A7K2",
+        "join.nameLabel": "닉네임",
+        "join.namePlaceholder": "예: 영선",
+        "join.joinBtn": "🎉 참가하기",
+        "join.joining": "참가 중...",
+        // participantWait
+        "participantWait.cap": "대기 중!",
+        "participantWait.subtitle": "호스트가 벌칙 정하고 시작할 때까지<br/>잠깐만 기다려줘 🍵",
+        "participantWait.penaltyBoxLabel": "이번 게임 벌칙",
+        "participantWait.penaltyEmpty": "아직 벌칙이 설정되지 않았습니다.",
+        "participantWait.participants": "참가자 목록",
+        // penalty
+        "penalty.cap": "벌칙 갓!",
+        "penalty.title": "벌칙 설정",
+        "penalty.subtitle": "진 사람이 뭘 할까? <b>마루가 적어둔다 📝</b>",
+        "penalty.inputLabel": "이번 게임 벌칙",
+        "penalty.inputPlaceholder": "예: 오늘 커피 사기",
+        "penalty.frequentTitle": "자주 사용한 벌칙",
+        "penalty.saveBtn": "💾 벌칙 저장하기",
+        "penalty.saving": "저장 중...",
+        "penalty.saved": "저장 완료 ✓",
+        "penalty.returnBtn": "방 화면으로 돌아가기",
+        // lobby
+        "lobby.cap": "한 판 더?",
+        "lobby.subtitle": "친구들 다 모이면<br/>마루가 새 판! 🐾",
+        "lobby.hostLabel": "👑 호스트",
+        "lobby.hostUnknown": "불명",
+        "lobby.roomCodeLabel": "방 코드: <strong>{code}</strong>",
+        "lobby.penaltyBoxLabel": "이번 게임 벌칙",
+        "lobby.penaltyEmpty": "아직 벌칙이 설정되지 않았습니다.",
+        "lobby.participantCount": "참여자 목록 ({n}명)",
+        "lobby.readyBtn": "🎮 게임 준비",
+        "lobby.readyDone": "✅ 준비 완료",
+        "lobby.readyPreparing": "준비 중...",
+        "lobby.editPenaltyBtn": "✏️ 벌칙 수정",
+        // ready
+        "ready.cap": "레디!",
+        "ready.subtitle": "모두 ✋ 누르면<br/>마루가 시작 신호!",
+        "ready.participantsStatus": "참가자 준비 현황",
+        "ready.myReady": "✋ 게임 준비",
+        "ready.hostStart": "🎮 게임 시작",
+        "ready.editPenalty": "✏️ 벌칙 수정",
+        "ready.exit": "나가기",
+        // game
+        "game.cap": "자, 가위바위보!",
+        "game.round": "라운드 {n}",
+        "game.subtitle": "마루를 따라 하나만 선택해 ✊✌️🖐",
+        "game.summaryTimer": "남은 시간",
+        "game.summarySelected": "선택 완료",
+        "game.summaryTotal": "참가자",
+        "game.choiceScissors": "가위",
+        "game.choiceRock": "바위",
+        "game.choicePaper": "보",
+        "game.devAuto": "테스트용: 모든 참가자 랜덤 선택",
+        // hostPlaying
+        "hostPlaying.cap": "관전 중!",
+        "hostPlaying.round": "라운드 {n}",
+        "hostPlaying.subtitle": "모두 선택할 때까지<br/>마루랑 같이 지켜봐 👀",
+        "hostPlaying.statusH3": "참가자 선택 현황",
+        "hostPlaying.judgeBtn": "🎯 판정 내리기",
+        "hostPlaying.devAuto": "테스트용: 미선택자 자동 선택",
+        // round result
+        "result.capDefault": "결과 발표!",
+        "result.capDraw": "어라?",
+        "result.capLost": "아이고~",
+        "result.capWin": "야호~!",
+        "result.capSafe": "휴~ 다행",
+        "result.titleWin": "승리!",
+        "result.titleDraw": "무승부!",
+        "result.titleLose": "패배!",
+        "result.titleSafeNow": "안전!",
+        "result.titleContinue": "계속 진행!",
+        "result.titleLoserConfirmed": "술래 확정!",
+        "result.titleLoserConfirmedCount": "술래 확정! ({done}/{target}명)",
+        "result.titleSurvived": "생존!",
+        "result.penaltyBoxLabel": "이번 벌칙",
+        "result.penaltyEmpty": "벌칙이 설정되지 않았습니다.",
+        "result.roundResultsH3": "라운드 결과",
+        "result.msgDrawHost": "무승부! 다음 라운드를 시작하려면 아래 버튼을 눌러주세요.",
+        "result.msgDrawGuest": "무승부! 호스트가 다음 라운드를 시작할 때까지 기다려주세요.",
+        "result.msgGameOverLose": "축하합니다(?) 벌칙을 수행하세요!",
+        "result.msgGameOverWin": "술래 {target}명이 모두 결정됐습니다!",
+        "result.msgTooManyLose": "패자 {round}명 중 {target}명만 술래!\n잠시 후 ✋ 게임 준비를 눌러주세요.",
+        "result.msgTooManySafe": "당신은 안전! 패자들이 준비되면 자동으로 재경기가 시작됩니다.",
+        "result.msgTooFewLoser": "술래 확정 ({done}/{target}명). 벌칙 준비!",
+        "result.msgTooFewOther": "술래 {newlyConfirmed}명 확정. {remaining}명 더 필요! 잠시 후 재대결...",
+        "result.nextRoundBtn": "🔄 다음 라운드 시작",
+        "result.endGameBtn": "게임 종료 및 통계 보기",
+        "result.hostSettingsBtn": "🎮 한번더! (호스트 설정)",
+        "result.viewStatsBtn": "🏆 게임 승률 보기",
+        "result.becomeNextHostBtn": "🎮 다음 게임 호스트 시작 ({n}초)",
+        // winnerWait / loserWait
+        "winnerWait.cap": "세이프!",
+        "winnerWait.title": "우선안전!",
+        "winnerWait.message": "이번 재게임에서는 빠지고 최종 술래가 나올 때까지 기다려주세요.",
+        "winnerWait.hint": "남은 참여자들만 재게임을 진행 중입니다 🍵",
+        "loserWait.cap": "아이고~",
+        "loserWait.title": "술래 확정!",
+        "loserWait.messageWaiting": "벌칙을 준비하세요. 술래 {n}명을 더 찾는 중...",
+        "loserWait.messageDone": "벌칙을 준비하세요. 게임이 끝났습니다!",
+        "loserWait.messageDefault": "벌칙을 준비하세요. 게임이 계속 진행 중입니다...",
+        // stats
+        "stats.cap": "통계 발표!",
+        "stats.title": "최종 결과",
+        "stats.subtitle": "참가자별 승률·벌칙 횟수를<br/>마루가 정리했어 📊",
+        "stats.thParticipant": "참가자",
+        "stats.thWin": "승",
+        "stats.thLose": "패",
+        "stats.thDraw": "무",
+        "stats.thRate": "승률",
+        "stats.thPenalty": "벌칙",
+        "stats.replayBtn": "같은 방에서 다시 하기",
+        // popups
+        "popup.statsTitle": "🏆 게임 승률",
+        "popup.statsSubtitle": "현재 게임방 누적 기록",
+        "popup.statsClose": "닫기",
+        "popup.nextHostTitle": "👑 다음 호스트 선택",
+        "popup.nextHostSubtitle": "게임을 이어받을 다음 호스트를 선택해주세요.",
+        "popup.nextHostRandom": "랜덤으로 호스트 지명 후 나가기",
+        "popup.inviteTitle": "🎮 새 게임 초대",
+        "popup.inviteSubtitle": "호스트가 같은 방에서 새 게임을 시작합니다!",
+        "popup.inviteAccept": "수락하기",
+        "popup.inviteDecline": "거절하기",
+        "popup.inviteHostTitle": "🎮 게임 초대 중...",
+        "popup.inviteHostSubtitle": "참가자들에게 초대를 보냈습니다. 잠시 후 자동으로 시작됩니다.",
+        "popup.inviteHostStart": "지금 시작하기",
+        "popup.inviteHostCancel": "취소",
+        "popup.confirmLeaveTitle": "정말 나가시겠어요?",
+        "popup.confirmLeaveMsg": "게임방을 나가면 진행 중인 게임에서 빠지게 됩니다 🐾",
+        "popup.confirmLeaveOk": "🚪 나가기",
+        // tags
+        "tag.host": "HOST",
+        "tag.win": "승리",
+        "tag.lose": "패배",
+        "tag.draw": "무승부",
+        "tag.safe": "안전",
+        "tag.loserConfirmed": "술래 확정",
+        "tag.me": "나",
+        "tag.meHost": "나 (호스트)",
+        "tag.readyDone": "✓ 준비 완료",
+        "tag.readyWaiting": "○ 준비 대기",
+        "tag.chosenDone": "✓ 선택완료",
+        "tag.chosenWaiting": "○ 대기 중",
+        // toasts
+        "toast.codeRequired": "방 코드를 입력해주세요.",
+        "toast.nameRequired": "닉네임을 입력해주세요.",
+        "toast.roomNotFound": "존재하지 않는 방입니다.",
+        "toast.joinLocked": "모든 참여자가 준비를 완료해서 새로 참가할 수 없습니다.",
+        "toast.penaltyRequired": "벌칙을 입력해주세요.",
+        "toast.penaltyNotSet": "먼저 벌칙을 설정해주세요.",
+        "toast.saveError": "저장 오류: {msg}",
+        "toast.startError": "게임 시작 오류: {msg}",
+        "toast.error": "오류: {msg}",
+        "toast.notYetChosen": "아직 선택하지 않은 참가자: {names}",
+        "toast.urlInputRequired": "스마트폰에서 열 수 있는 주소를 입력해주세요. 예: http://192.168.1.6:5173",
+        "toast.urlUpdated": "QR 접속 주소를 업데이트했습니다.",
+        "toast.qrCodeRead": "QR에서 방코드를 읽었습니다.",
+        "toast.inviteLinkCopied": "📋 초대 링크가 복사되었어요",
+        "toast.copyFailed": "복사 실패: {text}",
+        "toast.snsComingSoon": "{provider} 로그인은 현재 준비 중입니다. 곧 서비스될 예정입니다! 🔜",
+        // default penalties
+        "defaultPenalty.coffee": "오늘 커피 사기",
+        "defaultPenalty.dance": "10초 동안 춤추기",
+        "defaultPenalty.funnyFace": "웃긴 표정 짓기",
+        "defaultPenalty.water": "물 한 잔 마시기",
+        "defaultPenalty.nextHost": "다음 게임 호스트",
+        // sns provider names
+        "sns.kakao": "카카오톡",
+        "sns.line": "라인",
+        "sns.wechat": "위쳇",
+        // choice labels
+        "choice.scissors": "가위",
+        "choice.rock": "바위",
+        "choice.paper": "보",
+      },
+      en: {
+        "app.title": "Maru's Rock Paper Scissors",
+        "app.brand": "Maru's RPS",
+        "topbar.snsLogin": "👤 Sign in",
+        "topbar.noRoom": "No room",
+        "topbar.room": "Room {code}",
+        "topbar.muteOn": "🔊",
+        "topbar.muteOff": "🔇",
+        "common.cancel": "Cancel",
+        "common.confirm": "OK",
+        "common.home": "Home",
+        "common.leaveRoom": "🚪 Exit Room",
+        "common.leaveRoomShort": "Exit Room",
+        "common.next": "Next",
+        "countdown.intro": "Ready!",
+        "countdown.go": "Rock, paper, scissors, shoot!",
+        "countdown.roundLabel": "Starting soon!",
+        "countdown.replay": "🔄 Rematch #{n}!",
+        "voice.intro": "Ready",
+        "voice.go1": "Rock paper scissors",
+        "voice.go2": "shoot!",
+        "voice.becameLoser": "Oh no, you're it!",
+        "voice.gameOver": "Congratulations! The loser has been decided!",
+        "voice.continue": "Phew, safe! Let's continue!",
+        "auth.title": "Game on with <em>friends?</em>",
+        "auth.subtitle": "Gather by QR and play RPS with Maru!<br/>Sign in to save your <b>win-rate & penalty history</b> 🏆",
+        "auth.snsKakao": "Sign in with KakaoTalk",
+        "auth.snsLine": "Sign in with LINE",
+        "auth.snsWechat": "Sign in with WeChat",
+        "auth.dividerOr": "or",
+        "auth.guestPlay": "🐱 Play as guest with Maru",
+        "auth.guestHint": "Guest mode doesn't save game history",
+        "home.kcultureTag": "K-CULTURE × PARTY GAME",
+        "home.title": "<em>Rock Paper Scissors!</em>",
+        "home.subtitle": "Gather by QR, one round with Maru 🐾<br/>Loser takes the penalty!",
+        "home.nicknameLabel": "Your nickname",
+        "home.nicknamePlaceholder": "e.g. Alex",
+        "home.createBtn": "🏠 Create room / Start as host",
+        "home.scanBtn": "📷 Scan QR to join",
+        "home.quickJoin": "Join by QR",
+        "home.quickStats": "Recent results",
+        "home.footer": "<b>K-PLAY #001</b> · A new chapter of Korean party culture 🇰🇷",
+        "qrScanner.cap": "Scan QR!",
+        "qrScanner.subtitle": "Point your camera at the host's QR code.<br/>If unsupported, enter the room code manually.",
+        "qrScanner.loading": "📷 Setting up camera...",
+        "qrScanner.inputCode": "Enter room code",
+        "hostRoom.cap": "Host mode!",
+        "hostRoom.subtitle": "Show the QR or room code to your friends.<br/>Maru's waiting for them 🐾",
+        "hostRoom.penaltyBoxLabel": "This game's penalty",
+        "hostRoom.shareUrlTitle": "Phone QR access URL",
+        "hostRoom.shareUrlHelp": "During local testing, your PC and phone must be on the same Wi-Fi. If it fails, replace the IP below with your PC's Wi-Fi IP.",
+        "hostRoom.shareApply": "Apply",
+        "hostRoom.locked": "Closed for new joiners",
+        "hostRoom.lockedDesc": "All players are ready — QR joining is closed.",
+        "hostRoom.participants": "Players",
+        "hostRoom.loserCount": "🎯 Number of losers",
+        "hostRoom.loserCountOption": "{n}",
+        "hostRoom.startGameLabel": "🚀 Start game!",
+        "hostRoom.prepareGameLabel": "🎮 Get ready",
+        "hostRoom.penaltySetBtn": "Set penalty",
+        "hostRoom.penaltyEditBtn": "✏️ Edit penalty",
+        "hostRoom.penaltyChangeBtn": "Change penalty",
+        "join.cap": "Join!",
+        "join.title": "Join a room",
+        "join.subtitle": "Enter room code and nickname.<br/>Maru's holding your spot 🐾",
+        "join.codeLabel": "Room code",
+        "join.codePlaceholder": "e.g. A7K2",
+        "join.nameLabel": "Nickname",
+        "join.namePlaceholder": "e.g. Sam",
+        "join.joinBtn": "🎉 Join",
+        "join.joining": "Joining...",
+        "participantWait.cap": "Waiting!",
+        "participantWait.subtitle": "Hang on while the host<br/>sets the penalty 🍵",
+        "participantWait.penaltyBoxLabel": "This game's penalty",
+        "participantWait.penaltyEmpty": "No penalty set yet.",
+        "participantWait.participants": "Players",
+        "penalty.cap": "Penalty!",
+        "penalty.title": "Set penalty",
+        "penalty.subtitle": "What should the loser do? <b>Maru's writing it down 📝</b>",
+        "penalty.inputLabel": "This game's penalty",
+        "penalty.inputPlaceholder": "e.g. Loser buys coffee",
+        "penalty.frequentTitle": "Recently used",
+        "penalty.saveBtn": "💾 Save penalty",
+        "penalty.saving": "Saving...",
+        "penalty.saved": "Saved ✓",
+        "penalty.returnBtn": "Back to room",
+        "lobby.cap": "One more?",
+        "lobby.subtitle": "Once everyone's back<br/>Maru starts a new round! 🐾",
+        "lobby.hostLabel": "👑 Host",
+        "lobby.hostUnknown": "Unknown",
+        "lobby.roomCodeLabel": "Room code: <strong>{code}</strong>",
+        "lobby.penaltyBoxLabel": "This game's penalty",
+        "lobby.penaltyEmpty": "No penalty set yet.",
+        "lobby.participantCount": "Players ({n})",
+        "lobby.readyBtn": "🎮 Get ready",
+        "lobby.readyDone": "✅ Ready",
+        "lobby.readyPreparing": "Getting ready...",
+        "lobby.editPenaltyBtn": "✏️ Edit penalty",
+        "ready.cap": "Ready!",
+        "ready.subtitle": "When all ✋ press,<br/>Maru starts the game!",
+        "ready.participantsStatus": "Player ready status",
+        "ready.myReady": "✋ Get ready",
+        "ready.hostStart": "🎮 Start game",
+        "ready.editPenalty": "✏️ Edit penalty",
+        "ready.exit": "Exit",
+        "game.cap": "Rock, paper, scissors!",
+        "game.round": "Round {n}",
+        "game.subtitle": "Pick one with Maru ✊✌️🖐",
+        "game.summaryTimer": "Time left",
+        "game.summarySelected": "Selected",
+        "game.summaryTotal": "Players",
+        "game.choiceScissors": "Scissors",
+        "game.choiceRock": "Rock",
+        "game.choicePaper": "Paper",
+        "game.devAuto": "Dev: random for all",
+        "hostPlaying.cap": "Watching!",
+        "hostPlaying.round": "Round {n}",
+        "hostPlaying.subtitle": "Watch with Maru<br/>while everyone picks 👀",
+        "hostPlaying.statusH3": "Player picks",
+        "hostPlaying.judgeBtn": "🎯 Judge round",
+        "hostPlaying.devAuto": "Dev: auto-pick unfinished",
+        "result.capDefault": "Results!",
+        "result.capDraw": "Huh?",
+        "result.capLost": "Oh no...",
+        "result.capWin": "Yay~!",
+        "result.capSafe": "Phew~",
+        "result.titleWin": "Win!",
+        "result.titleDraw": "Draw!",
+        "result.titleLose": "Lose!",
+        "result.titleSafeNow": "Safe!",
+        "result.titleContinue": "Keep going!",
+        "result.titleLoserConfirmed": "You're it!",
+        "result.titleLoserConfirmedCount": "Loser confirmed! ({done}/{target})",
+        "result.titleSurvived": "Survived!",
+        "result.penaltyBoxLabel": "Penalty",
+        "result.penaltyEmpty": "No penalty set.",
+        "result.roundResultsH3": "Round results",
+        "result.msgDrawHost": "Draw! Press the button below to start the next round.",
+        "result.msgDrawGuest": "Draw! Waiting for the host to start the next round.",
+        "result.msgGameOverLose": "Congrats(?) Time to do the penalty!",
+        "result.msgGameOverWin": "All {target} losers have been decided!",
+        "result.msgTooManyLose": "{round} losers but only {target} needed!\nGet ready ✋ shortly.",
+        "result.msgTooManySafe": "You're safe! Replay starts automatically when losers ready up.",
+        "result.msgTooFewLoser": "Loser confirmed ({done}/{target}). Ready your penalty!",
+        "result.msgTooFewOther": "{newlyConfirmed} losers confirmed. {remaining} more needed! Rematch shortly...",
+        "result.nextRoundBtn": "🔄 Next round",
+        "result.endGameBtn": "End game & view stats",
+        "result.hostSettingsBtn": "🎮 One more! (host setup)",
+        "result.viewStatsBtn": "🏆 View stats",
+        "result.becomeNextHostBtn": "🎮 Become next host ({n}s)",
+        "winnerWait.cap": "Safe!",
+        "winnerWait.title": "You're safe!",
+        "winnerWait.message": "Sit this rematch out and wait for the final loser.",
+        "winnerWait.hint": "Remaining players are replaying 🍵",
+        "loserWait.cap": "Oh no~",
+        "loserWait.title": "You're it!",
+        "loserWait.messageWaiting": "Get your penalty ready. Finding {n} more loser(s)...",
+        "loserWait.messageDone": "Get your penalty ready. The game is over!",
+        "loserWait.messageDefault": "Get your penalty ready. The game continues...",
+        "stats.cap": "Final stats!",
+        "stats.title": "Final results",
+        "stats.subtitle": "Maru tallied wins, losses<br/>and penalty counts 📊",
+        "stats.thParticipant": "Player",
+        "stats.thWin": "W",
+        "stats.thLose": "L",
+        "stats.thDraw": "D",
+        "stats.thRate": "Win %",
+        "stats.thPenalty": "Penalty",
+        "stats.replayBtn": "Play again in the same room",
+        "popup.statsTitle": "🏆 Game stats",
+        "popup.statsSubtitle": "This room's running record",
+        "popup.statsClose": "Close",
+        "popup.nextHostTitle": "👑 Pick next host",
+        "popup.nextHostSubtitle": "Pick the next host to take over the room.",
+        "popup.nextHostRandom": "Pick random host and exit",
+        "popup.inviteTitle": "🎮 New game invitation",
+        "popup.inviteSubtitle": "The host is starting a new game in this room!",
+        "popup.inviteAccept": "Accept",
+        "popup.inviteDecline": "Decline",
+        "popup.inviteHostTitle": "🎮 Inviting players...",
+        "popup.inviteHostSubtitle": "Invitation sent. The game starts automatically shortly.",
+        "popup.inviteHostStart": "Start now",
+        "popup.inviteHostCancel": "Cancel",
+        "popup.confirmLeaveTitle": "Leave the room?",
+        "popup.confirmLeaveMsg": "Leaving the room drops you from the current game 🐾",
+        "popup.confirmLeaveOk": "🚪 Exit",
+        "tag.host": "HOST",
+        "tag.win": "Win",
+        "tag.lose": "Lose",
+        "tag.draw": "Draw",
+        "tag.safe": "Safe",
+        "tag.loserConfirmed": "Loser confirmed",
+        "tag.me": "Me",
+        "tag.meHost": "Me (host)",
+        "tag.readyDone": "✓ Ready",
+        "tag.readyWaiting": "○ Waiting",
+        "tag.chosenDone": "✓ Picked",
+        "tag.chosenWaiting": "○ Choosing",
+        "toast.codeRequired": "Please enter a room code.",
+        "toast.nameRequired": "Please enter a nickname.",
+        "toast.roomNotFound": "Room not found.",
+        "toast.joinLocked": "All players are ready — you can't join now.",
+        "toast.penaltyRequired": "Please enter a penalty.",
+        "toast.penaltyNotSet": "Please set a penalty first.",
+        "toast.saveError": "Save error: {msg}",
+        "toast.startError": "Start error: {msg}",
+        "toast.error": "Error: {msg}",
+        "toast.notYetChosen": "Players not picked yet: {names}",
+        "toast.urlInputRequired": "Please enter a phone-accessible URL. e.g. http://192.168.1.6:5173",
+        "toast.urlUpdated": "QR access URL updated.",
+        "toast.qrCodeRead": "Read room code from QR.",
+        "toast.inviteLinkCopied": "📋 Invitation link copied",
+        "toast.copyFailed": "Copy failed: {text}",
+        "toast.snsComingSoon": "{provider} sign-in is coming soon! 🔜",
+        "defaultPenalty.coffee": "Loser buys coffee",
+        "defaultPenalty.dance": "Loser buys lunch",
+        "defaultPenalty.funnyFace": "Loser does the dishes",
+        "defaultPenalty.water": "Winner picks the next game",
+        "defaultPenalty.nextHost": "Loser wears a funny hat",
+        "sns.kakao": "KakaoTalk",
+        "sns.line": "LINE",
+        "sns.wechat": "WeChat",
+        "choice.scissors": "Scissors",
+        "choice.rock": "Rock",
+        "choice.paper": "Paper",
+      },
+      ja: {
+        "app.title": "マルのじゃんけん",
+        "app.brand": "マルのじゃんけん",
+        "topbar.snsLogin": "👤 ログイン",
+        "topbar.noRoom": "部屋なし",
+        "topbar.room": "部屋 {code}",
+        "topbar.muteOn": "🔊",
+        "topbar.muteOff": "🔇",
+        "common.cancel": "キャンセル",
+        "common.confirm": "OK",
+        "common.home": "ホームへ",
+        "common.leaveRoom": "🚪 部屋を出る",
+        "common.leaveRoomShort": "部屋を出る",
+        "common.next": "次へ",
+        "countdown.intro": "最初はグー",
+        "countdown.go": "じゃんけんぽん！",
+        "countdown.roundLabel": "まもなく開始！",
+        "countdown.replay": "🔄 {n}回目の再戦！",
+        "voice.intro": "最初はグー",
+        "voice.go1": "じゃんけん",
+        "voice.go2": "ぽん！",
+        "voice.becameLoser": "あら、鬼になっちゃった！",
+        "voice.gameOver": "おめでとう！鬼が決まりました！",
+        "voice.continue": "ふぅ、セーフ！続けます！",
+        "auth.title": "友達と<em>一勝負？</em>",
+        "auth.subtitle": "QRで集まって、マルとじゃんけん！<br/>ログインで<b>勝率・罰ゲーム履歴</b>が保存されます 🏆",
+        "auth.snsKakao": "カカオトークでログイン",
+        "auth.snsLine": "LINEでログイン",
+        "auth.snsWechat": "WeChatでログイン",
+        "auth.dividerOr": "または",
+        "auth.guestPlay": "🐱 ゲストでマルと遊ぶ",
+        "auth.guestHint": "ゲストモードでは履歴は保存されません",
+        "home.kcultureTag": "Kカルチャー・パーティーゲーム",
+        "home.title": "<em>じゃんけん！</em>",
+        "home.subtitle": "QRで集まってマルと一勝負 🐾<br/>負けたら罰ゲーム！",
+        "home.nicknameLabel": "ニックネーム",
+        "home.nicknamePlaceholder": "例：たろう",
+        "home.createBtn": "🏠 部屋を作る / ホスト開始",
+        "home.scanBtn": "📷 QRをスキャンして入室",
+        "home.quickJoin": "QRで参加した画面",
+        "home.quickStats": "最近のゲーム結果",
+        "home.footer": "<b>K-PLAY #001</b> · 韓国パーティー文化の新章 🇰🇷",
+        "qrScanner.cap": "QRスキャン！",
+        "qrScanner.subtitle": "ホスト画面のQRコードにカメラをかざしてください。<br/>使えない場合は部屋コードを直接入力。",
+        "qrScanner.loading": "📷 カメラ準備中...",
+        "qrScanner.inputCode": "部屋コード直接入力",
+        "hostRoom.cap": "ホストモード！",
+        "hostRoom.subtitle": "QRまたは部屋コードを友達に見せてください。<br/>マルが入室を待ってるよ 🐾",
+        "hostRoom.penaltyBoxLabel": "今回の罰ゲーム",
+        "hostRoom.shareUrlTitle": "スマホ用QRアクセス先",
+        "hostRoom.shareUrlHelp": "ローカルテスト中はPCとスマホが同じWi-Fiにある必要があります。接続できない場合は下のIPをPCのWi-Fi IPに置き換えてください。",
+        "hostRoom.shareApply": "適用",
+        "hostRoom.locked": "参加締切",
+        "hostRoom.lockedDesc": "全員が準備完了したのでQR参加は閉じられました。",
+        "hostRoom.participants": "参加者一覧",
+        "hostRoom.loserCount": "🎯 鬼の人数",
+        "hostRoom.loserCountOption": "{n}人",
+        "hostRoom.startGameLabel": "🚀 ゲーム開始！",
+        "hostRoom.prepareGameLabel": "🎮 ゲーム準備",
+        "hostRoom.penaltySetBtn": "罰ゲームを設定",
+        "hostRoom.penaltyEditBtn": "✏️ 罰ゲーム編集",
+        "hostRoom.penaltyChangeBtn": "罰ゲーム変更",
+        "join.cap": "参加！",
+        "join.title": "部屋に参加",
+        "join.subtitle": "部屋コードとニックネームを入力。<br/>マルが席を取っとくよ 🐾",
+        "join.codeLabel": "部屋コード",
+        "join.codePlaceholder": "例：A7K2",
+        "join.nameLabel": "ニックネーム",
+        "join.namePlaceholder": "例：はなこ",
+        "join.joinBtn": "🎉 参加する",
+        "join.joining": "参加中...",
+        "participantWait.cap": "待機中！",
+        "participantWait.subtitle": "ホストが罰ゲームを決めて<br/>始めるまで少し待ってね 🍵",
+        "participantWait.penaltyBoxLabel": "今回の罰ゲーム",
+        "participantWait.penaltyEmpty": "まだ罰ゲームは設定されていません。",
+        "participantWait.participants": "参加者一覧",
+        "penalty.cap": "罰ゲーム！",
+        "penalty.title": "罰ゲーム設定",
+        "penalty.subtitle": "負けた人は何する？<b>マルがメモするよ 📝</b>",
+        "penalty.inputLabel": "今回の罰ゲーム",
+        "penalty.inputPlaceholder": "例：コーヒーをおごる",
+        "penalty.frequentTitle": "よく使う罰ゲーム",
+        "penalty.saveBtn": "💾 罰ゲームを保存",
+        "penalty.saving": "保存中...",
+        "penalty.saved": "保存完了 ✓",
+        "penalty.returnBtn": "部屋画面に戻る",
+        "lobby.cap": "もう一回？",
+        "lobby.subtitle": "みんな揃ったら<br/>マルが新ラウンド！ 🐾",
+        "lobby.hostLabel": "👑 ホスト",
+        "lobby.hostUnknown": "不明",
+        "lobby.roomCodeLabel": "部屋コード: <strong>{code}</strong>",
+        "lobby.penaltyBoxLabel": "今回の罰ゲーム",
+        "lobby.penaltyEmpty": "まだ罰ゲームは設定されていません。",
+        "lobby.participantCount": "参加者一覧 ({n}人)",
+        "lobby.readyBtn": "🎮 ゲーム準備",
+        "lobby.readyDone": "✅ 準備完了",
+        "lobby.readyPreparing": "準備中...",
+        "lobby.editPenaltyBtn": "✏️ 罰ゲーム編集",
+        "ready.cap": "レディ！",
+        "ready.subtitle": "みんなが ✋ を押したら<br/>マルが開始の合図！",
+        "ready.participantsStatus": "参加者準備状況",
+        "ready.myReady": "✋ ゲーム準備",
+        "ready.hostStart": "🎮 ゲーム開始",
+        "ready.editPenalty": "✏️ 罰ゲーム編集",
+        "ready.exit": "出る",
+        "game.cap": "さあ、じゃんけん！",
+        "game.round": "ラウンド {n}",
+        "game.subtitle": "マルに合わせて1つ選んで ✊✌️🖐",
+        "game.summaryTimer": "残り時間",
+        "game.summarySelected": "選択完了",
+        "game.summaryTotal": "参加者",
+        "game.choiceScissors": "チョキ",
+        "game.choiceRock": "グー",
+        "game.choicePaper": "パー",
+        "game.devAuto": "テスト用：全員ランダム選択",
+        "hostPlaying.cap": "観戦中！",
+        "hostPlaying.round": "ラウンド {n}",
+        "hostPlaying.subtitle": "全員が選び終わるまで<br/>マルと見守ろう 👀",
+        "hostPlaying.statusH3": "参加者の選択状況",
+        "hostPlaying.judgeBtn": "🎯 判定する",
+        "hostPlaying.devAuto": "テスト用：未選択者自動選択",
+        "result.capDefault": "結果発表！",
+        "result.capDraw": "あれ？",
+        "result.capLost": "あらら...",
+        "result.capWin": "やったー！",
+        "result.capSafe": "ふぅ〜",
+        "result.titleWin": "勝ち！",
+        "result.titleDraw": "あいこ！",
+        "result.titleLose": "負け！",
+        "result.titleSafeNow": "セーフ！",
+        "result.titleContinue": "続行！",
+        "result.titleLoserConfirmed": "鬼確定！",
+        "result.titleLoserConfirmedCount": "鬼確定！ ({done}/{target}人)",
+        "result.titleSurvived": "生き残り！",
+        "result.penaltyBoxLabel": "今回の罰ゲーム",
+        "result.penaltyEmpty": "罰ゲームは設定されていません。",
+        "result.roundResultsH3": "ラウンド結果",
+        "result.msgDrawHost": "あいこ！下のボタンで次のラウンドを始めてください。",
+        "result.msgDrawGuest": "あいこ！ホストが次ラウンドを始めるまで待ってください。",
+        "result.msgGameOverLose": "おめでとう（？）罰ゲームをどうぞ！",
+        "result.msgGameOverWin": "鬼 {target}人がすべて決まりました！",
+        "result.msgTooManyLose": "負け {round}人中 {target}人だけ鬼！\nもうすぐ ✋ ゲーム準備を押してね。",
+        "result.msgTooManySafe": "あなたはセーフ！負け組が準備したら自動で再戦が始まります。",
+        "result.msgTooFewLoser": "鬼確定 ({done}/{target}人)。罰ゲーム準備！",
+        "result.msgTooFewOther": "鬼 {newlyConfirmed}人確定。あと {remaining}人必要！再戦準備中...",
+        "result.nextRoundBtn": "🔄 次のラウンド",
+        "result.endGameBtn": "ゲーム終了・統計を見る",
+        "result.hostSettingsBtn": "🎮 もう一回！ (ホスト設定)",
+        "result.viewStatsBtn": "🏆 勝率を見る",
+        "result.becomeNextHostBtn": "🎮 次のホストになる ({n}秒)",
+        "winnerWait.cap": "セーフ！",
+        "winnerWait.title": "ひと足先にセーフ！",
+        "winnerWait.message": "今回の再戦は外れて最終の鬼が決まるまで待ってください。",
+        "winnerWait.hint": "残りのメンバーで再戦中です 🍵",
+        "loserWait.cap": "あらら〜",
+        "loserWait.title": "鬼確定！",
+        "loserWait.messageWaiting": "罰ゲームの準備。あと {n}人の鬼を探しています...",
+        "loserWait.messageDone": "罰ゲームの準備。ゲームが終わりました！",
+        "loserWait.messageDefault": "罰ゲームの準備。ゲームは進行中です...",
+        "stats.cap": "結果発表！",
+        "stats.title": "最終結果",
+        "stats.subtitle": "参加者の勝率と罰ゲーム回数を<br/>マルがまとめたよ 📊",
+        "stats.thParticipant": "参加者",
+        "stats.thWin": "勝",
+        "stats.thLose": "負",
+        "stats.thDraw": "あいこ",
+        "stats.thRate": "勝率",
+        "stats.thPenalty": "罰",
+        "stats.replayBtn": "同じ部屋でもう一回",
+        "popup.statsTitle": "🏆 ゲーム勝率",
+        "popup.statsSubtitle": "現部屋の累計記録",
+        "popup.statsClose": "閉じる",
+        "popup.nextHostTitle": "👑 次のホスト選択",
+        "popup.nextHostSubtitle": "ゲームを引き継ぐ次のホストを選んでください。",
+        "popup.nextHostRandom": "ランダムでホスト指名して退室",
+        "popup.inviteTitle": "🎮 新ゲーム招待",
+        "popup.inviteSubtitle": "ホストが同じ部屋で新ゲームを始めます！",
+        "popup.inviteAccept": "参加する",
+        "popup.inviteDecline": "辞退する",
+        "popup.inviteHostTitle": "🎮 招待中...",
+        "popup.inviteHostSubtitle": "参加者に招待を送信しました。まもなく自動で始まります。",
+        "popup.inviteHostStart": "今すぐ始める",
+        "popup.inviteHostCancel": "キャンセル",
+        "popup.confirmLeaveTitle": "本当に出ますか？",
+        "popup.confirmLeaveMsg": "部屋を出ると進行中のゲームから抜けます 🐾",
+        "popup.confirmLeaveOk": "🚪 出る",
+        "tag.host": "ホスト",
+        "tag.win": "勝",
+        "tag.lose": "負",
+        "tag.draw": "あいこ",
+        "tag.safe": "セーフ",
+        "tag.loserConfirmed": "鬼確定",
+        "tag.me": "私",
+        "tag.meHost": "私 (ホスト)",
+        "tag.readyDone": "✓ 準備完了",
+        "tag.readyWaiting": "○ 準備待ち",
+        "tag.chosenDone": "✓ 選択完了",
+        "tag.chosenWaiting": "○ 選択中",
+        "toast.codeRequired": "部屋コードを入力してください。",
+        "toast.nameRequired": "ニックネームを入力してください。",
+        "toast.roomNotFound": "存在しない部屋です。",
+        "toast.joinLocked": "全員準備完了で新規参加できません。",
+        "toast.penaltyRequired": "罰ゲームを入力してください。",
+        "toast.penaltyNotSet": "先に罰ゲームを設定してください。",
+        "toast.saveError": "保存エラー: {msg}",
+        "toast.startError": "ゲーム開始エラー: {msg}",
+        "toast.error": "エラー: {msg}",
+        "toast.notYetChosen": "未選択の参加者: {names}",
+        "toast.urlInputRequired": "スマホからアクセスできるURLを入力。例: http://192.168.1.6:5173",
+        "toast.urlUpdated": "QRアクセスURLを更新しました。",
+        "toast.qrCodeRead": "QRから部屋コードを読み取りました。",
+        "toast.inviteLinkCopied": "📋 招待リンクをコピーしました",
+        "toast.copyFailed": "コピー失敗: {text}",
+        "toast.snsComingSoon": "{provider}ログインは準備中。まもなく公開予定 🔜",
+        "defaultPenalty.coffee": "コンビニスイーツをおごる",
+        "defaultPenalty.dance": "コーヒーをおごる",
+        "defaultPenalty.funnyFace": "後片付け係",
+        "defaultPenalty.water": "罰ゲームでモノマネ",
+        "defaultPenalty.nextHost": "最後の一個を譲る",
+        "sns.kakao": "カカオトーク",
+        "sns.line": "LINE",
+        "sns.wechat": "WeChat",
+        "choice.scissors": "チョキ",
+        "choice.rock": "グー",
+        "choice.paper": "パー",
+      },
+    };
+
+    let currentLocale = "ko";
+
+    function detectLocale() {
+      const saved = localStorage.getItem("rpsLocale");
+      if (saved && ["ko","en","ja"].includes(saved)) return saved;
+      const lang = (navigator.language || navigator.userLanguage || "ko").toLowerCase();
+      if (lang.startsWith("ja")) return "ja";
+      if (lang.startsWith("ko")) return "ko";
+      return "en";
+    }
+
+    function t(key, vars = {}) {
+      const dict = i18n[currentLocale] || i18n.ko;
+      let str = dict[key];
+      if (str == null) str = i18n.ko[key];
+      if (str == null) str = key;
+      for (const [k, v] of Object.entries(vars)) {
+        str = String(str).replace(new RegExp(`\\{${k}\\}`, "g"), v);
+      }
+      return str;
+    }
+
+    function applyTranslations(root) {
+      const scope = root || document;
+      scope.querySelectorAll("[data-i18n]").forEach(el => {
+        const key = el.getAttribute("data-i18n");
+        el.textContent = t(key);
+      });
+      scope.querySelectorAll("[data-i18n-html]").forEach(el => {
+        const key = el.getAttribute("data-i18n-html");
+        el.innerHTML = t(key);
+      });
+      scope.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+        const key = el.getAttribute("data-i18n-placeholder");
+        el.setAttribute("placeholder", t(key));
+      });
+    }
+
+    function setLocale(loc) {
+      if (!i18n[loc]) loc = "ko";
+      currentLocale = loc;
+      localStorage.setItem("rpsLocale", loc);
+      document.documentElement.lang = loc;
+      document.body.setAttribute("data-locale", loc);
+      applyTranslations();
+      // 동적 텍스트가 변하는 화면 다시 렌더
+      if (typeof renderAll === "function") try { renderAll(); } catch {}
+      if (typeof updateRoomBadge === "function") try { updateRoomBadge(); } catch {}
+    }
+    window.setLocale = setLocale;
+    window.t = t;
+
+    // Initial locale (즉시 적용 — body[data-locale]은 폰트 스택에 사용됨)
+    currentLocale = detectLocale();
+    document.documentElement.lang = currentLocale;
+    if (document.body) document.body.setAttribute("data-locale", currentLocale);
+
     const SUPABASE_URL = "https://cmfxhehpreanijwanwrr.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNtZnhoZWhwcmVhbmlqd2Fud3JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5Mjg5MDIsImV4cCI6MjA5NDUwNDkwMn0.v5HUgGyy4ZRhmIdCfx1K4_VtVafgK8L2uBe_3ah3xzI";
     const db = window.supabase
