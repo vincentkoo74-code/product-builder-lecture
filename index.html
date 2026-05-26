@@ -934,17 +934,7 @@
     }
     .maru-notice strong{color:var(--maru-red)}
 
-    /* 호스트룸 컨트롤 영역 — 4개 요소 통일 (벌칙 표시 + 3개 버튼) */
-    #screenHostRoom #penaltyStatusBox{
-      text-align:center;
-      padding:15px 16px;
-      font-size:15px;
-      font-weight:800;
-      font-family:"Noto Sans KR",sans-serif;
-      border-radius:18px;
-      margin-bottom:10px;
-      line-height:1.25;
-    }
+    /* 호스트룸 푸터 액션 버튼 통일 (벌칙 박스는 검정 .penalty-box로 분리되어 위로 이동) */
     #screenHostRoom .footer-actions button{
       padding:15px 16px;
       font-size:15px;
@@ -1256,6 +1246,11 @@
       <div class="vrshow-cap vrshow-cap-lg">방장 모드!</div>
       <p class="maru-section-sub" style="margin-top:6px">QR이나 방 코드를 친구한테 보여주세요.<br/>마루가 입장을 기다리고 있어요 🐾</p>
 
+      <div id="penaltyStatusBox" class="penalty-box hidden" style="margin:14px 0">
+        <small>이번 게임 벌칙</small>
+        <strong id="hostPenaltyText"></strong>
+      </div>
+
       <div class="qr-box" id="qrInviteBox">
         <div class="fake-qr" id="fakeQr"></div>
         <div class="code-text" id="roomCodeText">----</div>
@@ -1285,7 +1280,6 @@
           <option value="1">1명</option>
         </select>
       </div>
-      <div id="penaltyStatusBox" class="maru-notice hidden" style="margin-top:12px"></div>
       <div class="footer-actions" style="margin-top:12px">
         <button id="startGameBtn" class="btn-kparty hidden" onclick="window.goToReadyScreen()">
           🎮 게임 준비하기
@@ -2221,12 +2215,13 @@
       renderShareUrlControls();
       updateLoserCountDropdown();
       const penaltyBox = $("penaltyStatusBox");
+      const penaltyTextEl = $("hostPenaltyText");
       const startBtn = $("startGameBtn");
       const penaltyBtn = $("penaltySetBtn");
       const penaltyTxt = getPenaltyText();
 
       if (state.status === "ready") {
-        penaltyBox.textContent = `벌칙: ${penaltyTxt}`;
+        if (penaltyTextEl) penaltyTextEl.textContent = penaltyTxt;
         penaltyBox.classList.remove("hidden");
         startBtn.textContent = "🚀 게임 시작!";
         startBtn.onclick = () => window.startGame();
@@ -2239,7 +2234,7 @@
         startBtn.disabled = !allReady;
         startBtn.style.opacity = allReady ? "1" : "0.5";
       } else if (penaltyTxt) {
-        penaltyBox.textContent = `설정된 벌칙: ${penaltyTxt}`;
+        if (penaltyTextEl) penaltyTextEl.textContent = penaltyTxt;
         penaltyBox.classList.remove("hidden");
         startBtn.textContent = "🎮 게임 준비하기";
         startBtn.onclick = () => window.goToReadyScreen();
