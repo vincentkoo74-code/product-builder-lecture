@@ -1,3 +1,5 @@
 .claude/
 .gstack/
 mockups/
+# 원본 zip 폴더 (정리본은 ASSETS/fonts/ 에 둠)
+ASSETS/font/
