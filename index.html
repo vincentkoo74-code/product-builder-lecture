@@ -1176,13 +1176,13 @@
     <div class="topbar">
       <div class="brand">
         <div class="brand-icon" style="background:linear-gradient(135deg,var(--orange),var(--gold));color:#fff">🐾</div>
-        <div style="font-family:'Black Han Sans',sans-serif;font-weight:400;letter-spacing:.5px">마루의 가위바위보</div>
+        <div data-i18n="app.brand" style="font-family:var(--font-display);font-weight:400;letter-spacing:.5px">마루의 가위바위보</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <button id="guestLoginTopBtn" class="guest-login-btn hidden" onclick="window.showAuthScreen()">
+        <button id="guestLoginTopBtn" class="guest-login-btn hidden" onclick="window.showAuthScreen()" data-i18n="topbar.snsLogin">
           👤 SNS 로그인
         </button>
-        <div class="room-badge" id="roomBadge">방 없음</div>
+        <div class="room-badge" id="roomBadge" data-i18n="topbar.noRoom">방 없음</div>
       </div>
     </div>
 
@@ -1202,30 +1202,30 @@
         <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
       </div>
 
-      <h1 class="maru-title">친구들과 <em>한 판?</em></h1>
-      <p class="maru-subtitle">QR로 모이고, 마루랑 같이 가위바위보!<br/>로그인하면 <b>승률·벌칙 기록</b>이 저장돼요 🏆</p>
+      <h1 class="maru-title" data-i18n-html="auth.title">친구들과 <em>한 판?</em></h1>
+      <p class="maru-subtitle" data-i18n-html="auth.subtitle">QR로 모이고, 마루랑 같이 가위바위보!<br/>로그인하면 <b>승률·벌칙 기록</b>이 저장돼요 🏆</p>
 
       <div class="grid" style="gap:10px;margin-bottom:4px">
         <button class="sns-btn sns-btn-kakao" onclick="window.loginWithSns('kakao')">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3C6.48 3 2 6.72 2 11.28c0 2.94 1.75 5.52 4.38 7.03L5.3 21.5a.5.5 0 0 0 .72.54l3.88-2.52A11.3 11.3 0 0 0 12 19.56c5.52 0 10-3.72 10-8.28C22 6.72 17.52 3 12 3z"/></svg>
-          카카오톡으로 로그인
+          <span data-i18n="auth.snsKakao">카카오톡으로 로그인</span>
         </button>
         <button class="sns-btn sns-btn-line" onclick="window.loginWithSns('line')">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63h2.386c.349 0 .63.285.63.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.105.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63.349 0 .631.285.631.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.281.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/></svg>
-          라인으로 로그인
+          <span data-i18n="auth.snsLine">라인으로 로그인</span>
         </button>
         <button class="sns-btn sns-btn-wechat" onclick="window.loginWithSns('wechat')">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c-.303-.87-.463-1.79-.463-2.74 0-3.658 3.28-6.631 7.327-6.631.218 0 .435.01.651.025C15.57 4.58 12.415 2.188 8.69 2.188zm-1.9 3.55a.96.96 0 1 1 0 1.921.96.96 0 0 1 0-1.92zm3.8 0a.96.96 0 1 1 0 1.921.96.96 0 0 1 0-1.92zM24 14.185c0-3.443-3.236-6.236-7.231-6.236-4.016 0-7.232 2.793-7.232 6.236 0 3.444 3.216 6.237 7.232 6.237.87 0 1.706-.13 2.49-.363a.75.75 0 0 1 .625.088l1.56.91a.29.29 0 0 0 .145.047c.134 0 .257-.11.257-.257 0-.06-.025-.12-.04-.185l-.34-1.29a.518.518 0 0 1 .181-.58C23.046 17.908 24 16.12 24 14.184zm-9.6-1.044a.836.836 0 1 1 0-1.672.836.836 0 0 1 0 1.672zm4.8 0a.836.836 0 1 1 0-1.672.836.836 0 0 1 0 1.672z"/></svg>
-          위쳇으로 로그인
+          <span data-i18n="auth.snsWechat">위쳇으로 로그인</span>
         </button>
       </div>
 
-      <div class="auth-divider"><span>또는</span></div>
+      <div class="auth-divider"><span data-i18n="auth.dividerOr">또는</span></div>
 
-      <button class="btn-outline btn-full" onclick="window.playAsGuest()" style="margin-bottom:8px">
+      <button class="btn-outline btn-full" onclick="window.playAsGuest()" style="margin-bottom:8px" data-i18n="auth.guestPlay">
         🐱 로그인 없이 마루랑 놀기
       </button>
-      <p style="text-align:center;font-size:12px;color:var(--muted);margin:0">
+      <p style="text-align:center;font-size:12px;color:var(--muted);margin:0" data-i18n="auth.guestHint">
         게스트 모드에서는 게임 기록이 저장되지 않습니다
       </p>
     </section>
@@ -1241,36 +1241,36 @@
 
       <div class="kculture-tag">
         <span class="dot"></span>
-        <span>K-CULTURE × PARTY GAME</span>
+        <span data-i18n="home.kcultureTag">K-CULTURE × PARTY GAME</span>
       </div>
-      <h1 class="maru-title" style="font-size:46px;line-height:1.1;margin:10px 0 6px"><em>가위바위보!</em></h1>
-      <p class="maru-subtitle">QR로 모이고 마루랑 한 판 🐾<br/>진 사람이 벌칙!</p>
+      <h1 class="maru-title" style="font-size:46px;line-height:1.1;margin:10px 0 6px" data-i18n-html="home.title"><em>가위바위보!</em></h1>
+      <p class="maru-subtitle" data-i18n-html="home.subtitle">QR로 모이고 마루랑 한 판 🐾<br/>진 사람이 벌칙!</p>
 
       <div class="field">
-        <label>내 닉네임</label>
-        <input id="homeNickname" placeholder="예: 민수" maxlength="10" />
+        <label data-i18n="home.nicknameLabel">내 닉네임</label>
+        <input id="homeNickname" placeholder="예: 민수" data-i18n-placeholder="home.nicknamePlaceholder" maxlength="10" />
       </div>
 
       <button class="btn-kparty" onclick="window.createRoom()">
-        🏠 방 만들기 / 호스트 시작
+        <span data-i18n="home.createBtn">🏠 방 만들기 / 호스트 시작</span>
         <span class="go-pill">GO</span>
       </button>
-      <button class="btn-light btn-full" onclick="window.showQrScanner()" style="margin-bottom:10px">
+      <button class="btn-light btn-full" onclick="window.showQrScanner()" style="margin-bottom:10px" data-i18n="home.scanBtn">
         📷 QR 스캔해서 입장
       </button>
 
       <div class="quick-row">
         <button class="quick-btn" onclick="window.showJoinScreen()">
           <span class="icon">📱</span>
-          QR로 참여한 화면
+          <span data-i18n="home.quickJoin">QR로 참여한 화면</span>
         </button>
         <button class="quick-btn" onclick="window.showStats()">
           <span class="icon">📊</span>
-          최근 게임 결과
+          <span data-i18n="home.quickStats">최근 게임 결과</span>
         </button>
       </div>
 
-      <div class="maru-footer"><b>K놀이 #001</b> · 한국 파티 문화의 새 챕터 🇰🇷</div>
+      <div class="maru-footer" data-i18n-html="home.footer"><b>K놀이 #001</b> · 한국 파티 문화의 새 챕터 🇰🇷</div>
     </section>
 
     <section class="card maru-card hidden" id="screenQrScanner">
@@ -4829,6 +4829,10 @@
       if (params.get("debug") === "1" || localStorage.getItem("rpsDebugMode") === "1") {
         document.body.classList.add("debug-mode");
       }
+      // i18n: 감지된 locale로 번역 적용 (URL 파라미터 ?lang=en|ja|ko 지원)
+      const urlLang = (params.get("lang") || "").toLowerCase();
+      if (["ko","en","ja"].includes(urlLang)) localStorage.setItem("rpsLocale", urlLang);
+      setLocale(detectLocale());
       loadState();
       const savedNickname = loadNickname();
       if (savedNickname) $("homeNickname").value = savedNickname;
