@@ -749,6 +749,31 @@
     }
     .guest-login-btn:hover { background: #eef2ff; }
 
+    /* 언어 선택 드롭다운 + 음소거 토글 */
+    .lang-select{
+      background:rgba(255,255,255,0.9);
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:5px 8px;
+      font-size:11px;
+      font-weight:700;
+      color:var(--text);
+      cursor:pointer;
+      font-family:var(--font-body);
+      appearance:none;-webkit-appearance:none;
+      background-image:none;
+    }
+    .lang-select:hover{background:#fff;border-color:var(--orange)}
+    .mute-btn{
+      background:rgba(255,255,255,0.9);
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:4px 9px;
+      font-size:14px;
+      cursor:pointer;
+    }
+    .mute-btn:hover{background:#fff}
+
     .sns-badge {
       display: inline-flex;
       align-items: center;
@@ -1178,7 +1203,13 @@
         <div class="brand-icon" style="background:linear-gradient(135deg,var(--orange),var(--gold));color:#fff">🐾</div>
         <div data-i18n="app.brand" style="font-family:var(--font-display);font-weight:400;letter-spacing:.5px">마루의 가위바위보</div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px">
+      <div style="display:flex;align-items:center;gap:6px">
+        <select id="langSelect" onchange="window.setLocale(this.value)" class="lang-select" title="Language">
+          <option value="ko">🇰🇷 한</option>
+          <option value="en">🇺🇸 EN</option>
+          <option value="ja">🇯🇵 JP</option>
+        </select>
+        <button id="muteToggleBtn" class="mute-btn" onclick="window.toggleMute()" title="Mute / Unmute">🔊</button>
         <button id="guestLoginTopBtn" class="guest-login-btn hidden" onclick="window.showAuthScreen()" data-i18n="topbar.snsLogin">
           👤 SNS 로그인
         </button>
@@ -2492,6 +2523,14 @@
       document.documentElement.lang = loc;
       document.body.setAttribute("data-locale", loc);
       applyTranslations();
+      // 언어 토글 select value 동기화
+      const sel = document.getElementById("langSelect");
+      if (sel) sel.value = loc;
+      // locale별 손 사인 이미지 라우팅 ([data-locale-img="rock|paper|scissors"])
+      document.querySelectorAll("[data-locale-img]").forEach(img => {
+        const choice = img.getAttribute("data-locale-img");
+        img.src = `ASSETS/rps/scenes/cat-${choice}-${loc}.png`;
+      });
       // 동적 텍스트가 변하는 화면 다시 렌더
       if (typeof renderAll === "function") try { renderAll(); } catch {}
       if (typeof updateRoomBadge === "function") try { updateRoomBadge(); } catch {}
@@ -2535,8 +2574,13 @@
     // 하위 호환: 기존 const 참조 코드용 getter
     const defaultPenalties = new Proxy([], {
       get(_t, key) {
+        // Symbol 키(Symbol.iterator 등)는 실제 array에 위임
+        if (typeof key === "symbol") {
+          const arr = getDefaultPenalties();
+          const v = arr[key];
+          return typeof v === "function" ? v.bind(arr) : v;
+        }
         if (key === "length" || /^\d+$/.test(key)) return getDefaultPenalties()[key];
-        if (key === Symbol.iterator) return getDefaultPenalties()[Symbol.iterator].bind(getDefaultPenalties());
         if (key === "includes") return v => getDefaultPenalties().includes(v);
         if (key === "indexOf") return v => getDefaultPenalties().indexOf(v);
         if (key === "map" || key === "filter" || key === "forEach" || key === "slice") {
@@ -3480,27 +3524,36 @@
       const labelEl = $("countdownLabel");
       overlay.classList.remove("hidden");
 
-      const roundLabel = state.round > 1 ? `🔄 ${state.round}번째 재대결!` : "잠시 후 시작!";
+      const roundLabel = state.round > 1
+        ? t("countdown.replay", { n: state.round })
+        : t("countdown.roundLabel");
 
-      // 1단계: "안내면 술래"
+      // 1단계: 인트로 ("안내면 술래" / "Ready!" / "最初はグー")
       numEl.className = "";
       numEl.style.fontSize = "54px";
-      numEl.textContent = "안내면 술래";
+      numEl.textContent = t("countdown.intro");
       labelEl.textContent = roundLabel;
       void numEl.offsetWidth;
       numEl.className = "count-anim";
-      await speak("안내면 술래", 1.4, 1.0);
+      await speak(t("voice.intro"), 1.4, 1.0);
 
-      // 2단계: "가위바위 보!" — 보를 크게, "보"에서 피치 업
+      // 2단계: "가위바위 보!" / "Rock paper scissors, shoot!" / "じゃんけんぽん！"
       numEl.className = "";
       numEl.style.fontSize = "46px";
-      numEl.innerHTML = `가위바위<span style="font-size:2em;vertical-align:middle"> 보!</span>`;
+      // 한국어/일본어는 "보!"/"ぽん！" 분리 강조, 영어는 통째로
+      const go1 = t("voice.go1");
+      const go2 = t("voice.go2");
+      if (currentLocale === "en") {
+        numEl.textContent = t("countdown.go");
+      } else {
+        numEl.innerHTML = `${go1}<span style="font-size:2em;vertical-align:middle"> ${go2}</span>`;
+      }
       labelEl.textContent = "";
       void numEl.offsetWidth;
       numEl.className = "count-anim";
-      // "가위바위" 기본 톤, "보!"는 높은 톤으로 분리 호출
-      speak("가위바위", 1.6, 0.85);
-      setTimeout(() => speak("보!", 2.2, 0.95), 750);
+      // 음성: 분리 호출 (영/일/한 모두 "보/shoot/ぽん"에서 피치 업)
+      speak(go1, 1.6, 0.85);
+      setTimeout(() => speak(go2, 2.2, 0.95), 750);
       await sleep(1800);
 
       overlay.classList.add("hidden");
@@ -3589,6 +3642,9 @@
       setTimerText(state.remainingSeconds);
       const rn = $("roundNumber"); if (rn) rn.textContent = state.round;
       const hrn = $("hostRoundNumber"); if (hrn) hrn.textContent = state.round;
+      // 라운드 타이틀 다국어: "라운드 1" / "Round 1" / "ラウンド 1"
+      const rt = $("roundTitle"); if (rt) rt.textContent = t("game.round", { n: state.round });
+      const hrt = $("hostRoundTitle"); if (hrt) hrt.textContent = t("hostPlaying.round", { n: state.round });
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
       const activeCount = state.participants.filter(p => !safeIds.includes(p.id) && !loserIds.includes(p.id)).length;
@@ -3744,8 +3800,8 @@
         renderRoundResult("gameOver", roundLosers.length, remainingSlots);
         showScreen("screenRoundResult");
         setTimeout(() => playFinalFanfare(), 400);
-        if (myResult === "lose") setTimeout(() => speak("아이고, 술래가 되셨습니다!", 1.4, 1.0), 2200);
-        else if (myResult === "win") setTimeout(() => speak("축하합니다! 술래가 결정됐습니다!", 1.4, 1.0), 2200);
+        if (myResult === "lose") setTimeout(() => speak(t("voice.becameLoser"), 1.4, 1.0), 2200);
+        else if (myResult === "win") setTimeout(() => speak(t("voice.gameOver"), 1.4, 1.0), 2200);
         // 5초 후 모든 기기가 로비로 자동 복귀. 5초 안에 패자가 "다음 게임 호스트" 클릭하면 host 전환 (returnToLobbyAfterGame은 status 체크로 무시됨)
         if (state.role === "host") {
           if (state.gameOverTimeout) clearTimeout(state.gameOverTimeout);
@@ -3763,9 +3819,9 @@
         renderRoundResult("tooFew", roundLosers.length, remainingSlots);
         showScreen("screenRoundResult");
         if (roundLosers.length > 0 && myResult === "lose") {
-          setTimeout(() => speak("아이고, 술래가 되셨습니다!", 1.4, 1.0), 800);
+          setTimeout(() => speak(t("voice.becameLoser"), 1.4, 1.0), 800);
         } else if (myResult === "win") {
-          setTimeout(() => speak("휴~ 다행이다. 계속 진행합니다!", 1.4, 0.9), 800);
+          setTimeout(() => speak(t("voice.continue"), 1.4, 0.9), 800);
         }
         if (state.role === "host") setTimeout(() => { state.finishingRound = false; nextRound(); }, 1500);
       }
@@ -4761,20 +4817,34 @@
       } catch(e) {}
     }
 
+    // 음소거 상태 (localStorage 영속)
+    function isMuted() {
+      return localStorage.getItem("rpsMuted") === "1";
+    }
+    function setMuted(v) {
+      localStorage.setItem("rpsMuted", v ? "1" : "0");
+      const btn = $("muteToggleBtn");
+      if (btn) btn.textContent = v ? "🔇" : "🔊";
+      if (v && window.speechSynthesis) speechSynthesis.cancel();
+    }
+    window.toggleMute = function() {
+      setMuted(!isMuted());
+    };
+
     function speak(text, pitch = 1.6, rate = 1.0) {
       return new Promise(resolve => {
-        if (!window.speechSynthesis) { resolve(); return; }
+        if (!window.speechSynthesis || isMuted()) { resolve(); return; }
         speechSynthesis.cancel();
-        // iOS/Android: resume if paused (TTS gets suspended outside user gesture context)
         if (speechSynthesis.paused) speechSynthesis.resume();
         const u = new SpeechSynthesisUtterance(text);
-        u.lang = 'ko-KR';
+        // locale별 BCP47 태그 — 브라우저가 매칭 보이스 선택
+        const langMap = { ko: "ko-KR", en: "en-US", ja: "ja-JP" };
+        u.lang = langMap[currentLocale] || "ko-KR";
         u.pitch = pitch;
         u.rate = rate;
         u.onend = resolve;
         u.onerror = resolve;
         speechSynthesis.speak(u);
-        // Fallback: mobile browsers may never fire onend when called from WebSocket events
         setTimeout(resolve, 1500);
       });
     }
@@ -4858,6 +4928,9 @@
       const urlLang = (params.get("lang") || "").toLowerCase();
       if (["ko","en","ja"].includes(urlLang)) localStorage.setItem("rpsLocale", urlLang);
       setLocale(detectLocale());
+      // Mute 버튼 상태 동기화
+      const muteBtn = $("muteToggleBtn");
+      if (muteBtn) muteBtn.textContent = isMuted() ? "🔇" : "🔊";
       loadState();
       const savedNickname = loadNickname();
       if (savedNickname) $("homeNickname").value = savedNickname;
