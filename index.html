@@ -5054,16 +5054,19 @@
       overlay.classList.remove("hidden");
     }
 
+    // 카카오 OAuth client ID (REST API 키, 공개 가능)
+    const KAKAO_REST_API_KEY = "bce3cbf5a9fcdb2a300ce741bca3486a";
+
     async function loginWithSns(provider) {
       const providerName = t("sns." + provider) || provider;
+      // 인앱 브라우저 감지 — OAuth 시도 전에 차단해서 친절히 안내
+      const inApp = detectInAppBrowser();
+      if (inApp) {
+        showInAppBrowserPopup(inApp);
+        return;
+      }
       // Google / Apple은 Supabase 네이티브 지원
       if ((provider === "google" || provider === "apple") && db?.auth) {
-        // 인앱 브라우저 감지 — OAuth 시도 전에 차단해서 친절히 안내
-        const inApp = detectInAppBrowser();
-        if (inApp) {
-          showInAppBrowserPopup(inApp);
-          return;
-        }
         try {
           const { error } = await db.auth.signInWithOAuth({
             provider,
@@ -5078,11 +5081,78 @@
         }
         return;
       }
-      // Kakao / LINE은 Supabase 공식 지원 안 됨 — 추후 Edge Function 연동
+      // Kakao — Custom OAuth flow (Edge Function 'kakao-auth')
+      if (provider === "kakao") {
+        const redirectUri = location.origin + location.pathname + "?provider=kakao";
+        const state = crypto.randomUUID();
+        sessionStorage.setItem("kakaoOAuthState", state);
+        location.href = "https://kauth.kakao.com/oauth/authorize"
+          + "?response_type=code"
+          + `&client_id=${KAKAO_REST_API_KEY}`
+          + `&redirect_uri=${encodeURIComponent(redirectUri)}`
+          + `&state=${state}`;
+        return;
+      }
+      // LINE — 추후 Edge Function 연동
       showToast(t("toast.snsComingSoon", { provider: providerName }));
     }
+
+    // Kakao OAuth 콜백 처리 — initFromUrl 에서 호출됨
+    async function handleKakaoCallback() {
+      const params = new URLSearchParams(location.search);
+      if (params.get("provider") !== "kakao") return false;
+      const code = params.get("code");
+      const state = params.get("state");
+      const err = params.get("error");
+      if (err) {
+        showToast(t("toast.error", { msg: err }));
+        history.replaceState({}, "", location.pathname);
+        return true;
+      }
+      if (!code) return false;
+
+      const expectedState = sessionStorage.getItem("kakaoOAuthState");
+      sessionStorage.removeItem("kakaoOAuthState");
+      if (expectedState && state !== expectedState) {
+        showToast(t("toast.error", { msg: "Invalid OAuth state" }));
+        history.replaceState({}, "", location.pathname);
+        return true;
+      }
+
+      try {
+        const redirectUri = location.origin + location.pathname + "?provider=kakao";
+        const { data, error } = await db.functions.invoke("kakao-auth", {
+          body: { code, redirect_uri: redirectUri }
+        });
+        if (error) throw error;
+        if (!data?.success || !data?.token_hash) {
+          throw new Error(data?.error || "kakao auth failed");
+        }
+        // Supabase 세션 활성화
+        const { error: verifyErr } = await db.auth.verifyOtp({
+          type: "magiclink",
+          token_hash: data.token_hash,
+        });
+        if (verifyErr) throw verifyErr;
+
+        setAuthState("authed");
+        if (data.nickname) saveNickname(data.nickname);
+        showToast(`✨ ${data.nickname || "Kakao"} 로그인 완료`);
+        history.replaceState({}, "", location.pathname);
+        // Home 화면으로
+        showScreen("screenHome");
+        const homeNick = $("homeNickname");
+        if (homeNick && data.nickname) homeNick.value = data.nickname;
+      } catch (e) {
+        showToast(t("toast.error", { msg: e.message || String(e) }));
+        history.replaceState({}, "", location.pathname);
+      }
+      return true;
+    }
+
     window.detectInAppBrowser = detectInAppBrowser;
     window.showInAppBrowserPopup = showInAppBrowserPopup;
+    window.handleKakaoCallback = handleKakaoCallback;
 
     function playAsGuest() {
       setAuthState("guest");
@@ -5114,6 +5184,15 @@
       const muteBtn = $("muteToggleBtn");
       if (muteBtn) muteBtn.textContent = isMuted() ? "🔇" : "🔊";
 
+      // Kakao OAuth callback 처리 (?provider=kakao&code=... 일 때만 동작)
+      if (db?.auth && params.get("provider") === "kakao") {
+        const handled = await handleKakaoCallback();
+        if (handled) {
+          // callback 처리 후엔 아래 진입 로직 건너뜀
+          updateAuthTopbar();
+          return;
+        }
+      }
       // Supabase OAuth 세션 처리 — Google/Apple 로그인 후 돌아왔을 때 세션 자동 감지
       if (db?.auth) {
         try {
