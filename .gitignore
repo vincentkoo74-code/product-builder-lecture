@@ -3,3 +3,9 @@
 mockups/
 # 원본 zip 폴더 (정리본은 ASSETS/fonts/ 에 둠)
 ASSETS/font/
+# Apple Sign In private key (절대 commit 금지)
+*.p8
+AuthKey_*.p8
+# Node.js
+node_modules/
+package-lock.json
