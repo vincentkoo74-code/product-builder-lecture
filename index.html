@@ -5117,6 +5117,8 @@
 
     // 카카오 OAuth client ID (REST API 키, 공개 가능)
     const KAKAO_REST_API_KEY = "bce3cbf5a9fcdb2a300ce741bca3486a";
+    // LINE OAuth Channel ID (공개 가능)
+    const LINE_CHANNEL_ID = "2010213585";
 
     async function loginWithSns(provider) {
       const providerName = t("sns." + provider) || provider;
@@ -5154,7 +5156,20 @@
           + `&state=${state}`;
         return;
       }
-      // LINE — 추후 Edge Function 연동
+      // LINE — Custom OAuth flow (Edge Function 'line-auth')
+      if (provider === "line") {
+        const redirectUri = location.origin + location.pathname + "?provider=line";
+        const state = crypto.randomUUID();
+        sessionStorage.setItem("lineOAuthState", state);
+        // scope: profile (필수), openid+email (선택 — 이메일 권한 승인 후 자동 활성)
+        location.href = "https://access.line.me/oauth2/v2.1/authorize"
+          + "?response_type=code"
+          + `&client_id=${LINE_CHANNEL_ID}`
+          + `&redirect_uri=${encodeURIComponent(redirectUri)}`
+          + `&state=${state}`
+          + `&scope=${encodeURIComponent("profile openid email")}`;
+        return;
+      }
       showToast(t("toast.snsComingSoon", { provider: providerName }));
     }
 
@@ -5211,9 +5226,61 @@
       return true;
     }
 
+    // LINE OAuth 콜백 처리 — initFromUrl 에서 호출됨
+    async function handleLineCallback() {
+      const params = new URLSearchParams(location.search);
+      if (params.get("provider") !== "line") return false;
+      const code = params.get("code");
+      const state = params.get("state");
+      const err = params.get("error");
+      if (err) {
+        showToast(t("toast.error", { msg: err }));
+        history.replaceState({}, "", location.pathname);
+        return true;
+      }
+      if (!code) return false;
+
+      const expectedState = sessionStorage.getItem("lineOAuthState");
+      sessionStorage.removeItem("lineOAuthState");
+      if (expectedState && state !== expectedState) {
+        showToast(t("toast.error", { msg: "Invalid OAuth state" }));
+        history.replaceState({}, "", location.pathname);
+        return true;
+      }
+
+      try {
+        const redirectUri = location.origin + location.pathname + "?provider=line";
+        const { data, error } = await db.functions.invoke("line-auth", {
+          body: { code, redirect_uri: redirectUri }
+        });
+        if (error) throw error;
+        if (!data?.success || !data?.token_hash) {
+          throw new Error(data?.error || "line auth failed");
+        }
+        const { error: verifyErr } = await db.auth.verifyOtp({
+          type: "magiclink",
+          token_hash: data.token_hash,
+        });
+        if (verifyErr) throw verifyErr;
+
+        setAuthState("authed");
+        if (data.nickname) saveNickname(data.nickname);
+        showToast(`✨ ${data.nickname || "LINE"} 로그인 완료`);
+        history.replaceState({}, "", location.pathname);
+        showScreen("screenHome");
+        const homeNick = $("homeNickname");
+        if (homeNick && data.nickname) homeNick.value = data.nickname;
+      } catch (e) {
+        showToast(t("toast.error", { msg: e.message || String(e) }));
+        history.replaceState({}, "", location.pathname);
+      }
+      return true;
+    }
+
     window.detectInAppBrowser = detectInAppBrowser;
     window.showInAppBrowserPopup = showInAppBrowserPopup;
     window.handleKakaoCallback = handleKakaoCallback;
+    window.handleLineCallback = handleLineCallback;
 
     function playAsGuest() {
       setAuthState("guest");
@@ -5250,6 +5317,14 @@
         const handled = await handleKakaoCallback();
         if (handled) {
           // callback 처리 후엔 아래 진입 로직 건너뜀
+          updateAuthTopbar();
+          return;
+        }
+      }
+      // LINE OAuth callback 처리
+      if (db?.auth && params.get("provider") === "line") {
+        const handled = await handleLineCallback();
+        if (handled) {
           updateAuthTopbar();
           return;
         }

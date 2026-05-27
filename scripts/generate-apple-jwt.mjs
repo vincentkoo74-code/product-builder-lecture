@@ -20,9 +20,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // 여기를 본인 값으로 수정 (4개)
 // ========================================
 const TEAM_ID   = "3JN8PM3TPS";              // Apple Developer Team ID (Console 우상단)
-const KEY_ID    = "PUT_YOUR_KEY_ID_HERE";    // .p8 다운로드 시 받은 10자리 Key ID
+const KEY_ID    = "S2B6746YKA";    // .p8 다운로드 시 받은 10자리 Key ID
 const CLIENT_ID = "com.maru.rps.web";        // Services ID (com.maru.rps.web)
-const P8_FILE   = "AuthKey_PUT_YOUR_KEY_ID_HERE.p8"; // .p8 파일명
+const P8_FILE   = "AuthKey_S2B6746YKA.p8"; // .p8 파일명
 // ========================================
 
 const p8Path = resolve(__dirname, "..", P8_FILE);
