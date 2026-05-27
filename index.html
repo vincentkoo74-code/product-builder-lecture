@@ -797,6 +797,16 @@
       cursor:pointer;
     }
     .mute-btn:hover{background:#fff}
+    .signout-btn{
+      background:rgba(255,255,255,0.9);
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:4px 9px;
+      font-size:14px;
+      cursor:pointer;
+      transition:0.15s;
+    }
+    .signout-btn:hover{background:#FEE2E2;border-color:var(--danger);color:var(--danger)}
 
     .sns-badge {
       display: inline-flex;
@@ -1253,6 +1263,9 @@
         <button id="muteToggleBtn" class="mute-btn" onclick="window.toggleMute()" title="Mute / Unmute">🔊</button>
         <button id="guestLoginTopBtn" class="guest-login-btn hidden" onclick="window.showAuthScreen()" data-i18n="topbar.snsLogin">
           👤 SNS 로그인
+        </button>
+        <button id="signOutTopBtn" class="signout-btn hidden" onclick="window.signOutWithConfirm()" title="Sign out">
+          🚪
         </button>
         <div class="room-badge" id="roomBadge" data-i18n="topbar.noRoom">방 없음</div>
       </div>
@@ -1858,6 +1871,12 @@
         "common.starting": "시작 중...",
         "common.joining": "참가 중...",
         "common.timeUp": "⏱ 시간 초과",
+        "common.signOut": "🚪 로그아웃",
+        "popup.confirmSignOutTitle": "로그아웃 하시겠어요?",
+        "popup.confirmSignOutMsg": "다시 로그인하려면 SNS 인증을 한번 더 거쳐야 해요 🐾",
+        "popup.confirmSignOutOk": "로그아웃",
+        "toast.signedOut": "👋 로그아웃 완료. 다음에 또 만나요!",
+        "topbar.signedInAs": "👤 {name}",
         // countdown
         "countdown.intro": "안내면 술래",
         "countdown.go": "가위바위 보!",
@@ -2117,6 +2136,12 @@
         "common.starting": "Starting...",
         "common.joining": "Joining...",
         "common.timeUp": "⏱ Time's up",
+        "common.signOut": "🚪 Sign out",
+        "popup.confirmSignOutTitle": "Sign out?",
+        "popup.confirmSignOutMsg": "You'll need to sign in again via SNS to come back 🐾",
+        "popup.confirmSignOutOk": "Sign out",
+        "toast.signedOut": "👋 Signed out. See you next time!",
+        "topbar.signedInAs": "👤 {name}",
         "countdown.intro": "Ready!",
         "countdown.go": "Rock, paper, scissors, shoot!",
         "countdown.roundLabel": "Starting soon!",
@@ -2354,6 +2379,12 @@
         "common.starting": "開始中...",
         "common.joining": "参加中...",
         "common.timeUp": "⏱ 時間切れ",
+        "common.signOut": "🚪 ログアウト",
+        "popup.confirmSignOutTitle": "ログアウトしますか？",
+        "popup.confirmSignOutMsg": "再ログインにはSNS認証をもう一度行う必要があります 🐾",
+        "popup.confirmSignOutOk": "ログアウト",
+        "toast.signedOut": "👋 ログアウト完了。また会おうね！",
+        "topbar.signedInAs": "👤 {name}",
         "countdown.intro": "最初はグー",
         "countdown.go": "じゃんけんぽん！",
         "countdown.roundLabel": "まもなく開始！",
@@ -4979,14 +5010,44 @@
 
     function updateAuthTopbar() {
       const btn = $("guestLoginTopBtn");
-      if (!btn) return;
+      const signOutBtn = $("signOutTopBtn");
       const auth = getAuthState();
-      if (auth === "guest") {
-        btn.classList.remove("hidden");
-      } else {
-        btn.classList.add("hidden");
-      }
+      if (btn) btn.classList.toggle("hidden", auth !== "guest");
+      // SNS 인증된 상태(authed)일 때만 로그아웃 버튼 표시
+      if (signOutBtn) signOutBtn.classList.toggle("hidden", auth !== "authed");
     }
+
+    // 로그아웃 (확인 모달 + Supabase signOut)
+    async function signOutWithConfirm() {
+      const ok = await showConfirmPopup({
+        title: t("popup.confirmSignOutTitle"),
+        message: t("popup.confirmSignOutMsg"),
+        okText: t("popup.confirmSignOutOk"),
+        cancelText: t("common.cancel"),
+        okClass: "btn-danger btn-full",
+        img: "cat-draw-confused.png",
+      });
+      if (!ok) return;
+      try {
+        if (db?.auth) {
+          await db.auth.signOut();
+        }
+      } catch (e) {
+        console.warn("signOut error:", e?.message);
+      }
+      localStorage.removeItem("rpsAuthState");
+      localStorage.removeItem("rpsNickname");
+      updateAuthTopbar();
+      showToast(t("toast.signedOut"));
+      // Auth 화면으로 복귀
+      showAuthScreen();
+      // 닉네임 입력칸 초기화
+      const homeNick = $("homeNickname");
+      if (homeNick) homeNick.value = "";
+      const joinNick = $("joinName");
+      if (joinNick) joinNick.value = "";
+    }
+    window.signOutWithConfirm = signOutWithConfirm;
 
     function showToast(msg, duration = 2800) {
       const el = $("toastEl");
