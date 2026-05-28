@@ -1241,6 +1241,63 @@
     .quick-btn span:last-child{line-height:1.2;word-break:keep-all}
     .quick-btn:hover{border-color:var(--orange);color:var(--orange-deep);background:#fff}
     .quick-btn .icon{font-size:18px}
+
+    .game-progress-card{
+      background:#111827;
+      color:#fff;
+      border-radius:20px;
+      padding:14px 16px;
+      margin:12px 0;
+      box-shadow:var(--shadow);
+    }
+    .game-progress-top{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      margin-bottom:10px;
+    }
+    .game-progress-round{
+      color:#a3e635;
+      font-size:18px;
+      font-weight:900;
+      white-space:nowrap;
+    }
+    .game-progress-rematch{
+      background:#0e7490;
+      color:white;
+      border-radius:999px;
+      padding:7px 12px;
+      font-size:13px;
+      font-weight:900;
+      text-align:center;
+      min-width:96px;
+    }
+    .game-progress-stats{
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:8px;
+      text-align:center;
+    }
+    .game-progress-stat strong{
+      display:block;
+      font-size:28px;
+      line-height:1;
+      font-weight:900;
+      margin-bottom:4px;
+    }
+    .game-progress-stat span{
+      font-size:12px;
+      font-weight:800;
+    }
+    .game-progress-stat.safe strong,.game-progress-stat.safe span{color:#a3e635}
+    .game-progress-stat.loser strong,.game-progress-stat.loser span{color:#ff2d55}
+    .game-progress-lock{
+      margin-top:9px;
+      font-size:11px;
+      color:#cbd5e1;
+      text-align:center;
+    }
   </style>
 </head>
 <body>
@@ -1393,6 +1450,7 @@
         <small data-i18n="hostRoom.penaltyBoxLabel">이번 게임 벌칙</small>
         <strong id="hostPenaltyText"></strong>
       </div>
+      <div class="game-progress-card" data-round-progress></div>
 
       <div class="qr-box" id="qrInviteBox">
         <div class="fake-qr" id="fakeQr"></div>
@@ -1475,6 +1533,7 @@
         <small data-i18n="participantWait.penaltyBoxLabel">이번 게임 벌칙</small>
         <strong id="waitPenaltyText" data-i18n="participantWait.penaltyEmpty">아직 벌칙이 설정되지 않았습니다.</strong>
       </div>
+      <div class="game-progress-card" data-round-progress></div>
       <h3 data-i18n="participantWait.participants">참가자 목록</h3>
       <div class="participant-list" id="waitParticipantList"></div>
       <div style="text-align:center;margin-top:12px">
@@ -1529,6 +1588,13 @@
         <small data-i18n="lobby.penaltyBoxLabel">이번 게임 벌칙</small>
         <strong id="lobbyPenaltyText" data-i18n="lobby.penaltyEmpty">아직 벌칙이 설정되지 않았습니다.</strong>
       </div>
+      <div id="lobbyLoserCountBox" class="maru-notice hidden" style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <span style="font-weight:700" data-i18n="hostRoom.loserCount">🎯 술래 숫자</span>
+        <select id="lobbyLoserCountSelect" onchange="window.onLoserCountChange(this.value)" class="loser-count-select">
+          <option value="1">1명</option>
+        </select>
+      </div>
+      <div class="game-progress-card" data-round-progress></div>
       <h3 id="lobbyParticipantHeading">참여자 목록 (<span id="lobbyParticipantCount">0</span>명)</h3>
       <div class="participant-list" id="lobbyParticipantList"></div>
       <div class="grid" style="margin-top:16px">
@@ -1551,6 +1617,7 @@
       <div class="vrshow-cap vrshow-cap-lg" data-i18n="ready.cap">레디!</div>
       <p class="maru-section-sub" style="margin-top:6px" data-i18n-html="ready.subtitle">모두 ✋ 누르면<br/>마루가 시작 신호!</p>
       <div class="maru-notice" id="readyPenaltyBox" style="margin-bottom:14px"></div>
+      <div class="game-progress-card" data-round-progress></div>
       <h3 data-i18n="ready.participantsStatus">참가자 준비 현황</h3>
       <div id="readyParticipantList" style="margin-bottom:16px"></div>
       <div class="grid">
@@ -1574,6 +1641,7 @@
       <div class="vrshow-cap vrshow-cap-lg" data-i18n="game.cap">자, 가위바위보!</div>
       <h2 class="maru-section-title" id="roundTitle" style="margin-top:6px">라운드 <span id="roundNumber">1</span></h2>
       <p class="maru-section-sub" data-i18n="game.subtitle">마루를 따라 하나만 선택해 ✊✌️🖐</p>
+      <div class="game-progress-card" data-round-progress></div>
       <div class="choice-anim" id="choiceAnim"></div>
       <div class="summary-row">
         <div class="summary-item"><strong id="timerText">5</strong><span data-i18n="game.summaryTimer">남은 시간</span></div>
@@ -1609,6 +1677,7 @@
       <div class="vrshow-cap vrshow-cap-lg" data-i18n="hostPlaying.cap">관전 중!</div>
       <h2 class="maru-section-title" id="hostRoundTitle" style="margin-top:4px">라운드 <span id="hostRoundNumber">1</span></h2>
       <p class="maru-section-sub" data-i18n-html="hostPlaying.subtitle">모두 선택할 때까지<br/>마루랑 같이 지켜봐 👀</p>
+      <div class="game-progress-card" data-round-progress></div>
       <div class="summary-row">
         <div class="summary-item"><strong id="hostTimerText">5</strong><span data-i18n="game.summaryTimer">남은 시간</span></div>
         <div class="summary-item"><strong id="hostSelectedCount">0</strong><span data-i18n="game.summarySelected">선택 완료</span></div>
@@ -1642,6 +1711,7 @@
       </div>
 
       <h3 data-i18n="result.roundResultsH3">라운드 결과</h3>
+      <div class="game-progress-card" data-round-progress></div>
       <div class="participant-list" id="roundResultList"></div>
 
       <div class="footer-actions" id="roundResultActions">
@@ -1671,6 +1741,7 @@
         <p class="lead" data-i18n="winnerWait.message">이번 재게임에서는 빠지고 최종 술래가 나올 때까지 기다려주세요.</p>
         <p style="color:#888;font-size:14px" data-i18n="winnerWait.hint">남은 참여자들만 재게임을 진행 중입니다 🍵</p>
       </div>
+      <div class="game-progress-card" data-round-progress></div>
       <div style="text-align:center;margin-top:12px">
         <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
       </div>
@@ -1723,6 +1794,7 @@
         <small data-i18n="result.penaltyBoxLabel">이번 벌칙</small>
         <strong id="loserWaitPenaltyText"></strong>
       </div>
+      <div class="game-progress-card" data-round-progress></div>
       <div style="text-align:center;margin-top:12px">
         <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
       </div>
@@ -1899,6 +1971,14 @@
         "countdown.go": "가위바위 보!",
         "countdown.roundLabel": "잠시 후 시작!",
         "countdown.replay": "🔄 {n}번째 재대결!",
+        "progress.round": "{n} 라운드",
+        "progress.first": "첫 대결",
+        "progress.rematch": "{n}번째 재대결",
+        "progress.safe": "승",
+        "progress.loser": "패",
+        "progress.targetLoser": "목표 술래",
+        "progress.locked": "술래 숫자는 이번 게임이 끝날 때까지 잠겨 있습니다.",
+        "progress.editable": "게임 시작 전 술래 숫자를 변경할 수 있습니다.",
         // voice (TTS 텍스트)
         "voice.intro": "안내면 술래",
         "voice.go1": "가위바위",
@@ -2033,8 +2113,8 @@
         "result.penaltyBoxLabel": "이번 벌칙",
         "result.penaltyEmpty": "벌칙이 설정되지 않았습니다.",
         "result.roundResultsH3": "라운드 결과",
-        "result.msgDrawHost": "무승부! 다음 라운드를 시작하려면 아래 버튼을 눌러주세요.",
-        "result.msgDrawGuest": "무승부! 호스트가 다음 라운드를 시작할 때까지 기다려주세요.",
+        "result.msgDrawHost": "무승부! 잠시 후 자동으로 다음 재대결 준비 화면으로 이동합니다.",
+        "result.msgDrawGuest": "무승부! 잠시 후 자동으로 다음 재대결 준비 화면으로 이동합니다.",
         "result.msgGameOverLose": "축하합니다(?) 벌칙을 수행하세요!",
         "result.msgGameOverWin": "술래 {target}명이 모두 결정됐습니다!",
         "result.msgTooManyLose": "패자 {round}명 중 {target}명만 술래!\n잠시 후 ✋ 게임 준비를 눌러주세요.",
@@ -2164,6 +2244,14 @@
         "countdown.go": "Rock, paper, scissors, shoot!",
         "countdown.roundLabel": "Starting soon!",
         "countdown.replay": "🔄 Rematch #{n}!",
+        "progress.round": "Round {n}",
+        "progress.first": "First match",
+        "progress.rematch": "Rematch #{n}",
+        "progress.safe": "Safe",
+        "progress.loser": "Losers",
+        "progress.targetLoser": "Target",
+        "progress.locked": "Target loser count is locked until this game ends.",
+        "progress.editable": "You can change the target loser count before the game starts.",
         "voice.intro": "Ready",
         "voice.go1": "Rock paper scissors",
         "voice.go2": "shoot!",
@@ -2285,8 +2373,8 @@
         "result.penaltyBoxLabel": "Penalty",
         "result.penaltyEmpty": "No penalty set.",
         "result.roundResultsH3": "Round results",
-        "result.msgDrawHost": "Draw! Press the button below to start the next round.",
-        "result.msgDrawGuest": "Draw! Waiting for the host to start the next round.",
+        "result.msgDrawHost": "Draw! Moving to the next rematch automatically shortly.",
+        "result.msgDrawGuest": "Draw! Moving to the next rematch automatically shortly.",
         "result.msgGameOverLose": "Congrats(?) Time to do the penalty!",
         "result.msgGameOverWin": "All {target} losers have been decided!",
         "result.msgTooManyLose": "{round} losers but only {target} needed!\nGet ready ✋ shortly.",
@@ -2408,6 +2496,14 @@
         "countdown.go": "じゃんけんぽん！",
         "countdown.roundLabel": "まもなく開始！",
         "countdown.replay": "🔄 {n}回目の再戦！",
+        "progress.round": "ラウンド {n}",
+        "progress.first": "初戦",
+        "progress.rematch": "{n}回目の再戦",
+        "progress.safe": "勝",
+        "progress.loser": "負",
+        "progress.targetLoser": "目標の鬼",
+        "progress.locked": "鬼の人数はこのゲームが終わるまで変更できません。",
+        "progress.editable": "ゲーム開始前に鬼の人数を変更できます。",
         "voice.intro": "最初はグー",
         "voice.go1": "じゃんけん",
         "voice.go2": "ぽん！",
@@ -2529,8 +2625,8 @@
         "result.penaltyBoxLabel": "今回の罰ゲーム",
         "result.penaltyEmpty": "罰ゲームは設定されていません。",
         "result.roundResultsH3": "ラウンド結果",
-        "result.msgDrawHost": "あいこ！下のボタンで次のラウンドを始めてください。",
-        "result.msgDrawGuest": "あいこ！ホストが次ラウンドを始めるまで待ってください。",
+        "result.msgDrawHost": "あいこ！まもなく自動で次の再戦準備へ進みます。",
+        "result.msgDrawGuest": "あいこ！まもなく自動で次の再戦準備へ進みます。",
         "result.msgGameOverLose": "おめでとう（？）罰ゲームをどうぞ！",
         "result.msgGameOverWin": "鬼 {target}人がすべて決まりました！",
         "result.msgTooManyLose": "負け {round}人中 {target}人だけ鬼！\nもうすぐ ✋ ゲーム準備を押してね。",
@@ -2786,6 +2882,15 @@
     }
     function getPenaltyText() { return parsePenalty(state.penalty).text; }
     function getTargetLoserCount() { return parsePenalty(state.penalty).loserCount || state.targetLoserCount || 1; }
+    function getMaxLoserCount() {
+      return Math.max(1, Math.max(0, state.participants.length) - 1);
+    }
+    function clampLoserCount(value) {
+      return Math.max(1, Math.min(parseInt(value, 10) || 1, getMaxLoserCount()));
+    }
+    function isLoserCountEditable() {
+      return state.role === "host" && (state.status === "waiting" || state.status === "lobby");
+    }
 
     function $(id) {
       return document.getElementById(id);
@@ -2993,6 +3098,7 @@
     async function handleRoomUpdate(room) {
       if (!room) return;
       state.penalty = room.penalty;
+      state.targetLoserCount = getTargetLoserCount();
 
       // round가 1로 리셋될 때만(이전 라운드에서 새 게임) 로컬 마커 초기화
       // p.is_ready는 건드리지 않음: fetchParticipants()가 DB 값으로 동기화하며,
@@ -3315,24 +3421,38 @@
     }
 
     function updateLoserCountDropdown() {
-      const sel = $("loserCountSelect");
-      if (!sel) return;
-      const total = state.participants.length;
-      const max = Math.max(1, total - 1);
-      const current = state.targetLoserCount || getTargetLoserCount();
-      sel.innerHTML = "";
-      for (let i = 1; i <= max; i++) {
-        const opt = document.createElement("option");
-        opt.value = i;
-        opt.textContent = t("hostRoom.loserCountOption", { n: i });
-        if (i === current) opt.selected = true;
-        sel.appendChild(opt);
-      }
-      sel.disabled = (state.status === "ready" || state.status === "playing");
+      const selects = [$("loserCountSelect"), $("lobbyLoserCountSelect")].filter(Boolean);
+      if (!selects.length) return;
+      const max = getMaxLoserCount();
+      const current = clampLoserCount(state.targetLoserCount || getTargetLoserCount());
+      state.targetLoserCount = current;
+      selects.forEach(sel => {
+        sel.innerHTML = "";
+        for (let i = 1; i <= max; i++) {
+          const opt = document.createElement("option");
+          opt.value = i;
+          opt.textContent = t("hostRoom.loserCountOption", { n: i });
+          if (i === current) opt.selected = true;
+          sel.appendChild(opt);
+        }
+        sel.disabled = !isLoserCountEditable() || state.participants.length < 2;
+        sel.title = sel.disabled ? t("progress.locked") : "";
+      });
     }
 
-    function onLoserCountChange(val) {
-      state.targetLoserCount = parseInt(val, 10) || 1;
+    async function onLoserCountChange(val) {
+      if (!isLoserCountEditable()) {
+        updateLoserCountDropdown();
+        showToast("술래 숫자는 현재 게임이 끝난 뒤 다음 게임 설정에서 변경할 수 있어요.");
+        return;
+      }
+      state.targetLoserCount = clampLoserCount(val);
+      updateLoserCountDropdown();
+      if (getOnlineMode() && state.roomCode) {
+        const text = getPenaltyText();
+        state.penalty = JSON.stringify({ text, loserCount: state.targetLoserCount });
+        await db.from('rooms').update({ penalty: state.penalty }).eq('id', state.roomCode);
+      }
     }
 
     function renderShareUrlControls() {
@@ -3565,7 +3685,8 @@
       const textVal = $("penaltyInput").value.trim();
       if (!textVal) { showToast("벌칙을 입력해주세요."); return; }
 
-      const loserCount = state.targetLoserCount || 1;
+      const loserCount = clampLoserCount(state.targetLoserCount || 1);
+      state.targetLoserCount = loserCount;
       const value = JSON.stringify({ text: textVal, loserCount });
 
       const btn = $("savePenaltyBtn");
@@ -3942,8 +4063,8 @@
         if (iPlayedThisRound) recordMyAccountGameResult("draw");
         renderRoundResult("draw", 0, remainingSlots);
         showScreen("screenRoundResult");
-        state.finishingRound = false;
-        // 자동 진행 제거: 호스트가 "다음 라운드 시작" 버튼을 눌러야 다음 라운드로 진행 (renderRoundResult에서 처리)
+        if (state.role === "host") setTimeout(() => { state.finishingRound = false; nextRound(); }, 1500);
+        else state.finishingRound = false;
         return;
       }
 
@@ -4122,18 +4243,11 @@
         setCap(t("result.capDraw"));
         if (state.role === "host") {
           message.textContent = t("result.msgDrawHost");
-          actionsDiv.style.display = "";
-          nextBtn.style.display = "";
-          nextBtn.disabled = false;
-          const lbl = nextBtn.querySelector("span:not(.go-pill)");
-          if (lbl) lbl.textContent = t("result.nextRoundBtn");
-          nextBtn.className = "btn-primary btn-full";
-          nextBtn.onclick = () => window.nextRound();
         } else {
           message.textContent = t("result.msgDrawGuest");
-          actionsDiv.style.display = "none";
-          nextBtn.style.display = "none";
         }
+        actionsDiv.style.display = "none";
+        nextBtn.style.display = "none";
 
       } else if (caseType === "gameOver") {
         if (myResult === "lose") {
@@ -4458,6 +4572,39 @@
       }
     }
 
+    function getRoundProgressData() {
+      const target = getTargetLoserCount();
+      const safeCount = (state.confirmedSafeIds || []).length;
+      const loserCount = (state.confirmedLoserIds || []).length;
+      const round = Math.max(1, state.round || 1);
+      const rematchText = round <= 1 ? t("progress.first") : t("progress.rematch", { n: round });
+      const locked = !isLoserCountEditable() && target > 0;
+      return { target, safeCount, loserCount, round, rematchText, locked };
+    }
+
+    function renderRoundProgressCards() {
+      const cards = document.querySelectorAll("[data-round-progress]");
+      if (!cards.length) return;
+      const info = getRoundProgressData();
+      const lockText = info.locked ? t("progress.locked") : t("progress.editable");
+      const html = `
+        <div class="game-progress-top">
+          <div class="game-progress-round">${t("progress.round", { n: info.round })}</div>
+          <div class="game-progress-rematch">${info.rematchText}</div>
+        </div>
+        <div class="game-progress-stats">
+          <div class="game-progress-stat safe"><strong>${info.safeCount}</strong><span>${t("progress.safe")}</span></div>
+          <div class="game-progress-stat"><strong>${info.loserCount}</strong><span>${t("progress.loser")}</span></div>
+          <div class="game-progress-stat loser"><strong>${info.target}</strong><span>${t("progress.targetLoser")}</span></div>
+        </div>
+        <div class="game-progress-lock">${lockText}</div>
+      `;
+      cards.forEach(card => {
+        card.innerHTML = html;
+        card.classList.toggle("hidden", !state.roomCode && !state.penalty);
+      });
+    }
+
     function renderAll() {
       const joinLocked = isJoinLocked();
       const qrInviteBox = $("qrInviteBox");
@@ -4488,6 +4635,7 @@
       const readyPenaltyBoxEl = $("readyPenaltyBox");
       if (readyPenaltyBoxEl) readyPenaltyBoxEl.textContent = `${t("participantWait.penaltyBoxLabel")}: ${getPenaltyText() || t("lobby.penaltyEmpty")}`;
       if (!$("screenLobby").classList.contains("hidden")) renderLobby();
+      renderRoundProgressCards();
       // 호스트가 플레이 화면에 있을 때 참가자 선택 진행 상황 실시간 반영
       const hostPlayingEl = $("screenHostPlaying");
       if (state.role === "host" && hostPlayingEl && !hostPlayingEl.classList.contains("hidden")) {
@@ -5775,6 +5923,9 @@
       const penTxt = getPenaltyText();
       const penEl = $("lobbyPenaltyText");
       if (penEl) penEl.textContent = penTxt || t("lobby.penaltyEmpty");
+      const loserBox = $("lobbyLoserCountBox");
+      if (loserBox) loserBox.classList.toggle("hidden", state.role !== "host");
+      updateLoserCountDropdown();
 
       const me = state.participants.find(p => p.id === state.currentUserId);
       const btn = $("lobbyReadyBtn");
@@ -5841,6 +5992,10 @@
 
       if (getOnlineMode()) {
         try {
+          state.targetLoserCount = clampLoserCount(state.targetLoserCount || getTargetLoserCount());
+          const penaltyValue = JSON.stringify({ text: getPenaltyText(), loserCount: state.targetLoserCount });
+          state.penalty = penaltyValue;
+          await db.from('rooms').update({ penalty: penaltyValue }).eq('id', state.roomCode);
           await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
           await db.from('rooms').update({ round: 1, status: 'playing' }).eq('id', state.roomCode);
           // 호스트는 state.gameStarting=true 상태라 handleRoomUpdate의 카운트다운 블록이 실행되지 않음
