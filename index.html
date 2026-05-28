@@ -1052,6 +1052,69 @@
     }
     .maru-notice strong{color:var(--maru-red)}
 
+    .join-room-row{
+      display:grid;
+      grid-template-columns:1.12fr 1fr;
+      gap:12px;
+      align-items:end;
+      margin-bottom:12px;
+    }
+    .join-room-row .field{margin-bottom:0}
+    .join-status-card{
+      min-height:54px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:0 16px;
+      border-radius:16px;
+      border:1px solid #F5D8A8;
+      background:linear-gradient(90deg,#FFF8E8 0 50%,#FFE7C2 50% 100%);
+      color:#7A4A1F;
+      font-weight:800;
+    }
+    .join-status-card span{
+      color:#9A6B38;
+      font-weight:800;
+    }
+    .join-status-card strong{
+      color:var(--maru-red);
+      font-weight:900;
+      white-space:nowrap;
+    }
+    .join-fixed-name-card{
+      min-height:48px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:0 18px;
+      border:1.5px solid #2F2A25;
+      border-radius:12px;
+      background:#fff;
+      color:var(--text);
+      margin-bottom:14px;
+      font-size:15px;
+    }
+    .join-fixed-name-card span{
+      color:#7A6A5D;
+      font-weight:700;
+    }
+    .join-fixed-name-card strong{
+      color:#111;
+      font-weight:900;
+      font-size:18px;
+      line-height:1.1;
+      text-align:right;
+      max-width:60%;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    @media (max-width: 380px){
+      .join-room-row{grid-template-columns:1fr;gap:8px}
+    }
+
     /* 호스트룸 / 로비 푸터 액션 버튼 통일 — 동일 폰트·크기·패딩·중앙정렬·간격 */
     #screenHostRoom .footer-actions button,
     #screenLobby .grid > button{
@@ -1502,20 +1565,22 @@
       <div class="vrshow-cap vrshow-cap-lg" data-i18n="join.cap">참가!</div>
       <h2 class="maru-section-title" style="margin-top:6px" data-i18n="join.title">게임방 참여</h2>
       <p class="maru-section-sub" data-i18n-html="join.subtitle">방 코드랑 닉네임 알려줘! <br/>마루가 자리 잡아둘게 🐾</p>
-      <div class="field">
-        <label data-i18n="join.codeLabel">방 코드</label>
-        <input id="joinRoomCode" placeholder="예: A7K2" data-i18n-placeholder="join.codePlaceholder" list="recentRoomCodes" autocomplete="off" />
-        <datalist id="recentRoomCodes"></datalist>
-      </div>
-      <div id="joinRoomStatusBox" class="maru-notice hidden" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px">
-        <span id="joinRoomStatusLabel"></span>
-        <strong id="joinRoomStatusValue"></strong>
+      <div class="join-room-row">
+        <div class="field">
+          <label data-i18n="join.codeLabel">방 코드</label>
+          <input id="joinRoomCode" placeholder="예: A7K2" data-i18n-placeholder="join.codePlaceholder" list="recentRoomCodes" autocomplete="off" />
+          <datalist id="recentRoomCodes"></datalist>
+        </div>
+        <div id="joinRoomStatusBox" class="join-status-card hidden">
+          <span id="joinRoomStatusLabel"></span>
+          <strong id="joinRoomStatusValue"></strong>
+        </div>
       </div>
       <div class="field" id="joinNameField">
         <label data-i18n="join.nameLabel">닉네임</label>
         <input id="joinName" placeholder="예: 영선" data-i18n-placeholder="join.namePlaceholder" />
       </div>
-      <div id="joinFixedNameBox" class="maru-notice hidden" style="margin-bottom:14px;text-align:center">
+      <div id="joinFixedNameBox" class="join-fixed-name-card hidden">
         <span data-i18n="join.fixedNicknameLabel">닉네임</span>
         <strong id="joinFixedNameText"></strong>
       </div>
