@@ -5194,7 +5194,7 @@
             .select("room_id,round,result,penalty_text,created_at")
             .eq("user_id", user.id)
             .order("created_at", { ascending: false })
-            .limit(10),
+            .limit(80),
         ]);
         if (statsError) throw statsError;
         if (historyError) throw historyError;
@@ -5216,24 +5216,29 @@
         const penalties = stats.penalties || 0;
         const decisiveTotal = wins + losses;
         const rate = decisiveTotal === 0 ? 0 : Math.round((wins / decisiveTotal) * 100);
-        const historyHtml = (history || []).length
-          ? history.map(item => {
-              const meta = getAccountResultMeta(item.result);
-              const penalty = item.result === "lose" && item.penalty_text
-                ? `<div style="margin-top:4px;color:var(--muted);font-size:12px">벌칙: ${escapeHtml(item.penalty_text)}</div>`
+        const groupedHistory = groupAccountHistoryByRound(history || []).slice(0, 10);
+        const historyHtml = groupedHistory.length
+          ? groupedHistory.map(item => {
+              const meta = getAccountResultMeta(item.finalResult);
+              const roundRateText = item.decisiveTotal > 0 ? ` · 승률 ${item.rate}%` : "";
+              const penalty = item.penaltyText
+                ? `<div style="margin-top:4px;color:var(--muted);font-size:12px">벌칙: ${escapeHtml(item.penaltyText)}</div>`
                 : "";
               return `
                 <div class="participant" style="align-items:flex-start;gap:10px">
                   <span style="min-width:62px;border-radius:999px;padding:5px 9px;text-align:center;background:${meta.bg};color:${meta.color};font-weight:900;font-size:12px">${meta.icon} ${meta.label}</span>
                   <div style="flex:1;min-width:0">
-                    <strong style="display:block;font-size:14px">${escapeHtml(item.room_id || "-")} · ${item.round || 1}R</strong>
-                    <span style="color:var(--muted);font-size:12px">${formatAccountDate(item.created_at)}</span>
+                    <strong style="display:flex;justify-content:space-between;gap:8px;font-size:14px">
+                      <span>${escapeHtml(item.room_id || "-")} · ${item.round || 1}R</span>
+                      <span style="font-weight:800;color:#111827">${item.games}전 ${item.wins}승 ${item.losses}패${item.draws ? ` ${item.draws}무` : ""}</span>
+                    </strong>
+                    <span style="color:var(--muted);font-size:12px">${formatAccountDate(item.latestAt)}${roundRateText}</span>
                     ${penalty}
                   </div>
                 </div>
               `;
             }).join("")
-          : `<div class="participant"><strong>최근 게임 기록이 없습니다.</strong><span>다음 게임부터 표시됩니다.</span></div>`;
+          : `<div class="participant"><strong>라운드별 기록이 없습니다.</strong><span>다음 게임부터 표시됩니다.</span></div>`;
 
         body.innerHTML = `
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:12px">
@@ -5252,12 +5257,56 @@
             </div>
             <p style="margin:8px 0 0;color:var(--muted);font-size:12px">승률은 무승부를 제외한 승/패 기준입니다.</p>
           </div>
-          <h4 style="margin:14px 0 8px;font-size:15px">최근 게임 기록</h4>
+          <h4 style="margin:14px 0 8px;font-size:15px">라운드별 최종 기록</h4>
           <div style="display:flex;flex-direction:column;gap:8px">${historyHtml}</div>
         `;
       } catch (e) {
         body.innerHTML = `<div class="participant"><strong>기록 불러오기 실패</strong><span>${escapeHtml(e?.message || String(e))}</span></div>`;
       }
+    }
+
+    function groupAccountHistoryByRound(history) {
+      const groups = new Map();
+      (history || []).forEach(item => {
+        const roomId = item.room_id || "-";
+        const round = Number(item.round) || 1;
+        const key = `${roomId}:${round}`;
+        if (!groups.has(key)) {
+          groups.set(key, { room_id: roomId, round, items: [], latestAt: item.created_at || "" });
+        }
+        const group = groups.get(key);
+        group.items.push(item);
+        if (new Date(item.created_at || 0) > new Date(group.latestAt || 0)) {
+          group.latestAt = item.created_at;
+        }
+      });
+
+      return [...groups.values()]
+        .map(group => {
+          const ordered = [...group.items].sort((a, b) =>
+            new Date(a.created_at || 0) - new Date(b.created_at || 0)
+          );
+          const finalItem = ordered[ordered.length - 1] || {};
+          const wins = ordered.filter(item => item.result === "win").length;
+          const losses = ordered.filter(item => item.result === "lose").length;
+          const draws = ordered.filter(item => item.result === "draw").length;
+          const decisiveTotal = wins + losses;
+          const penaltyItem = [...ordered].reverse().find(item => item.penalty_text);
+          return {
+            room_id: group.room_id,
+            round: group.round,
+            latestAt: group.latestAt || finalItem.created_at,
+            finalResult: finalItem.result || "draw",
+            games: ordered.length,
+            wins,
+            losses,
+            draws,
+            decisiveTotal,
+            rate: decisiveTotal === 0 ? 0 : Math.round((wins / decisiveTotal) * 100),
+            penaltyText: penaltyItem?.penalty_text || "",
+          };
+        })
+        .sort((a, b) => new Date(b.latestAt || 0) - new Date(a.latestAt || 0));
     }
 
     function renderAccountStatCard(label, value, icon) {
