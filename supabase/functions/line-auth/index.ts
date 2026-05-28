@@ -109,7 +109,7 @@ serve(async (req: Request): Promise<Response> => {
       user_metadata: userMeta,
     });
     if (createErr) {
-      const isAlready = /already (registered|exists)/i.test(createErr.message || "");
+      const isAlready = /already.*(registered|exists)|email.*already/i.test(createErr.message || "");
       if (!isAlready) {
         return json({ success: false, error: "createUser failed: " + createErr.message }, 500);
       }
