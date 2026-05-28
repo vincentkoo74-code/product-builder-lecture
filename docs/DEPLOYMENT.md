@@ -36,6 +36,15 @@ cmfxhehpreanijwanwrr
 `SUPABASE_ACCESS_TOKEN` must be a Supabase account access token that starts with
 `sbp_`.
 
+Create it at:
+
+```text
+https://supabase.com/dashboard/account/tokens
+```
+
+Do not use a publishable key, anon JWT, service role key, project URL, or database
+password for `SUPABASE_ACCESS_TOKEN`.
+
 `SUPABASE_DB_PASSWORD` must be the actual Postgres database password for this
 project. If GitHub Actions shows `password authentication failed for user
 "postgres"`, reset the database password in Supabase and update this secret.
