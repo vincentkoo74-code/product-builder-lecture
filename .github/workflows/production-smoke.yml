@@ -15,17 +15,23 @@ jobs:
     name: Verify production app and Supabase endpoints
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for Vercel deployment
-        run: sleep 60
-
       - name: Verify production HTML contains current app hooks
         run: |
           set -euo pipefail
-          html="$(curl -fsSL --retry 3 --retry-delay 10 https://product-builder-lecture-phi.vercel.app/)"
-          echo "$html" | grep -q "loginWithSns"
-          echo "$html" | grep -q "line-auth"
-          echo "$html" | grep -q "kakao-auth"
-          echo "$html" | grep -q "accountStatsTopBtn"
+          for attempt in $(seq 1 20); do
+            html="$(curl -fsSL --retry 3 --retry-delay 5 https://product-builder-lecture-phi.vercel.app/)"
+            if echo "$html" | grep -q "loginWithSns" \
+              && echo "$html" | grep -q "line-auth" \
+              && echo "$html" | grep -q "kakao-auth" \
+              && echo "$html" | grep -q "accountStatsTopBtn"; then
+              echo "Production app contains current hooks."
+              exit 0
+            fi
+            echo "Production is not updated yet. Retry $attempt/20..."
+            sleep 30
+          done
+          echo "Production app did not update within 10 minutes."
+          exit 1
 
       - name: Verify Supabase Edge Functions are reachable
         run: |
