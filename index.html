@@ -1401,7 +1401,7 @@
       </button>
 
       <div class="quick-row">
-        <button class="quick-btn" onclick="window.showJoinScreen()">
+        <button class="quick-btn" onclick="window.showJoinScreen({ recent: true })">
           <span class="icon">📱</span>
           <span data-i18n="home.quickJoin">참가했던 방</span>
         </button>
@@ -1507,9 +1507,17 @@
         <input id="joinRoomCode" placeholder="예: A7K2" data-i18n-placeholder="join.codePlaceholder" list="recentRoomCodes" autocomplete="off" />
         <datalist id="recentRoomCodes"></datalist>
       </div>
-      <div class="field">
+      <div id="joinRoomStatusBox" class="maru-notice hidden" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <span id="joinRoomStatusLabel"></span>
+        <strong id="joinRoomStatusValue"></strong>
+      </div>
+      <div class="field" id="joinNameField">
         <label data-i18n="join.nameLabel">닉네임</label>
         <input id="joinName" placeholder="예: 영선" data-i18n-placeholder="join.namePlaceholder" />
+      </div>
+      <div id="joinFixedNameBox" class="maru-notice hidden" style="margin-bottom:14px;text-align:center">
+        <span data-i18n="join.fixedNicknameLabel">닉네임</span>
+        <strong id="joinFixedNameText"></strong>
       </div>
       <div class="grid">
         <button id="joinBtn" class="btn-kparty" onclick="window.joinRoom()">
@@ -2040,6 +2048,18 @@
         "join.namePlaceholder": "예: 영선",
         "join.joinBtn": "🎉 참가하기",
         "join.joining": "참가 중...",
+        "join.rejoinBtn": "다시 참가하기",
+        "join.replayBtn": "한판 더 어때요?",
+        "join.fixedNicknameLabel": "닉네임",
+        "join.statusLabel": "상태",
+        "join.statusLoading": "확인 중...",
+        "join.statusOngoing": "게임 진행중...",
+        "join.statusEnded": "종료",
+        "join.statusMissing": "방 없음",
+        "join.waitingCurrentGame": "진행 중인 게임이 끝날 때까지 대기실에서 기다립니다.",
+        "join.replayInviteSent": "한판 더 초대를 보냈습니다.",
+        "join.noRecentRoom": "최근 참가했던 방이 없습니다.",
+        "join.inAnotherGame": "현재 다른 게임에 참여 중이라 초대만 확인할 수 있습니다.",
         // participantWait
         "participantWait.cap": "대기 중!",
         "participantWait.subtitle": "호스트가 벌칙 정하고 시작할 때까지<br/>잠깐만 기다려줘 🍵",
@@ -2333,6 +2353,18 @@
         "join.namePlaceholder": "e.g. Sam",
         "join.joinBtn": "🎉 Join",
         "join.joining": "Joining...",
+        "join.rejoinBtn": "Rejoin",
+        "join.replayBtn": "One more round?",
+        "join.fixedNicknameLabel": "Nickname",
+        "join.statusLabel": "Status",
+        "join.statusLoading": "Checking...",
+        "join.statusOngoing": "Game in progress...",
+        "join.statusEnded": "Ended",
+        "join.statusMissing": "Room not found",
+        "join.waitingCurrentGame": "You will wait in the lobby until the current game ends.",
+        "join.replayInviteSent": "One-more-round invitation sent.",
+        "join.noRecentRoom": "No recently joined room.",
+        "join.inAnotherGame": "You're already in another game, so you can only view this invite.",
         "participantWait.cap": "Waiting!",
         "participantWait.subtitle": "Hang on while the host<br/>sets the penalty 🍵",
         "participantWait.penaltyBoxLabel": "This game's penalty",
@@ -2611,6 +2643,18 @@
         "join.namePlaceholder": "例：はなこ",
         "join.joinBtn": "🎉 参加する",
         "join.joining": "参加中...",
+        "join.rejoinBtn": "再参加する",
+        "join.replayBtn": "もう一回どう？",
+        "join.fixedNicknameLabel": "ニックネーム",
+        "join.statusLabel": "状態",
+        "join.statusLoading": "確認中...",
+        "join.statusOngoing": "ゲーム進行中...",
+        "join.statusEnded": "終了",
+        "join.statusMissing": "部屋なし",
+        "join.waitingCurrentGame": "進行中のゲームが終わるまでロビーで待機します。",
+        "join.replayInviteSent": "もう一回の招待を送りました。",
+        "join.noRecentRoom": "最近参加した部屋はありません。",
+        "join.inAnotherGame": "現在ほかのゲームに参加中のため、招待の確認のみ可能です。",
         "participantWait.cap": "待機中！",
         "participantWait.subtitle": "ホストが罰ゲームを決めて<br/>始めるまで少し待ってね 🍵",
         "participantWait.penaltyBoxLabel": "今回の罰ゲーム",
@@ -2948,6 +2992,9 @@
       gameRound: 1,
       gameStarting: false,
       finishingRound: false,
+      joinScreenMode: "manual",
+      joinScreenAction: "join",
+      joinRecentRoom: null,
       qrScanStream: null,
       qrScanTimer: null,
       cleaningDropped: false,
@@ -3051,24 +3098,36 @@
       try {
         const arr = JSON.parse(localStorage.getItem("rpsRecentRoomCodes") || "[]");
         const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-        return arr.filter(r => r.code && r.ts > cutoff).sort((a, b) => b.ts - a.ts);
+        return arr
+          .map(r => typeof r === "string" ? { code: r, ts: Date.now() } : r)
+          .filter(r => r.code && r.ts > cutoff)
+          .sort((a, b) => b.ts - a.ts);
       } catch { return []; }
     }
 
-    function saveRecentRoomCode(code) {
+    function saveRecentRoomCode(code, nickname = "", participantId = "") {
       if (!code) return;
       const recent = getRecentRoomCodes().filter(r => r.code !== code);
-      recent.unshift({ code, ts: Date.now() });
+      recent.unshift({
+        code,
+        nickname: nickname || state.nickname || loadNickname() || "",
+        participantId: participantId || state.currentUserId || "",
+        ts: Date.now()
+      });
       localStorage.setItem("rpsRecentRoomCodes", JSON.stringify(recent.slice(0, 20)));
     }
 
-    function getLastJoinedRoomCode() {
+    function getLastJoinedRoom() {
       const recent = getRecentRoomCodes();
-      return recent.length ? recent[0].code : "";
+      return recent.length ? recent[0] : null;
     }
 
-    function saveLastJoinedRoomCode(code) {
-      saveRecentRoomCode(code);
+    function getLastJoinedRoomCode() {
+      return getLastJoinedRoom()?.code || "";
+    }
+
+    function saveLastJoinedRoomCode(code, nickname = "", participantId = "") {
+      saveRecentRoomCode(code, nickname, participantId);
     }
 
     function getRoomPlayers() {
@@ -3104,8 +3163,16 @@
       return (state.participants || []).some(p => p.id === id && p.choice === '__loser__');
     }
 
+    function isNonPlayingChoice(choice) {
+      return choice === '__safe__' || choice === '__loser__' || choice === '__waiting__';
+    }
+
+    function isWaitingForNextGame(id = state.currentUserId) {
+      return Boolean(id) && (state.participants || []).some(p => p.id === id && p.choice === '__waiting__');
+    }
+
     function isCurrentRoundParticipant(id = state.currentUserId) {
-      return Boolean(id) && !isSafeParticipant(id) && !isConfirmedLoser(id);
+      return Boolean(id) && !isSafeParticipant(id) && !isConfirmedLoser(id) && !isWaitingForNextGame(id);
     }
 
     async function cleanupDroppedParticipants() {
@@ -3207,7 +3274,7 @@
         state.targetLoserCount = getTargetLoserCount();
         // __safe__/__loser__ 마커만 로컬에서 제거 (isSafeParticipant 오탐 방지)
         state.participants.forEach(p => {
-          if (p.choice === '__safe__' || p.choice === '__loser__') p.choice = null;
+          if (isNonPlayingChoice(p.choice)) p.choice = null;
         });
       }
       state.round = room.round;
@@ -3246,6 +3313,9 @@
           } else if (iAmConfirmedLoser) {
             stopTimers();
             showLoserWaitScreen();
+          } else if (isWaitingForNextGame(state.currentUserId)) {
+            stopTimers();
+            showScreen("screenParticipantWait");
           } else if (!state.gameStarting) {
             // 중복 실행 방지: Realtime + 폴링이 동시에 'playing' 전환을 감지해도 한 번만 실행
             state.gameStarting = true;
@@ -3256,6 +3326,8 @@
             showLoserWaitScreen();
           } else if (iAmSafe) {
             showScreen("screenWinnerWait");
+          } else if (isWaitingForNextGame(state.currentUserId)) {
+            showScreen("screenParticipantWait");
           } else if (state.role === "host" && state.round === 1) {
             showHostRoom(); // 1라운드 초기 설정은 호스트 방
           } else {
@@ -3331,7 +3403,7 @@
           if (state.status === "playing") {
             const activeForRound = data.filter(p =>
               !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
-              p.choice !== '__safe__' && p.choice !== '__loser__'
+              !isNonPlayingChoice(p.choice)
             );
             if (activeForRound.length > 0 && activeForRound.every(p => p.choice)) {
               updateRoomStatus("result");
@@ -3348,7 +3420,7 @@
           if (state.status === "ready" && state.round > 1 && !state.gameStarting) {
             const activeForReady = data.filter(p =>
               !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
-              p.choice !== '__safe__' && p.choice !== '__loser__'
+              !isNonPlayingChoice(p.choice)
             );
             if (activeForReady.length > 0 && activeForReady.every(p => p.is_ready)) {
               startGame({ trigger: "last-ready" });
@@ -3416,7 +3488,7 @@
 
       const code = Math.random().toString(36).substring(2, 6).toUpperCase();
       state.roomCode = code;
-      saveRecentRoomCode(code);
+      saveRecentRoomCode(code, nickname);
       state.shareBaseUrl = getDefaultShareBaseUrl();
       state.roomUrl = buildRoomUrl(code);
       state.role = "host";
@@ -3448,10 +3520,12 @@
             5000
           );
           state.currentUserId = hostId;
+          saveLastJoinedRoomCode(code, nickname, hostId);
           subscribeToRoom(code);
         } catch (e) {
           console.error("Supabase 연결 실패, 오프라인 모드로 전환:", e.message);
           state.currentUserId = "host";
+          saveLastJoinedRoomCode(code, nickname, "host");
           state.participants = [createParticipant("host", nickname, true)];
           saveState();
         }
@@ -3582,16 +3656,86 @@
       showToast("QR 접속 주소를 업데이트했습니다.");
     }
 
-    function showJoinScreen() {
-      const joinedRoomCode = getLastJoinedRoomCode();
+    function showJoinScreen(options = {}) {
+      const recentMode = Boolean(options?.recent);
+      const recentRoom = recentMode ? getLastJoinedRoom() : null;
+      const joinedRoomCode = recentRoom?.code || "";
+      state.joinScreenMode = recentMode ? "recent" : "manual";
+      state.joinScreenAction = "join";
+      state.joinRecentRoom = recentRoom || null;
+
       $("joinRoomCode").value = joinedRoomCode || "";
-      const nickname = $("homeNickname").value.trim() || loadNickname();
+      $("joinRoomCode").readOnly = recentMode && Boolean(joinedRoomCode);
+      const nickname = recentRoom?.nickname || $("homeNickname").value.trim() || loadNickname();
       if (nickname) $("joinName").value = nickname;
+
+      const nameField = $("joinNameField");
+      const fixedNameBox = $("joinFixedNameBox");
+      const fixedNameText = $("joinFixedNameText");
+      const statusBox = $("joinRoomStatusBox");
+      const statusLabel = $("joinRoomStatusLabel");
+      const statusValue = $("joinRoomStatusValue");
+      if (nameField) nameField.classList.toggle("hidden", recentMode);
+      if (fixedNameBox) fixedNameBox.classList.toggle("hidden", !recentMode);
+      if (fixedNameText) fixedNameText.textContent = nickname || "-";
+      if (statusBox) statusBox.classList.toggle("hidden", !recentMode);
+      if (statusLabel) statusLabel.textContent = t("join.statusLabel");
+      if (statusValue) statusValue.textContent = recentMode ? t("join.statusLoading") : "";
+
+      const joinBtn = $("joinBtn");
+      if (joinBtn) {
+        joinBtn.disabled = false;
+        setBtnText(joinBtn, recentMode ? t("join.rejoinBtn") : t("join.joinBtn"));
+      }
+
       const datalist = document.getElementById("recentRoomCodes");
       if (datalist) {
         datalist.innerHTML = getRecentRoomCodes().map(r => `<option value="${escapeHtml(r.code)}">`).join("");
       }
       showScreen("screenJoin");
+
+      if (recentMode) {
+        if (!joinedRoomCode) {
+          showToast(t("join.noRecentRoom"));
+          if (statusValue) statusValue.textContent = t("join.statusMissing");
+          if (joinBtn) joinBtn.disabled = true;
+        } else {
+          refreshJoinRoomPreview(joinedRoomCode);
+        }
+      }
+    }
+
+    async function refreshJoinRoomPreview(code) {
+      if (!getOnlineMode() || !code) return;
+      const statusValue = $("joinRoomStatusValue");
+      const joinBtn = $("joinBtn");
+      try {
+        const { data: room } = await db.from('rooms').select('*').eq('id', code).single();
+        const { data: participants } = await db.from('participants')
+          .select('*').eq('room_id', code).order('created_at', { ascending: true });
+        const preview = getJoinRoomPreview(room, participants || []);
+        state.joinScreenAction = preview.action;
+        if (statusValue) statusValue.textContent = preview.label;
+        if (joinBtn) {
+          joinBtn.disabled = preview.action === "missing";
+          setBtnText(joinBtn, preview.action === "replay" ? t("join.replayBtn") : t("join.rejoinBtn"));
+        }
+      } catch (e) {
+        state.joinScreenAction = "missing";
+        if (statusValue) statusValue.textContent = t("join.statusMissing");
+        if (joinBtn) joinBtn.disabled = true;
+      }
+    }
+
+    function getJoinRoomPreview(room, participants = []) {
+      if (!room) return { action: "missing", label: t("join.statusMissing") };
+      const target = parsePenalty(room.penalty).loserCount || 1;
+      const loserCount = participants.filter(p => p.choice === "__loser__").length;
+      const isCompletedResult = room.status === "result" && loserCount >= target;
+      const ended = isCompletedResult || ["lobby", "waiting", "stats"].includes(room.status);
+      return ended
+        ? { action: "replay", label: t("join.statusEnded") }
+        : { action: "join", label: t("join.statusOngoing") };
     }
 
     function showPenaltyScreen() {
@@ -3701,10 +3845,16 @@
 
     async function joinRoom() {
       const code = $("joinRoomCode").value.trim().toUpperCase();
-      const name = $("joinName").value.trim();
+      const name = state.joinScreenMode === "recent"
+        ? (state.joinRecentRoom?.nickname || $("joinName").value.trim() || loadNickname()).trim()
+        : $("joinName").value.trim();
 
       if (!code) { showToast("방 코드를 입력해주세요."); return; }
       if (!name) { showToast("닉네임을 입력해주세요."); return; }
+      if (state.joinScreenAction === "replay") {
+        await requestReplayFromJoinedRoom(code, name);
+        return;
+      }
 
       const btn = $("joinBtn");
       btn.disabled = true;
@@ -3737,27 +3887,77 @@
 
           if (existing) {
             state.currentUserId = existing.id;
-            await db.from('participants').update({ choice: null }).eq('id', existing.id);
+            const waitingChoice = isJoinLocked(roomParticipants || [], room.status) ? "__waiting__" : null;
+            await db.from('participants').update({ choice: waitingChoice, is_ready: false }).eq('id', existing.id);
           } else {
             await db.from('participants').insert([{ id, room_id: code, name, is_host: false }]);
           }
           saveNickname(name);
-          saveLastJoinedRoomCode(code);
+          saveLastJoinedRoomCode(code, name, state.currentUserId);
           subscribeToRoom(code);
-          if (room.status === "ready") showReadyScreen();
+          if (state.joinScreenMode === "recent" && isJoinLocked(roomParticipants || [], room.status)) {
+            showToast(t("join.waitingCurrentGame"));
+            showScreen("screenParticipantWait");
+          } else if (room.status === "ready") showReadyScreen();
           else showScreen("screenParticipantWait");
         } else {
           const existing = state.participants.find(p => p.name === name && !p.is_host);
           if (existing) state.currentUserId = existing.id;
           else state.participants.push(createParticipant(id, name, false));
           saveNickname(name);
-          saveLastJoinedRoomCode(code);
+          saveLastJoinedRoomCode(code, name, state.currentUserId);
           saveState();
           showScreen("screenParticipantWait");
         }
       } finally {
         btn.disabled = false;
-        setBtnText(btn, t("join.joinBtn"));
+        setBtnText(btn, state.joinScreenMode === "recent"
+          ? (state.joinScreenAction === "replay" ? t("join.replayBtn") : t("join.rejoinBtn"))
+          : t("join.joinBtn"));
+      }
+    }
+
+    async function requestReplayFromJoinedRoom(code, name) {
+      const btn = $("joinBtn");
+      if (btn) {
+        btn.disabled = true;
+        setBtnText(btn, t("common.starting"));
+      }
+      try {
+        const id = state.joinRecentRoom?.participantId || `p_${Date.now()}`;
+        state.role = "host";
+        state.currentUserId = id;
+        state.nickname = name;
+        state.roomCode = code;
+        state.shareBaseUrl = getDefaultShareBaseUrl();
+        state.roomUrl = buildRoomUrl(code);
+
+        if (getOnlineMode()) {
+          const { data: participants } = await db.from('participants')
+            .select('*').eq('room_id', code).order('created_at', { ascending: true });
+          const existing = (participants || []).find(p => p.id === id || (!p.is_host && p.name === name));
+          if (existing) {
+            state.currentUserId = existing.id;
+          } else {
+            await db.from('participants').insert([{ id, room_id: code, name, is_host: true }]);
+          }
+
+          await db.from('participants').update({ is_host: false, is_ready: false, choice: null }).eq('room_id', code);
+          await db.from('participants').update({ is_host: true }).eq('id', state.currentUserId);
+          await db.from('rooms').update({ status: 'reinviting', round: 1 }).eq('id', code);
+          saveNickname(name);
+          saveLastJoinedRoomCode(code, name, state.currentUserId);
+          subscribeToRoom(code);
+          showToast(t("join.replayInviteSent"));
+          _showInviteHostPopup();
+        }
+      } catch (e) {
+        showToast(t("toast.error", { msg: e?.message || String(e) }));
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          setBtnText(btn, t("join.replayBtn"));
+        }
       }
     }
 
@@ -3986,7 +4186,7 @@
       // 모든 활성 참가자가 선택 완료했으면 판정 버튼 활성화
       const activeForRound = state.participants.filter(p =>
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
-        p.choice !== '__safe__' && p.choice !== '__loser__'
+        !isNonPlayingChoice(p.choice)
       );
       const allChosen = activeForRound.length > 0 && activeForRound.every(p => p.choice);
       const btn = $("hostJudgeBtn");
@@ -4001,7 +4201,7 @@
       const loserIds = state.confirmedLoserIds || [];
       const active = state.participants.filter(p =>
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
-        p.choice !== '__safe__' && p.choice !== '__loser__'
+        !isNonPlayingChoice(p.choice)
       );
       const count = active.filter(p => p.choice).length;
       $("hostSelectedCount").textContent = count;
@@ -4090,7 +4290,7 @@
       const loserIds = state.confirmedLoserIds || [];
       const active = state.participants.filter(p =>
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
-        p.choice !== '__safe__' && p.choice !== '__loser__'
+        !isNonPlayingChoice(p.choice)
       );
       const count = active.filter(p => p.choice).length;
       $("selectedCount").textContent = count;
@@ -4102,7 +4302,7 @@
       const loserIds = state.confirmedLoserIds || [];
       const activePlayers = state.participants.filter(p =>
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
-        p.choice !== '__safe__' && p.choice !== '__loser__'
+        !isNonPlayingChoice(p.choice)
       );
       if (getOnlineMode()) {
         for (const p of activePlayers) {
@@ -4157,7 +4357,9 @@
 
       const prevSafeIds = [...(state.confirmedSafeIds || [])];
       const prevLoserIds = [...(state.confirmedLoserIds || [])];
-      const activePlayers = state.participants.filter(p => !prevSafeIds.includes(p.id) && !prevLoserIds.includes(p.id));
+      const activePlayers = state.participants.filter(p =>
+        !prevSafeIds.includes(p.id) && !prevLoserIds.includes(p.id) && !isNonPlayingChoice(p.choice)
+      );
       const targetCount = getTargetLoserCount();
       const remainingSlots = targetCount - prevLoserIds.length;
       const allDraw = activePlayers.length > 0 && activePlayers.every(p => p.lastResult === "draw");
@@ -4236,7 +4438,7 @@
 
       const active = participants.filter(p =>
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
-        p.choice !== '__safe__' && p.choice !== '__loser__'
+        !isNonPlayingChoice(p.choice)
       );
       if (active.length === 0) return result;
 
@@ -4273,7 +4475,7 @@
       const loserIds = state.confirmedLoserIds || [];
       const active = state.participants.filter(p =>
         !safeIds.includes(p.id) && !loserIds.includes(p.id) &&
-        p.choice !== '__safe__' && p.choice !== '__loser__'
+        !isNonPlayingChoice(p.choice)
       );
 
       // 아직 선택하지 않은 참가자가 있으면 판정 불가
@@ -4484,7 +4686,14 @@
       }
     }
 
-    function endGame() {
+    async function endGame() {
+      if (getOnlineMode() && state.role === "host" && state.roomCode) {
+        try {
+          await updateRoomStatus("stats");
+        } catch (e) {
+          console.warn("endGame status update failed:", e?.message || e);
+        }
+      }
       renderStats();
       saveState();
       const replayBtn = $("statsReplayBtn");
