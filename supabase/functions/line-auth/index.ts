@@ -103,26 +103,22 @@ serve(async (req: Request): Promise<Response> => {
     };
 
     let userId: string | undefined;
-    const { data: created, error: createErr } = await supabase.auth.admin.createUser({
-      email,
-      email_confirm: true,
-      user_metadata: userMeta,
-    });
-    if (createErr) {
-      const isAlready = /already.*(registered|exists)|email.*already/i.test(createErr.message || "");
-      if (!isAlready) {
+    const { data: list } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    const existing = list?.users?.find((u: any) => u.email === email);
+
+    if (existing) {
+      userId = existing.id;
+      await supabase.auth.admin.updateUserById(existing.id, { user_metadata: userMeta });
+    } else {
+      const { data: created, error: createErr } = await supabase.auth.admin.createUser({
+        email,
+        email_confirm: true,
+        user_metadata: userMeta,
+      });
+      if (createErr) {
         return json({ success: false, error: "createUser failed: " + createErr.message }, 500);
       }
-    }
-    userId = created?.user?.id;
-
-    if (!userId) {
-      const { data: list } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
-      const existing = list.users.find((u: any) => u.email === email);
-      if (existing) {
-        userId = existing.id;
-        await supabase.auth.admin.updateUserById(existing.id, { user_metadata: userMeta });
-      }
+      userId = created?.user?.id;
     }
 
     if (!userId) {

@@ -115,30 +115,22 @@ serve(async (req: Request): Promise<Response> => {
       avatar_url: profileImage,
     };
 
-    const { data: created, error: createErr } = await supabase.auth.admin.createUser({
-      email,
-      email_confirm: true,
-      user_metadata: userMeta,
-    });
+    const { data: list } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    const existing = list?.users?.find((u: any) => u.email === email);
 
-    if (createErr) {
-      // already exists 메시지면 무시
-      const isAlready = /already.*(registered|exists)|email.*already/i.test(createErr.message || "");
-      if (!isAlready) {
+    if (existing) {
+      userId = existing.id;
+      await supabase.auth.admin.updateUserById(existing.id, { user_metadata: userMeta });
+    } else {
+      const { data: created, error: createErr } = await supabase.auth.admin.createUser({
+        email,
+        email_confirm: true,
+        user_metadata: userMeta,
+      });
+      if (createErr) {
         return json({ success: false, error: "createUser failed: " + createErr.message }, 500);
       }
-    }
-    userId = created?.user?.id;
-
-    // 기존 user면 메타데이터 업데이트
-    if (!userId) {
-      // listUsers는 page size 50 기본 — 큰 DB에서는 더 좋은 방법 권장
-      const { data: list } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
-      const existing = list.users.find((u: any) => u.email === email);
-      if (existing) {
-        userId = existing.id;
-        await supabase.auth.admin.updateUserById(existing.id, { user_metadata: userMeta });
-      }
+      userId = created?.user?.id;
     }
 
     if (!userId) {
