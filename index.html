@@ -2803,6 +2803,7 @@
     const db = window.supabase
       ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
+    const ACCOUNT_ROUND_HISTORY_LIMIT = 10;
 
     const choiceLabel = {
       scissors: "가위",
@@ -5216,7 +5217,7 @@
         const penalties = stats.penalties || 0;
         const decisiveTotal = wins + losses;
         const rate = decisiveTotal === 0 ? 0 : Math.round((wins / decisiveTotal) * 100);
-        const groupedHistory = groupAccountHistoryByRound(history || []).slice(0, 10);
+        const groupedHistory = groupAccountHistoryByRound(history || []).slice(0, ACCOUNT_ROUND_HISTORY_LIMIT);
         const historyHtml = groupedHistory.length
           ? groupedHistory.map(item => {
               const meta = getAccountResultMeta(item.finalResult);
@@ -5257,7 +5258,8 @@
             </div>
             <p style="margin:8px 0 0;color:var(--muted);font-size:12px">승률은 무승부를 제외한 승/패 기준입니다.</p>
           </div>
-          <h4 style="margin:14px 0 8px;font-size:15px">라운드별 최종 기록</h4>
+          <h4 style="margin:14px 0 4px;font-size:15px">라운드별 최종 기록</h4>
+          <p style="margin:0 0 8px;color:var(--muted);font-size:12px">최근 ${ACCOUNT_ROUND_HISTORY_LIMIT}개 라운드만 표시됩니다.</p>
           <div style="display:flex;flex-direction:column;gap:8px">${historyHtml}</div>
         `;
       } catch (e) {
