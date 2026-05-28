@@ -1833,13 +1833,13 @@
         <div class="saekdong-v">
           <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
         </div>
-        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px">🏆 내 누적 기록</h3>
-        <p style="font-size:13px;color:var(--muted);margin:0 0 16px">로그인 계정에 저장된 전체 게임 기록입니다.</p>
+        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px" data-i18n="account.title">🏆 내 누적 기록</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px" data-i18n="account.subtitle">로그인 계정에 저장된 전체 게임 기록입니다.</p>
         <div id="accountStatsBody" class="participant-list" style="margin-bottom:12px">
-          <div class="participant"><span>기록을 불러오는 중...</span></div>
+          <div class="participant"><span data-i18n="account.loading">기록을 불러오는 중...</span></div>
         </div>
         <button onclick="window.closeAccountStatsPopup()" class="btn-kparty" style="margin-top:8px">
-          <span>닫기</span>
+          <span data-i18n="account.close">닫기</span>
           <span class="go-pill">OK</span>
         </button>
       </div>
@@ -2151,6 +2151,32 @@
         "popup.statsTitle": "🏆 게임 승률",
         "popup.statsSubtitle": "현재 게임방 누적 기록",
         "popup.statsClose": "닫기",
+        "account.title": "🏆 내 누적 기록",
+        "account.subtitle": "로그인 계정에 저장된 전체 게임 기록입니다.",
+        "account.close": "닫기",
+        "account.loading": "기록을 불러오는 중...",
+        "account.loginRequired": "로그인이 필요합니다.",
+        "account.noSavedTitle": "아직 저장된 게임 기록이 없습니다.",
+        "account.noSavedBody": "로그인 상태로 게임을 완료하면 이곳에 승률과 최근 기록이 저장됩니다.",
+        "account.totalGames": "총 게임",
+        "account.gamesCount": "{n}판",
+        "account.winRate": "승률",
+        "account.inlineWinRate": "승률 {rate}%",
+        "account.winLoseDraw": "승 / 패 / 무",
+        "account.penalties": "벌칙",
+        "account.penaltyCount": "{n}회",
+        "account.winRateNote": "승률은 무승부를 제외한 승/패 기준입니다.",
+        "account.roundHistoryTitle": "라운드별 최종 기록",
+        "account.roundHistoryLimit": "최근 {n}개 라운드만 표시됩니다.",
+        "account.noRoundHistoryTitle": "라운드별 기록이 없습니다.",
+        "account.noRoundHistoryBody": "다음 게임부터 표시됩니다.",
+        "account.penaltyLabel": "벌칙: {text}",
+        "account.loadFailed": "기록 불러오기 실패",
+        "account.resultWin": "승리",
+        "account.resultLose": "벌칙",
+        "account.resultDraw": "무승부",
+        "account.roundSummary": "{games}전 {wins}승 {losses}패",
+        "account.roundSummaryWithDraw": "{games}전 {wins}승 {losses}패 {draws}무",
         "popup.nextHostTitle": "👑 다음 호스트 선택",
         "popup.nextHostSubtitle": "게임을 이어받을 다음 호스트를 선택해주세요.",
         "popup.nextHostRandom": "랜덤으로 호스트 지명 후 나가기",
@@ -2408,6 +2434,32 @@
         "popup.statsTitle": "🏆 Game stats",
         "popup.statsSubtitle": "This room's running record",
         "popup.statsClose": "Close",
+        "account.title": "🏆 My record",
+        "account.subtitle": "All game records saved to your signed-in account.",
+        "account.close": "Close",
+        "account.loading": "Loading records...",
+        "account.loginRequired": "Sign-in required.",
+        "account.noSavedTitle": "No saved game records yet.",
+        "account.noSavedBody": "Finish a game while signed in to save your win rate and recent records here.",
+        "account.totalGames": "Total games",
+        "account.gamesCount": "{n} games",
+        "account.winRate": "Win rate",
+        "account.inlineWinRate": "Win rate {rate}%",
+        "account.winLoseDraw": "W / L / D",
+        "account.penalties": "Penalties",
+        "account.penaltyCount": "{n}",
+        "account.winRateNote": "Win rate excludes draws.",
+        "account.roundHistoryTitle": "Final round records",
+        "account.roundHistoryLimit": "Only the latest {n} rounds are shown.",
+        "account.noRoundHistoryTitle": "No round records yet.",
+        "account.noRoundHistoryBody": "They will appear after your next game.",
+        "account.penaltyLabel": "Penalty: {text}",
+        "account.loadFailed": "Failed to load records",
+        "account.resultWin": "Win",
+        "account.resultLose": "Penalty",
+        "account.resultDraw": "Draw",
+        "account.roundSummary": "{games} games {wins}W {losses}L",
+        "account.roundSummaryWithDraw": "{games} games {wins}W {losses}L {draws}D",
         "popup.nextHostTitle": "👑 Pick next host",
         "popup.nextHostSubtitle": "Pick the next host to take over the room.",
         "popup.nextHostRandom": "Pick random host and exit",
@@ -2660,6 +2712,32 @@
         "popup.statsTitle": "🏆 ゲーム勝率",
         "popup.statsSubtitle": "現部屋の累計記録",
         "popup.statsClose": "閉じる",
+        "account.title": "🏆 自分の記録",
+        "account.subtitle": "ログイン中のアカウントに保存された全ゲーム記録です。",
+        "account.close": "閉じる",
+        "account.loading": "記録を読み込み中...",
+        "account.loginRequired": "ログインが必要です。",
+        "account.noSavedTitle": "保存されたゲーム記録はまだありません。",
+        "account.noSavedBody": "ログインした状態でゲームを完了すると、勝率と最近の記録がここに保存されます。",
+        "account.totalGames": "総ゲーム",
+        "account.gamesCount": "{n}回",
+        "account.winRate": "勝率",
+        "account.inlineWinRate": "勝率 {rate}%",
+        "account.winLoseDraw": "勝 / 負 / あいこ",
+        "account.penalties": "罰ゲーム",
+        "account.penaltyCount": "{n}回",
+        "account.winRateNote": "勝率はあいこを除いた勝敗で計算されます。",
+        "account.roundHistoryTitle": "ラウンド別最終記録",
+        "account.roundHistoryLimit": "最新{n}ラウンドのみ表示されます。",
+        "account.noRoundHistoryTitle": "ラウンド別記録はありません。",
+        "account.noRoundHistoryBody": "次のゲームから表示されます。",
+        "account.penaltyLabel": "罰ゲーム: {text}",
+        "account.loadFailed": "記録の読み込みに失敗しました",
+        "account.resultWin": "勝利",
+        "account.resultLose": "罰ゲーム",
+        "account.resultDraw": "あいこ",
+        "account.roundSummary": "{games}戦 {wins}勝 {losses}敗",
+        "account.roundSummaryWithDraw": "{games}戦 {wins}勝 {losses}敗 {draws}あいこ",
         "popup.nextHostTitle": "👑 次のホスト選択",
         "popup.nextHostSubtitle": "ゲームを引き継ぐ次のホストを選んでください。",
         "popup.nextHostRandom": "ランダムでホスト指名して退室",
@@ -5170,10 +5248,10 @@
       const body = $("accountStatsBody");
       if (!popup || !body) return;
       popup.classList.remove("hidden");
-      body.innerHTML = `<div class="participant"><span>기록을 불러오는 중...</span></div>`;
+      body.innerHTML = `<div class="participant"><span>${t("account.loading")}</span></div>`;
 
       if (getAuthState() !== "authed" || !db?.auth) {
-        body.innerHTML = `<div class="participant"><strong>로그인이 필요합니다.</strong></div>`;
+        body.innerHTML = `<div class="participant"><strong>${t("account.loginRequired")}</strong></div>`;
         return;
       }
 
@@ -5203,8 +5281,8 @@
         if (!stats) {
           body.innerHTML = `
             <div class="participant" style="display:block;text-align:center;padding:18px">
-              <strong>아직 저장된 게임 기록이 없습니다.</strong>
-              <p style="margin:8px 0 0;color:var(--muted);font-size:13px">로그인 상태로 게임을 완료하면 이곳에 승률과 최근 기록이 저장됩니다.</p>
+              <strong>${t("account.noSavedTitle")}</strong>
+              <p style="margin:8px 0 0;color:var(--muted);font-size:13px">${t("account.noSavedBody")}</p>
             </div>
           `;
           return;
@@ -5221,17 +5299,23 @@
         const historyHtml = groupedHistory.length
           ? groupedHistory.map(item => {
               const meta = getAccountResultMeta(item.finalResult);
-              const roundRateText = item.decisiveTotal > 0 ? ` · 승률 ${item.rate}%` : "";
+              const roundRateText = item.decisiveTotal > 0 ? ` · ${t("account.inlineWinRate", { rate: item.rate })}` : "";
               const penalty = item.penaltyText
-                ? `<div style="margin-top:4px;color:var(--muted);font-size:12px">벌칙: ${escapeHtml(item.penaltyText)}</div>`
+                ? `<div style="margin-top:4px;color:var(--muted);font-size:12px">${escapeHtml(t("account.penaltyLabel", { text: item.penaltyText }))}</div>`
                 : "";
+              const summary = t(item.draws ? "account.roundSummaryWithDraw" : "account.roundSummary", {
+                games: item.games,
+                wins: item.wins,
+                losses: item.losses,
+                draws: item.draws,
+              });
               return `
                 <div class="participant" style="align-items:flex-start;gap:10px">
                   <span style="min-width:62px;border-radius:999px;padding:5px 9px;text-align:center;background:${meta.bg};color:${meta.color};font-weight:900;font-size:12px">${meta.icon} ${meta.label}</span>
                   <div style="flex:1;min-width:0">
                     <strong style="display:flex;justify-content:space-between;gap:8px;font-size:14px">
                       <span>${escapeHtml(item.room_id || "-")} · ${item.round || 1}R</span>
-                      <span style="font-weight:800;color:#111827">${item.games}전 ${item.wins}승 ${item.losses}패${item.draws ? ` ${item.draws}무` : ""}</span>
+                      <span style="font-weight:800;color:#111827">${escapeHtml(summary)}</span>
                     </strong>
                     <span style="color:var(--muted);font-size:12px">${formatAccountDate(item.latestAt)}${roundRateText}</span>
                     ${penalty}
@@ -5239,14 +5323,14 @@
                 </div>
               `;
             }).join("")
-          : `<div class="participant"><strong>라운드별 기록이 없습니다.</strong><span>다음 게임부터 표시됩니다.</span></div>`;
+          : `<div class="participant"><strong>${t("account.noRoundHistoryTitle")}</strong><span>${t("account.noRoundHistoryBody")}</span></div>`;
 
         body.innerHTML = `
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:12px">
-            ${renderAccountStatCard("총 게임", `${games}판`, "🎮")}
-            ${renderAccountStatCard("승률", `${rate}%`, "📈")}
-            ${renderAccountStatCard("승 / 패 / 무", `${wins} / ${losses} / ${draws}`, "🏆")}
-            ${renderAccountStatCard("벌칙", `${penalties}회`, "🎯")}
+            ${renderAccountStatCard(t("account.totalGames"), t("account.gamesCount", { n: games }), "🎮")}
+            ${renderAccountStatCard(t("account.winRate"), `${rate}%`, "📈")}
+            ${renderAccountStatCard(t("account.winLoseDraw"), `${wins} / ${losses} / ${draws}`, "🏆")}
+            ${renderAccountStatCard(t("account.penalties"), t("account.penaltyCount", { n: penalties }), "🎯")}
           </div>
           <div style="border:1px solid #f1e7d8;border-radius:14px;padding:12px;margin-bottom:12px;background:#fffaf2">
             <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:8px">
@@ -5256,14 +5340,14 @@
             <div style="height:10px;background:#f1f1f1;border-radius:999px;overflow:hidden">
               <div style="width:${Math.max(0, Math.min(100, rate))}%;height:100%;background:linear-gradient(90deg,#22c55e,#facc15);border-radius:999px"></div>
             </div>
-            <p style="margin:8px 0 0;color:var(--muted);font-size:12px">승률은 무승부를 제외한 승/패 기준입니다.</p>
+            <p style="margin:8px 0 0;color:var(--muted);font-size:12px">${t("account.winRateNote")}</p>
           </div>
-          <h4 style="margin:14px 0 4px;font-size:15px">라운드별 최종 기록</h4>
-          <p style="margin:0 0 8px;color:var(--muted);font-size:12px">최근 ${ACCOUNT_ROUND_HISTORY_LIMIT}개 라운드만 표시됩니다.</p>
+          <h4 style="margin:14px 0 4px;font-size:15px">${t("account.roundHistoryTitle")}</h4>
+          <p style="margin:0 0 8px;color:var(--muted);font-size:12px">${t("account.roundHistoryLimit", { n: ACCOUNT_ROUND_HISTORY_LIMIT })}</p>
           <div style="display:flex;flex-direction:column;gap:8px">${historyHtml}</div>
         `;
       } catch (e) {
-        body.innerHTML = `<div class="participant"><strong>기록 불러오기 실패</strong><span>${escapeHtml(e?.message || String(e))}</span></div>`;
+        body.innerHTML = `<div class="participant"><strong>${t("account.loadFailed")}</strong><span>${escapeHtml(e?.message || String(e))}</span></div>`;
       }
     }
 
@@ -5322,16 +5406,17 @@
     }
 
     function getAccountResultMeta(result) {
-      if (result === "win") return { label: "승리", icon: "🎉", color: "#166534", bg: "#dcfce7" };
-      if (result === "lose") return { label: "벌칙", icon: "😵", color: "#991b1b", bg: "#fee2e2" };
-      return { label: "무승부", icon: "🤝", color: "#374151", bg: "#f3f4f6" };
+      if (result === "win") return { label: t("account.resultWin"), icon: "🎉", color: "#166534", bg: "#dcfce7" };
+      if (result === "lose") return { label: t("account.resultLose"), icon: "😵", color: "#991b1b", bg: "#fee2e2" };
+      return { label: t("account.resultDraw"), icon: "🤝", color: "#374151", bg: "#f3f4f6" };
     }
 
     function formatAccountDate(value) {
       if (!value) return "-";
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) return "-";
-      return date.toLocaleString("ko-KR", {
+      const localeMap = { ko: "ko-KR", en: "en-US", ja: "ja-JP" };
+      return date.toLocaleString(localeMap[currentLocale] || "ko-KR", {
         month: "short",
         day: "numeric",
         hour: "2-digit",
