@@ -54,12 +54,28 @@ serve(async (req: Request): Promise<Response> => {
     };
     if (KAKAO_CLIENT_SECRET) tokenParams.client_secret = KAKAO_CLIENT_SECRET;
 
-    const tokenRes = await fetch("https://kauth.kakao.com/oauth/token", {
+    let tokenRes = await fetch("https://kauth.kakao.com/oauth/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams(tokenParams),
     });
-    const tokenData = await tokenRes.json();
+    let tokenData = await tokenRes.json();
+
+    // Some Kakao apps have "Client Secret" disabled. If a stale secret is set in
+    // Supabase, Kakao returns KOE010. Retry without the secret before failing.
+    if (!tokenData.access_token && KAKAO_CLIENT_SECRET) {
+      const isBadClientSecret =
+        tokenData?.error === "invalid_client" || tokenData?.error_code === "KOE010";
+      if (isBadClientSecret) {
+        delete tokenParams.client_secret;
+        tokenRes = await fetch("https://kauth.kakao.com/oauth/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams(tokenParams),
+        });
+        tokenData = await tokenRes.json();
+      }
+    }
     if (!tokenData.access_token) {
       return json({
         success: false,
