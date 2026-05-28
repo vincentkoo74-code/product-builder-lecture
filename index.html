@@ -1264,6 +1264,9 @@
         <button id="guestLoginTopBtn" class="guest-login-btn hidden" onclick="window.showAuthScreen()" data-i18n="topbar.snsLogin">
           👤 SNS 로그인
         </button>
+        <button id="accountStatsTopBtn" class="guest-login-btn hidden" onclick="window.showAccountStatsPopup()" title="내 누적 기록">
+          🏆 내 기록
+        </button>
         <button id="signOutTopBtn" class="signout-btn hidden" onclick="window.signOutWithConfirm()" title="Sign out">
           🚪
         </button>
@@ -1751,6 +1754,24 @@
         </table>
         <button onclick="window.closeStatsPopup()" class="btn-kparty" style="margin-top:16px">
           <span data-i18n="popup.statsClose">닫기</span>
+          <span class="go-pill">OK</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 계정 누적 기록 팝업 -->
+    <div id="accountStatsPopup" class="popup-overlay hidden">
+      <div class="popup-card maru-popup">
+        <div class="saekdong-v">
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px">🏆 내 누적 기록</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px">로그인 계정에 저장된 전체 게임 기록입니다.</p>
+        <div id="accountStatsBody" class="participant-list" style="margin-bottom:12px">
+          <div class="participant"><span>기록을 불러오는 중...</span></div>
+        </div>
+        <button onclick="window.closeAccountStatsPopup()" class="btn-kparty" style="margin-top:8px">
+          <span>닫기</span>
           <span class="go-pill">OK</span>
         </button>
       </div>
@@ -2756,7 +2777,8 @@
       qrScanTimer: null,
       cleaningDropped: false,
       droppedSince: {},
-      fetchParticipantsSeq: 0
+      fetchParticipantsSeq: 0,
+      accountStatsSaved: {}
     };
 
     function parsePenalty(raw) {
@@ -3915,8 +3937,10 @@
       const targetCount = getTargetLoserCount();
       const remainingSlots = targetCount - prevLoserIds.length;
       const allDraw = activePlayers.length > 0 && activePlayers.every(p => p.lastResult === "draw");
+      const iPlayedThisRound = activePlayers.some(p => p.id === state.currentUserId);
 
       if (allDraw) {
+        if (iPlayedThisRound) recordMyAccountGameResult("draw");
         renderRoundResult("draw", 0, remainingSlots);
         showScreen("screenRoundResult");
         state.finishingRound = false;
@@ -3927,6 +3951,7 @@
       const roundLosers = activePlayers.filter(p => p.lastResult === "lose");
       const roundWinners = activePlayers.filter(p => p.lastResult === "win");
       const myResult = (state.participants.find(p => p.id === state.currentUserId) || {}).lastResult;
+      if (iPlayedThisRound) recordMyAccountGameResult(myResult);
 
       if (roundLosers.length === remainingSlots) {
         state.confirmedLoserIds = [...prevLoserIds, ...roundLosers.map(p => p.id)];
@@ -4371,6 +4396,67 @@
       const total = p.wins + p.losses;
       if (total === 0) return 0;
       return Math.round((p.wins / total) * 100);
+    }
+
+    async function recordMyAccountGameResult(result) {
+      if (!getOnlineMode() || getAuthState() !== "authed" || !db?.auth || !result) return;
+      if (!["win", "lose", "draw"].includes(result)) return;
+
+      const dedupeKey = `${state.roomCode || "room"}:${state.round || 0}:${state.currentUserId || "me"}`;
+      if (state.accountStatsSaved[dedupeKey] || localStorage.getItem(`rpsAccountStat:${dedupeKey}`)) return;
+
+      try {
+        const { data: { user }, error: userErr } = await db.auth.getUser();
+        if (userErr || !user?.id) return;
+
+        const me = state.participants.find(p => p.id === state.currentUserId);
+        const displayName = me?.name || state.nickname || loadNickname() || user.email?.split("@")[0] || "";
+        const now = new Date().toISOString();
+        const delta = {
+          games_played: 1,
+          wins: result === "win" ? 1 : 0,
+          losses: result === "lose" ? 1 : 0,
+          draws: result === "draw" ? 1 : 0,
+          penalties: result === "lose" ? 1 : 0,
+        };
+
+        const { data: current } = await db
+          .from("user_game_stats")
+          .select("games_played,wins,losses,draws,penalties")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        const nextStats = {
+          user_id: user.id,
+          display_name: displayName,
+          games_played: (current?.games_played || 0) + delta.games_played,
+          wins: (current?.wins || 0) + delta.wins,
+          losses: (current?.losses || 0) + delta.losses,
+          draws: (current?.draws || 0) + delta.draws,
+          penalties: (current?.penalties || 0) + delta.penalties,
+          last_played_at: now,
+          updated_at: now,
+        };
+
+        const { error: statsErr } = await db
+          .from("user_game_stats")
+          .upsert(nextStats, { onConflict: "user_id" });
+        if (statsErr) throw statsErr;
+
+        const { error: historyErr } = await db.from("user_game_history").insert([{
+          user_id: user.id,
+          room_id: state.roomCode || null,
+          round: state.round || null,
+          result,
+          penalty_text: getPenaltyText() || null,
+        }]);
+        if (historyErr) throw historyErr;
+
+        state.accountStatsSaved[dedupeKey] = true;
+        localStorage.setItem(`rpsAccountStat:${dedupeKey}`, "1");
+      } catch (e) {
+        console.warn("account stats save failed:", e?.message || e);
+      }
     }
 
     function renderAll() {
@@ -4896,6 +4982,52 @@
       $("statsPopup").classList.add("hidden");
     }
 
+    async function showAccountStatsPopup() {
+      const popup = $("accountStatsPopup");
+      const body = $("accountStatsBody");
+      if (!popup || !body) return;
+      popup.classList.remove("hidden");
+      body.innerHTML = `<div class="participant"><span>기록을 불러오는 중...</span></div>`;
+
+      if (getAuthState() !== "authed" || !db?.auth) {
+        body.innerHTML = `<div class="participant"><strong>로그인이 필요합니다.</strong></div>`;
+        return;
+      }
+
+      try {
+        const { data: { user }, error: userErr } = await db.auth.getUser();
+        if (userErr || !user?.id) throw userErr || new Error("로그인 정보를 찾을 수 없습니다.");
+
+        const { data, error } = await db
+          .from("user_game_stats")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (error) throw error;
+
+        if (!data) {
+          body.innerHTML = `<div class="participant"><strong>아직 저장된 게임 기록이 없습니다.</strong></div>`;
+          return;
+        }
+
+        const total = (data.wins || 0) + (data.losses || 0);
+        const rate = total === 0 ? 0 : Math.round(((data.wins || 0) / total) * 100);
+        body.innerHTML = `
+          <div class="participant"><strong>닉네임</strong><span>${escapeHtml(data.display_name || "-")}</span></div>
+          <div class="participant"><strong>총 게임</strong><span>${data.games_played || 0}판</span></div>
+          <div class="participant"><strong>승 / 패 / 무</strong><span>${data.wins || 0} / ${data.losses || 0} / ${data.draws || 0}</span></div>
+          <div class="participant"><strong>승률</strong><span>${rate}%</span></div>
+          <div class="participant"><strong>벌칙</strong><span>${data.penalties || 0}회</span></div>
+        `;
+      } catch (e) {
+        body.innerHTML = `<div class="participant"><strong>기록 불러오기 실패</strong><span>${escapeHtml(e?.message || String(e))}</span></div>`;
+      }
+    }
+
+    function closeAccountStatsPopup() {
+      $("accountStatsPopup").classList.add("hidden");
+    }
+
     function playFanfare() {
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -5011,10 +5143,12 @@
     function updateAuthTopbar() {
       const btn = $("guestLoginTopBtn");
       const signOutBtn = $("signOutTopBtn");
+      const accountStatsBtn = $("accountStatsTopBtn");
       const auth = getAuthState();
       if (btn) btn.classList.toggle("hidden", auth !== "guest");
       // SNS 인증된 상태(authed)일 때만 로그아웃 버튼 표시
       if (signOutBtn) signOutBtn.classList.toggle("hidden", auth !== "authed");
+      if (accountStatsBtn) accountStatsBtn.classList.toggle("hidden", auth !== "authed");
     }
 
     // 로그아웃 (확인 모달 + Supabase signOut)
@@ -5475,6 +5609,8 @@
     window.becomeNextHost = becomeNextHost;
     window.showStatsPopup = showStatsPopup;
     window.closeStatsPopup = closeStatsPopup;
+    window.showAccountStatsPopup = showAccountStatsPopup;
+    window.closeAccountStatsPopup = closeAccountStatsPopup;
     window.onLoserCountChange = onLoserCountChange;
     window.updateShareBaseUrl = updateShareBaseUrl;
     window.showLoserWaitScreen = showLoserWaitScreen;
