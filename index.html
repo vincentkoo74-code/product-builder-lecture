@@ -5173,6 +5173,21 @@
       showToast(t("toast.snsComingSoon", { provider: providerName }));
     }
 
+    async function getFunctionErrorMessage(error, fallback) {
+      const response = error?.context;
+      if (response && typeof response.clone === "function") {
+        try {
+          const payload = await response.clone().json();
+          const providerDetail = payload?.kakao?.error_description
+            || payload?.line?.error_description
+            || payload?.kakao?.error
+            || payload?.line?.error;
+          return [payload?.error, providerDetail].filter(Boolean).join(": ") || fallback;
+        } catch {}
+      }
+      return error?.message || fallback;
+    }
+
     // Kakao OAuth 콜백 처리 — initFromUrl 에서 호출됨
     async function handleKakaoCallback() {
       const params = new URLSearchParams(location.search);
@@ -5200,7 +5215,7 @@
         const { data, error } = await db.functions.invoke("kakao-auth", {
           body: { code, redirect_uri: redirectUri }
         });
-        if (error) throw error;
+        if (error) throw new Error(await getFunctionErrorMessage(error, "kakao auth failed"));
         if (!data?.success || !data?.token_hash) {
           throw new Error(data?.error || "kakao auth failed");
         }
@@ -5253,7 +5268,7 @@
         const { data, error } = await db.functions.invoke("line-auth", {
           body: { code, redirect_uri: redirectUri }
         });
-        if (error) throw error;
+        if (error) throw new Error(await getFunctionErrorMessage(error, "line auth failed"));
         if (!data?.success || !data?.token_hash) {
           throw new Error(data?.error || "line auth failed");
         }
