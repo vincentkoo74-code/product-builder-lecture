@@ -33,11 +33,20 @@ The Supabase deploy workflow uses the fixed project ref:
 cmfxhehpreanijwanwrr
 ```
 
+`SUPABASE_ACCESS_TOKEN` must be a Supabase account access token that starts with
+`sbp_`.
+
+`SUPABASE_DB_PASSWORD` must be the actual Postgres database password for this
+project. If GitHub Actions shows `password authentication failed for user
+"postgres"`, reset the database password in Supabase and update this secret.
+
 ## Workflows
 
 - `.github/workflows/supabase-deploy.yml`
   - Pushes Supabase migrations.
   - Deploys all Edge Functions.
+  - Runs migrations and Edge Function deployment as separate jobs so function
+    deployment is not blocked by a bad database password.
 
 - `.github/workflows/production-smoke.yml`
   - Waits for Vercel.
