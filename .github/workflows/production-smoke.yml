@@ -24,7 +24,7 @@ jobs:
             if grep -q "loginWithSns" /tmp/production.html \
               && grep -q "line-auth" /tmp/production.html \
               && grep -q "kakao-auth" /tmp/production.html \
-              && grep -q "accountStatsTopBtn" /tmp/production.html; then
+              && grep -q "home.quickMyStats" /tmp/production.html; then
               echo "Production app contains current hooks."
               exit 0
             fi
