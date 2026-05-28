@@ -4998,30 +4998,112 @@
         const { data: { user }, error: userErr } = await db.auth.getUser();
         if (userErr || !user?.id) throw userErr || new Error("로그인 정보를 찾을 수 없습니다.");
 
-        const { data, error } = await db
-          .from("user_game_stats")
-          .select("*")
-          .eq("user_id", user.id)
-          .maybeSingle();
-        if (error) throw error;
+        const [
+          { data: stats, error: statsError },
+          { data: history, error: historyError },
+        ] = await Promise.all([
+          db
+            .from("user_game_stats")
+            .select("*")
+            .eq("user_id", user.id)
+            .maybeSingle(),
+          db
+            .from("user_game_history")
+            .select("room_id,round,result,penalty_text,created_at")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .limit(10),
+        ]);
+        if (statsError) throw statsError;
+        if (historyError) throw historyError;
 
-        if (!data) {
-          body.innerHTML = `<div class="participant"><strong>아직 저장된 게임 기록이 없습니다.</strong></div>`;
+        if (!stats) {
+          body.innerHTML = `
+            <div class="participant" style="display:block;text-align:center;padding:18px">
+              <strong>아직 저장된 게임 기록이 없습니다.</strong>
+              <p style="margin:8px 0 0;color:var(--muted);font-size:13px">로그인 상태로 게임을 완료하면 이곳에 승률과 최근 기록이 저장됩니다.</p>
+            </div>
+          `;
           return;
         }
 
-        const total = (data.wins || 0) + (data.losses || 0);
-        const rate = total === 0 ? 0 : Math.round(((data.wins || 0) / total) * 100);
+        const wins = stats.wins || 0;
+        const losses = stats.losses || 0;
+        const draws = stats.draws || 0;
+        const games = stats.games_played || 0;
+        const penalties = stats.penalties || 0;
+        const decisiveTotal = wins + losses;
+        const rate = decisiveTotal === 0 ? 0 : Math.round((wins / decisiveTotal) * 100);
+        const historyHtml = (history || []).length
+          ? history.map(item => {
+              const meta = getAccountResultMeta(item.result);
+              const penalty = item.result === "lose" && item.penalty_text
+                ? `<div style="margin-top:4px;color:var(--muted);font-size:12px">벌칙: ${escapeHtml(item.penalty_text)}</div>`
+                : "";
+              return `
+                <div class="participant" style="align-items:flex-start;gap:10px">
+                  <span style="min-width:62px;border-radius:999px;padding:5px 9px;text-align:center;background:${meta.bg};color:${meta.color};font-weight:900;font-size:12px">${meta.icon} ${meta.label}</span>
+                  <div style="flex:1;min-width:0">
+                    <strong style="display:block;font-size:14px">${escapeHtml(item.room_id || "-")} · ${item.round || 1}R</strong>
+                    <span style="color:var(--muted);font-size:12px">${formatAccountDate(item.created_at)}</span>
+                    ${penalty}
+                  </div>
+                </div>
+              `;
+            }).join("")
+          : `<div class="participant"><strong>최근 게임 기록이 없습니다.</strong><span>다음 게임부터 표시됩니다.</span></div>`;
+
         body.innerHTML = `
-          <div class="participant"><strong>닉네임</strong><span>${escapeHtml(data.display_name || "-")}</span></div>
-          <div class="participant"><strong>총 게임</strong><span>${data.games_played || 0}판</span></div>
-          <div class="participant"><strong>승 / 패 / 무</strong><span>${data.wins || 0} / ${data.losses || 0} / ${data.draws || 0}</span></div>
-          <div class="participant"><strong>승률</strong><span>${rate}%</span></div>
-          <div class="participant"><strong>벌칙</strong><span>${data.penalties || 0}회</span></div>
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:12px">
+            ${renderAccountStatCard("총 게임", `${games}판`, "🎮")}
+            ${renderAccountStatCard("승률", `${rate}%`, "📈")}
+            ${renderAccountStatCard("승 / 패 / 무", `${wins} / ${losses} / ${draws}`, "🏆")}
+            ${renderAccountStatCard("벌칙", `${penalties}회`, "🎯")}
+          </div>
+          <div style="border:1px solid #f1e7d8;border-radius:14px;padding:12px;margin-bottom:12px;background:#fffaf2">
+            <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:8px">
+              <strong>${escapeHtml(stats.display_name || "플레이어")}</strong>
+              <span style="font-weight:900;color:var(--accent)">${rate}%</span>
+            </div>
+            <div style="height:10px;background:#f1f1f1;border-radius:999px;overflow:hidden">
+              <div style="width:${Math.max(0, Math.min(100, rate))}%;height:100%;background:linear-gradient(90deg,#22c55e,#facc15);border-radius:999px"></div>
+            </div>
+            <p style="margin:8px 0 0;color:var(--muted);font-size:12px">승률은 무승부를 제외한 승/패 기준입니다.</p>
+          </div>
+          <h4 style="margin:14px 0 8px;font-size:15px">최근 게임 기록</h4>
+          <div style="display:flex;flex-direction:column;gap:8px">${historyHtml}</div>
         `;
       } catch (e) {
         body.innerHTML = `<div class="participant"><strong>기록 불러오기 실패</strong><span>${escapeHtml(e?.message || String(e))}</span></div>`;
       }
+    }
+
+    function renderAccountStatCard(label, value, icon) {
+      return `
+        <div style="border:1px solid #f1e7d8;border-radius:14px;padding:12px;background:white">
+          <div style="font-size:18px;margin-bottom:6px">${icon}</div>
+          <div style="color:var(--muted);font-size:12px">${label}</div>
+          <strong style="display:block;margin-top:2px;font-size:17px">${value}</strong>
+        </div>
+      `;
+    }
+
+    function getAccountResultMeta(result) {
+      if (result === "win") return { label: "승리", icon: "🎉", color: "#166534", bg: "#dcfce7" };
+      if (result === "lose") return { label: "벌칙", icon: "😵", color: "#991b1b", bg: "#fee2e2" };
+      return { label: "무승부", icon: "🤝", color: "#374151", bg: "#f3f4f6" };
+    }
+
+    function formatAccountDate(value) {
+      if (!value) return "-";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "-";
+      return date.toLocaleString("ko-KR", {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
     }
 
     function closeAccountStatsPopup() {
