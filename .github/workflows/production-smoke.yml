@@ -1,0 +1,34 @@
+name: Production Smoke Test
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-smoke-main
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Verify production app and Supabase endpoints
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Vercel deployment
+        run: sleep 60
+
+      - name: Verify production HTML contains current app hooks
+        run: |
+          set -euo pipefail
+          html="$(curl -fsSL --retry 3 --retry-delay 10 https://product-builder-lecture-phi.vercel.app/)"
+          echo "$html" | grep -q "loginWithSns"
+          echo "$html" | grep -q "line-auth"
+          echo "$html" | grep -q "kakao-auth"
+          echo "$html" | grep -q "accountStatsTopBtn"
+
+      - name: Verify Supabase Edge Functions are reachable
+        run: |
+          set -euo pipefail
+          curl -fsS -X OPTIONS https://cmfxhehpreanijwanwrr.supabase.co/functions/v1/kakao-auth >/dev/null
+          curl -fsS -X OPTIONS https://cmfxhehpreanijwanwrr.supabase.co/functions/v1/line-auth >/dev/null
