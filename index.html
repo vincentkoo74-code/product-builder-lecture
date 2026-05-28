@@ -5188,6 +5188,15 @@
       return error?.message || fallback;
     }
 
+    function withAuthTimeout(promise, ms, label) {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error(`${label} 응답 시간이 초과되었습니다`)), ms);
+        })
+      ]);
+    }
+
     // Kakao OAuth 콜백 처리 — initFromUrl 에서 호출됨
     async function handleKakaoCallback() {
       const params = new URLSearchParams(location.search);
@@ -5211,19 +5220,28 @@
       }
 
       try {
+        showToast("카카오 로그인 확인 중...", 8000);
         const redirectUri = location.origin + location.pathname + "?provider=kakao";
-        const { data, error } = await db.functions.invoke("kakao-auth", {
-          body: { code, redirect_uri: redirectUri }
-        });
+        const { data, error } = await withAuthTimeout(
+          db.functions.invoke("kakao-auth", {
+            body: { code, redirect_uri: redirectUri }
+          }),
+          15000,
+          "카카오 로그인 서버"
+        );
         if (error) throw new Error(await getFunctionErrorMessage(error, "kakao auth failed"));
         if (!data?.success || !data?.token_hash) {
           throw new Error(data?.error || "kakao auth failed");
         }
         // Supabase 세션 활성화
-        const { error: verifyErr } = await db.auth.verifyOtp({
-          type: "magiclink",
-          token_hash: data.token_hash,
-        });
+        const { error: verifyErr } = await withAuthTimeout(
+          db.auth.verifyOtp({
+            type: "magiclink",
+            token_hash: data.token_hash,
+          }),
+          15000,
+          "Supabase 세션 활성화"
+        );
         if (verifyErr) throw verifyErr;
 
         setAuthState("authed");
@@ -5237,6 +5255,7 @@
       } catch (e) {
         showToast(t("toast.error", { msg: e.message || String(e) }));
         history.replaceState({}, "", location.pathname);
+        showAuthScreen();
       }
       return true;
     }
@@ -5264,18 +5283,27 @@
       }
 
       try {
+        showToast("LINE 로그인 확인 중...", 8000);
         const redirectUri = location.origin + location.pathname + "?provider=line";
-        const { data, error } = await db.functions.invoke("line-auth", {
-          body: { code, redirect_uri: redirectUri }
-        });
+        const { data, error } = await withAuthTimeout(
+          db.functions.invoke("line-auth", {
+            body: { code, redirect_uri: redirectUri }
+          }),
+          15000,
+          "LINE 로그인 서버"
+        );
         if (error) throw new Error(await getFunctionErrorMessage(error, "line auth failed"));
         if (!data?.success || !data?.token_hash) {
           throw new Error(data?.error || "line auth failed");
         }
-        const { error: verifyErr } = await db.auth.verifyOtp({
-          type: "magiclink",
-          token_hash: data.token_hash,
-        });
+        const { error: verifyErr } = await withAuthTimeout(
+          db.auth.verifyOtp({
+            type: "magiclink",
+            token_hash: data.token_hash,
+          }),
+          15000,
+          "Supabase 세션 활성화"
+        );
         if (verifyErr) throw verifyErr;
 
         setAuthState("authed");
@@ -5288,6 +5316,7 @@
       } catch (e) {
         showToast(t("toast.error", { msg: e.message || String(e) }));
         history.replaceState({}, "", location.pathname);
+        showAuthScreen();
       }
       return true;
     }
