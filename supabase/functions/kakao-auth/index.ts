@@ -118,6 +118,8 @@ serve(async (req: Request): Promise<Response> => {
     const { data: list } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
     const existing = list?.users?.find((u: any) => u.email === email);
 
+    let userExists = Boolean(existing);
+
     if (existing) {
       userId = existing.id;
       await supabase.auth.admin.updateUserById(existing.id, { user_metadata: userMeta });
@@ -128,12 +130,17 @@ serve(async (req: Request): Promise<Response> => {
         user_metadata: userMeta,
       });
       if (createErr) {
-        return json({ success: false, error: "createUser failed: " + createErr.message }, 500);
+        const alreadyExists = /already|registered|exists|email/i.test(createErr.message || "");
+        if (!alreadyExists) {
+          return json({ success: false, error: "createUser failed: " + createErr.message }, 500);
+        }
+        userExists = true;
+      } else {
+        userId = created?.user?.id;
       }
-      userId = created?.user?.id;
     }
 
-    if (!userId) {
+    if (!userId && !userExists) {
       return json({ success: false, error: "user creation/lookup failed" }, 500);
     }
 
