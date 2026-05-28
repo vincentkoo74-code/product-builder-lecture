@@ -2866,6 +2866,7 @@
       confirmedSafeIds: [],
       confirmedLoserIds: [],
       targetLoserCount: 1,
+      gameRound: 1,
       gameStarting: false,
       finishingRound: false,
       qrScanStream: null,
@@ -2877,11 +2878,28 @@
     };
 
     function parsePenalty(raw) {
-      try { const p = JSON.parse(raw); if (p && typeof p === "object" && p.text !== undefined) return p; } catch {}
-      return { text: raw || "", loserCount: 1 };
+      try {
+        const p = JSON.parse(raw);
+        if (p && typeof p === "object" && p.text !== undefined) {
+          return {
+            text: p.text || "",
+            loserCount: p.loserCount || 1,
+            gameRound: p.gameRound || 1,
+          };
+        }
+      } catch {}
+      return { text: raw || "", loserCount: 1, gameRound: 1 };
     }
     function getPenaltyText() { return parsePenalty(state.penalty).text; }
     function getTargetLoserCount() { return parsePenalty(state.penalty).loserCount || state.targetLoserCount || 1; }
+    function getGameRound() { return parsePenalty(state.penalty).gameRound || state.gameRound || 1; }
+    function buildPenaltyValue({ text = getPenaltyText(), loserCount = state.targetLoserCount, gameRound = state.gameRound } = {}) {
+      return JSON.stringify({
+        text: text || "",
+        loserCount: clampLoserCount(loserCount || 1),
+        gameRound: Math.max(1, parseInt(gameRound, 10) || 1),
+      });
+    }
     function getMaxLoserCount() {
       return Math.max(1, Math.max(0, state.participants.length) - 1);
     }
@@ -3099,6 +3117,7 @@
       if (!room) return;
       state.penalty = room.penalty;
       state.targetLoserCount = getTargetLoserCount();
+      state.gameRound = getGameRound();
 
       // round가 1로 리셋될 때만(이전 라운드에서 새 게임) 로컬 마커 초기화
       // p.is_ready는 건드리지 않음: fetchParticipants()가 DB 값으로 동기화하며,
@@ -3323,6 +3342,11 @@
       state.roomUrl = buildRoomUrl(code);
       state.role = "host";
       state.status = "waiting";
+      state.round = 1;
+      state.gameRound = 1;
+      state.targetLoserCount = 1;
+      state.confirmedSafeIds = [];
+      state.confirmedLoserIds = [];
 
       if (getOnlineMode()) {
         try {
@@ -3449,8 +3473,7 @@
       state.targetLoserCount = clampLoserCount(val);
       updateLoserCountDropdown();
       if (getOnlineMode() && state.roomCode) {
-        const text = getPenaltyText();
-        state.penalty = JSON.stringify({ text, loserCount: state.targetLoserCount });
+        state.penalty = buildPenaltyValue();
         await db.from('rooms').update({ penalty: state.penalty }).eq('id', state.roomCode);
       }
     }
@@ -3687,7 +3710,8 @@
 
       const loserCount = clampLoserCount(state.targetLoserCount || 1);
       state.targetLoserCount = loserCount;
-      const value = JSON.stringify({ text: textVal, loserCount });
+      state.gameRound = getGameRound();
+      const value = buildPenaltyValue({ text: textVal, loserCount, gameRound: state.gameRound });
 
       const btn = $("savePenaltyBtn");
       btn.disabled = true;
@@ -3916,11 +3940,12 @@
         const t2 = $("hostTimerText"); if (t2) t2.textContent = v;
       };
       setTimerText(state.remainingSeconds);
-      const rn = $("roundNumber"); if (rn) rn.textContent = state.round;
-      const hrn = $("hostRoundNumber"); if (hrn) hrn.textContent = state.round;
+      const displayRound = getGameRound();
+      const rn = $("roundNumber"); if (rn) rn.textContent = displayRound;
+      const hrn = $("hostRoundNumber"); if (hrn) hrn.textContent = displayRound;
       // 라운드 타이틀 다국어: "라운드 1" / "Round 1" / "ラウンド 1"
-      const rt = $("roundTitle"); if (rt) rt.textContent = t("game.round", { n: state.round });
-      const hrt = $("hostRoundTitle"); if (hrt) hrt.textContent = t("hostPlaying.round", { n: state.round });
+      const rt = $("roundTitle"); if (rt) rt.textContent = t("game.round", { n: displayRound });
+      const hrt = $("hostRoundTitle"); if (hrt) hrt.textContent = t("hostPlaying.round", { n: displayRound });
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
       const activeCount = state.participants.filter(p => !safeIds.includes(p.id) && !loserIds.includes(p.id)).length;
@@ -4515,7 +4540,7 @@
       if (!getOnlineMode() || getAuthState() !== "authed" || !db?.auth || !result) return;
       if (!["win", "lose", "draw"].includes(result)) return;
 
-      const dedupeKey = `${state.roomCode || "room"}:${state.round || 0}:${state.currentUserId || "me"}`;
+      const dedupeKey = `${state.roomCode || "room"}:${getGameRound() || 1}:${state.round || 1}:${state.currentUserId || "me"}`;
       if (state.accountStatsSaved[dedupeKey] || localStorage.getItem(`rpsAccountStat:${dedupeKey}`)) return;
 
       try {
@@ -4559,7 +4584,7 @@
         const { error: historyErr } = await db.from("user_game_history").insert([{
           user_id: user.id,
           room_id: state.roomCode || null,
-          round: state.round || null,
+          round: getGameRound() || null,
           result,
           penalty_text: getPenaltyText() || null,
         }]);
@@ -4576,8 +4601,9 @@
       const target = getTargetLoserCount();
       const safeCount = (state.confirmedSafeIds || []).length;
       const loserCount = (state.confirmedLoserIds || []).length;
-      const round = Math.max(1, state.round || 1);
-      const rematchText = round <= 1 ? t("progress.first") : t("progress.rematch", { n: round });
+      const round = Math.max(1, getGameRound());
+      const rematchNo = Math.max(1, state.round || 1);
+      const rematchText = rematchNo <= 1 ? t("progress.first") : t("progress.rematch", { n: rematchNo });
       const locked = !isLoserCountEditable() && target > 0;
       return { target, safeCount, loserCount, round, rematchText, locked };
     }
@@ -4758,7 +4784,8 @@
         participants: state.participants,
         confirmedSafeIds: state.confirmedSafeIds,
         confirmedLoserIds: state.confirmedLoserIds,
-        targetLoserCount: state.targetLoserCount
+        targetLoserCount: state.targetLoserCount,
+        gameRound: state.gameRound
       }));
     }
 
@@ -4779,6 +4806,7 @@
         state.confirmedSafeIds = saved.confirmedSafeIds || state.confirmedSafeIds;
         state.confirmedLoserIds = saved.confirmedLoserIds || state.confirmedLoserIds;
         state.targetLoserCount = saved.targetLoserCount || state.targetLoserCount;
+        state.gameRound = saved.gameRound || getGameRound();
       } catch {
         // 저장 데이터가 깨졌을 경우 무시
       }
@@ -5041,6 +5069,11 @@
     async function transferHostAndLeave(newHostId) {
       closeNextHostPopup();
       if (getOnlineMode()) {
+        if (state.status === "result") {
+          state.gameRound = getGameRound() + 1;
+          state.penalty = buildPenaltyValue({ gameRound: state.gameRound });
+          await db.from('rooms').update({ penalty: state.penalty }).eq('id', state.roomCode);
+        }
         await db.from('participants').update({ is_host: true }).eq('id', newHostId);
         await db.from('participants').delete().eq('id', state.currentUserId);
         await db.from('rooms').update({ status: 'waiting', round: 1 }).eq('id', state.roomCode);
@@ -5065,7 +5098,9 @@
       // 나(술래)를 호스트로 승격
       await db.from('participants').update({ is_host: true }).eq('id', state.currentUserId);
       await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
-      await db.from('rooms').update({ round: 1, status: 'waiting' }).eq('id', state.roomCode);
+      state.gameRound = getGameRound() + 1;
+      state.penalty = buildPenaltyValue({ gameRound: state.gameRound });
+      await db.from('rooms').update({ round: 1, status: 'waiting', penalty: state.penalty }).eq('id', state.roomCode);
       state.role = "host";
       state.confirmedSafeIds = [];
       state.confirmedLoserIds = [];
@@ -5993,7 +6028,7 @@
       if (getOnlineMode()) {
         try {
           state.targetLoserCount = clampLoserCount(state.targetLoserCount || getTargetLoserCount());
-          const penaltyValue = JSON.stringify({ text: getPenaltyText(), loserCount: state.targetLoserCount });
+          const penaltyValue = buildPenaltyValue({ gameRound: state.gameRound || getGameRound() });
           state.penalty = penaltyValue;
           await db.from('rooms').update({ penalty: penaltyValue }).eq('id', state.roomCode);
           await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
@@ -6040,11 +6075,13 @@
         try {
           // DB 체크: 패자가 그 사이에 다음 호스트로 전환했다면 status가 'result'→'waiting'으로 바뀐 상태 → 자동 복귀 취소
           // (로컬 state.status는 real-time 도착 지연으로 아직 'result'일 수 있으므로 DB를 직접 조회)
-          const { data: currentRoom } = await db.from('rooms').select('status').eq('id', state.roomCode).single();
+        const { data: currentRoom } = await db.from('rooms').select('status').eq('id', state.roomCode).single();
           if (!currentRoom || currentRoom.status !== 'result') return;
 
           state.confirmedSafeIds = [];
           state.confirmedLoserIds = [];
+          state.gameRound = getGameRound() + 1;
+          state.penalty = buildPenaltyValue({ gameRound: state.gameRound });
           state.gameStarting = false;
           state.finishingRound = false;
 
@@ -6054,13 +6091,15 @@
           }).eq('room_id', state.roomCode);
           // status='lobby' → 모든 클라이언트가 screenLobby로 이동 (호스트+참가자 모두 "게임 준비" 버튼)
           // 전원 ready → fetchParticipants가 startFromLobby() 자동 호출
-          await db.from('rooms').update({ round: 1, status: 'lobby' }).eq('id', state.roomCode);
+          await db.from('rooms').update({ round: 1, status: 'lobby', penalty: state.penalty }).eq('id', state.roomCode);
         } catch (e) {
           console.error("returnToLobbyAfterGame error:", e);
         }
       } else {
         state.confirmedSafeIds = [];
         state.confirmedLoserIds = [];
+        state.gameRound += 1;
+        state.penalty = buildPenaltyValue({ gameRound: state.gameRound });
         state.gameStarting = false;
         state.finishingRound = false;
         state.round = 1;
