@@ -19,11 +19,12 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 20); do
-            html="$(curl -fsSL --retry 3 --retry-delay 5 https://product-builder-lecture-phi.vercel.app/)"
-            if echo "$html" | grep -q "loginWithSns" \
-              && echo "$html" | grep -q "line-auth" \
-              && echo "$html" | grep -q "kakao-auth" \
-              && echo "$html" | grep -q "accountStatsTopBtn"; then
+            curl -fsSL --max-time 20 --retry 3 --retry-delay 5 \
+              https://product-builder-lecture-phi.vercel.app/ > /tmp/production.html
+            if grep -q "loginWithSns" /tmp/production.html \
+              && grep -q "line-auth" /tmp/production.html \
+              && grep -q "kakao-auth" /tmp/production.html \
+              && grep -q "accountStatsTopBtn" /tmp/production.html; then
               echo "Production app contains current hooks."
               exit 0
             fi
@@ -36,5 +37,5 @@ jobs:
       - name: Verify Supabase Edge Functions are reachable
         run: |
           set -euo pipefail
-          curl -fsS -X OPTIONS https://cmfxhehpreanijwanwrr.supabase.co/functions/v1/kakao-auth >/dev/null
-          curl -fsS -X OPTIONS https://cmfxhehpreanijwanwrr.supabase.co/functions/v1/line-auth >/dev/null
+          curl -fsS --max-time 20 -X OPTIONS https://cmfxhehpreanijwanwrr.supabase.co/functions/v1/kakao-auth >/dev/null
+          curl -fsS --max-time 20 -X OPTIONS https://cmfxhehpreanijwanwrr.supabase.co/functions/v1/line-auth >/dev/null
