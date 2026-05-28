@@ -176,15 +176,6 @@
       box-shadow: var(--shadow);
     }
 
-    .room-badge {
-      background: white;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 8px 12px;
-      font-size: 12px;
-      color: var(--muted);
-    }
-
     .card {
       background: rgba(255, 255, 255, 0.92);
       backdrop-filter: blur(14px);
@@ -1229,20 +1220,25 @@
     }
     .maru-greeting b{color:var(--text);font-weight:700}
 
-    /* 빠른 액션 2칸 그리드 */
+    /* 빠른 액션 */
     .quick-row{display:flex;gap:10px;margin-top:6px}
     .quick-btn{
-      flex:1;
+      flex:1 1 0;
+      min-width:0;
       background:#FFFAF1;
       border:1.5px solid var(--line);
       border-radius:14px;
-      padding:12px 8px;
+      padding:11px 6px;
       font-size:12px;font-weight:700;color:var(--muted);
       cursor:pointer;
       display:flex;flex-direction:column;align-items:center;gap:4px;
       transition:all .15s;
       font-family:var(--font-body);
+      min-height:64px;
+      justify-content:center;
+      text-align:center;
     }
+    .quick-btn span:last-child{line-height:1.2;word-break:keep-all}
     .quick-btn:hover{border-color:var(--orange);color:var(--orange-deep);background:#fff}
     .quick-btn .icon{font-size:18px}
   </style>
@@ -1264,13 +1260,9 @@
         <button id="guestLoginTopBtn" class="guest-login-btn hidden" onclick="window.showAuthScreen()" data-i18n="topbar.snsLogin">
           👤 SNS 로그인
         </button>
-        <button id="accountStatsTopBtn" class="guest-login-btn hidden" onclick="window.showAccountStatsPopup()" title="내 누적 기록">
-          🏆 내 기록
-        </button>
         <button id="signOutTopBtn" class="signout-btn hidden" onclick="window.signOutWithConfirm()" title="Sign out">
           🚪
         </button>
-        <div class="room-badge" id="roomBadge" data-i18n="topbar.noRoom">방 없음</div>
       </div>
     </div>
 
@@ -1354,11 +1346,15 @@
       <div class="quick-row">
         <button class="quick-btn" onclick="window.showJoinScreen()">
           <span class="icon">📱</span>
-          <span data-i18n="home.quickJoin">QR로 참여한 화면</span>
+          <span data-i18n="home.quickJoin">참가했던 방</span>
         </button>
         <button class="quick-btn" onclick="window.showStats()">
           <span class="icon">📊</span>
-          <span data-i18n="home.quickStats">최근 게임 결과</span>
+          <span data-i18n="home.quickStats">바로전 게임결과</span>
+        </button>
+        <button class="quick-btn" onclick="window.showAccountStatsPopup()">
+          <span class="icon">🏆</span>
+          <span data-i18n="home.quickMyStats">내 기록</span>
         </button>
       </div>
 
@@ -1928,8 +1924,9 @@
         "home.nicknamePlaceholder": "예: 민수",
         "home.createBtn": "🏠 방 만들기 / 호스트 시작",
         "home.scanBtn": "📷 QR 스캔해서 입장",
-        "home.quickJoin": "QR로 참여한 화면",
-        "home.quickStats": "최근 게임 결과",
+        "home.quickJoin": "참가했던 방",
+        "home.quickStats": "바로전 게임결과",
+        "home.quickMyStats": "내 기록",
         "home.footer": "<b>K놀이 #001</b> · 한국 파티 문화의 새 챕터 🇰🇷",
         // qrScanner
         "qrScanner.cap": "QR 스캔!",
@@ -2189,8 +2186,9 @@
         "home.nicknamePlaceholder": "e.g. Alex",
         "home.createBtn": "🏠 Create room / Start as host",
         "home.scanBtn": "📷 Scan QR to join",
-        "home.quickJoin": "Join by QR",
-        "home.quickStats": "Recent results",
+        "home.quickJoin": "Joined rooms",
+        "home.quickStats": "Last result",
+        "home.quickMyStats": "My record",
         "home.footer": "<b>K-PLAY #001</b> · A new chapter of Korean party culture 🇰🇷",
         "qrScanner.cap": "Scan QR!",
         "qrScanner.subtitle": "Point your camera at the host's QR code.<br/>If unsupported, enter the room code manually.",
@@ -2432,8 +2430,9 @@
         "home.nicknamePlaceholder": "例：たろう",
         "home.createBtn": "🏠 部屋を作る / ホスト開始",
         "home.scanBtn": "📷 QRをスキャンして入室",
-        "home.quickJoin": "QRで参加した画面",
-        "home.quickStats": "最近のゲーム結果",
+        "home.quickJoin": "参加した部屋",
+        "home.quickStats": "直前の結果",
+        "home.quickMyStats": "自分の記録",
         "home.footer": "<b>K-PLAY #001</b> · 韓国パーティー文化の新章 🇰🇷",
         "qrScanner.cap": "QRスキャン！",
         "qrScanner.subtitle": "ホスト画面のQRコードにカメラをかざしてください。<br/>使えない場合は部屋コードを直接入力。",
@@ -5225,12 +5224,10 @@
     function updateAuthTopbar() {
       const btn = $("guestLoginTopBtn");
       const signOutBtn = $("signOutTopBtn");
-      const accountStatsBtn = $("accountStatsTopBtn");
       const auth = getAuthState();
       if (btn) btn.classList.toggle("hidden", auth !== "guest");
       // SNS 인증된 상태(authed)일 때만 로그아웃 버튼 표시
       if (signOutBtn) signOutBtn.classList.toggle("hidden", auth !== "authed");
-      if (accountStatsBtn) accountStatsBtn.classList.toggle("hidden", auth !== "authed");
     }
 
     // 로그아웃 (확인 모달 + Supabase signOut)
