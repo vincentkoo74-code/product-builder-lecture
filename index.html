@@ -3503,6 +3503,12 @@
           } else if (!me.is_host && state.role === "host") {
             state.role = "participant";
           }
+          const myDuplicates = data.filter(p => p.name === me.name && p.id !== me.id);
+          if (myDuplicates.length && !state.cleaningDuplicateProfiles) {
+            state.cleaningDuplicateProfiles = true;
+            cleanupDuplicateRoomProfiles(roomCode, me.name, me.id, data)
+              .finally(() => { state.cleaningDuplicateProfiles = false; fetchParticipants(roomCode); });
+          }
         }
         
         // 로컬에서 방금 본인이 "준비" 누른 직후의 DB 전파 지연만 보호 (자신 + 2초 이내)
@@ -3853,6 +3859,9 @@
           joinBtn.classList.toggle("join-unavailable", unavailable);
           setBtnText(joinBtn, t("join.rejoinBtn"));
         }
+        if (state.joinScreenMode === "recent" && preview.action === "unavailable") {
+          cleanupMyUnavailableRoomProfiles(code, participants || []);
+        }
       } catch (e) {
         state.joinScreenAction = "unavailable";
         if (statusValue) statusValue.textContent = t("join.statusUnavailable");
@@ -3873,6 +3882,38 @@
       const activePlayers = participants.filter(p => !p.is_host && !isNonPlayingChoice(p.choice));
       const canJoin = activeStatuses.includes(room.status) && !isCompletedResult && activePlayers.length > 0;
       return canJoin ? { action: "join", label: t("join.statusAvailable") } : unavailable;
+    }
+
+    async function cleanupDuplicateRoomProfiles(roomCode, name, keepId, participants = []) {
+      if (!getOnlineMode() || !roomCode || !name || !keepId) return;
+      const duplicates = (participants || []).filter(p => p.name === name && p.id !== keepId);
+      if (!duplicates.length) return;
+      const duplicateIds = duplicates.map(p => p.id);
+      const shouldKeepHost = duplicates.some(p => p.is_host);
+      await db.from('participants').delete().in('id', duplicateIds);
+      if (shouldKeepHost) {
+        await db.from('participants').update({ is_host: true }).eq('id', keepId);
+        state.role = "host";
+      }
+    }
+
+    async function cleanupMyUnavailableRoomProfiles(roomCode, participants = []) {
+      if (!getOnlineMode() || !roomCode || state.cleaningUnavailableRoom) return;
+      const recent = state.joinRecentRoom || getLastJoinedRoom();
+      const knownIds = [recent?.participantId, state.currentUserId].filter(Boolean);
+      const knownName = recent?.nickname || state.nickname || loadNickname() || "";
+      const stale = (participants || []).filter(p =>
+        knownIds.includes(p.id) || (knownName && p.name === knownName)
+      );
+      if (!stale.length) return;
+      state.cleaningUnavailableRoom = true;
+      try {
+        await db.from('participants').delete().in('id', stale.map(p => p.id));
+      } catch (e) {
+        console.warn("cleanup unavailable room profiles failed:", e?.message || e);
+      } finally {
+        state.cleaningUnavailableRoom = false;
+      }
     }
 
     function showPenaltyScreen() {
@@ -4018,7 +4059,9 @@
 
           const { data: roomParticipants } = await db.from('participants')
             .select('*').eq('room_id', code).order('created_at', { ascending: true });
-          const existing = (roomParticipants || []).find(p => p.name === name && !p.is_host);
+          const recentParticipantId = state.joinRecentRoom?.participantId || "";
+          const existing = (roomParticipants || []).find(p => recentParticipantId && p.id === recentParticipantId)
+            || (roomParticipants || []).find(p => p.name === name);
           const returningParticipant = getLastJoinedRoomCode() === code && loadNickname() === name;
           const locked = isJoinLocked(roomParticipants || [], room.status);
           if (locked && !existing && !returningParticipant) {
@@ -4028,11 +4071,13 @@
 
           if (existing) {
             state.currentUserId = existing.id;
+            state.role = existing.is_host ? "host" : "participant";
             const waitingChoice = isJoinLocked(roomParticipants || [], room.status) ? "__waiting__" : null;
             await db.from('participants').update({ choice: waitingChoice, is_ready: false }).eq('id', existing.id);
           } else {
             await db.from('participants').insert([{ id, room_id: code, name, is_host: false }]);
           }
+          await cleanupDuplicateRoomProfiles(code, name, state.currentUserId, roomParticipants || []);
           saveNickname(name);
           saveLastJoinedRoomCode(code, name, state.currentUserId);
           subscribeToRoom(code);
