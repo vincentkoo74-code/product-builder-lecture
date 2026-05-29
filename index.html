@@ -1296,6 +1296,20 @@
       font-family:var(--font-display);
       font-size:11px;padding:3px 8px;border-radius:6px;letter-spacing:.5px;
     }
+    #joinBtn.join-unavailable{
+      background:#E5E7EB;
+      color:#9CA3AF;
+      box-shadow:none;
+      cursor:not-allowed;
+      opacity:.72;
+    }
+    #joinBtn.join-unavailable::before{
+      opacity:.22;
+    }
+    #joinBtn.join-unavailable .go-pill{
+      background:#F9FAFB;
+      color:#9CA3AF;
+    }
 
     /* 푸터 K-stamp */
     .maru-footer{
@@ -2154,6 +2168,8 @@
         "join.statusOngoing": "게임 진행중...",
         "join.statusEnded": "종료",
         "join.statusMissing": "방 없음",
+        "join.statusAvailable": "입장가능",
+        "join.statusUnavailable": "입장불가",
         "join.waitingCurrentGame": "진행 중인 게임이 끝날 때까지 대기실에서 기다립니다.",
         "join.replayInviteSent": "한판 더 초대를 보냈습니다.",
         "join.noRecentRoom": "최근 참가했던 방이 없습니다.",
@@ -2459,6 +2475,8 @@
         "join.statusOngoing": "Game in progress...",
         "join.statusEnded": "Ended",
         "join.statusMissing": "Room not found",
+        "join.statusAvailable": "Available",
+        "join.statusUnavailable": "Unavailable",
         "join.waitingCurrentGame": "You will wait in the lobby until the current game ends.",
         "join.replayInviteSent": "One-more-round invitation sent.",
         "join.noRecentRoom": "No recently joined room.",
@@ -2749,6 +2767,8 @@
         "join.statusOngoing": "ゲーム進行中...",
         "join.statusEnded": "終了",
         "join.statusMissing": "部屋なし",
+        "join.statusAvailable": "入室可能",
+        "join.statusUnavailable": "入室不可",
         "join.waitingCurrentGame": "進行中のゲームが終わるまでロビーで待機します。",
         "join.replayInviteSent": "もう一回の招待を送りました。",
         "join.noRecentRoom": "最近参加した部屋はありません。",
@@ -3791,6 +3811,7 @@
       const joinBtn = $("joinBtn");
       if (joinBtn) {
         joinBtn.disabled = false;
+        joinBtn.classList.remove("join-unavailable");
         setBtnText(joinBtn, recentMode ? t("join.rejoinBtn") : t("join.joinBtn"));
       }
 
@@ -3803,8 +3824,12 @@
       if (recentMode) {
         if (!joinedRoomCode) {
           showToast(t("join.noRecentRoom"));
-          if (statusValue) statusValue.textContent = t("join.statusMissing");
-          if (joinBtn) joinBtn.disabled = true;
+          state.joinScreenAction = "unavailable";
+          if (statusValue) statusValue.textContent = t("join.statusUnavailable");
+          if (joinBtn) {
+            joinBtn.disabled = true;
+            joinBtn.classList.add("join-unavailable");
+          }
         } else {
           refreshJoinRoomPreview(joinedRoomCode);
         }
@@ -3823,25 +3848,31 @@
         state.joinScreenAction = preview.action;
         if (statusValue) statusValue.textContent = preview.label;
         if (joinBtn) {
-          joinBtn.disabled = preview.action === "missing";
-          setBtnText(joinBtn, preview.action === "replay" ? t("join.replayBtn") : t("join.rejoinBtn"));
+          const unavailable = preview.action !== "join";
+          joinBtn.disabled = unavailable;
+          joinBtn.classList.toggle("join-unavailable", unavailable);
+          setBtnText(joinBtn, t("join.rejoinBtn"));
         }
       } catch (e) {
-        state.joinScreenAction = "missing";
-        if (statusValue) statusValue.textContent = t("join.statusMissing");
-        if (joinBtn) joinBtn.disabled = true;
+        state.joinScreenAction = "unavailable";
+        if (statusValue) statusValue.textContent = t("join.statusUnavailable");
+        if (joinBtn) {
+          joinBtn.disabled = true;
+          joinBtn.classList.add("join-unavailable");
+        }
       }
     }
 
     function getJoinRoomPreview(room, participants = []) {
-      if (!room) return { action: "missing", label: t("join.statusMissing") };
+      const unavailable = { action: "unavailable", label: t("join.statusUnavailable") };
+      if (!room) return unavailable;
       const target = parsePenalty(room.penalty).loserCount || 1;
       const loserCount = participants.filter(p => p.choice === "__loser__").length;
       const isCompletedResult = room.status === "result" && loserCount >= target;
-      const ended = isCompletedResult || ["lobby", "waiting", "stats"].includes(room.status);
-      return ended
-        ? { action: "replay", label: t("join.statusEnded") }
-        : { action: "join", label: t("join.statusOngoing") };
+      const activeStatuses = ["ready", "playing", "result"];
+      const activePlayers = participants.filter(p => !p.is_host && !isNonPlayingChoice(p.choice));
+      const canJoin = activeStatuses.includes(room.status) && !isCompletedResult && activePlayers.length > 0;
+      return canJoin ? { action: "join", label: t("join.statusAvailable") } : unavailable;
     }
 
     function showPenaltyScreen() {
@@ -3957,6 +3988,10 @@
 
       if (!code) { showToast("방 코드를 입력해주세요."); return; }
       if (!name) { showToast("닉네임을 입력해주세요."); return; }
+      if (state.joinScreenAction === "unavailable") {
+        showToast(t("join.statusUnavailable"));
+        return;
+      }
       if (state.joinScreenAction === "replay") {
         await requestReplayFromJoinedRoom(code, name);
         return;
@@ -4016,10 +4051,10 @@
           showScreen("screenParticipantWait");
         }
       } finally {
-        btn.disabled = false;
-        setBtnText(btn, state.joinScreenMode === "recent"
-          ? (state.joinScreenAction === "replay" ? t("join.replayBtn") : t("join.rejoinBtn"))
-          : t("join.joinBtn"));
+        const unavailable = state.joinScreenAction === "unavailable";
+        btn.disabled = unavailable;
+        btn.classList.toggle("join-unavailable", unavailable);
+        setBtnText(btn, state.joinScreenMode === "recent" ? t("join.rejoinBtn") : t("join.joinBtn"));
       }
     }
 
