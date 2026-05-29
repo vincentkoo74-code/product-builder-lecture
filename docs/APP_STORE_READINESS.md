@@ -6,9 +6,9 @@
 
 - 웹앱 출시/테스트 준비도: 85%
 - Supabase 운영 자동화 준비도: 80%
-- App Store / Google Play 제출 준비도: 45%
+- App Store / Google Play 제출 준비도: 55%
 
-현재 웹 배포와 Supabase 자동화는 앱 테스트에 사용할 수 있는 수준입니다. 다만 App Store와 Google Play에 제출하려면 Capacitor 네이티브 프로젝트 생성, 앱 아이콘/스플래시 준비, 실기기 QA, 스토어 메타데이터 작성이 추가로 필요합니다.
+현재 웹 배포와 Supabase 자동화는 앱 테스트에 사용할 수 있는 수준입니다. Capacitor CLI 설치, Android/iOS 네이티브 프로젝트 생성, `cap sync`까지 완료되었습니다. 다만 App Store와 Google Play에 제출하려면 앱 아이콘/스플래시 정식 제작, Android Studio 실기기 실행, Mac/Xcode iOS 빌드, 네이티브 OAuth QA, 스토어 메타데이터 작성이 추가로 필요합니다.
 
 ## 현재 통과한 항목
 
@@ -21,27 +21,38 @@
 - Supabase / GitHub Actions 자동배포 최근 성공
 - 앱 내부에 계정 삭제 버튼 존재
 - Apple `.p8` 키 파일은 로컬에 있으나 `.gitignore`에 의해 Git 추적 대상은 아님
+- Capacitor CLI 설치 완료: `7.6.5`
+- `android/` 프로젝트 로컬 생성 완료
+- `ios/` 프로젝트 로컬 생성 완료
+- `npm.cmd run cap:sync` 완료
+- Android Studio 설치 완료
 
 ## 제출 전 주요 막힘 항목
 
-### 1. Capacitor 네이티브 프로젝트 미생성
+### 1. Android Studio 실기기 실행 확인 필요
 
-현재 저장소에 `ios/`, `android/` 디렉터리가 없습니다.
+Android Studio 설치는 완료되었습니다.
 
-즉, 아직 App Store용 IPA나 Google Play용 AAB를 빌드할 수 없습니다.
+다음 호출 시 진행할 작업은 다음과 같습니다.
 
-### 2. Capacitor CLI 로컬 설치 상태 확인 필요
+- `D:\claude\product-builder-lecture\android` 열기
+- Gradle Sync 확인
+- Android Emulator 또는 실제 Android 기기 연결
+- 디버그 실행 확인
+- Android에서 QR, 로그인, 게임 흐름 1차 확인
 
-현재 `node_modules/.bin/cap.cmd`가 없습니다.
+현재 단계에서는 Android Studio용 별도 CLI 키나 인증키는 필요하지 않습니다.
 
-다음 단계에서 먼저 의존성을 설치한 뒤 Capacitor 플랫폼을 생성해야 합니다.
+### 2. iOS 빌드용 Mac/Xcode 필요
 
-```powershell
-npm.cmd install
-npm.cmd run cap:add:android
-npm.cmd run cap:add:ios
-npm.cmd run cap:sync
-```
+iOS 프로젝트 파일은 로컬에 생성되었지만, Windows에서는 다음 작업을 할 수 없습니다.
+
+- Xcode 실행
+- iOS Simulator 실행
+- iPhone용 IPA 빌드
+- TestFlight 업로드
+
+Mac 또는 클라우드 Mac 준비 후 호출해야 합니다.
 
 ### 3. 앱 아이콘 / 스플래시 자산 필요
 
@@ -53,7 +64,9 @@ npm.cmd run cap:sync
 - 스플래시 화면
 - App Store / Google Play 스크린샷
 
-현재 저장소에서 별도 앱 아이콘/스플래시 전용 자산은 확인되지 않았습니다.
+현재 Capacitor 기본 아이콘/스플래시 자산은 생성되었지만, 스토어 제출용으로는 정식 브랜드 자산으로 교체해야 합니다.
+
+제작 기준 문서: `docs/APP_ICON_SPLASH_SPEC.md`
 
 ### 4. 네이티브 OAuth 테스트 필요
 
@@ -86,16 +99,56 @@ npm.cmd run cap:sync
 
 ## 다음 작업 순서
 
-1. `npm.cmd install`로 Capacitor CLI와 의존성 정리
-2. `npm.cmd run cap:add:android`로 Android 프로젝트 생성
-3. `npm.cmd run cap:add:ios`로 iOS 프로젝트 생성
-4. 앱 아이콘/스플래시 생성 및 적용
-5. Android Studio에서 AAB 빌드 테스트
-6. Xcode에서 IPA/TestFlight 빌드 테스트
-7. 네이티브 OAuth 리다이렉트 테스트
-8. App Store Connect / Google Play Console 메타데이터 작성
-9. 개인정보 처리방침, 이용약관, 계정 삭제 안내 URL 등록
-10. 실기기 QA 후 제출
+1. 앱 아이콘/스플래시 정식 제작 및 적용
+2. Android Studio 설치 후 호출: 설치 완료, 다음은 Android 프로젝트 실행 테스트
+3. Mac 시스템 설치 후 호출: Xcode/iOS 빌드 및 TestFlight 준비
+4. 1/2/3 완료 후 네이티브 OAuth 리다이렉트 테스트
+5. 1/2/3/4 완료 후 App Store Connect / Google Play Console 제출 준비
+
+## 현재 호출 대기 상태
+
+### Android Studio 설치 후 다음 호출
+
+Android Studio는 설치 완료되었습니다. 다음에 호출하면 아래 작업을 진행합니다.
+
+- Android Studio에서 `D:\claude\product-builder-lecture\android` 열기
+- Gradle Sync 오류 확인
+- Android SDK/JDK 설정 확인
+- Emulator 또는 실제 Android 폰 실행
+- 앱 디버그 실행
+- Android 네이티브 환경에서 카카오/라인/게스트 플로우 예비 확인
+
+### Mac 시스템 설치 후 다음 호출
+
+Mac 또는 클라우드 Mac 준비 후 호출하면 아래 작업을 진행합니다.
+
+- Xcode 설치 확인
+- CocoaPods 설치 확인
+- iOS 프로젝트 열기
+- Apple Developer 계정 연결
+- iPhone 실기기 실행
+- TestFlight 업로드 준비
+
+### 네이티브 1/2/3 완료 후 다음 호출
+
+앱 아이콘/스플래시, Android Studio 실행, Mac/Xcode 준비가 끝난 뒤 호출하면 아래 작업을 진행합니다.
+
+- 카카오 로그인 네이티브 테스트
+- 라인 로그인 네이티브 테스트
+- 게스트 모드 테스트
+- 로그인 후 기록 저장 테스트
+- 계정 삭제 테스트
+- 앱 종료/복귀 후 세션 유지 테스트
+
+### 1/2/3/4 완료 후 제출 준비 호출
+
+위 작업이 끝난 뒤 호출하면 아래 작업을 진행합니다.
+
+- 스토어 등록 문구 작성
+- 스크린샷 목록 정리
+- 심사 메모 작성
+- 데이터 안전성 / 개인정보 문항 작성
+- 최종 제출 체크리스트 점검
 
 ## 참고 공식 문서
 
