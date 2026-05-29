@@ -1961,7 +1961,7 @@
         <p style="font-size:13px;color:var(--muted);margin:0 0 16px" data-i18n="popup.nextHostSubtitle">게임을 이어받을 다음 호스트를 선택해주세요.</p>
         <div id="nextHostList"></div>
         <div style="height:8px"></div>
-        <button onclick="window.leaveRoomForce()" class="btn-light btn-full" style="margin-bottom:8px" data-i18n="popup.nextHostRandom">랜덤으로 호스트 지명 후 나가기</button>
+        <button onclick="window.leaveRoomForce()" class="btn-outline btn-full" style="margin-bottom:8px;background:#f3f4f6;border-color:#f3f4f6;color:#111827;font-weight:900" data-i18n="popup.nextHostRandom">그냥 나가기</button>
         <button onclick="window.closeNextHostPopup()" class="btn-outline btn-full" data-i18n="common.cancel">취소</button>
       </div>
     </div>
@@ -1978,7 +1978,7 @@
         </div>
         <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px;text-align:center" data-i18n="popup.inviteTitle">🎮 새 게임 초대</h3>
         <p style="font-size:13px;color:var(--muted);margin:0 0 16px;text-align:center" data-i18n="popup.inviteSubtitle">호스트가 같은 방에서 새 게임을 시작합니다!</p>
-        <button onclick="window.acceptInvite()" class="btn-kparty" style="margin-bottom:8px">
+        <button id="inviteAcceptBtn" onclick="window.acceptInvite()" class="btn-kparty" style="margin-bottom:8px">
           <span data-i18n="popup.inviteAccept">수락하기</span>
           <span class="go-pill">JOIN</span>
         </button>
@@ -2297,7 +2297,7 @@
         "account.roundSummaryWithDraw": "{games}전 {wins}승 {losses}패 {draws}무",
         "popup.nextHostTitle": "👑 다음 호스트 선택",
         "popup.nextHostSubtitle": "게임을 이어받을 다음 호스트를 선택해주세요.",
-        "popup.nextHostRandom": "랜덤으로 호스트 지명 후 나가기",
+        "popup.nextHostRandom": "그냥 나가기",
         "popup.inviteTitle": "🎮 새 게임 초대",
         "popup.inviteSubtitle": "호스트가 같은 방에서 새 게임을 시작합니다!",
         "popup.inviteAccept": "수락하기",
@@ -2592,7 +2592,7 @@
         "account.roundSummaryWithDraw": "{games} games {wins}W {losses}L {draws}D",
         "popup.nextHostTitle": "👑 Pick next host",
         "popup.nextHostSubtitle": "Pick the next host to take over the room.",
-        "popup.nextHostRandom": "Pick random host and exit",
+        "popup.nextHostRandom": "Just leave",
         "popup.inviteTitle": "🎮 New game invitation",
         "popup.inviteSubtitle": "The host is starting a new game in this room!",
         "popup.inviteAccept": "Accept",
@@ -2882,7 +2882,7 @@
         "account.roundSummaryWithDraw": "{games}戦 {wins}勝 {losses}敗 {draws}あいこ",
         "popup.nextHostTitle": "👑 次のホスト選択",
         "popup.nextHostSubtitle": "ゲームを引き継ぐ次のホストを選んでください。",
-        "popup.nextHostRandom": "ランダムでホスト指名して退室",
+        "popup.nextHostRandom": "そのまま出る",
         "popup.inviteTitle": "🎮 新ゲーム招待",
         "popup.inviteSubtitle": "ホストが同じ部屋で新ゲームを始めます！",
         "popup.inviteAccept": "参加する",
@@ -3093,6 +3093,9 @@
       joinScreenMode: "manual",
       joinScreenAction: "join",
       joinRecentRoom: null,
+      pendingInviteRoomCode: "",
+      globalInviteTimer: null,
+      seenInviteRooms: {},
       qrScanStream: null,
       qrScanTimer: null,
       cleaningDropped: false,
@@ -3241,6 +3244,11 @@
       const players = participants.filter(p => !p.is_host);
       return status === "playing" || status === "result" || status === "stats" ||
         (status === "ready" && players.length > 0 && players.every(p => p.is_ready));
+    }
+
+    function isBusyInAnotherActiveRoom(inviteRoomCode = "") {
+      if (!state.roomCode || state.roomCode === inviteRoomCode) return false;
+      return ["waiting", "ready", "playing", "result", "lobby", "reinviting"].includes(state.status);
     }
 
     function isParticipantOnline(id) {
@@ -3442,7 +3450,7 @@
           renderLobby();
         } else if (state.status === "reinviting") {
           if (state.role !== "host") {
-            $("invitePopup").classList.remove("hidden");
+            showInvitePopupForRoom(state.roomCode);
           }
         }
       }
@@ -4831,14 +4839,49 @@
         await resetGameKeepRoom();
         return;
       }
-      // Participants without a host
-      const nonHost = state.participants.filter(p => !p.is_host);
-      if (!nonHost.length) {
-        await resetGameKeepRoom();
-        return;
-      }
       await db.from('rooms').update({ status: 'reinviting' }).eq('id', state.roomCode);
       _showInviteHostPopup();
+    }
+
+    function showInvitePopupForRoom(roomCode) {
+      if (!roomCode) return;
+      state.pendingInviteRoomCode = roomCode;
+      const busy = isBusyInAnotherActiveRoom(roomCode);
+      const subtitle = document.querySelector("#invitePopup [data-i18n='popup.inviteSubtitle']");
+      if (subtitle) {
+        subtitle.textContent = busy ? t("join.inAnotherGame") : t("popup.inviteSubtitle");
+      }
+      const acceptBtn = $("inviteAcceptBtn");
+      if (acceptBtn) {
+        acceptBtn.disabled = busy;
+        acceptBtn.style.opacity = busy ? "0.45" : "1";
+      }
+      $("invitePopup").classList.remove("hidden");
+    }
+
+    async function checkGlobalReplayInvites() {
+      if (!getOnlineMode()) return;
+      const recentRooms = getRecentRoomCodes().map(r => r.code).filter(Boolean);
+      if (!recentRooms.length) return;
+      try {
+        const { data: rooms } = await db.from('rooms').select('id,status').in('id', recentRooms);
+        (rooms || []).forEach(room => {
+          if (room.status !== "reinviting") return;
+          if (room.id === state.roomCode && state.role === "host") return;
+          const seenKey = `${room.id}:reinviting`;
+          if (state.seenInviteRooms[seenKey]) return;
+          state.seenInviteRooms[seenKey] = Date.now();
+          showInvitePopupForRoom(room.id);
+        });
+      } catch (e) {
+        console.warn("global invite check failed:", e?.message || e);
+      }
+    }
+
+    function startGlobalInviteMonitor() {
+      if (state.globalInviteTimer || !getOnlineMode()) return;
+      state.globalInviteTimer = setInterval(checkGlobalReplayInvites, 3000);
+      checkGlobalReplayInvites();
     }
 
     function _showInviteHostPopup() {
@@ -4859,7 +4902,23 @@
     }
 
     async function acceptInvite() {
+      const inviteRoom = state.pendingInviteRoomCode || state.roomCode;
+      if (isBusyInAnotherActiveRoom(inviteRoom)) {
+        showToast(t("join.inAnotherGame"));
+        return;
+      }
       $("invitePopup").classList.add("hidden");
+      if (inviteRoom && inviteRoom !== state.roomCode) {
+        const recent = getRecentRoomCodes().find(r => r.code === inviteRoom);
+        state.roomCode = inviteRoom;
+        state.joinScreenMode = "recent";
+        state.joinScreenAction = "join";
+        state.joinRecentRoom = recent || { code: inviteRoom, nickname: loadNickname() };
+        $("joinRoomCode").value = inviteRoom;
+        $("joinName").value = state.joinRecentRoom.nickname || loadNickname() || "";
+        await joinRoom();
+        return;
+      }
       // is_ready는 resetGameKeepRoom 이후 실제 게임준비 단계에서만 사용
       // 여기서 true로 쓰면 showReadyScreen 렌더링 시 버튼이 비활성화되는 경쟁 조건 발생
       showScreen("screenParticipantWait");
@@ -6313,6 +6372,7 @@
       const savedNickname = loadNickname();
       if (savedNickname) $("homeNickname").value = savedNickname;
       updateAuthTopbar();
+      startGlobalInviteMonitor();
 
       const authState = getAuthState();
 
