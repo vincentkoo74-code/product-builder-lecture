@@ -9,3 +9,6 @@ AuthKey_*.p8
 # Node.js
 node_modules/
 package-lock.json
+dist/
+ios/
+android/

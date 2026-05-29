@@ -1,5 +1,5 @@
 {
   "rewrites": [
-    { "source": "/((?!ASSETS/|mockups/).*)", "destination": "/index.html" }
+    { "source": "/((?!ASSETS/|mockups/|privacy\\.html|terms\\.html|account-delete\\.html).*)", "destination": "/index.html" }
   ]
 }

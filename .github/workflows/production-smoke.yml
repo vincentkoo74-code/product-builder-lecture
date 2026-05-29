@@ -39,3 +39,4 @@ jobs:
           set -euo pipefail
           curl -fsS --max-time 20 -X OPTIONS https://cmfxhehpreanijwanwrr.supabase.co/functions/v1/kakao-auth >/dev/null
           curl -fsS --max-time 20 -X OPTIONS https://cmfxhehpreanijwanwrr.supabase.co/functions/v1/line-auth >/dev/null
+          curl -fsS --max-time 20 -X OPTIONS https://cmfxhehpreanijwanwrr.supabase.co/functions/v1/delete-account >/dev/null

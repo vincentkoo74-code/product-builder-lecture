@@ -1,0 +1,37 @@
+{
+  "name": "product-builder-lecture",
+  "version": "1.0.0",
+  "description": "QR party rock-paper-scissors game for web and mobile app stores",
+  "main": "main.js",
+  "scripts": {
+    "build:web": "node scripts/build-web.mjs",
+    "cap:init": "npm run build:web && npx cap init \"마루의 가위바위보\" com.maru.rps --web-dir dist",
+    "cap:add:ios": "npm run build:web && npx cap add ios",
+    "cap:add:android": "npm run build:web && npx cap add android",
+    "cap:sync": "npm run build:web && npx cap sync",
+    "cap:open:ios": "npx cap open ios",
+    "cap:open:android": "npx cap open android",
+    "test": "node -e \"const fs=require('fs'); const html=fs.readFileSync('index.html','utf8'); const m=html.match(/<script>([\\s\\S]*)<\\/script>/); new Function(m[1]); console.log('JS syntax OK')\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vincentkoo74-code/product-builder-lecture.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/vincentkoo74-code/product-builder-lecture/issues"
+  },
+  "homepage": "https://github.com/vincentkoo74-code/product-builder-lecture#readme",
+  "dependencies": {
+    "jose": "^6.2.3"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/ios": "^7.0.0"
+  }
+}

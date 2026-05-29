@@ -1962,6 +1962,7 @@
           <span data-i18n="account.close">닫기</span>
           <span class="go-pill">OK</span>
         </button>
+        <button onclick="window.deleteAccountWithConfirm()" class="btn-outline btn-full" style="margin-top:8px;color:#b91c1c;border-color:#fecaca" data-i18n="account.deleteBtn">계정 삭제</button>
       </div>
     </div>
 
@@ -2288,6 +2289,11 @@
         "account.title": "🏆 내 누적 기록",
         "account.subtitle": "로그인 계정에 저장된 전체 게임 기록입니다.",
         "account.close": "닫기",
+        "account.deleteBtn": "계정 삭제",
+        "account.deleteTitle": "계정을 삭제할까요?",
+        "account.deleteMsg": "계정과 저장된 게임 기록이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+        "account.deleteOk": "삭제하기",
+        "account.deleteDone": "계정이 삭제되었습니다.",
         "account.loading": "기록을 불러오는 중...",
         "account.loginRequired": "로그인이 필요합니다.",
         "account.noSavedTitle": "아직 저장된 게임 기록이 없습니다.",
@@ -2585,6 +2591,11 @@
         "account.title": "🏆 My record",
         "account.subtitle": "All game records saved to your signed-in account.",
         "account.close": "Close",
+        "account.deleteBtn": "Delete account",
+        "account.deleteTitle": "Delete your account?",
+        "account.deleteMsg": "Your account and saved game records will be deleted. This cannot be undone.",
+        "account.deleteOk": "Delete",
+        "account.deleteDone": "Your account has been deleted.",
         "account.loading": "Loading records...",
         "account.loginRequired": "Sign-in required.",
         "account.noSavedTitle": "No saved game records yet.",
@@ -2877,6 +2888,11 @@
         "account.title": "🏆 自分の記録",
         "account.subtitle": "ログイン中のアカウントに保存された全ゲーム記録です。",
         "account.close": "閉じる",
+        "account.deleteBtn": "アカウント削除",
+        "account.deleteTitle": "アカウントを削除しますか？",
+        "account.deleteMsg": "アカウントと保存されたゲーム記録が削除されます。この操作は元に戻せません。",
+        "account.deleteOk": "削除する",
+        "account.deleteDone": "アカウントを削除しました。",
         "account.loading": "記録を読み込み中...",
         "account.loginRequired": "ログインが必要です。",
         "account.noSavedTitle": "保存されたゲーム記録はまだありません。",
@@ -6096,6 +6112,41 @@
       if (joinNick) joinNick.value = "";
     }
     window.signOutWithConfirm = signOutWithConfirm;
+
+    async function deleteAccountWithConfirm() {
+      const ok = await showConfirmPopup({
+        title: t("account.deleteTitle"),
+        message: t("account.deleteMsg"),
+        okText: t("account.deleteOk"),
+        cancelText: t("common.cancel"),
+        okClass: "btn-danger btn-full",
+        img: "cat-lost-tired.png",
+      });
+      if (!ok) return;
+      try {
+        const { data: sessionData } = await db.auth.getSession();
+        const accessToken = sessionData?.session?.access_token;
+        if (!accessToken) {
+          showToast(t("account.loginRequired"));
+          return;
+        }
+        const { error } = await db.functions.invoke("delete-account", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (error) throw error;
+        await db.auth.signOut();
+        localStorage.removeItem("rpsAuthState");
+        localStorage.removeItem("rpsNickname");
+        localStorage.removeItem("rpsAccountStatsCache");
+        closeAccountStatsPopup();
+        updateAuthTopbar();
+        showToast(t("account.deleteDone"));
+        showAuthScreen();
+      } catch (e) {
+        showToast(t("toast.error", { msg: e?.message || String(e) }));
+      }
+    }
+    window.deleteAccountWithConfirm = deleteAccountWithConfirm;
 
     function showToast(msg, duration = 2800) {
       const el = $("toastEl");
