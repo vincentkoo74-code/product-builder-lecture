@@ -310,6 +310,10 @@
       color: var(--text);
     }
 
+    input {
+      text-align: center;
+    }
+
     textarea {
       min-height: 92px;
       resize: vertical;
@@ -446,6 +450,30 @@
       font-size: 14px;
     }
 
+    #hostParticipantList {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    #hostParticipantList .participant {
+      min-height: 46px;
+      padding: 9px 10px;
+      gap: 8px;
+    }
+
+    #hostParticipantList .participant strong {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #hostParticipantList .tag {
+      min-width: 50px;
+      padding: 5px 8px;
+      flex: 0 0 auto;
+    }
+
     .tag {
       display: inline-flex;
       align-items: center;
@@ -501,6 +529,7 @@
       border-radius: 20px;
       padding: 18px;
       margin: 14px 0;
+      text-align: center;
     }
 
     .penalty-box small {
@@ -513,6 +542,7 @@
       font-size: 22px;
       line-height: 1.35;
       display: block;
+      text-align: center;
     }
 
     .countdown {
@@ -1251,6 +1281,9 @@
       position:relative;overflow:hidden;
       font-family:var(--font-body);
       text-align:center;line-height:1.25;
+    }
+    #screenHome .btn-kparty > span:first-child{
+      transform:translateX(10px);
     }
     .btn-kparty:active{transform:scale(.97)}
     .btn-kparty::before{
