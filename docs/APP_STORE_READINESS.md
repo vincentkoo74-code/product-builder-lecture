@@ -118,6 +118,27 @@ Android Studio는 설치 완료되었습니다. 다음에 호출하면 아래 �
 - 앱 디버그 실행
 - Android 네이티브 환경에서 카카오/라인/게스트 플로우 예비 확인
 
+#### 2026-05-29 진행 기록
+
+- Android Studio 설치 확인 완료
+- Android SDK 위치 확인: `C:\Users\Vince\AppData\Local\Android\Sdk`
+- Android Studio 내장 JDK 확인:
+  - `C:\Program Files\Android\Android Studio1\jbr`
+  - `C:\Program Files\Android\Android Studio2\jbr`
+- `android/local.properties` 로컬 생성 완료:
+  - `sdk.dir=C\:/Users/Vince/AppData/Local/Android/Sdk`
+- `JAVA_HOME`은 Windows 전역 환경변수에 아직 설정되지 않음
+- Gradle wrapper 실행 시 Java는 해결됐으나, `gradle-8.11.1-bin.zip` 다운로드가 네트워크 타임아웃으로 완료되지 않음
+- 임시 다운로드 파일 위치:
+  - `C:\Users\Vince\AppData\Local\Temp\gradle-8.11.1-bin.zip`
+
+다음 진행 방법:
+
+1. Android Studio에서 `D:\claude\product-builder-lecture\android`를 직접 열어 Gradle Sync를 실행한다.
+2. Android Studio가 Gradle 배포판을 자체적으로 다운로드하도록 기다린다.
+3. Sync가 실패하면 오류 화면을 캡처해서 이어서 확인한다.
+4. Sync가 성공하면 Run 버튼으로 Emulator 또는 실제 Android 기기에서 실행한다.
+
 ### Mac 시스템 설치 후 다음 호출
 
 Mac 또는 클라우드 Mac 준비 후 호출하면 아래 작업을 진행합니다.
