@@ -3226,13 +3226,14 @@
       } catch { return []; }
     }
 
-    function saveRecentRoomCode(code, nickname = "", participantId = "") {
+    function saveRecentRoomCode(code, nickname = "", participantId = "", role = "") {
       if (!code) return;
       const recent = getRecentRoomCodes().filter(r => r.code !== code);
       recent.unshift({
         code,
         nickname: nickname || state.nickname || loadNickname() || "",
         participantId: participantId || state.currentUserId || "",
+        role: role || state.role || "",
         ts: Date.now()
       });
       localStorage.setItem("rpsRecentRoomCodes", JSON.stringify(recent.slice(0, 20)));
@@ -3247,8 +3248,8 @@
       return getLastJoinedRoom()?.code || "";
     }
 
-    function saveLastJoinedRoomCode(code, nickname = "", participantId = "") {
-      saveRecentRoomCode(code, nickname, participantId);
+    function saveLastJoinedRoomCode(code, nickname = "", participantId = "", role = "") {
+      saveRecentRoomCode(code, nickname, participantId, role);
     }
 
     function getRoomPlayers() {
@@ -3619,11 +3620,11 @@
       saveNickname(nickname);
 
       const code = Math.random().toString(36).substring(2, 6).toUpperCase();
-      state.roomCode = code;
-      saveRecentRoomCode(code, nickname);
       state.shareBaseUrl = getDefaultShareBaseUrl();
       state.roomUrl = buildRoomUrl(code);
       state.role = "host";
+      state.roomCode = code;
+      saveRecentRoomCode(code, nickname, "", "host");
       state.status = "waiting";
       state.round = 1;
       state.gameRound = 1;
@@ -3652,12 +3653,12 @@
             5000
           );
           state.currentUserId = hostId;
-          saveLastJoinedRoomCode(code, nickname, hostId);
+          saveLastJoinedRoomCode(code, nickname, hostId, "host");
           subscribeToRoom(code);
         } catch (e) {
           console.error("Supabase 연결 실패, 오프라인 모드로 전환:", e.message);
           state.currentUserId = "host";
-          saveLastJoinedRoomCode(code, nickname, "host");
+          saveLastJoinedRoomCode(code, nickname, "host", "host");
           state.participants = [createParticipant("host", nickname, true)];
           saveState();
         }
@@ -3854,10 +3855,10 @@
         state.joinScreenAction = preview.action;
         if (statusValue) statusValue.textContent = preview.label;
         if (joinBtn) {
-          const unavailable = preview.action !== "join";
+          const unavailable = !["join", "replay"].includes(preview.action);
           joinBtn.disabled = unavailable;
           joinBtn.classList.toggle("join-unavailable", unavailable);
-          setBtnText(joinBtn, t("join.rejoinBtn"));
+          setBtnText(joinBtn, preview.action === "replay" ? t("join.replayBtn") : t("join.rejoinBtn"));
         }
         if (state.joinScreenMode === "recent" && preview.action === "unavailable") {
           cleanupMyUnavailableRoomProfiles(code, participants || []);
@@ -3875,12 +3876,18 @@
     function getJoinRoomPreview(room, participants = []) {
       const unavailable = { action: "unavailable", label: t("join.statusUnavailable") };
       if (!room) return unavailable;
+      const recent = state.joinRecentRoom || getLastJoinedRoom();
+      const wasHost = recent?.role === "host" ||
+        recent?.participantId === "host" ||
+        String(recent?.participantId || "").startsWith("h_") ||
+        participants.some(p => p.id === recent?.participantId && p.is_host);
       const target = parsePenalty(room.penalty).loserCount || 1;
       const loserCount = participants.filter(p => p.choice === "__loser__").length;
       const isCompletedResult = room.status === "result" && loserCount >= target;
       const activeStatuses = ["ready", "playing", "result"];
       const activePlayers = participants.filter(p => !p.is_host && !isNonPlayingChoice(p.choice));
       const canJoin = activeStatuses.includes(room.status) && !isCompletedResult && activePlayers.length > 0;
+      if (!canJoin && wasHost) return { action: "replay", label: t("join.statusUnavailable") };
       return canJoin ? { action: "join", label: t("join.statusAvailable") } : unavailable;
     }
 
@@ -4079,7 +4086,7 @@
           }
           await cleanupDuplicateRoomProfiles(code, name, state.currentUserId, roomParticipants || []);
           saveNickname(name);
-          saveLastJoinedRoomCode(code, name, state.currentUserId);
+          saveLastJoinedRoomCode(code, name, state.currentUserId, state.role);
           subscribeToRoom(code);
           if (state.joinScreenMode === "recent" && isJoinLocked(roomParticipants || [], room.status)) {
             showToast(t("join.waitingCurrentGame"));
@@ -4091,7 +4098,7 @@
           if (existing) state.currentUserId = existing.id;
           else state.participants.push(createParticipant(id, name, false));
           saveNickname(name);
-          saveLastJoinedRoomCode(code, name, state.currentUserId);
+          saveLastJoinedRoomCode(code, name, state.currentUserId, "participant");
           saveState();
           showScreen("screenParticipantWait");
         }
@@ -4121,7 +4128,8 @@
         if (getOnlineMode()) {
           const { data: participants } = await db.from('participants')
             .select('*').eq('room_id', code).order('created_at', { ascending: true });
-          const existing = (participants || []).find(p => p.id === id || (!p.is_host && p.name === name));
+          const existing = (participants || []).find(p => p.id === id)
+            || (participants || []).find(p => p.name === name);
           if (existing) {
             state.currentUserId = existing.id;
           } else {
@@ -4130,9 +4138,10 @@
 
           await db.from('participants').update({ is_host: false, is_ready: false, choice: null }).eq('room_id', code);
           await db.from('participants').update({ is_host: true }).eq('id', state.currentUserId);
+          await cleanupDuplicateRoomProfiles(code, name, state.currentUserId, participants || []);
           await db.from('rooms').update({ status: 'reinviting', round: 1 }).eq('id', code);
           saveNickname(name);
-          saveLastJoinedRoomCode(code, name, state.currentUserId);
+          saveLastJoinedRoomCode(code, name, state.currentUserId, "host");
           subscribeToRoom(code);
           showToast(t("join.replayInviteSent"));
           _showInviteHostPopup();
