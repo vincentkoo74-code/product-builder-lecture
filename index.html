@@ -6218,6 +6218,47 @@
     const KAKAO_REST_API_KEY = "bce3cbf5a9fcdb2a300ce741bca3486a";
     // LINE OAuth Channel ID (공개 가능)
     const LINE_CHANNEL_ID = "2010213585";
+    const OAUTH_BRIDGE_URL = "https://product-builder-lecture-phi.vercel.app/oauth-bridge.html";
+
+    function isNativeCapacitorApp() {
+      try {
+        return Boolean(window.Capacitor?.getPlatform && window.Capacitor.getPlatform() !== "web");
+      } catch {
+        return false;
+      }
+    }
+
+    function getOAuthRedirectUri(provider) {
+      if (isNativeCapacitorApp()) {
+        return `${OAUTH_BRIDGE_URL}?provider=${provider}`;
+      }
+      return location.origin + location.pathname + `?provider=${provider}`;
+    }
+
+    async function handleNativeOAuthUrl(url) {
+      let parsed;
+      try {
+        parsed = new URL(url);
+      } catch {
+        return false;
+      }
+      if (parsed.protocol !== "com.maru.rps:" || parsed.host !== "oauth") return false;
+
+      const provider = parsed.searchParams.get("provider");
+      if (provider === "kakao") return handleKakaoCallback(parsed.searchParams);
+      if (provider === "line") return handleLineCallback(parsed.searchParams);
+      return false;
+    }
+
+    function initNativeOAuthListener() {
+      const appPlugin = window.Capacitor?.Plugins?.App;
+      if (!appPlugin?.addListener || window.__maruOAuthListenerReady) return;
+      window.__maruOAuthListenerReady = true;
+      appPlugin.addListener("appUrlOpen", async ({ url }) => {
+        const handled = await handleNativeOAuthUrl(url);
+        if (handled) updateAuthTopbar();
+      });
+    }
 
     async function loginWithSns(provider) {
       const providerName = t("sns." + provider) || provider;
@@ -6245,7 +6286,7 @@
       }
       // Kakao — Custom OAuth flow (Edge Function 'kakao-auth')
       if (provider === "kakao") {
-        const redirectUri = location.origin + location.pathname + "?provider=kakao";
+        const redirectUri = getOAuthRedirectUri("kakao");
         const state = crypto.randomUUID();
         sessionStorage.setItem("kakaoOAuthState", state);
         location.href = "https://kauth.kakao.com/oauth/authorize"
@@ -6257,7 +6298,7 @@
       }
       // LINE — Custom OAuth flow (Edge Function 'line-auth')
       if (provider === "line") {
-        const redirectUri = location.origin + location.pathname + "?provider=line";
+        const redirectUri = getOAuthRedirectUri("line");
         const state = crypto.randomUUID();
         sessionStorage.setItem("lineOAuthState", state);
         // scope: profile (필수), openid+email (선택 — 이메일 권한 승인 후 자동 활성)
@@ -6297,8 +6338,10 @@
     }
 
     // Kakao OAuth 콜백 처리 — initFromUrl 에서 호출됨
-    async function handleKakaoCallback() {
-      const params = new URLSearchParams(location.search);
+    async function handleKakaoCallback(sourceParams = new URLSearchParams(location.search)) {
+      const params = sourceParams instanceof URLSearchParams
+        ? sourceParams
+        : new URLSearchParams(sourceParams);
       if (params.get("provider") !== "kakao") return false;
       const code = params.get("code");
       const state = params.get("state");
@@ -6320,7 +6363,7 @@
 
       try {
         showToast("카카오 로그인 확인 중...", 8000);
-        const redirectUri = location.origin + location.pathname + "?provider=kakao";
+        const redirectUri = getOAuthRedirectUri("kakao");
         const { data, error } = await withAuthTimeout(
           db.functions.invoke("kakao-auth", {
             body: { code, redirect_uri: redirectUri }
@@ -6360,8 +6403,10 @@
     }
 
     // LINE OAuth 콜백 처리 — initFromUrl 에서 호출됨
-    async function handleLineCallback() {
-      const params = new URLSearchParams(location.search);
+    async function handleLineCallback(sourceParams = new URLSearchParams(location.search)) {
+      const params = sourceParams instanceof URLSearchParams
+        ? sourceParams
+        : new URLSearchParams(sourceParams);
       if (params.get("provider") !== "line") return false;
       const code = params.get("code");
       const state = params.get("state");
@@ -6383,7 +6428,7 @@
 
       try {
         showToast("LINE 로그인 확인 중...", 8000);
-        const redirectUri = location.origin + location.pathname + "?provider=line";
+        const redirectUri = getOAuthRedirectUri("line");
         const { data, error } = await withAuthTimeout(
           db.functions.invoke("line-auth", {
             body: { code, redirect_uri: redirectUri }
@@ -6442,6 +6487,7 @@
     }
 
     async function initFromUrl() {
+      initNativeOAuthListener();
       const params = new URLSearchParams(location.search);
       const room = params.get("room");
       if (params.get("debug") === "1" || localStorage.getItem("rpsDebugMode") === "1") {

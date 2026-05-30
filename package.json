@@ -26,6 +26,7 @@
   },
   "homepage": "https://github.com/vincentkoo74-code/product-builder-lecture#readme",
   "dependencies": {
+    "@capacitor/app": "^7.0.0",
     "jose": "^6.2.3"
   },
   "devDependencies": {
