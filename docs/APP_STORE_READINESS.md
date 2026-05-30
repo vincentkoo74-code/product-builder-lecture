@@ -139,6 +139,29 @@ Android Studio는 설치 완료되었습니다. 다음에 호출하면 아래 �
 3. Sync가 실패하면 오류 화면을 캡처해서 이어서 확인한다.
 4. Sync가 성공하면 Run 버튼으로 Emulator 또는 실제 Android 기기에서 실행한다.
 
+#### 2026-05-30 진행 기록
+
+- Android Studio Gradle Sync 실패 원인 확인:
+  - 이전 Gradle 다운로드가 남긴 `.lck` / `.part` 파일 때문에 exclusive access timeout 발생
+- 손상된 Gradle 캐시 정리 완료:
+  - `C:\Users\Vince\.gradle\wrapper\dists\gradle-8.11.1-bin`
+  - `C:\Users\Vince\.gradle\wrapper\dists\gradle-8.11.1-all`
+- Windows BITS 다운로드로 Gradle 배포파일 직접 다운로드 완료:
+  - `gradle-8.11.1-bin.zip`
+- Gradle wrapper 캐시에 배포파일 반영 완료
+- `gradlew tasks` 성공
+- Android debug APK 빌드 성공:
+  - `D:\claude\product-builder-lecture\android\app\build\outputs\apk\debug\app-debug.apk`
+- Gradle daemon 정리 완료
+
+다음 Android 단계:
+
+1. Android Studio에서 `D:\claude\product-builder-lecture\android`를 다시 연다.
+2. Gradle Sync가 정상 통과하는지 확인한다.
+3. Emulator 또는 실제 Android 폰을 연결한다.
+4. Android Studio의 Run 버튼으로 앱을 실행한다.
+5. 앱 첫 화면, 게스트 모드, 카카오/라인 로그인, QR 게임방 참여를 확인한다.
+
 ### Mac 시스템 설치 후 다음 호출
 
 Mac 또는 클라우드 Mac 준비 후 호출하면 아래 작업을 진행합니다.
