@@ -119,11 +119,9 @@
     }
 
     .app {
-      aspect-ratio: 9 / 16;
-      height: 100vh;
-      width: calc(100vh * 9 / 16);
+      min-height: 100vh;
+      width: min(100vw, 430px);
       max-width: 100vw;
-      max-height: calc(100vw * 16 / 9);
       overflow-y: auto;
       overflow-x: hidden;
       padding: 14px;
@@ -469,7 +467,7 @@
     }
 
     #hostParticipantList .tag {
-      min-width: 50px;
+      min-width: 0;
       padding: 5px 8px;
       flex: 0 0 auto;
     }
@@ -1429,6 +1427,228 @@
       font-size:11px;
       color:#cbd5e1;
       text-align:center;
+    }
+
+    /* Small phone layout: keep every control inside the 320-360px viewport. */
+    @media (max-width: 380px){
+      body{
+        align-items:stretch;
+      }
+      .app{
+        width:100vw;
+        min-height:100dvh;
+        max-width:none;
+        padding-top:max(14px, calc(env(safe-area-inset-top, 0px) + 8px));
+        padding-left:0;
+        padding-right:0;
+        padding-bottom:max(18px, env(safe-area-inset-bottom, 0px));
+      }
+      .topbar{
+        gap:6px;
+        margin-bottom:10px;
+      }
+      .brand{
+        min-width:0;
+        flex:1 1 auto;
+        gap:8px;
+        font-size:17px;
+      }
+      body[data-locale="en"] .brand{font-size:17px}
+      body[data-locale="ja"] .brand{font-size:14px}
+      .brand-icon{
+        width:38px;
+        height:38px;
+        border-radius:13px;
+        font-size:20px;
+        flex:0 0 auto;
+      }
+      .topbar > div:last-child{
+        flex:0 0 auto;
+        gap:4px !important;
+      }
+      .lang-select,
+      .mute-btn,
+      .signout-btn,
+      .guest-login-btn{
+        height:32px;
+        min-width:32px;
+        padding:0 8px;
+      }
+      .guest-login-btn{
+        width:32px;
+        padding:0;
+        border-radius:50%;
+        font-size:0;
+      }
+      .guest-login-btn::before{
+        content:"👤";
+        font-size:15px;
+      }
+      .card{
+        padding:14px;
+        border-radius:22px;
+        margin-bottom:12px;
+      }
+      .maru-card{
+        padding-left:18px !important;
+        padding-right:12px !important;
+      }
+      .saekdong-v{
+        width:6px;
+      }
+      .maru-corner.maru-corner-lg{
+        width:126px;
+        height:126px;
+        top:8px;
+        right:0;
+      }
+      .maru-corner.maru-corner-md{
+        width:96px;
+        height:96px;
+        right:0;
+      }
+      .maru-card .maru-corner-lg ~ .maru-section-sub,
+      .maru-card .maru-corner-lg ~ h2{
+        max-width:calc(100% - 112px);
+      }
+      .maru-card .maru-corner-md ~ .maru-section-sub,
+      .maru-card .maru-corner-md ~ h2{
+        max-width:calc(100% - 84px);
+      }
+      .vrshow-cap.vrshow-cap-lg{
+        font-size:20px;
+        padding:7px 14px 5px;
+        margin-bottom:8px;
+        max-width:calc(100% - 90px);
+        white-space:normal;
+        line-height:1.15;
+      }
+      .maru-section-sub{
+        font-size:12.5px;
+        line-height:1.45;
+      }
+      .game-progress-card{
+        border-radius:18px;
+        padding:12px 12px;
+        margin:10px 0;
+      }
+      .game-progress-top{
+        gap:8px;
+        margin-bottom:9px;
+      }
+      .game-progress-round{
+        font-size:17px;
+      }
+      .game-progress-rematch{
+        min-width:84px;
+        padding:7px 10px;
+        font-size:12px;
+      }
+      .game-progress-stat strong{
+        font-size:26px;
+      }
+      .game-progress-stat span{
+        font-size:11px;
+      }
+      .game-progress-lock{
+        font-size:10.5px;
+        line-height:1.35;
+      }
+      .qr-box{
+        padding:10px;
+        border-radius:18px;
+        margin:12px 0;
+        overflow:hidden;
+      }
+      .fake-qr{
+        width:min(236px, calc(100vw - 56px));
+        height:min(236px, calc(100vw - 56px));
+      }
+      .fake-qr canvas,
+      .fake-qr img{
+        width:100% !important;
+        height:100% !important;
+      }
+      .code-text{
+        font-size:28px;
+        letter-spacing:2px;
+      }
+      #shareUrlBox{
+        padding:10px;
+      }
+      #shareUrlBox .row{
+        grid-template-columns:minmax(0, 1fr) 54px;
+        gap:8px;
+      }
+      #shareUrlBox input{
+        min-width:0;
+        padding:12px 10px;
+      }
+      #shareUrlBox button{
+        min-width:0;
+        padding:10px 8px;
+        line-height:1.15;
+        word-break:keep-all;
+      }
+      #hostParticipantList{
+        grid-template-columns:1fr;
+        gap:8px;
+      }
+      #hostParticipantList .participant{
+        min-height:44px;
+        padding:9px 10px;
+        gap:6px;
+      }
+      #hostParticipantList .participant strong{
+        flex:1 1 auto;
+        min-width:0;
+      }
+      #hostParticipantList .tag,
+      .tag.host{
+        min-width:0;
+        padding:4px 7px;
+        font-size:11px;
+        white-space:nowrap;
+      }
+      #loserCountBox{
+        align-items:flex-start !important;
+        gap:8px !important;
+      }
+      select.loser-count-select{
+        width:82px;
+        font-size:16px;
+      }
+      .btn-kparty{
+        padding:14px 54px 14px 18px;
+      }
+      #screenHostRoom .footer-actions button,
+      #screenLobby .grid > button{
+        padding:14px 12px;
+        font-size:14px;
+      }
+    }
+
+    @media (max-width: 340px){
+      .brand{font-size:15px}
+      body[data-locale="en"] .brand{font-size:15px}
+      body[data-locale="ja"] .brand{font-size:13px}
+      .brand-icon{width:34px;height:34px;font-size:18px}
+      .lang-select{width:38px;padding:0 4px}
+      .mute-btn,
+      .signout-btn,
+      .guest-login-btn{width:30px;min-width:30px;height:30px}
+      .maru-corner.maru-corner-lg{
+        width:112px;
+        height:112px;
+      }
+      .maru-card .maru-corner-lg ~ .maru-section-sub,
+      .maru-card .maru-corner-lg ~ h2{
+        max-width:calc(100% - 98px);
+      }
+      .vrshow-cap.vrshow-cap-lg{
+        font-size:18px;
+        max-width:calc(100% - 82px);
+      }
     }
   </style>
 </head>
