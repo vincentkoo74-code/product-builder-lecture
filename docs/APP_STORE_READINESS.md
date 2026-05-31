@@ -198,6 +198,8 @@ LINE Developers에 필요한 Callback URL:
 
 LINE 로그인에서 `400 Bad Request / Invalid redirect_uri value`가 나오면 위 Callback URL이 LINE Developers Console에 등록되어 있는지 먼저 확인한다.
 
+자세한 LINE 로그인 점검 순서는 [LINE_LOGIN_TROUBLESHOOTING.md](LINE_LOGIN_TROUBLESHOOTING.md)를 기준으로 확인한다.
+
 ### 1/2/3/4 완료 후 제출 준비 호출
 
 위 작업이 끝난 뒤 호출하면 아래 작업을 진행합니다.
