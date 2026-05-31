@@ -126,11 +126,11 @@
       max-height: calc(100vw * 16 / 9);
       overflow-y: auto;
       overflow-x: hidden;
-      padding: 24px;
+      padding: 14px;
       /* 모바일 노치/다이내믹 아일랜드/펀치홀 안전영역 패딩 (iOS PWA standalone, 안드 fullscreen 대응) */
       padding-top: max(20px, calc(env(safe-area-inset-top, 0px) + 12px));
-      padding-left: max(24px, env(safe-area-inset-left, 0px));
-      padding-right: max(24px, env(safe-area-inset-right, 0px));
+      padding-left: max(10px, env(safe-area-inset-left, 0px));
+      padding-right: max(10px, env(safe-area-inset-right, 0px));
       padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
       box-sizing: border-box;
       scrollbar-width: none;
@@ -690,11 +690,11 @@
 
     @media (max-width: 430px) {
       body {
-        padding: 16px;
+        padding: 0;
       }
 
       .card {
-        padding: 18px;
+        padding: 16px;
       }
 
       h1 {
@@ -733,6 +733,28 @@
     }
     .popup-card h3 { margin: 0 0 4px; font-size: 18px; }
     .popup-card p  { font-size: 13px; color: #888; margin: 0 0 16px; }
+    .screen-close-btn,
+    .popup-close-btn{
+      position:absolute;
+      top:14px;
+      right:14px;
+      width:34px;
+      height:34px;
+      border-radius:50%;
+      border:1px solid rgba(230,57,70,.25);
+      background:rgba(255,255,255,.88);
+      color:var(--maru-red);
+      font-size:22px;
+      line-height:1;
+      font-weight:900;
+      cursor:pointer;
+      display:grid;
+      place-items:center;
+      z-index:5;
+      box-shadow:0 8px 18px rgba(230,57,70,.12);
+    }
+    .screen-close-btn:active,
+    .popup-close-btn:active{transform:scale(.95)}
 
     .sns-btn {
       display: flex;
@@ -1602,6 +1624,7 @@
     </section>
 
     <section class="card maru-card hidden" id="screenJoin">
+      <button type="button" class="screen-close-btn" onclick="window.goHome()" aria-label="Close">×</button>
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
@@ -1868,6 +1891,7 @@
     </section>
 
     <section class="card maru-card hidden" id="screenStats">
+      <button type="button" class="screen-close-btn" onclick="window.goHome()" aria-label="Close">×</button>
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
@@ -1875,7 +1899,7 @@
         <div class="maru-hero-bg"></div>
         <img src="ASSETS/rps/scenes/cat-win-happy.png" alt="마루" />
       </div>
-      <div class="vrshow-cap vrshow-cap-lg" data-i18n="stats.cap">통계 발표!</div>
+      <div class="vrshow-cap vrshow-cap-lg" data-i18n="stats.cap">개인전적</div>
       <h2 class="maru-section-title" style="margin-top:6px" data-i18n="stats.title">최종 결과</h2>
       <p class="maru-section-sub" data-i18n-html="stats.subtitle">참가자별 승률·벌칙 횟수를<br/>마루가 정리했어 📊</p>
       <table>
@@ -1923,6 +1947,7 @@
     <!-- 게임 승률 팝업 -->
     <div id="statsPopup" class="popup-overlay hidden">
       <div class="popup-card maru-popup">
+        <button type="button" class="popup-close-btn" onclick="window.closeStatsPopup()" aria-label="Close">×</button>
         <div class="saekdong-v">
           <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
         </div>
@@ -1950,6 +1975,7 @@
     <!-- 계정 누적 기록 팝업 -->
     <div id="accountStatsPopup" class="popup-overlay hidden">
       <div class="popup-card maru-popup">
+        <button type="button" class="popup-close-btn" onclick="window.closeAccountStatsPopup()" aria-label="Close">×</button>
         <div class="saekdong-v">
           <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
         </div>
@@ -2081,6 +2107,7 @@
         "common.starting": "시작 중...",
         "common.joining": "참가 중...",
         "common.timeUp": "⏱ 시간 초과",
+        "common.secondsShort": "{n}초",
         "common.signOut": "🚪 로그아웃",
         "popup.confirmSignOutTitle": "로그아웃 하시겠어요?",
         "popup.confirmSignOutMsg": "다시 로그인하려면 SNS 인증을 한번 더 거쳐야 해요 🐾",
@@ -2272,7 +2299,7 @@
         "loserWait.messageDone": "벌칙을 준비하세요. 게임이 끝났습니다!",
         "loserWait.messageDefault": "벌칙을 준비하세요. 게임이 계속 진행 중입니다...",
         // stats
-        "stats.cap": "통계 발표!",
+        "stats.cap": "개인전적",
         "stats.title": "최종 결과",
         "stats.subtitle": "참가자별 승률·벌칙 횟수를<br/>마루가 정리했어 📊",
         "stats.thParticipant": "참가자",
@@ -2400,6 +2427,7 @@
         "common.starting": "Starting...",
         "common.joining": "Joining...",
         "common.timeUp": "⏱ Time's up",
+        "common.secondsShort": "{n}s",
         "common.signOut": "🚪 Sign out",
         "popup.confirmSignOutTitle": "Sign out?",
         "popup.confirmSignOutMsg": "You'll need to sign in again via SNS to come back 🐾",
@@ -2575,7 +2603,7 @@
         "loserWait.messageWaiting": "Get your penalty ready. Finding {n} more loser(s)...",
         "loserWait.messageDone": "Get your penalty ready. The game is over!",
         "loserWait.messageDefault": "Get your penalty ready. The game continues...",
-        "stats.cap": "Final stats!",
+        "stats.cap": "Personal record",
         "stats.title": "Final results",
         "stats.subtitle": "Maru tallied wins, losses<br/>and penalty counts 📊",
         "stats.thParticipant": "Player",
@@ -2697,6 +2725,7 @@
         "common.starting": "開始中...",
         "common.joining": "参加中...",
         "common.timeUp": "⏱ 時間切れ",
+        "common.secondsShort": "{n}秒",
         "common.signOut": "🚪 ログアウト",
         "popup.confirmSignOutTitle": "ログアウトしますか？",
         "popup.confirmSignOutMsg": "再ログインにはSNS認証をもう一度行う必要があります 🐾",
@@ -2872,7 +2901,7 @@
         "loserWait.messageWaiting": "罰ゲームの準備。あと {n}人の鬼を探しています...",
         "loserWait.messageDone": "罰ゲームの準備。ゲームが終わりました！",
         "loserWait.messageDefault": "罰ゲームの準備。ゲームは進行中です...",
-        "stats.cap": "結果発表！",
+        "stats.cap": "個人戦績",
         "stats.title": "最終結果",
         "stats.subtitle": "参加者の勝率と罰ゲーム回数を<br/>マルがまとめたよ 📊",
         "stats.thParticipant": "参加者",
@@ -4992,11 +5021,11 @@
     function _showInviteHostPopup() {
       $("inviteHostPopup").classList.remove("hidden");
       let countdown = 10;
-      $("inviteCountdown").textContent = countdown + "초";
+      $("inviteCountdown").textContent = t("common.secondsShort", { n: countdown });
       if (_inviteCountdownTimer) clearInterval(_inviteCountdownTimer);
       _inviteCountdownTimer = setInterval(async () => {
         countdown--;
-        $("inviteCountdown").textContent = countdown + "초";
+        $("inviteCountdown").textContent = t("common.secondsShort", { n: countdown });
         if (countdown <= 0) {
           clearInterval(_inviteCountdownTimer);
           _inviteCountdownTimer = null;

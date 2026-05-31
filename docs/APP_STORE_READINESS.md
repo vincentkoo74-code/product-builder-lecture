@@ -184,6 +184,20 @@ Mac 또는 클라우드 Mac 준비 후 호출하면 아래 작업을 진행합�
 - 계정 삭제 테스트
 - 앱 종료/복귀 후 세션 유지 테스트
 
+#### 네이티브 OAuth Redirect URI 체크
+
+Capacitor Android 앱은 외부 브라우저에서 SNS 로그인을 진행한 뒤 앱으로 돌아오기 위해 브릿지 URL을 사용한다.
+
+Kakao Developers에 필요한 Redirect URI:
+
+- `https://product-builder-lecture-phi.vercel.app/oauth-bridge.html?provider=kakao`
+
+LINE Developers에 필요한 Callback URL:
+
+- `https://product-builder-lecture-phi.vercel.app/oauth-bridge.html?provider=line`
+
+LINE 로그인에서 `400 Bad Request / Invalid redirect_uri value`가 나오면 위 Callback URL이 LINE Developers Console에 등록되어 있는지 먼저 확인한다.
+
 ### 1/2/3/4 완료 후 제출 준비 호출
 
 위 작업이 끝난 뒤 호출하면 아래 작업을 진행합니다.
