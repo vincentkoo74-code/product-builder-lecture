@@ -3426,8 +3426,16 @@
       fetchParticipantsSeq: 0,
       accountStatsSaved: {}
     };
+    let toastTimer = null;
 
     function parsePenalty(raw) {
+      if (raw && typeof raw === "object") {
+        return {
+          text: raw.text || "",
+          loserCount: raw.loserCount || 1,
+          gameRound: raw.gameRound || 1,
+        };
+      }
       try {
         const p = JSON.parse(raw);
         if (p && typeof p === "object" && p.text !== undefined) {
@@ -3440,7 +3448,7 @@
       } catch {}
       return { text: raw || "", loserCount: 1, gameRound: 1 };
     }
-    function getPenaltyText() { return parsePenalty(state.penalty).text; }
+    function getPenaltyText() { return String(parsePenalty(state.penalty).text || "").trim(); }
     function getTargetLoserCount() { return parsePenalty(state.penalty).loserCount || state.targetLoserCount || 1; }
     function getGameRound() { return parsePenalty(state.penalty).gameRound || state.gameRound || 1; }
     function buildPenaltyValue({ text = getPenaltyText(), loserCount = state.targetLoserCount, gameRound = state.gameRound } = {}) {
@@ -3879,6 +3887,7 @@
     // --- 기존 UI 제어 로직 수정 ---
 
     function hideAllScreens() {
+      clearToast();
       [
         "screenAuth",
         "screenHome",
@@ -4612,7 +4621,7 @@
       labelEl.textContent = roundLabel;
       void numEl.offsetWidth;
       numEl.className = "count-anim";
-      await speak(t("voice.intro"), 1.4, 1.0);
+      await speak(t("voice.intro"), 1.12, 1.08);
 
       // 2단계: "가위바위 보!" / "Rock paper scissors, shoot!" / "じゃんけんぽん！"
       numEl.className = "";
@@ -4628,10 +4637,10 @@
       labelEl.textContent = "";
       void numEl.offsetWidth;
       numEl.className = "count-anim";
-      // 음성: 분리 호출 (영/일/한 모두 "보/shoot/ぽん"에서 피치 업)
-      speak(go1, 1.6, 0.85);
-      setTimeout(() => speak(go2, 2.2, 0.95), 750);
-      await sleep(1800);
+      // iOS Safari can distort overlapped/cancelled speech, so keep the call playful but single-pass.
+      const spokenGo = currentLocale === "en" ? t("countdown.go") : `${go1} ${go2}`;
+      await speak(spokenGo, 1.18, 1.12);
+      await sleep(240);
 
       overlay.classList.add("hidden");
       numEl.style.fontSize = "";
@@ -5718,7 +5727,18 @@
     }
 
     async function goToReadyScreen() {
-      if (!state.penalty) { showToast("먼저 벌칙을 설정해주세요."); return; }
+      if (!getPenaltyText() && getOnlineMode() && state.roomCode) {
+        try {
+          const { data: room } = await db.from('rooms').select('penalty,status').eq('id', state.roomCode).single();
+          if (room?.penalty) {
+            state.penalty = room.penalty;
+            state.status = room.status || state.status;
+          }
+        } catch (e) {
+          console.warn("Penalty refresh before ready failed:", e?.message || e);
+        }
+      }
+      if (!getPenaltyText()) { showToast(t("toast.penaltyNotSet")); return; }
       if (getOnlineMode()) {
         try {
           await Promise.race([
@@ -6435,11 +6455,27 @@
     }
     window.deleteAccountWithConfirm = deleteAccountWithConfirm;
 
+    function clearToast() {
+      const el = $("toastEl");
+      if (!el) return;
+      if (toastTimer) {
+        clearTimeout(toastTimer);
+        toastTimer = null;
+      }
+      el.classList.remove("show");
+      el.textContent = "";
+    }
+
     function showToast(msg, duration = 2800) {
       const el = $("toastEl");
+      if (!el) return;
+      if (toastTimer) clearTimeout(toastTimer);
       el.textContent = msg;
       el.classList.add("show");
-      setTimeout(() => el.classList.remove("show"), duration);
+      toastTimer = setTimeout(() => {
+        el.classList.remove("show");
+        toastTimer = null;
+      }, duration);
     }
 
     function showAuthScreen() {
