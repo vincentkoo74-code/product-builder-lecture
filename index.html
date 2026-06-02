@@ -2633,6 +2633,7 @@
         "tag.meHost": "나 (호스트)",
         "tag.readyDone": "✓ 준비 완료",
         "tag.readyWaiting": "○ 준비 대기",
+        "tag.offline": "○ 접속 대기",
         "tag.chosenDone": "✓ 선택완료",
         "tag.chosenWaiting": "○ 대기 중",
         // toasts
@@ -2935,6 +2936,7 @@
         "tag.meHost": "Me (host)",
         "tag.readyDone": "✓ Ready",
         "tag.readyWaiting": "○ Waiting",
+        "tag.offline": "○ Offline",
         "tag.chosenDone": "✓ Picked",
         "tag.chosenWaiting": "○ Choosing",
         "toast.codeRequired": "Please enter a room code.",
@@ -3233,6 +3235,7 @@
         "tag.meHost": "私 (ホスト)",
         "tag.readyDone": "✓ 準備完了",
         "tag.readyWaiting": "○ 準備待ち",
+        "tag.offline": "○ 接続待ち",
         "tag.chosenDone": "✓ 選択完了",
         "tag.chosenWaiting": "○ 選択中",
         "toast.codeRequired": "部屋コードを入力してください。",
@@ -3940,9 +3943,13 @@
       state.status = "waiting";
       state.round = 1;
       state.gameRound = 1;
+      state.penalty = "";
       state.targetLoserCount = 1;
+      state.participants = [];
       state.confirmedSafeIds = [];
       state.confirmedLoserIds = [];
+      state.gameStarting = false;
+      state.finishingRound = false;
 
       if (getOnlineMode()) {
         try {
@@ -4876,7 +4883,7 @@
         if (iPlayedThisRound) recordMyAccountGameResult("draw");
         renderRoundResult("draw", 0, remainingSlots);
         showScreen("screenRoundResult");
-        if (state.role === "host") setTimeout(() => { state.finishingRound = false; nextRound(); }, 1500);
+        if (state.role === "host") setTimeout(() => { state.finishingRound = false; autoStartDrawRematch(); }, 1500);
         else state.finishingRound = false;
         return;
       }
@@ -5164,6 +5171,38 @@
         `;
         list.appendChild(div);
       });
+    }
+
+    async function autoStartDrawRematch() {
+      if (state.role !== "host" || state.gameStarting) return;
+      state.gameStarting = true;
+      state.finishingRound = false;
+      const nextRoundNo = (state.round || 1) + 1;
+
+      if (getOnlineMode()) {
+        try {
+          await db.from('participants')
+            .update({ choice: null, is_ready: false })
+            .eq('room_id', state.roomCode);
+          await db.from('rooms')
+            .update({ round: nextRoundNo, status: 'playing' })
+            .eq('id', state.roomCode);
+          state.round = nextRoundNo;
+          await runCountdownThenShowGame();
+        } catch (e) {
+          showToast(t("toast.startError", { msg: e.message || String(e) }));
+          state.gameStarting = false;
+        }
+      } else {
+        state.round = nextRoundNo;
+        state.participants.forEach(p => {
+          p.choice = null;
+          p.is_ready = false;
+          p.lastResult = null;
+        });
+        saveState();
+        await runCountdownThenShowGame();
+      }
     }
 
     async function nextRound() {
@@ -5520,11 +5559,11 @@
         const label = p.id === state.currentUserId ? t("tag.meHost") : t("tag.host");
         return `<span class="tag host">👑 ${label}</span>`;
       }
-      if (!p.is_host && !isParticipantOnline(p.id)) {
-        return `<span class="tag lose">${t("tag.lose")}</span>`;
-      }
       if (p.is_ready) {
         return `<span class="tag win">${t("tag.readyDone")}</span>`;
+      }
+      if (!p.is_host && !isParticipantOnline(p.id)) {
+        return `<span class="tag">${t("tag.offline")}</span>`;
       }
       return `<span class="tag">${options.waitText || t("tag.readyWaiting")}</span>`;
     }
