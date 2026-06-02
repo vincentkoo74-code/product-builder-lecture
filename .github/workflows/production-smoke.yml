@@ -51,3 +51,27 @@ jobs:
               sleep 15
             done
           done
+
+      - name: Notify Telegram
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          JOB_STATUS: ${{ job.status }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "Telegram secrets are not configured. Skipping notification."
+            exit 0
+          fi
+          if [ "$JOB_STATUS" = "success" ]; then
+            STATUS_TEXT="성공"
+          else
+            STATUS_TEXT="실패"
+          fi
+          MESSAGE="$(printf '윈도우-덱스: Android 앱 업데이트 검증 %s\n커밋: %s\n%s' "$STATUS_TEXT" "${COMMIT_SHA:0:7}" "$RUN_URL")"
+          curl -fsS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${MESSAGE}"

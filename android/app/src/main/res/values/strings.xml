@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">마루의 가위바위보</string>
+    <string name="title_activity_main">마루의 가위바위보</string>
+    <string name="package_name">com.maru.rps</string>
+    <string name="custom_url_scheme">com.maru.rps</string>
+</resources>
