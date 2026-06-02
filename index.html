@@ -1384,6 +1384,53 @@
     .quick-btn:hover{border-color:var(--orange);color:var(--orange-deep);background:#fff}
     .quick-btn .icon{font-size:18px}
 
+    .help-btn{
+      height:36px;
+      min-width:36px;
+      border:1px solid var(--line);
+      background:#fff;
+      color:var(--text);
+      border-radius:999px;
+      font-weight:900;
+      cursor:pointer;
+      box-shadow:0 6px 14px rgba(228,134,56,.10);
+      font-family:var(--font-body);
+    }
+    .onboarding-list{
+      display:grid;
+      gap:10px;
+      margin:14px 0;
+    }
+    .onboarding-step{
+      display:grid;
+      grid-template-columns:34px 1fr;
+      gap:10px;
+      align-items:start;
+      padding:12px;
+      border:1px solid #F5D8A8;
+      border-radius:16px;
+      background:#FFF8EC;
+    }
+    .onboarding-step b{
+      display:grid;
+      place-items:center;
+      width:34px;
+      height:34px;
+      border-radius:12px;
+      background:linear-gradient(135deg,var(--orange),var(--gold));
+      color:#fff;
+    }
+    .onboarding-step strong{
+      display:block;
+      margin-bottom:2px;
+      font-size:14px;
+    }
+    .onboarding-step span{
+      color:var(--muted);
+      font-size:12.5px;
+      line-height:1.45;
+    }
+
     .game-progress-card{
       background:#111827;
       color:#fff;
@@ -1495,6 +1542,11 @@
         padding:0;
         border-radius:50%;
         font-size:0;
+      }
+      .help-btn{
+        height:32px;
+        min-width:32px;
+        padding:0;
       }
       .guest-login-btn::before{
         content:"👤";
@@ -1704,6 +1756,7 @@
           <option value="ja">🇯🇵 JP</option>
         </select>
         <button id="muteToggleBtn" class="mute-btn" onclick="window.toggleMute()" title="Mute / Unmute">🔊</button>
+        <button id="helpTopBtn" class="help-btn" onclick="window.showOnboardingGuide(true)" title="How to play" aria-label="How to play">?</button>
         <button id="guestLoginTopBtn" class="guest-login-btn hidden" onclick="window.showAuthScreen()" data-i18n="topbar.snsLogin">
           👤 SNS 로그인
         </button>
@@ -2323,6 +2376,29 @@
       </div>
     </div>
 
+    <!-- 처음 사용자 게임 순서 안내 -->
+    <div id="onboardingPopup" class="popup-overlay hidden">
+      <div class="popup-card maru-popup">
+        <button type="button" class="popup-close-btn" onclick="window.closeOnboardingGuide()" aria-label="Close">×</button>
+        <div class="saekdong-v">
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px;text-align:center" data-i18n="onboarding.title">처음 한 판 안내</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 12px;text-align:center" data-i18n="onboarding.subtitle">호스트 한 명이 방을 만들고 친구들이 QR로 들어와요.</p>
+        <div class="onboarding-list">
+          <div class="onboarding-step"><b>1</b><div><strong data-i18n="onboarding.step1Title">방 만들기</strong><span data-i18n="onboarding.step1Body">호스트가 닉네임을 쓰고 방을 만들면 QR 코드가 나옵니다.</span></div></div>
+          <div class="onboarding-step"><b>2</b><div><strong data-i18n="onboarding.step2Title">친구 초대</strong><span data-i18n="onboarding.step2Body">참가자는 QR을 스캔하거나 방 코드로 들어옵니다.</span></div></div>
+          <div class="onboarding-step"><b>3</b><div><strong data-i18n="onboarding.step3Title">벌칙과 술래 수 설정</strong><span data-i18n="onboarding.step3Body">호스트가 벌칙과 목표 술래 수를 정합니다.</span></div></div>
+          <div class="onboarding-step"><b>4</b><div><strong data-i18n="onboarding.step4Title">준비 후 가위바위보</strong><span data-i18n="onboarding.step4Body">모두 준비하면 카운트다운 뒤 가위, 바위, 보를 선택합니다.</span></div></div>
+          <div class="onboarding-step"><b>5</b><div><strong data-i18n="onboarding.step5Title">술래 확정과 한판 더</strong><span data-i18n="onboarding.step5Body">목표 술래 수가 채워지면 게임이 끝나고 호스트가 다시 초대할 수 있습니다.</span></div></div>
+        </div>
+        <button class="btn-kparty" onclick="window.closeOnboardingGuide()">
+          <span data-i18n="onboarding.startBtn">알겠어요, 시작!</span>
+          <span class="go-pill">GO</span>
+        </button>
+      </div>
+    </div>
+
     <!-- 공용 confirm 팝업 (네이티브 confirm 대체) -->
     <div id="confirmPopup" class="popup-overlay hidden">
       <div class="popup-card maru-popup">
@@ -2355,6 +2431,19 @@
         "topbar.room": "방 {code}",
         "topbar.muteOn": "🔊",
         "topbar.muteOff": "🔇",
+        "onboarding.title": "처음 한 판 안내",
+        "onboarding.subtitle": "호스트 한 명이 방을 만들고 친구들이 QR로 들어와요.",
+        "onboarding.step1Title": "방 만들기",
+        "onboarding.step1Body": "호스트가 닉네임을 쓰고 방을 만들면 QR 코드가 나옵니다.",
+        "onboarding.step2Title": "친구 초대",
+        "onboarding.step2Body": "참가자는 QR을 스캔하거나 방 코드로 들어옵니다.",
+        "onboarding.step3Title": "벌칙과 술래 수 설정",
+        "onboarding.step3Body": "호스트가 벌칙과 목표 술래 수를 정합니다.",
+        "onboarding.step4Title": "준비 후 가위바위보",
+        "onboarding.step4Body": "모두 준비하면 카운트다운 뒤 가위, 바위, 보를 선택합니다.",
+        "onboarding.step5Title": "술래 확정과 한판 더",
+        "onboarding.step5Body": "목표 술래 수가 채워지면 게임이 끝나고 호스트가 다시 초대할 수 있습니다.",
+        "onboarding.startBtn": "알겠어요, 시작!",
         // common
         "common.cancel": "취소",
         "common.confirm": "확인",
@@ -2677,6 +2766,19 @@
         "topbar.room": "Room {code}",
         "topbar.muteOn": "🔊",
         "topbar.muteOff": "🔇",
+        "onboarding.title": "How to play",
+        "onboarding.subtitle": "One host creates a room, and friends join with QR.",
+        "onboarding.step1Title": "Create a room",
+        "onboarding.step1Body": "The host enters a nickname and creates a room to show a QR code.",
+        "onboarding.step2Title": "Invite friends",
+        "onboarding.step2Body": "Players scan the QR code or enter the room code.",
+        "onboarding.step3Title": "Set penalty and loser count",
+        "onboarding.step3Body": "The host sets the penalty and target number of losers.",
+        "onboarding.step4Title": "Ready, then play",
+        "onboarding.step4Body": "When everyone is ready, choose rock, paper, or scissors after the countdown.",
+        "onboarding.step5Title": "Finish or play again",
+        "onboarding.step5Body": "When the target losers are decided, the host can invite everyone for one more game.",
+        "onboarding.startBtn": "Got it, start!",
         "common.cancel": "Cancel",
         "common.confirm": "OK",
         "common.home": "Home",
@@ -2976,6 +3078,19 @@
         "topbar.room": "部屋 {code}",
         "topbar.muteOn": "🔊",
         "topbar.muteOff": "🔇",
+        "onboarding.title": "はじめての遊び方",
+        "onboarding.subtitle": "ホストが部屋を作り、友だちはQRで参加します。",
+        "onboarding.step1Title": "部屋を作る",
+        "onboarding.step1Body": "ホストがニックネームを入力して部屋を作るとQRコードが表示されます。",
+        "onboarding.step2Title": "友だちを招待",
+        "onboarding.step2Body": "参加者はQRをスキャンするか部屋コードで入ります。",
+        "onboarding.step3Title": "罰ゲームと鬼の人数",
+        "onboarding.step3Body": "ホストが罰ゲームと目標の鬼人数を決めます。",
+        "onboarding.step4Title": "準備してじゃんけん",
+        "onboarding.step4Body": "全員が準備したらカウントダウン後にグー、チョキ、パーを選びます。",
+        "onboarding.step5Title": "鬼決定ともう一回",
+        "onboarding.step5Body": "目標人数の鬼が決まると終了し、ホストがもう一回招待できます。",
+        "onboarding.startBtn": "わかった、開始！",
         "common.cancel": "キャンセル",
         "common.confirm": "OK",
         "common.home": "ホームへ",
@@ -6845,7 +6960,22 @@
         showScreen("screenJoin");
       } else {
         showScreen("screenHome");
+        setTimeout(() => showOnboardingGuide(false), 450);
       }
+    }
+
+    function showOnboardingGuide(manual = false) {
+      const popup = $("onboardingPopup");
+      if (!popup) return;
+      if (!manual && localStorage.getItem("rpsOnboardingSeen") === "1") return;
+      popup.classList.remove("hidden");
+      if (!manual) localStorage.setItem("rpsOnboardingSeen", "1");
+    }
+
+    function closeOnboardingGuide() {
+      localStorage.setItem("rpsOnboardingSeen", "1");
+      const popup = $("onboardingPopup");
+      if (popup) popup.classList.add("hidden");
     }
 
     async function initFromUrl() {
@@ -6938,8 +7068,10 @@
       } else {
         if (!authState) {
           showAuthScreen();
+          setTimeout(() => showOnboardingGuide(false), 450);
         } else {
           showScreen("screenHome");
+          setTimeout(() => showOnboardingGuide(false), 450);
         }
       }
     }
@@ -6991,6 +7123,8 @@
     window.showAuthScreen = showAuthScreen;
     window.loginWithSns = loginWithSns;
     window.playAsGuest = playAsGuest;
+    window.showOnboardingGuide = showOnboardingGuide;
+    window.closeOnboardingGuide = closeOnboardingGuide;
 
     // ===== Phase 2: 게임 루프 + 로비 관리 =====
 
