@@ -16,7 +16,7 @@ for (const file of ["index.html", "main.js", "style.css", "privacy.html", "terms
 }
 
 await mkdir(new URL("ASSETS", dist), { recursive: true });
-for (const dir of ["fonts", "rps", "vendor"]) {
+for (const dir of ["fonts", "rps", "vendor", "build8"]) {
   await cp(new URL(`ASSETS/${dir}`, root), new URL(`ASSETS/${dir}`, dist), { recursive: true, force: true });
 }
 
