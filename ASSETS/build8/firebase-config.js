@@ -14,11 +14,11 @@
 
   // TODO(M1): Firebase Console 값으로 교체. projectId 는 서버 FIREBASE_PROJECT_ID 와 동일해야 함.
   var FIREBASE_CONFIG = {
-    apiKey: "__FILL_FIREBASE_API_KEY__",
-    authDomain: "__FILL_PROJECT_ID__.firebaseapp.com",
-    projectId: "__FILL_PROJECT_ID__",
-    appId: "__FILL_FIREBASE_APP_ID__",
-    messagingSenderId: "__FILL_MESSAGING_SENDER_ID__",
+    apiKey: "AIzaSyB4tFnQPvCew9Z2jK7GbTRqcwjxZ3JVV9g",
+    authDomain: "woorimaru-rps-12345.firebaseapp.com",
+    projectId: "woorimaru-rps-12345",
+    appId: "",
+    messagingSenderId: "",
   };
 
   // Build8 서버 (운영 배포). 변경 금지.
