@@ -1,14 +1,14 @@
 # 앱등록 준비상태 점검
 
-점검일: 2026-05-29
+점검일: 2026-06-10
 
 ## 요약 판정
 
 - 웹앱 출시/테스트 준비도: 85%
 - Supabase 운영 자동화 준비도: 80%
-- App Store / Google Play 제출 준비도: 55%
+- App Store / Google Play 제출 준비도: 70%
 
-현재 웹 배포와 Supabase 자동화는 앱 테스트에 사용할 수 있는 수준입니다. Capacitor CLI 설치, Android/iOS 네이티브 프로젝트 생성, `cap sync`까지 완료되었습니다. 다만 App Store와 Google Play에 제출하려면 앱 아이콘/스플래시 정식 제작, Android Studio 실기기 실행, Mac/Xcode iOS 빌드, 네이티브 OAuth QA, 스토어 메타데이터 작성이 추가로 필요합니다.
+현재 웹 배포와 Supabase 자동화는 앱 테스트에 사용할 수 있는 수준입니다. Android와 iOS 네이티브 프로젝트가 모두 생성되었습니다. App Store 제출 전 Xcode 개발자 디렉터리 선택, Apple Developer Team 연결, iOS Simulator/실기기 테스트, 네이티브 OAuth QA, TestFlight 업로드, 스토어 메타데이터 작성이 추가로 필요합니다.
 
 ## 현재 통과한 항목
 
@@ -16,15 +16,16 @@
 - 개인정보 처리방침 페이지 공개 정상: https://product-builder-lecture-phi.vercel.app/privacy.html
 - 이용약관 페이지 공개 정상: https://product-builder-lecture-phi.vercel.app/terms.html
 - 계정 삭제 안내 페이지 공개 정상: https://product-builder-lecture-phi.vercel.app/account-delete.html
-- `npm.cmd test` 통과: `index.html` 내 JavaScript 문법 정상
-- `npm.cmd run build:web` 통과: `dist/` 빌드 정상
+- `npm test` 통과: `index.html` 내 JavaScript 문법 정상
+- `npm run build:web` 통과: `dist/` 빌드 정상
 - Supabase / GitHub Actions 자동배포 최근 성공
 - 앱 내부에 계정 삭제 버튼 존재
 - Apple `.p8` 키 파일은 로컬에 있으나 `.gitignore`에 의해 Git 추적 대상은 아님
-- Capacitor CLI 설치 완료: `7.6.5`
-- `android/` 프로젝트 로컬 생성 완료
-- `ios/` 프로젝트 로컬 생성 완료
-- `npm.cmd run cap:sync` 완료
+- npm/npx 설치 확인: `11.16.0`
+- CocoaPods 설치 확인: `1.16.2`
+- 최신 저장소에 `android/` 프로젝트 포함
+- 현재 Mac 작업공간에 `ios/` 프로젝트 생성 완료
+- iOS URL scheme, 카메라 권한, 언어별 앱 아이콘 설정 완료
 - Android Studio 설치 완료
 
 ## 제출 전 주요 막힘 항목
@@ -43,16 +44,22 @@ Android Studio 설치는 완료되었습니다.
 
 현재 단계에서는 Android Studio용 별도 CLI 키나 인증키는 필요하지 않습니다.
 
-### 2. iOS 빌드용 Mac/Xcode 필요
+### 2. Xcode Team 연결 및 iOS 빌드 필요
 
-iOS 프로젝트 파일은 로컬에 생성되었지만, Windows에서는 다음 작업을 할 수 없습니다.
+현재 Mac에는 Xcode가 설치되어 있지만 `xcode-select`가 `/Library/Developer/CommandLineTools`를 가리키고 있어 Xcode 빌드를 실행할 수 없습니다. 전체 Xcode 개발자 디렉터리를 선택하고 Apple Developer Team을 연결해야 합니다.
 
-- Xcode 실행
-- iOS Simulator 실행
-- iPhone용 IPA 빌드
-- TestFlight 업로드
+필요한 작업:
 
-Mac 또는 클라우드 Mac 준비 후 호출해야 합니다.
+- `sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer`
+- `sudo xcodebuild -runFirstLaunch`
+- `npx cap sync ios`
+- `ios/App/App.xcworkspace` 열기
+- Apple Developer Team 선택
+- Xcode에서 iOS Simulator 실행
+- 실제 iPhone 실행
+- Archive 검증 및 TestFlight 업로드
+
+자세한 iOS 기준 체크리스트는 `docs/IOS_APP_STORE_95_CHECKLIST.md`를 기준으로 진행합니다.
 
 ### 3. 앱 아이콘 / 스플래시 자산 필요
 
@@ -64,7 +71,7 @@ Mac 또는 클라우드 Mac 준비 후 호출해야 합니다.
 - 스플래시 화면
 - App Store / Google Play 스크린샷
 
-현재 Capacitor 기본 아이콘/스플래시 자산은 생성되었지만, 스토어 제출용으로는 정식 브랜드 자산으로 교체해야 합니다.
+현재 iOS 기본/영문/일문 앱 아이콘과 스플래시 자산은 적용되었습니다. App Store 스크린샷과 실제 기기에서의 최종 아이콘/스플래시 표시 확인이 필요합니다.
 
 제작 기준 문서: `docs/APP_ICON_SPLASH_SPEC.md`
 
@@ -101,7 +108,7 @@ Mac 또는 클라우드 Mac 준비 후 호출해야 합니다.
 
 1. 앱 아이콘/스플래시 정식 제작 및 적용
 2. Android Studio 설치 후 호출: 설치 완료, 다음은 Android 프로젝트 실행 테스트
-3. Mac 시스템 설치 후 호출: Xcode/iOS 빌드 및 TestFlight 준비
+3. Xcode Team 연결 후 iOS 빌드 및 TestFlight 준비
 4. 1/2/3 완료 후 네이티브 OAuth 리다이렉트 테스트
 5. 1/2/3/4 완료 후 App Store Connect / Google Play Console 제출 준비
 
@@ -162,16 +169,15 @@ Android Studio는 설치 완료되었습니다. 다음에 호출하면 아래 �
 4. Android Studio의 Run 버튼으로 앱을 실행한다.
 5. 앱 첫 화면, 게스트 모드, 카카오/라인 로그인, QR 게임방 참여를 확인한다.
 
-### Mac 시스템 설치 후 다음 호출
+### Apple Developer Team 연결 후 다음 호출
 
-Mac 또는 클라우드 Mac 준비 후 호출하면 아래 작업을 진행합니다.
+Xcode에서 App 대상의 Team을 선택한 뒤 아래 작업을 진행합니다.
 
-- Xcode 설치 확인
-- CocoaPods 설치 확인
-- iOS 프로젝트 열기
-- Apple Developer 계정 연결
+- iOS workspace 빌드 확인
+- Simulator 실행
 - iPhone 실기기 실행
-- TestFlight 업로드 준비
+- Archive 검증
+- TestFlight 업로드
 
 ### 네이티브 1/2/3 완료 후 다음 호출
 

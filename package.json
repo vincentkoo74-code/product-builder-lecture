@@ -4,6 +4,7 @@
   "description": "QR party rock-paper-scissors game for web and mobile app stores",
   "main": "main.js",
   "scripts": {
+    "build": "npm run build:web",
     "build:web": "node scripts/build-web.mjs",
     "cap:init": "npm run build:web && npx cap init \"마루의 가위바위보\" com.maru.rps --web-dir dist",
     "cap:add:ios": "npm run build:web && npx cap add ios",
@@ -11,7 +12,9 @@
     "cap:sync": "npm run build:web && npx cap sync",
     "cap:open:ios": "npx cap open ios",
     "cap:open:android": "npx cap open android",
-    "test": "node -e \"const fs=require('fs'); const html=fs.readFileSync('index.html','utf8'); const m=html.match(/<script>([\\s\\S]*)<\\/script>/); new Function(m[1]); console.log('JS syntax OK')\""
+    "sync:logic": "node scripts/sync-game-logic.mjs",
+    "test": "vitest run",
+    "test:syntax": "node -e \"const fs=require('fs'); const html=fs.readFileSync('index.html','utf8'); const m=html.match(/<script>([\\s\\S]*)<\\/script>/); new Function(m[1]); console.log('JS syntax OK')\""
   },
   "repository": {
     "type": "git",
@@ -27,13 +30,18 @@
   "homepage": "https://github.com/vincentkoo74-code/product-builder-lecture#readme",
   "dependencies": {
     "@capacitor/app": "^7.0.0",
-    "jose": "^6.2.3"
+    "@capacitor/browser": "^7.0.5",
+    "@capacitor/screen-orientation": "^7.0.0",
+    "@supabase/supabase-js": "^2.108.1",
+    "jose": "^6.2.3",
+    "jsqr": "^1.4.0"
   },
   "devDependencies": {
     "@capacitor/android": "^7.0.0",
     "@capacitor/cli": "^7.0.0",
     "@capacitor/core": "^7.0.0",
     "@capacitor/ios": "^7.0.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^2.1.8"
   }
 }

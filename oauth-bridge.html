@@ -44,19 +44,30 @@
     <a id="fallbackLink" href="#">앱으로 돌아가기</a>
   </main>
   <script>
-    const params = new URLSearchParams(location.search);
-    const provider = params.get("provider") || "";
-    const target = new URL("com.maru.rps://oauth");
-    for (const [key, value] of params.entries()) target.searchParams.set(key, value);
-    if (!target.searchParams.get("provider") && provider) target.searchParams.set("provider", provider);
+    (function () {
+      var search = new URLSearchParams(location.search);
+      var hash = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+      var provider = search.get("provider") || hash.get("provider") || "";
 
-    const url = target.toString();
-    const link = document.getElementById("fallbackLink");
-    link.href = url;
+      var target = new URL("com.maru.rps://oauth");
+      // 쿼리와 해시 파라미터를 모두 앱 스킴으로 전달한다.
+      // (PKCE는 ?code=..., implicit/일부 provider는 #access_token=...&refresh_token=... 로 올 수 있음)
+      search.forEach(function (v, k) { target.searchParams.set(k, v); });
+      hash.forEach(function (v, k) { if (!target.searchParams.has(k)) target.searchParams.set(k, v); });
+      if (provider && !target.searchParams.get("provider")) target.searchParams.set("provider", provider);
 
-    setTimeout(() => {
-      location.href = url;
-    }, 150);
+      var url = target.toString();
+      var link = document.getElementById("fallbackLink");
+      if (link) link.href = url;
+
+      function go() {
+        try { location.replace(url); } catch (e) { location.href = url; }
+      }
+      // 즉시 시도 + 짧은 재시도. SFSafariViewController가 첫 자동 리다이렉트를 무시하는 경우 대비.
+      go();
+      setTimeout(go, 250);
+      setTimeout(go, 1000);
+    })();
   </script>
 </body>
 </html>

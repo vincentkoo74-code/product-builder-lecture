@@ -11,7 +11,8 @@ AuthKey_*.p8
 node_modules/
 package-lock.json
 dist/
-ios/
+.derivedData*/
+.DS_Store
 android/.gradle/
 android/**/build/
 android/local.properties
