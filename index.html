@@ -2948,6 +2948,13 @@
   <script src="ASSETS/vendor/qrcode.min.js"></script>
   <!-- jsQR: BarcodeDetector 미지원 환경(iOS WKWebView) QR 스캔 폴백. 오프라인 동작 위해 로컬 번들. -->
   <script src="ASSETS/vendor/jsQR.js"></script>
+  <!-- ===== Build8.1.2 마이그레이션 (Path1): Firebase compat SDK + Build8 클라이언트 =====
+       기존 Supabase/로그인/게임 코드는 무변경. 본 스크립트는 전역(firebase, window.Build8)만 정의하며
+       initializeApp/네트워크는 Build8.test() 호출 시에만 lazy 실행된다(앱 자동 동작 없음). 로컬 번들=오프라인. -->
+  <script src="ASSETS/vendor/firebase-app-compat.js"></script>
+  <script src="ASSETS/vendor/firebase-auth-compat.js"></script>
+  <script src="ASSETS/build8/firebase-config.js"></script>
+  <script src="ASSETS/build8/client.js"></script>
   <script>
     // ========== i18n 메시지 카탈로그 (ko / en / ja) ==========
     const i18n = {
@@ -9581,6 +9588,35 @@ function summarizeGameStats(rows) {
     window.ensureHostExists = ensureHostExists;
     window.startFromLobby = startFromLobby;
     window.returnToLobbyAfterGame = returnToLobbyAfterGame;
+  </script>
+  <!-- ===== Build8 마이그레이션 디버그 진입점 (격리, Internal 전용) =====
+       기존 화면 무수정: body 말단에 추가되며, b8debug 플래그(localStorage 'b8debug'='1' 또는 URL ?b8debug=1)
+       일 때만 노출된다. 평상시 사용자/테스터에게는 보이지 않으며 앱 동작에 영향 없음. -->
+  <script>
+    (function () {
+      try {
+        var on = (window.localStorage && localStorage.getItem('b8debug') === '1') ||
+                 /[?&]b8debug=1/.test(location.search || '');
+        if (!on) return;
+        var btn = document.createElement('button');
+        btn.id = 'build8DebugBtn';
+        btn.type = 'button';
+        btn.textContent = 'B8 test';
+        btn.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99999;padding:8px 12px;' +
+          'background:#E48638;color:#fff;border:none;border-radius:8px;font-size:13px;opacity:.85';
+        btn.addEventListener('click', function () {
+          if (window.Build8 && typeof window.Build8.test === 'function') {
+            btn.textContent = 'B8 …';
+            window.Build8.test()
+              .then(function () { btn.textContent = 'B8 ✓'; })
+              .catch(function () { btn.textContent = 'B8 ✗'; });
+          } else {
+            console.warn('[build8] Build8.test 미로드 (config/SDK 확인)');
+          }
+        });
+        document.body.appendChild(btn);
+      } catch (e) { /* 디버그 진입점 실패는 본 앱에 영향 없음 */ }
+    })();
   </script>
 </body>
 </html>
