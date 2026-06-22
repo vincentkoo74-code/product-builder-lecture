@@ -131,7 +131,8 @@ ID는 `BUG_MASTER_LEDGER.md`의 `WRPS-NNN`을 참조한다.
   - `src/game-logic.mjs`: `participantListView` 헬퍼(뷰 스펙) 추가.
 - **테스트**: vitest **49/49**(신규 `tests/host-transfer.test.mjs` 5건). 블록 문법 OK, build:web/cap sync OK.
 - **원칙 준수**: DB 스키마/RLS/REPLICA IDENTITY/판정/Firebase 무변경, 5s 폴링·realtime 유지.
-- **빌드**: Build8.3 = build 8→9, Archive/Export/TestFlight 재업로드(아래 갱신).
+- **빌드**: Build8.3 = build 8→9. commit `625df34` → push.
+  - ✅ **TestFlight 업로드 완료**(2026-06-22) — build 9, UPLOAD SUCCEEDED, Delivery UUID `eb3547e1-7df0-4879-81cb-d2d2f2a160b8`, API Key `8FCAM7NFRL`. 충돌 없음.
 
 ---
 
