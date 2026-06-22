@@ -99,6 +99,8 @@ ID는 `BUG_MASTER_LEDGER.md`의 `WRPS-NNN`을 참조한다.
 - **검증**: 인라인 `<script>` 블록별 문법 OK(2블록), `npm test` 39/39, `npm run build:web` OK, `npx cap sync ios` OK.
   - ⚠️ `npm run test:syntax`(greedy 정규식)는 **build8 마이그레이션 때부터** bare `<script>` 2블록을 한 덩어리로 잡아 실패 — 본 수정과 무관한 기존 결함(별도 개선 필요).
 - **미해결 이월**: WRPS-013/014는 **실기기 검증 대기**(코드 수정 완료, RELEASE 체크리스트 3절 통과 시 종결).
+- **릴리즈**: commit `38b4b6b` → push `origin/fix/build6-regression-recovery` → **Archive 성공** → **IPA export 성공**(`build/export-build8.1/WooriMaruRPS.ipa`, build 7, Apple Distribution).
+  - ⛔ **TestFlight 업로드는 미완** — 환경에 App Store Connect 자격증명 부재(인증 차단). 사용자 자격증명 제공 시 업로드 재개. build 7 충돌 시 8로 증가.
 
 ---
 
