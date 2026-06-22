@@ -54,20 +54,19 @@
 
 ---
 
-## 🚦 릴리즈 가능 여부: **Internal TestFlight = 게이트 PASS(업로드 인증 대기) · 외부/스토어 = 조건부 NO-GO**
+## 🚦 릴리즈 상태: **TestFlight 업로드 완료 · 실기기 QA 대기**
 
-### 빌드/아카이브 게이트 (2026-06-22 Build8.1)
+### 빌드/아카이브/업로드 게이트 (2026-06-22 Build8.1)
 - ✅ 빌드 성공 · ✅ **ARCHIVE SUCCEEDED** · ✅ **IPA EXPORT SUCCEEDED**(`build/export-build8.1/WooriMaruRPS.ipa`, App Store 배포 서명)
+- ✅ **TestFlight UPLOAD SUCCEEDED** — Delivery UUID `8432a629-20d7-4320-bbac-0a5dcaaa2e7a`, build **7** 전송 완료(2026-06-22, altool API Key 8FCAM7NFRL). **build 번호 충돌 없음.**
 - ✅ P0 코드 수정 완료(WRPS-013) · ✅ P0 릴리즈 차단 이슈 없음 · ✅ 게임 판정/Firebase 영역 무변경(diff 격리)
 - ✅ npm test 39/39 · ✅ 코드 검색 5종 통과
-- ⛔ **TestFlight 업로드 BLOCKED** — App Store Connect 자격증명(API 키 `.p8` 또는 app-specific password)이 환경에 없어 `altool` 인증 실패. **빌드 결함 아님, 인증 차단.**
 
-### 미해결(실기기 검증 대기)
-1. WRPS-013/014 코드 수정 완료, **실기기 멀티디바이스 검증 미수행**.
-2. WRPS-026(호스트 빠짐)·WRPS-036(매트릭스 54셀) 실기기 미검증.
-
-**업로드 재개 조건(사용자 1회 작업)**: ASC API 키(`~/.appstoreconnect/private_keys/AuthKey_XXXX.p8` + issuer/key id) 또는 app-specific password 제공 → IPA 업로드(아래 다음 조치 명령). build 번호 **7**이 기존 TestFlight와 충돌 시 8로 증가 후 재아카이브.
-> Internal TestFlight 배포 자체는 게이트 PASS(검증 목적). 외부/스토어 릴리즈는 실기기 체크리스트 통과 전 NO-GO.
+### 다음: 실기기 QA (TestFlight 설치 후)
+- ⏳ App Store Connect **처리(Processing)** 완료 후 내부 테스터 설치 → 아래 실기기 체크리스트 수행.
+- WRPS-013/014 코드 수정 완료, **실기기 멀티디바이스 검증 대기**.
+- WRPS-026(호스트 빠짐)·WRPS-036(매트릭스 54셀) 실기기 미검증.
+> Internal TestFlight 배포 **완료**. 외부/스토어 릴리즈는 실기기 체크리스트 통과 전 NO-GO.
 
 ---
 

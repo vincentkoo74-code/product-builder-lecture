@@ -4,6 +4,8 @@
 > 한 항목이라도 ❌면 `QA_STATUS.md` 판정은 **NO-GO**.
 > 갱신: 2026-06-22
 
+> 📦 **Build8.1 릴리즈 로그**: Archive ✅ → IPA export ✅ → **TestFlight 업로드 ✅**(2026-06-22, build 7, Delivery UUID `8432a629-20d7-4320-bbac-0a5dcaaa2e7a`, API Key `8FCAM7NFRL`). 0~2·6·7절 통과. **3절(실기기) QA 대기** — 외부/스토어 릴리즈는 3절 통과 후.
+
 ---
 
 ## 0. 게이트 진입 전

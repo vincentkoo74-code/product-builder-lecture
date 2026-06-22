@@ -1,9 +1,11 @@
 # 🔴 ACTIVE ISSUES — 현재 살아있는 문제만
 
 > **닫히지 않은 문제만** 우선순위별로 관리한다. 해결되면 이 문서에서 제거하고 `BUG_MASTER_LEDGER.md`에 `현재 상태=해결`로 기록한다.
-> 기준 코드: `fix/build6-regression-recovery` (= build8) · 갱신: 2026-06-22 (Build8.1 코드 수정 반영)
+> 기준 코드: `fix/build6-regression-recovery` (= build8) · 갱신: 2026-06-22 (Build8.1 코드 수정 + **TestFlight 업로드 완료**)
 
 집계: **P0 0건 · P1 3건 · P2 3건 · P3 2건** (총 8건 미해결) · **Build8.1에서 3건 코드 수정**(WRPS-013/014/018, 실기기 검증 대기)
+
+> 📦 **TestFlight: build 7 업로드 완료**(2026-06-22, Delivery UUID `8432a629-20d7-4320-bbac-0a5dcaaa2e7a`). ASC Processing 후 내부 테스터 실기기 QA 진행 → 통과 시 WRPS-013/014 종결.
 
 ---
 
