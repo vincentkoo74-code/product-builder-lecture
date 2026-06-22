@@ -78,6 +78,7 @@ build8 = build6 + 격리된 Firebase 스캐폴딩(+36줄). 게임 로직 byte �
 | WRPS-039 | ready 상태에서 술래 수 편집 불가 | Build5 | 2026-06-14 | B5 | ded6154 | NO | — | 유지됨 | 정상(`isLoserCountEditable` ready 추가) | P2 |
 | WRPS-040 | Firebase(Build8) 마이그레이션 통합 | Build8 | 2026-06-21 | B8 | 9797a0c…35cd68d | NO | — | 유지됨(격리) | **회귀 0** — 게임로직 byte 동일 | N/A |
 | WRPS-041 | GAME_LOGIC.md 자동시작 기술이 코드와 불일치(문서 드리프트) | Build4 이후 | 2026-06-13 | **Build8.1 (2026-06-22)** | 문서수정 | — | — | **수정반영** | GAME_LOGIC.md §3/§11에 Build4 자동시작 재채택 정정 반영 | P2→수정됨 |
+| WRPS-042 | 전원 Ready 기반 시작 트리거 통일(호스트 시작 버튼 폐지·호스트 포함 전원 ready) | Build8.1(QA) | 2026-06-22 | **Build8.2(예정)** | (미구현) | — | — | **미반영(사양 확정)** | 현재 코드: 호스트 ready 게이트 제외 + `hostStartBtn` 노출 → 사양 불일치. elimination 파급으로 비국소 변경 → Build8.2 | P1 |
 
 ---
 

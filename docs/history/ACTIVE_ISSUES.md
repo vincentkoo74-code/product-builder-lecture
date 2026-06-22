@@ -3,7 +3,7 @@
 > **닫히지 않은 문제만** 우선순위별로 관리한다. 해결되면 이 문서에서 제거하고 `BUG_MASTER_LEDGER.md`에 `현재 상태=해결`로 기록한다.
 > 기준 코드: `fix/build6-regression-recovery` (= build8) · 갱신: 2026-06-22 (Build8.1 코드 수정 + **TestFlight 업로드 완료**)
 
-집계: **P0 0건 · P1 3건 · P2 3건 · P3 2건** (총 8건 미해결) · **Build8.1에서 3건 코드 수정**(WRPS-013/014/018, 실기기 검증 대기)
+집계: **P0 0건 · P1 4건 · P2 2건 · P3 2건** (총 8건 미해결, WRPS-042 신규 P1 포함) · **Build8.1에서 3건 코드 수정**(WRPS-013/014/018, 실기기 검증 대기)
 
 > 📦 **TestFlight: build 7 업로드 완료**(2026-06-22, Delivery UUID `8432a629-20d7-4320-bbac-0a5dcaaa2e7a`). ASC Processing 후 내부 테스터 실기기 QA 진행 → 통과 시 WRPS-013/014 종결.
 
@@ -26,6 +26,17 @@
 ---
 
 ## 🟧 P1 — 주요 (Major)
+
+### WRPS-042 — 전원 Ready 기반 게임 시작 트리거 통일 (사양 확정, 코드 미일치 → Build8.2)
+- **사양(확정 2026-06-22)**: ① 호스트는 벌칙 설정 권한만 / ② 벌칙 후 **호스트 포함 전원**이 각자 게임 준비 / ③ 활성 전원 ready 시 **마지막 ready 액션이 시작 트리거** / ④ **호스트 전용 시작 버튼 미사용** / ⑤ 재게임도 동일 / ⑥ 호스트 고유 권한 = 벌칙 설정·재게임 요청·방 관리/승계.
+- **현재 코드(불일치)**:
+  - `computePlayerStatuses`(game-logic.mjs:58)가 호스트를 `HOST`로 분류 → `getActivePlayers()`/`areAllActivePlayersReady()`에서 **호스트 제외**(호스트는 ready 안 누름).
+  - `showReadyScreen`(7801~7809)이 호스트에게 **`hostStartBtn`(게임 시작) 노출 + `myReadyBtn` 숨김**. → 사양 ④ 위반(시작 버튼 존재), 사양 ②/③ 위반(호스트 ready 미참여).
+  - 잔존: `hostStartBtn`(HTML 2627, ref 6262, showReadyScreen 7803/7807, `updateHostStartButton` 7851), `lobbyHostStartBtn`(HTML 2602, ref 9468), i18n `ready.hostStart`/`ready.rematchStart`.
+  - 단, 비호스트 전원 ready 시 **auto-start는 동작**(`fetchParticipants`/`triggerReplayIfLastReady`) → 호스트 버튼은 사실상 중복.
+- **위험/난이도**: 호스트를 active player로 포함시키면 **elimination(소거)·술래 상한(=비호스트−1)·판정**에 파급(게임-로직 단일소스 `src/game-logic.mjs` + `elimination.test.mjs` 39케이스 영향). **비국소 변경, 별도 QA 필요.**
+- **분류**: **Build8.2 수정 대상**. build 7(TestFlight 업로드 완료)에는 즉석 반영하지 않음.
+- **상태**: 🔴 QA 발견 / 사양 확정 / **코드 불일치 확인됨** — Build8.2 구현 대기. 상세 구현 옵션은 `FEATURE_DECISION_HISTORY.md` §11 참조.
 
 ### WRPS-015 — 카운트다운 기기간 시차 (late-arrival 보정 공백)
 - **증상**: 늦게 이벤트를 받은 기기가 카운트다운 단계가 밀림.

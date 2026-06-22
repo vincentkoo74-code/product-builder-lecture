@@ -16,7 +16,8 @@
 | 자동 시작 | pre-Build3 (06-06) | 제거 | 승인 | 호스트 미클릭 오동작 → 수동 버튼 | `FIXES.md`, `GAME_LOGIC.md §3/§11` | **폐기** |
 | 자동 시작 | Build4 (06-13) | 재도입 | QA 승인 | 활성 전원 Ready 시 자동시작+마지막 Ready 트리거 | `BUILD4_P0_QA_MATRIX` 항목3, `triggerReplayIfLastReady`(7879) | **활성** |
 | 자동 시작 | Build4~ | 가드 추가 | 승인 | 중복시작 방지 | `autoStartInFlight`, `areAllActivePlayersReady`(4505) | **활성** |
-- 연계 버그: WRPS-011, WRPS-037(stale 오발화 위험), WRPS-041(GAME_LOGIC.md 문서 드리프트 — 갱신 필요).
+| 시작 트리거 통일 | Build8.2(예정) | **호스트 시작 버튼 폐지 + 호스트 포함 전원 Ready 트리거** | 사양 확정(2026-06-22) | 2인전 등에서 호스트 시작 버튼 흐름 혼란 → 전원 Ready 단일화 | WRPS-042, §11 | **확정(미구현)** |
+- 연계 버그: WRPS-011, WRPS-037(stale 오발화 위험), WRPS-041(GAME_LOGIC.md 문서 드리프트 — Build8.1 해소), **WRPS-042(전원 Ready 통일 — Build8.2)**.
 
 ## 2. 호스트 승계 (Host Succession)
 
@@ -91,6 +92,28 @@
 | 자동선택 타임아웃 | Build1/2 | 도입 | 승인 | 미선택자 5초 후 랜덤 | `autoFillChoices` | **활성** |
 | 게임 타입(단판/삼세판/5판3승) | 실험 | 도입 | 미승인 | 세트 개념 | `67e34b6`(origin/agents/yesterday-work-review) | **미머지(실험)** |
 | 마루 캐릭터/색동 리디자인 | 실험 | 도입 | 부분 | Auth/Home 키비주얼 | `678c7a4`(origin/ui-redesign) | **미머지(실험)** |
+
+---
+
+## 11. WRPS-042 — 전원 Ready 기반 시작 트리거 통일 (사양 확정 2026-06-22, Build8.2 구현)
+
+### 확정 사양
+1. 호스트는 **벌칙 설정 권한만** 가진다.
+2. 벌칙 설정 후 **호스트 포함 모든 플레이어**가 각자 게임 준비 버튼을 누른다.
+3. 모든 active player가 ready가 되면 **마지막 ready 액션이 게임 시작 트리거**가 된다.
+4. **별도 호스트 게임 시작 버튼은 사용하지 않는다.**
+5. 재게임에서도 동일 적용.
+6. 호스트 고유 권한 = 벌칙 설정 · 한번더/재게임 요청 · 방 관리/승계.
+
+### 현재 코드와의 차이 (불일치 확인됨)
+- 호스트가 `computePlayerStatuses`에서 `HOST`로 분류되어 **active/ready 게이트에서 제외**됨.
+- `showReadyScreen`이 호스트에게 **시작 버튼(`hostStartBtn`) 노출, 준비 버튼 숨김**.
+
+### Build8.2 구현 옵션 (구현 전 제품 확정 필요)
+- **옵션 A (호스트=완전 플레이어)**: `computePlayerStatuses`에서 호스트도 `ACTIVE`로. 호스트가 가위바위보 참여·술래 대상 포함. → **elimination/술래 상한/판정/`elimination.test.mjs`(39) 전면 재검증** 필요. 고위험.
+- **옵션 B (호스트=ready만, 비참여 심판)**: 호스트는 게임 준비 버튼을 누르고 ready 게이트에 포함되지만, 소거/술래 대상에선 계속 제외(심판). `showReadyScreen` 버튼만 교체 + ready 게이트에 호스트 포함. → 중위험, elimination 무영향. **권장 후보**.
+- 공통 정리 대상: `hostStartBtn`(HTML 2627·ref 6262·showReadyScreen 7803/7807·`updateHostStartButton` 7851), `lobbyHostStartBtn`(HTML 2602·ref 9468), i18n `ready.hostStart`/`ready.rematchStart`, `startGame`/`startFromLobby` 버튼 onclick.
+- ⚠️ 옵션 A/B 중 **게임 모델(호스트가 가위바위보를 내는가) 확정** 후 구현. `KNOWN_BEHAVIORS.md` 경계 항목과 직접 연결.
 
 ---
 
