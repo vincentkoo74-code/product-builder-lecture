@@ -121,6 +121,20 @@ ID는 `BUG_MASTER_LEDGER.md`의 `WRPS-NNN`을 참조한다.
 
 ---
 
+## Build 8.3 — WRPS-044 호스트 승계 참가자 목록 stale 수정 (2026-06-22)
+
+- **WRPS-044**(Build8.1 실기기 발견): 호스트 승계+퇴장 후 참가자 목록/HOST 태그 stale.
+- **런타임 확정**: Supabase REST 제어 테스트로 `transferHostAndLeave` 쓰기 시퀀스 재현 → 쓰기/RLS 정상, 승계 후 DB 2행 정확 → **Case A(DB 정상 / UI 비정상)**.
+- **원인**: participants realtime **DELETE 이벤트가 `room_id` 필터로 전달 안 됨**(REPLICA IDENTITY 기본) → 옛 호스트 제거 미전파.
+- **수정(클라이언트 국소, DB 무변경)**:
+  - `index.html`: rooms realtime 리스너 + `handleRoomUpdate` 상태 전이 시 `scheduleFetchParticipants` 강제 재조회 → 전체 재조회로 `state.participants` 교체 → `renderAll`이 목록/HOST 배지 재계산.
+  - `src/game-logic.mjs`: `participantListView` 헬퍼(뷰 스펙) 추가.
+- **테스트**: vitest **49/49**(신규 `tests/host-transfer.test.mjs` 5건). 블록 문법 OK, build:web/cap sync OK.
+- **원칙 준수**: DB 스키마/RLS/REPLICA IDENTITY/판정/Firebase 무변경, 5s 폴링·realtime 유지.
+- **빌드**: Build8.3 = build 8→9, Archive/Export/TestFlight 재업로드(아래 갱신).
+
+---
+
 ## (다음) Build 9+ — 여기에 누적
 
 > 새 Build 작업 시작 시 이 아래에 섹션 추가. 형식: 신규 버그 / 해결 버그 / 재발 / 미완 검증 / 릴리즈 판정.

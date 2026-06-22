@@ -174,6 +174,15 @@ export function resolveElimination({
   };
 }
 
+// WRPS-044: 클라이언트 참가자 목록은 "최신 DB 행"을 그대로 신뢰해야 한다(호스트 승계/퇴장 후 stale 제거).
+// 주어진 DB 행 배열에서 표시용 뷰(멤버 id 목록 · 단일 호스트 id · 인원수)를 도출한다.
+// 전체 재조회 결과로 이 뷰를 다시 그리면 옛 호스트 행 제거·is_host 변경·신규 참가자 반영이 자동 보장된다.
+export function participantListView(rows) {
+  const list = (rows || []).filter((r) => r && r.id);
+  const host = list.find((r) => r.is_host || r.isHost);
+  return { ids: list.map((r) => r.id), hostId: host ? host.id : null, count: list.length };
+}
+
 // 권위 DB 참가자 행에서 게임 전적 요약을 만든다(클라이언트 무관 동일 결과 보장용).
 // rows = [{ id, name, isHost, wins, losses, draws, penalties }]
 // 승률 = wins / (wins + losses) (무승부 제외 — 기존 제품 정의 유지, account.winRateNote).

@@ -4990,6 +4990,10 @@
         .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomCode}` }, async () => {
           const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
           if (room) handleRoomUpdate(room);
+          // WRPS-044: 호스트 승계/퇴장은 beginNewGameRound로 room을 갱신하므로 이 rooms 이벤트는 확실히 발화한다.
+          // 동반되는 participants DELETE/is_host 변경은 realtime DELETE 이벤트가 room_id 필터로 전달되지
+          // 않을 수 있어(REPLICA IDENTITY 기본) 누락 가능 → room 변경 시 participants도 강제 재조회해 stale 제거.
+          scheduleFetchParticipants(roomCode);
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomCode}` }, () => {
           scheduleFetchParticipants(roomCode);
@@ -5109,6 +5113,10 @@
       } else if (state.status === "playing") {
         await enterPlayingStateFromRoomUpdate();
       }
+      // WRPS-044: 상태 전이(호스트 승계 시 status가 waiting 등으로 변경)에는 participants 변경
+      // (옛 호스트 삭제·새 호스트 is_host)이 동반된다. realtime DELETE가 누락될 수 있으므로
+      // 전이 시 participants를 강제 재조회해 stale 목록/HOST 태그를 제거한다.
+      if (oldStatus !== state.status && db && state.roomCode) scheduleFetchParticipants(state.roomCode);
       renderAll();
     }
 
@@ -6910,6 +6918,15 @@ function resolveElimination({
     remainingSlotsAfter: targetLoserCount - newLosers.length,
     isComplete: false,
   };
+}
+
+// WRPS-044: 클라이언트 참가자 목록은 "최신 DB 행"을 그대로 신뢰해야 한다(호스트 승계/퇴장 후 stale 제거).
+// 주어진 DB 행 배열에서 표시용 뷰(멤버 id 목록 · 단일 호스트 id · 인원수)를 도출한다.
+// 전체 재조회 결과로 이 뷰를 다시 그리면 옛 호스트 행 제거·is_host 변경·신규 참가자 반영이 자동 보장된다.
+function participantListView(rows) {
+  const list = (rows || []).filter((r) => r && r.id);
+  const host = list.find((r) => r.is_host || r.isHost);
+  return { ids: list.map((r) => r.id), hostId: host ? host.id : null, count: list.length };
 }
 
 // 권위 DB 참가자 행에서 게임 전적 요약을 만든다(클라이언트 무관 동일 결과 보장용).
