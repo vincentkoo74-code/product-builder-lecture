@@ -115,7 +115,9 @@ ID는 `BUG_MASTER_LEDGER.md`의 `WRPS-NNN`을 참조한다.
   - `index.html`: `getMaxLoserCount`=전체 참가자−1(maxLoserCountFor), `showReadyScreen`/`renderLobby` 호스트도 ready 버튼·시작 버튼 폐지, `getActivePlayers` 호스트 포함. (sync:logic 주입)
 - **테스트**: vitest **44/44**(기존 39 → 호스트=플레이어로 갱신 + WRPS-043 다중술래/maxLoserCountFor 신규). 블록 문법 OK, build:web OK, cap sync OK.
 - **잔여(WRPS-042 후속)**: 호스트룸 초기 시작 버튼(`startGameBtn`)은 setup→ready 진입용으로 유지(게임 판정 무관). 완전 통일은 후속.
-- **빌드**: Build8.2 = build number 7→8, 재Archive/Export/TestFlight 재업로드 대상(아래 갱신).
+- **빌드**: Build8.2 = build number 7→8. commit `44eb978`(코드) → push.
+  - ✅ **TestFlight 업로드 완료**(2026-06-22) — build 8, UPLOAD SUCCEEDED, Delivery UUID `47873144-873f-4360-8725-a7c3817ab3d6`, API Key `8FCAM7NFRL`. build 충돌 없음.
+  - **다음**: ASC Processing 후 내부 테스터 실기기 재검증(WRPS-042/043/013/018) → 통과 시 종결.
 
 ---
 

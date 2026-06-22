@@ -58,18 +58,18 @@
 
 ---
 
-## 🚦 릴리즈 상태: **TestFlight 업로드 완료 · 실기기 QA 대기**
+## 🚦 릴리즈 상태: **Build8.2 (build 8) TestFlight 업로드 완료 · 실기기 QA 대기**
 
-### 빌드/아카이브/업로드 게이트 (2026-06-22 Build8.1)
-- ✅ 빌드 성공 · ✅ **ARCHIVE SUCCEEDED** · ✅ **IPA EXPORT SUCCEEDED**(`build/export-build8.1/WooriMaruRPS.ipa`, App Store 배포 서명)
-- ✅ **TestFlight UPLOAD SUCCEEDED** — Delivery UUID `8432a629-20d7-4320-bbac-0a5dcaaa2e7a`, build **7** 전송 완료(2026-06-22, altool API Key 8FCAM7NFRL). **build 번호 충돌 없음.**
-- ✅ P0 코드 수정 완료(WRPS-013) · ✅ P0 릴리즈 차단 이슈 없음 · ✅ 게임 판정/Firebase 영역 무변경(diff 격리)
-- ✅ npm test 39/39 · ✅ 코드 검색 5종 통과
+### 빌드/아카이브/업로드 게이트 (2026-06-22 Build8.2)
+- ✅ **ARCHIVE SUCCEEDED** · ✅ **IPA EXPORT SUCCEEDED**(`build/export-build8.2/WooriMaruRPS.ipa`)
+- ✅ **TestFlight UPLOAD SUCCEEDED** — build **8**, Delivery UUID `47873144-873f-4360-8725-a7c3817ab3d6`(altool API Key 8FCAM7NFRL). **build 충돌 없음.**
+- ✅ npm test **44/44** · ✅ 블록 문법 OK · ✅ game-logic 단일소스 동기화 · ✅ Firebase/Build8 마이그레이션 영역 무변경
+- (이전) Build8.1 build 7 업로드: Delivery UUID `8432a629-…`.
 
-### 다음: 실기기 QA (TestFlight 설치 후)
-- ⏳ App Store Connect **처리(Processing)** 완료 후 내부 테스터 설치 → 아래 실기기 체크리스트 수행.
-- WRPS-013/014 코드 수정 완료, **실기기 멀티디바이스 검증 대기**.
-- WRPS-026(호스트 빠짐)·WRPS-036(매트릭스 54셀) 실기기 미검증.
+### 다음: 실기기 QA (build 8 설치 후)
+- ⏳ ASC **Processing** 완료 후 내부 테스터 설치 → 아래 체크리스트 수행.
+- 재검증 대상: WRPS-043(다중 술래 1~N-1)·WRPS-042(전원 Ready 시작)·WRPS-013/018(재초대 고착).
+- 미검증 게이트: WRPS-026(호스트 빠짐)·WRPS-036(멀티디바이스 매트릭스).
 > Internal TestFlight 배포 **완료**. 외부/스토어 릴리즈는 실기기 체크리스트 통과 전 NO-GO.
 
 ---
