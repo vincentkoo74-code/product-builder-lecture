@@ -68,6 +68,7 @@
 | 2026-06-22 | WRPS-043 | 1 | **Build8.2 수정** — Model P(호스트=플레이어), getMaxLoserCount=전체−1, maxLoserCountFor 단일소스 | 실기기 재검증 대기 |
 | 2026-06-22 | WRPS-042 | 3 | **Build8.2 수정** — 호스트도 ready 버튼, 시작 버튼 폐지(WRPS-043과 동시 해결) | 실기기 재검증 대기 |
 | 2026-06-22 | WRPS-014/015 | — | **실기기 PASS** (Build8.1 TestFlight) → 종결 | closed |
+| 2026-06-22 | WRPS-044 | 1 | **신규 발견** (Build8.1 실기기) — 호스트 승계+퇴장 후 참가자 목록/HOST stale | 원인 판별중(데이터 아님→전파/렌더 유력), 수정 보류 |
 
 ---
 

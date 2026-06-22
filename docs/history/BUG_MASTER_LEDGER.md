@@ -80,6 +80,7 @@ build8 = build6 + 격리된 Firebase 스캐폴딩(+36줄). 게임 로직 byte �
 | WRPS-041 | GAME_LOGIC.md 자동시작 기술이 코드와 불일치(문서 드리프트) | Build4 이후 | 2026-06-13 | **Build8.1 (2026-06-22)** | 문서수정 | — | — | **수정반영** | GAME_LOGIC.md §3/§11에 Build4 자동시작 재채택 정정 반영 | P2→수정됨 |
 | WRPS-042 | 전원 Ready 기반 시작 트리거 통일(호스트 시작 버튼 폐지·호스트 포함 전원 ready) | Build8.1(QA) | 2026-06-22 | **Build8.2 (2026-06-22)** | 코드수정 | — | — | **수정반영** | Model P 채택 — `showReadyScreen`/`renderLobby` 호스트도 ready 버튼, hostStartBtn/lobbyHostStartBtn 폐지. 실기기 검증 대기 | P1→수정됨 |
 | WRPS-043 | 3인 게임에서 술래 2명 선택 불가(1명 고정) — 다중 술래 회귀 | Build8.1 실기기 QA | 2026-06-22 | **Build8.2 (2026-06-22)** | 코드수정 | YES(재발) | Build8.1 | **수정반영** | 원인: `getMaxLoserCount`가 비호스트−1. Model P로 호스트=플레이어 → 전체−1. game-logic.mjs 호스트 특례 제거 + maxLoserCountFor 단일소스 + 테스트 44 | P1→수정됨 |
+| WRPS-044 | 호스트 승계+퇴장 후 참가자 목록/HOST 태그 stale(새 호스트는 본인만, 타 참가자는 옛 호스트 잔존) | Build8.1 실기기 QA | 2026-06-22 | (조사중) | — | — | — | **미수정(원인 판별중)** | 정적분석: `transferHostAndLeave` DB 쓰기(newHost is_host=true + old host DELETE)는 정상 → 데이터 아닌 **클라이언트 전파/갱신 유력**(realtime DELETE 미전달 + 5s 폴링 보정 실패 의심). 런타임 확인 필요 | P1 |
 | WRPS-014 | 참가자 단말 카운트다운 TTS 미재생 — **실기기 PASS** | Lineage A | 2026-05-18 | Build8.1 | 4a8cbda→이식 | NO | — | **검증완료** | 2026-06-22 TestFlight 실기기 참가자 폰 음성 정상 확인 → 종결 | 종결 |
 | WRPS-015 | 카운트다운 기기간 시차 — **실기기 PASS** | Lineage A | 2026-05-18 | (대체구현) | serverNow/countdownStartAt | NO | — | **검증완료** | 2026-06-22 TestFlight 실기기 동기화 정상 확인 → 종결 | 종결 |
 

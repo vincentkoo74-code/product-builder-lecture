@@ -3,7 +3,7 @@
 > **닫히지 않은 문제만** 우선순위별로 관리한다. 해결되면 이 문서에서 제거하고 `BUG_MASTER_LEDGER.md`에 `현재 상태=해결`로 기록한다.
 > 기준 코드: `fix/build6-regression-recovery` (= build8) · 갱신: 2026-06-22 (Build8.1 코드 수정 + **TestFlight 업로드 완료**)
 
-집계: **P0 0건 · P1 2건 · P2 2건 · P3 2건** (총 6건 미해결) · Build8.2에서 WRPS-042/043 코드 수정(실기기 재검증 대기)
+집계: **P0 0건 · P1 3건 · P2 2건 · P3 2건** (총 7건 미해결, WRPS-044 신규 P1 조사중) · Build8.2에서 WRPS-042/043 코드 수정(실기기 재검증 대기)
 
 > ✅ **실기기 PASS 종결(Build8.1)**: WRPS-014(참가자 TTS) · WRPS-015(카운트다운 동기화).
 > ✅ **Build8.2 코드 수정(실기기 재검증 대기)**: WRPS-042(전원 Ready 통일) · WRPS-043(다중 술래, 호스트=플레이어).
@@ -42,6 +42,18 @@
 ---
 
 ## 🟧 P1 — 주요 (Major)
+
+### WRPS-044 — 호스트 승계+퇴장 후 참가자 목록/HOST 태그 stale (원인 판별 단계)
+- **증상**: 호스트가 권한 이양 후 퇴장 → ① 새 호스트 화면: 실제 2명인데 **본인만** 표시 ② 다른 참가자 화면: 퇴장한 **옛 호스트 이름+HOST 태그 잔존**.
+- **정적 분석(코드)**:
+  - `transferHostAndLeave`(8095): DB `update newHost is_host=true` + `delete old host` + `beginNewGameRound(status:"waiting")`. **DB 쓰기 자체는 정상** → 서버 데이터는 [새호스트, 참가자] 2행으로 올바를 것으로 추정.
+  - realtime participants 리스너(4994)는 `event:'*'` + 필터 `room_id=eq.X`. **Supabase는 REPLICA IDENTITY FULL이 없으면 DELETE 이벤트가 PK만 담고 비PK(room_id) 필터에 매칭되지 않아 전달 안 됨** → 옛 호스트 DELETE 전파 누락 가능(타 참가자 stale HOST 설명).
+  - 5초 `pollInterval`(5019)이 전체 재조회 → 정상이면 ≤5s 내 보정돼야 함. **stale 지속 = 폴링/렌더 보정 실패** 의심(새 호스트 본인만 표시 설명).
+- **판별 결론(잠정)**: **데이터(서버 쓰기) 문제 아님 → 클라이언트 전파/재조회·렌더 문제 유력.** 단 런타임 확정 필요(추측 수정 금지).
+- **런타임 확정 절차**(코드 수정 전 필수):
+  1. 재현 직후 **Supabase 대시보드 → participants(room_id=해당 방)** 조회: [새호스트(is_host=true), 참가자] 2행 정확? → 정확하면 **데이터 정상=UI/전파 문제 확정**. 아니면 데이터 문제.
+  2. (선택) 임시 진단 로그: `fetchParticipants` 직후 `console.log(data.map(p=>[p.id,p.is_host]))` + `pollInterval` 발화 여부 → 클라이언트가 2행을 받는지/렌더하는지 확인.
+- **상태**: 🔴 실기기 재현 완료 · **원인 판별 중(데이터 vs UI)** · 수정 보류(런타임 확정 후 착수)
 
 ### WRPS-015 — 카운트다운 기기간 시차 → **실기기 PASS(Build8.1)**
 - 2026-06-22 TestFlight 실기기에서 동기화 정상 확인 → **종결**. (late-arrival 보정 코드 미적용이나 실사용 문제 없음 확인)
