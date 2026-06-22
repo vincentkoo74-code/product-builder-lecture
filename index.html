@@ -5255,6 +5255,18 @@
         updateSelectedCount();
         renderAll();
 
+        // WRPS-018: 3초 폴링 기반 복구 안전망. status=ready인데 안전/술래/대기 대상이 아닌
+        // 비호스트 참가자가 여전히 participantWait 화면에 떠 있으면(재초대 수락 고착 등) 준비화면으로 복구.
+        // handleRoomUpdate는 status 변경 시에만 화면을 바꾸므로 동일-status 고착은 여기서만 풀 수 있다.
+        if (state.role !== "host" && state.status === "ready" &&
+            !isSafeParticipant(state.currentUserId) && !isConfirmedLoser(state.currentUserId) &&
+            !isWaitingForNextGame(state.currentUserId)) {
+          const waitScreen = $("screenParticipantWait");
+          if (waitScreen && !waitScreen.classList.contains("hidden")) {
+            showReadyScreen();
+          }
+        }
+
         if (state.role === "host") {
           const safeIds = state.confirmedSafeIds || [];
           const loserIds = state.confirmedLoserIds || [];
@@ -7344,7 +7356,17 @@ function summarizeGameStats(rows) {
       }
       // is_ready는 resetGameKeepRoom 이후 실제 게임준비 단계에서만 사용
       // 여기서 true로 쓰면 showReadyScreen 렌더링 시 버튼이 비활성화되는 경쟁 조건 발생
-      showScreen("screenParticipantWait");
+      // WRPS-013: 초대 카운트다운이 이미 끝나 status=ready로 전환된 뒤 "수락"을 누르면,
+      // 무조건 participantWait로 보내면 handleRoomUpdate(oldStatus===ready)가 화면을 다시 안 바꿔
+      // 참가자가 대기화면에 영구 고착된다. ready 단계면 곧바로 준비화면으로 진입시킨다.
+      if (state.status === "ready" &&
+          !isSafeParticipant(state.currentUserId) &&
+          !isConfirmedLoser(state.currentUserId) &&
+          !isWaitingForNextGame(state.currentUserId)) {
+        showReadyScreen();
+      } else {
+        showScreen("screenParticipantWait");
+      }
     }
 
     async function declineInvite() {
@@ -7896,6 +7918,12 @@ function summarizeGameStats(rows) {
       const btn = $("myReadyBtn");
       btn.disabled = true;
       setBtnText(btn, t("lobby.readyPreparing"));
+      // WRPS-014: 모바일 user-gesture 컨텍스트(준비 버튼 클릭)에서 speechSynthesis를 사전 언락.
+      // 이후 카운트다운 TTS는 WebSocket 이벤트 경로(제스처 없음)에서 호출되어 참가자 단말에서 차단되므로,
+      // 여기서 빈 발화로 미리 잠금 해제해야 참가자 폰에서도 "안내면 술래 가위바위보" 음성이 재생된다.
+      if (window.speechSynthesis && !isMuted()) {
+        try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch (e) { /* unlock 실패는 무음일 뿐 앱 동작 무관 */ }
+      }
       if (getOnlineMode()) {
         try {
           await Promise.race([

@@ -73,7 +73,9 @@ QR 스캔 → 닉네임 입력 → 방 입장
 ## 3. 라운드 시작 로직 (모든 라운드 공통) ✅ 2026-06-06 수정
 
 ### 핵심 원칙
-> **모든 라운드의 첫 대결은 반드시 호스트가 게임 시작 버튼을 눌러야 시작된다.**
+> ⚠️ **이 절(2026-06-06 기준)은 이후 Build4(2026-06-13)에서 번복되었다.** 아래 §3 끝의 "변경 이력(2026-06-13 Build4)"을 먼저 보라.
+> (2026-06-06 당시 원칙) ~~모든 라운드의 첫 대결은 반드시 호스트가 게임 시작 버튼을 눌러야 시작된다.~~
+> **(현행 / Build4~) 활성(비호스트) 전원이 Ready를 누르면 호스트 클라이언트가 권위적으로 자동 시작한다.** 호스트 수동 시작 버튼도 병행 제공.
 
 ### 흐름
 
@@ -122,10 +124,17 @@ QR 스캔 → 닉네임 입력 → 방 입장
 - 호스트도 `myReadyBtn`을 눌러야 했음
 - `startGame()` 내 `state.gameStarting` 타이밍 버그로 호스트 화면만 미시작
 
-**현재 동작 (수정 후)**
+**2026-06-06 동작 (이후 번복됨)**
 - 모든 라운드: 호스트는 `myReadyBtn` 없음, 항상 `hostStartBtn`으로 시작
 - 자동 시작 로직 완전 제거
 - `state.gameStarting = false`를 `updateRoomStatus('playing')` 이전으로 이동
+
+### ⚠️ 변경 이력 (2026-06-13 Build4 — 현행) — WRPS-037 / WRPS-041
+- **자동 시작 정식 재채택**: 활성(비호스트) 전원 `is_ready=true`가 되면 **호스트 클라이언트가 권위적으로** `startGame()`/`startFromLobby()`를 자동 호출(`triggerReplayIfLastReady`, `fetchParticipants`의 ready/lobby 분기).
+- 중복 시작 방지: `state.autoStartInFlight` + `state.gameStarting` 가드, `areAllActivePlayersReady()` 게이트.
+- 호스트 수동 `hostStartBtn`은 **병행 유지**(전원 ready 전 수동 시작 가능).
+- `state.gameStarting = false`를 playing 업데이트 전에 두는 타이밍 수정은 유지.
+- 근거: `docs/BUILD4_P0_QA_MATRIX.md` 항목 3, `docs/history/FEATURE_DECISION_HISTORY.md` §1, `docs/history/KNOWN_BEHAVIORS.md` KB-01.
 
 ---
 
@@ -261,7 +270,7 @@ supabase.channel('room:{roomCode}')
   │     → status 변경 감지 → 화면 전환
   └─ participants 테이블 변경 → onParticipantsChanged()
         → is_ready 변경 → renderReadyList() → updateHostStartButton()
-        → status=ready 일 때 자동 시작 없음 (버튼 활성화만)
+        → status=ready/lobby 일 때 활성 전원 ready면 **호스트가 자동 시작**(Build4~, WRPS-037) + 수동 버튼 병행
 ```
 
 ---
