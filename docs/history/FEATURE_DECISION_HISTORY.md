@@ -16,7 +16,8 @@
 | 자동 시작 | pre-Build3 (06-06) | 제거 | 승인 | 호스트 미클릭 오동작 → 수동 버튼 | `FIXES.md`, `GAME_LOGIC.md §3/§11` | **폐기** |
 | 자동 시작 | Build4 (06-13) | 재도입 | QA 승인 | 활성 전원 Ready 시 자동시작+마지막 Ready 트리거 | `BUILD4_P0_QA_MATRIX` 항목3, `triggerReplayIfLastReady`(7879) | **활성** |
 | 자동 시작 | Build4~ | 가드 추가 | 승인 | 중복시작 방지 | `autoStartInFlight`, `areAllActivePlayersReady`(4505) | **활성** |
-| 시작 트리거 통일 | Build8.2(예정) | **호스트 시작 버튼 폐지 + 호스트 포함 전원 Ready 트리거** | 사양 확정(2026-06-22) | 2인전 등에서 호스트 시작 버튼 흐름 혼란 → 전원 Ready 단일화 | WRPS-042, §11 | **확정(미구현)** |
+| 시작 트리거 통일 | Build8.2(2026-06-22) | **호스트 시작 버튼 폐지 + 호스트 포함 전원 Ready 트리거** | 구현 완료 | 2인전 등에서 호스트 시작 버튼 흐름 혼란 → 전원 Ready 단일화 | WRPS-042, §11 | **활성** |
+| 호스트 게임 역할 | Build8.2(2026-06-22) | **호스트도 가위바위보를 내는 플레이어(Model P)** — 심판 모델 폐지 | 제품 확정(WRPS-043 계기) | 호스트도 술래 대상·술래 수=전체−1. 3인 게임 술래 2 가능 | WRPS-043, §11 | **활성** |
 - 연계 버그: WRPS-011, WRPS-037(stale 오발화 위험), WRPS-041(GAME_LOGIC.md 문서 드리프트 — Build8.1 해소), **WRPS-042(전원 Ready 통일 — Build8.2)**.
 
 ## 2. 호스트 승계 (Host Succession)

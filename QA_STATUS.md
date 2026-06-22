@@ -3,7 +3,7 @@
 > **개발 시작 전 · 디버그 시작 전 · 버전업 전 · 릴리즈 전, 항상 이 파일을 먼저 연다.**
 > 상세는 `docs/history/`(BUG_MASTER_LEDGER / BUG_TIMELINE / ACTIVE_ISSUES / REGRESSION_TRACKER / RELEASE_QA_CHECKLIST / FEATURE_DECISION_HISTORY / KNOWN_BEHAVIORS / README).
 >
-> 최종 갱신: **2026-06-22 (Build8.1)** · 기준 브랜치: `fix/build6-regression-recovery` (build8 기반, iOS build 7)
+> 최종 갱신: **2026-06-22 (Build8.2)** · 기준 브랜치: `fix/build6-regression-recovery` (iOS build 7→8 예정)
 
 ---
 
@@ -11,11 +11,14 @@
 
 | 우선순위 | 건수 | 비고 |
 |---|---|---|
-| **P0** | **0** | (WRPS-013 Build8.1 수정, 실기기 검증 대기로 전환) |
-| **P1** | **4** | **WRPS-042**(전원 Ready 통일·Build8.2) · WRPS-015 · WRPS-026 · WRPS-036 (+WRPS-037 오발화 위험) |
+| **P0** | **0** | — |
+| **P1** | **2** | WRPS-026(호스트 빠짐) · WRPS-036(멀티디바이스 매트릭스) (+WRPS-037 오발화 위험) |
 | **P2** | **2** | WRPS-020 · WRPS-034 |
 | **P3** | **2** | WRPS-019 · WRPS-021 |
-| 합계(미해결) | 8 | + Build8.1 수정 4건(실기기 검증 대기) |
+| 합계(미해결) | 6 | + Build8.1/8.2 수정 다수(실기기 검증 대기) |
+
+**실기기 PASS 종결**: WRPS-014(참가자 TTS) · WRPS-015(카운트다운 동기화).
+**Build8.2 코드 수정(실기기 재검증 대기)**: WRPS-042(전원 Ready 통일) · WRPS-043(다중 술래, 호스트=플레이어) · WRPS-013/018(재초대 고착).
 
 > P1 표기 3건은 핵심 미검증 게이트 기준. WRPS-037은 설계상 의도 동작(경쟁조건 보강 검토).
 

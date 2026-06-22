@@ -4334,12 +4334,10 @@
       return state.penalty;
     }
     function getMaxLoserCount() {
-      // 술래 후보 = 비호스트 플레이어(호스트는 심판이라 플레이/술래 대상 아님).
-      // 최소 1명의 승자가 남아야 게임이 끝나므로 최대 술래 = (플레이어 수 - 1).
-      // 호스트를 포함해 계산하면 술래 목표가 플레이어 수와 같아져 마지막 라운드가
-      // 1명만 남아 무한 무승부(deadlock)에 빠질 수 있다 → 비호스트 기준으로 제한.
-      const players = (state.participants || []).filter(p => !p.is_host).length;
-      return Math.max(1, players - 1);
+      // WRPS-043(2026-06-22): 호스트도 가위바위보를 내는 플레이어 → 전체 참가자 수 기준.
+      // N명(호스트 포함) → 최대 술래 = N-1 (최소 1명의 승자가 남아 게임 종료, deadlock 없음).
+      // 예) 3명 → 1~2 선택 가능, 4명 → 1~3. (단일소스: maxLoserCountFor in game-logic.mjs)
+      return maxLoserCountFor((state.participants || []).length);
     }
     function clampLoserCount(value) {
       return Math.max(1, Math.min(parseInt(value, 10) || 1, getMaxLoserCount()));
@@ -4490,7 +4488,8 @@
       return players.length > 0 && players.every(p => p.is_ready);
     }
 
-    // 이번 라운드 활성 플레이어(호스트 제외 + 확정 술래/안전 제외) — 단일 소스 computePlayerStatuses 사용.
+    // 이번 라운드 활성 플레이어(확정 술래/안전 제외) — 단일 소스 computePlayerStatuses 사용.
+    // WRPS-042/043: 호스트도 플레이어로 포함된다(심판 모델 폐지).
     // 다중 술래 재대결에서 확정자(__safe__/__loser__, is_ready=true)가 준비 게이트를 오염시키지 않도록 한다.
     function getActivePlayers() {
       const statuses = computePlayerStatuses(
@@ -6785,16 +6784,18 @@ function judgePure(active) {
   return result;
 }
 
-// 각 참가자의 상태를 단일 규칙으로 도출한다(흩어진 isSafe/isLoser/isHost 판단 통합).
+// 각 참가자의 상태를 단일 규칙으로 도출한다(확정 술래/안전/활성).
 // participants = [{ id, isHost, choice }]
-// 우선순위: HOST > 확정 술래 > 확정 안전 > ACTIVE. choice 마커는 확정 배열의 폴백.
+// WRPS-042/043(2026-06-22): 호스트도 일반 플레이어로 가위바위보에 참여한다(심판 모델 폐지).
+//   → isHost는 게임 상태 판정에 영향을 주지 않는다(방 관리/벌칙설정/승계 전용 플래그).
+//   PLAYER_STATUS.HOST는 하위호환을 위해 상수만 유지(더는 부여되지 않음).
+// 우선순위: 확정 술래 > 확정 안전 > ACTIVE. choice 마커는 확정 배열의 폴백.
 function computePlayerStatuses(participants, confirmedSafeIds = [], confirmedLoserIds = []) {
   const safe = new Set(confirmedSafeIds || []);
   const loser = new Set(confirmedLoserIds || []);
   const map = {};
   (participants || []).forEach((p) => {
     if (!p || !p.id) return;
-    if (p.isHost) { map[p.id] = PLAYER_STATUS.HOST; return; }
     if (loser.has(p.id) || p.choice === '__loser__') { map[p.id] = PLAYER_STATUS.LOSER_CONFIRMED; return; }
     if (safe.has(p.id) || p.choice === '__safe__') { map[p.id] = PLAYER_STATUS.WINNER_CONFIRMED; return; }
     map[p.id] = PLAYER_STATUS.ACTIVE;
@@ -6802,7 +6803,14 @@ function computePlayerStatuses(participants, confirmedSafeIds = [], confirmedLos
   return map;
 }
 
-// 호스트를 제외하고 아직 술래/안전이 확정되지 않은(ACTIVE) 플레이어 id 목록.
+// 선택 가능한 최대 술래 수 = 플레이어 수 - 1 (최소 1명의 승자가 남아야 게임 종료).
+// WRPS-043: 호스트도 플레이어이므로 playerCount는 호스트 포함 전체 참가자 수다.
+//   N명 → 1 ~ (N-1) 선택 가능. 2명이면 1, 3명이면 1~2, 4명이면 1~3 ...
+function maxLoserCountFor(playerCount) {
+  return Math.max(1, (Number(playerCount) || 0) - 1);
+}
+
+// 아직 술래/안전이 확정되지 않은(ACTIVE) 플레이어 id 목록(WRPS-042/043: 호스트 포함).
 function getActiveIds(participants, confirmedSafeIds = [], confirmedLoserIds = []) {
   const statuses = computePlayerStatuses(participants, confirmedSafeIds, confirmedLoserIds);
   return (participants || [])
@@ -7798,16 +7806,12 @@ function summarizeGameStats(rows) {
 	      showScreen("screenReady");
 	      renderInlinePenaltyBox($("readyPenaltyBox"));
 	      renderReadyList();
-      // 모든 라운드에서 호스트는 "게임 시작" 버튼 사용, "게임 준비" 버튼 숨김
-      if (state.role === "host") {
-        $("hostStartBtn").classList.remove("hidden");
-        $("editPenaltyBtn").classList.remove("hidden");
-        $("myReadyBtn").classList.add("hidden");
-      } else {
-        $("hostStartBtn").classList.add("hidden");
-        $("editPenaltyBtn").classList.add("hidden");
-        $("myReadyBtn").classList.remove("hidden");
-      }
+      // WRPS-042/043: 호스트도 플레이어 → 전원이 "게임 준비"를 누르고, 활성 전원 ready 시
+      // 마지막 ready가 시작 트리거. 호스트 전용 "게임 시작" 버튼은 폐지(항상 숨김).
+      // 벌칙 수정 버튼은 호스트 고유 권한이므로 호스트에게만 노출.
+      $("hostStartBtn").classList.add("hidden");
+      $("myReadyBtn").classList.remove("hidden");
+      $("editPenaltyBtn").classList.toggle("hidden", state.role !== "host");
       updateActionGridLayouts();
       updateGuides();
     }
@@ -9464,22 +9468,11 @@ function summarizeGameStats(rows) {
       const editBtn = $("lobbyEditPenaltyBtn");
       if (editBtn) editBtn.classList.toggle("hidden", state.role !== "host");
 
-      // 호스트 전용: 게임 시작 버튼 (참가자 전원 준비 완료 시 활성화)
+      // WRPS-042/043: 호스트도 플레이어 → 호스트 전용 시작 버튼 폐지. 호스트도 lobbyReadyBtn 사용.
+      // 활성 전원 ready 시 마지막 ready가 자동 시작 트리거(fetchParticipants lobby 분기).
       const lobbyStartBtn = $("lobbyHostStartBtn");
-      if (lobbyStartBtn) {
-        if (state.role === "host") {
-          lobbyStartBtn.classList.remove("hidden");
-          // lobbyReadyBtn 호스트에게는 불필요 → 숨김
-          if (btn) btn.classList.add("hidden");
-          const allReady = areAllActivePlayersReady();
-          lobbyStartBtn.disabled = !allReady;
-          lobbyStartBtn.style.opacity = allReady ? "1" : "0.5";
-          lobbyStartBtn.textContent = t("ready.rematchStart");
-        } else {
-          lobbyStartBtn.classList.add("hidden");
-          if (btn) btn.classList.remove("hidden");
-        }
-      }
+      if (lobbyStartBtn) lobbyStartBtn.classList.add("hidden");
+      if (btn) btn.classList.remove("hidden");
 
       const list = $("lobbyParticipantList");
       // 호스트는 "준비대기"가 아니라 HOST 배지로 표시(항목 6). 단일 배지 함수 사용.

@@ -105,6 +105,20 @@ ID는 `BUG_MASTER_LEDGER.md`의 `WRPS-NNN`을 참조한다.
 
 ---
 
+## Build 8.2 — 호스트=플레이어 모델(WRPS-042/043) + Build8.1 실기기 QA 반영 (2026-06-22)
+
+- **Build8.1 실기기 QA 결과**: ✅ WRPS-014(참가자 TTS) PASS · ✅ WRPS-015(카운트다운 동기화) PASS → 두 건 종결.
+- **신규/재발**: WRPS-043 — 3인 게임에서 술래 2명 선택 불가(1명 고정).
+- **제품 결정(2026-06-22)**: 호스트도 가위바위보를 내는 **플레이어**(Model P). 심판 모델 폐지. → WRPS-042/043 동시 해결.
+- **코드 수정**:
+  - `src/game-logic.mjs`: `computePlayerStatuses` 호스트 특례 제거(호스트 ACTIVE) + `maxLoserCountFor(playerCount)` 단일소스 추가.
+  - `index.html`: `getMaxLoserCount`=전체 참가자−1(maxLoserCountFor), `showReadyScreen`/`renderLobby` 호스트도 ready 버튼·시작 버튼 폐지, `getActivePlayers` 호스트 포함. (sync:logic 주입)
+- **테스트**: vitest **44/44**(기존 39 → 호스트=플레이어로 갱신 + WRPS-043 다중술래/maxLoserCountFor 신규). 블록 문법 OK, build:web OK, cap sync OK.
+- **잔여(WRPS-042 후속)**: 호스트룸 초기 시작 버튼(`startGameBtn`)은 setup→ready 진입용으로 유지(게임 판정 무관). 완전 통일은 후속.
+- **빌드**: Build8.2 = build number 7→8, 재Archive/Export/TestFlight 재업로드 대상(아래 갱신).
+
+---
+
 ## (다음) Build 9+ — 여기에 누적
 
 > 새 Build 작업 시작 시 이 아래에 섹션 추가. 형식: 신규 버그 / 해결 버그 / 재발 / 미완 검증 / 릴리즈 판정.

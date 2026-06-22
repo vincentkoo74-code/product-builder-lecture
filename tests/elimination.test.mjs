@@ -5,27 +5,19 @@ import {
   computePlayerStatuses,
   getActiveIds,
   resolveElimination,
+  maxLoserCountFor,
   PLAYER_STATUS,
 } from '../src/game-logic.mjs';
 
 // 라운드 단위 술래-소거 시뮬레이터.
 // players: [{ id, isHost? }], choicesByRound(round, activeIds) → { [id]: 'scissors'|'rock'|'paper' }
-// 호스트는 심판이라 절대 활성 집합/선택 대상이 아니다(자동 검증).
+// WRPS-042/043: 호스트도 일반 플레이어 → 활성 집합/선택/술래 대상에 포함된다(isHost는 게임 판정에 무영향).
 function simulate({ players, targetLoserCount, choicesByRound, maxRounds = 50 }) {
   let confirmedLoserIds = [];
   let confirmedSafeIds = [];
   const transitions = [];
   for (let round = 1; round <= maxRounds; round++) {
-    const statuses = computePlayerStatuses(players, confirmedSafeIds, confirmedLoserIds);
     const activeIds = getActiveIds(players, confirmedSafeIds, confirmedLoserIds);
-
-    // 호스트 불변식: 매 라운드 항상 HOST, 절대 활성/확정 대상 아님.
-    players.filter((p) => p.isHost).forEach((h) => {
-      expect(statuses[h.id]).toBe(PLAYER_STATUS.HOST);
-      expect(activeIds).not.toContain(h.id);
-      expect(confirmedLoserIds).not.toContain(h.id);
-      expect(confirmedSafeIds).not.toContain(h.id);
-    });
 
     if (activeIds.length === 0) {
       transitions.push({ round, outcome: 'noActive', activeIds });
@@ -100,7 +92,7 @@ describe('getWinningChoice', () => {
 });
 
 describe('computePlayerStatuses', () => {
-  it('HOST > LOSER_CONFIRMED > WINNER_CONFIRMED > ACTIVE 우선순위', () => {
+  it('LOSER_CONFIRMED > WINNER_CONFIRMED > ACTIVE 우선순위 (WRPS-042/043: 호스트도 플레이어 ACTIVE)', () => {
     const players = [
       { id: 'h', isHost: true },
       { id: 'a' },
@@ -110,7 +102,7 @@ describe('computePlayerStatuses', () => {
     ];
     const s = computePlayerStatuses(players, ['a'], ['b']);
     expect(s).toEqual({
-      h: 'HOST', a: 'WINNER_CONFIRMED', b: 'LOSER_CONFIRMED', c: 'WINNER_CONFIRMED', d: 'LOSER_CONFIRMED',
+      h: 'ACTIVE', a: 'WINNER_CONFIRMED', b: 'LOSER_CONFIRMED', c: 'WINNER_CONFIRMED', d: 'LOSER_CONFIRMED',
     });
   });
 });
@@ -207,18 +199,19 @@ describe('필수 검증 시나리오 A~F (while currentLoser < target 반복)', 
     expect(out.confirmedLoserIds).toHaveLength(3);
   });
 
-  it('시나리오 E: 호스트는 첫 게임부터 절대 술래가 될 수 없다(심판)', () => {
+  it('시나리오 E (WRPS-043): 호스트도 플레이어 — 4명(호스트 포함)/술래 2명, 호스트도 술래가 될 수 있다', () => {
     const players = [{ id: 'H', isHost: true }, { id: 'A' }, { id: 'B' }, { id: 'C' }];
-    const choicesByRound = (round, ids) => (round === 1 ? oneLoser('C')(round, ids) : oneLoser('B')(round, ids));
+    // R1: 호스트 H 패(tooFew 1<2) → R2: 남은 A,B,C 중 C 패(gameOver)
+    const choicesByRound = (round, ids) => (round === 1 ? oneLoser('H')(round, ids) : oneLoser('C')(round, ids));
     const out = simulate({ players, targetLoserCount: 2, choicesByRound });
-    expect(out.confirmedLoserIds).not.toContain('H');
-    expect(out.confirmedLoserIds.sort()).toEqual(['B', 'C']);
+    expect(out.confirmedLoserIds.sort()).toEqual(['C', 'H']);
+    expect(out.confirmedLoserIds).toHaveLength(2);
   });
 
-  it('시나리오 F: 호스트는 재대결 활성 대상에 포함되지 않는다', () => {
+  it('시나리오 F (WRPS-043): 5명(호스트 포함)/술래 2명 — 호스트도 매 라운드 활성에 포함된다', () => {
     const players = [{ id: 'H', isHost: true }, { id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }];
     const choicesByRound = (round, ids) => {
-      expect(ids).not.toContain('H'); // 매 라운드 호스트 미포함
+      expect(ids).toContain('H'); // 미확정 동안 호스트도 활성 플레이어
       return round === 1 ? oneLoser('A')(round, ids) : oneLoser('D')(round, ids);
     };
     const out = simulate({ players, targetLoserCount: 2, choicesByRound });
@@ -266,18 +259,55 @@ describe('P0 다인전 매트릭스 — 모든 조합 수렴 + 정확성', () =>
     }
   }
 
-  it('호스트 포함 매트릭스: 호스트는 어떤 조합에서도 술래/활성에 포함되지 않음', () => {
+  it('WRPS-043 호스트 포함 매트릭스: 호스트도 플레이어로 카운트 — (n+1)명에서 술래 1..n 모두 수렴', () => {
     for (const n of [3, 4, 5]) {
-      for (let target = 1; target <= n - 1; target++) {
+      const total = n + 1; // 호스트 포함 전체 플레이어 수
+      for (let target = 1; target <= total - 1; target++) {
         const players = [{ id: 'HOST', isHost: true },
           ...Array.from({ length: n }, (_, i) => ({ id: `P${i + 1}` }))];
         const out = simulate({ players, targetLoserCount: target, choicesByRound: stepLoser, maxRounds: 30 });
-        expect(out.confirmedLoserIds).not.toContain('HOST');
-        expect(out.confirmedSafeIds).not.toContain('HOST');
         expect(out.confirmedLoserIds).toHaveLength(target);
+        expect(out.transitions.at(-1).outcome).toBe('gameOver');
       }
     }
   });
+});
+
+// WRPS-043: 다중 술래 선택 범위(호스트 포함) + 각 목표가 deadlock 없이 달성되는지.
+describe('WRPS-043 — 다중 술래 선택 범위 (maxLoserCountFor, 호스트=플레이어)', () => {
+  const stepLoser = (round, ids) => {
+    const m = {};
+    ids.forEach((id, i) => { m[id] = i === ids.length - 1 ? 'scissors' : 'rock'; });
+    return m;
+  };
+
+  it('N명일 때 maxLosers = N-1', () => {
+    expect(maxLoserCountFor(2)).toBe(1);
+    expect(maxLoserCountFor(3)).toBe(2);
+    expect(maxLoserCountFor(4)).toBe(3);
+    expect(maxLoserCountFor(5)).toBe(4);
+  });
+
+  it('최소 1 보장(엣지 입력)', () => {
+    expect(maxLoserCountFor(1)).toBe(1);
+    expect(maxLoserCountFor(0)).toBe(1);
+    expect(maxLoserCountFor(undefined)).toBe(1);
+  });
+
+  for (const [n, valid] of [[3, [1, 2]], [4, [1, 2, 3]], [5, [1, 2, 3, 4]]]) {
+    it(`${n}명 게임(호스트 포함) → 술래 ${valid.join('/')} 선택 가능 + 각 목표 달성`, () => {
+      // 선택 범위가 1..(N-1)
+      expect(Array.from({ length: maxLoserCountFor(n) }, (_, i) => i + 1)).toEqual(valid);
+      // 각 유효 목표가 실제 소거에서 정확히 달성(호스트 포함 N명, 1명 승자 남음)
+      for (const target of valid) {
+        const players = [{ id: 'HOST', isHost: true },
+          ...Array.from({ length: n - 1 }, (_, i) => ({ id: `P${i + 1}` }))]; // 호스트 포함 N명
+        const out = simulate({ players, targetLoserCount: target, choicesByRound: stepLoser, maxRounds: 30 });
+        expect(out.confirmedLoserIds).toHaveLength(target);
+        expect(out.transitions.at(-1).outcome).toBe('gameOver');
+      }
+    });
+  }
 });
 
 // 중도 퇴장(leave) 시 재계산되어 게임이 멈추지 않고 종료되는지.

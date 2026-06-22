@@ -3,9 +3,11 @@
 > **닫히지 않은 문제만** 우선순위별로 관리한다. 해결되면 이 문서에서 제거하고 `BUG_MASTER_LEDGER.md`에 `현재 상태=해결`로 기록한다.
 > 기준 코드: `fix/build6-regression-recovery` (= build8) · 갱신: 2026-06-22 (Build8.1 코드 수정 + **TestFlight 업로드 완료**)
 
-집계: **P0 0건 · P1 4건 · P2 2건 · P3 2건** (총 8건 미해결, WRPS-042 신규 P1 포함) · **Build8.1에서 3건 코드 수정**(WRPS-013/014/018, 실기기 검증 대기)
+집계: **P0 0건 · P1 2건 · P2 2건 · P3 2건** (총 6건 미해결) · Build8.2에서 WRPS-042/043 코드 수정(실기기 재검증 대기)
 
-> 📦 **TestFlight: build 7 업로드 완료**(2026-06-22, Delivery UUID `8432a629-20d7-4320-bbac-0a5dcaaa2e7a`). ASC Processing 후 내부 테스터 실기기 QA 진행 → 통과 시 WRPS-013/014 종결.
+> ✅ **실기기 PASS 종결(Build8.1)**: WRPS-014(참가자 TTS) · WRPS-015(카운트다운 동기화).
+> ✅ **Build8.2 코드 수정(실기기 재검증 대기)**: WRPS-042(전원 Ready 통일) · WRPS-043(다중 술래, 호스트=플레이어).
+> 📦 **TestFlight**: build 7(Build8.1) 업로드 완료. Build8.2(build 8) 재업로드 준비 중.
 
 ---
 
@@ -25,24 +27,24 @@
 
 ---
 
+## ✅ Build8.2 코드 수정 완료 (실기기 재검증 대기)
+
+### WRPS-043 — 3인 게임 술래 2명 선택 불가 → 수정
+- **원인**: `getMaxLoserCount`가 `(비호스트 수)−1`. 호스트 포함 3명 = 비호스트 2명 → 최대 1로 고정.
+- **수정(Model P)**: 호스트도 플레이어 → `getMaxLoserCount = 전체 참가자 − 1`(`maxLoserCountFor`). `computePlayerStatuses` 호스트 특례 제거로 판정·소거에 호스트 포함 → 3명 술래 2 = 2술래+1승자(deadlock 없음). vitest 44 통과.
+
+### WRPS-042 — 전원 Ready 시작 트리거 통일 → 수정
+- `showReadyScreen`/`renderLobby` 호스트도 게임 준비 버튼 사용, `hostStartBtn`/`lobbyHostStartBtn` 폐지(숨김). 활성 전원(호스트 포함) ready 시 마지막 ready가 자동 시작.
+- **잔여**: 호스트룸 초기 `startGameBtn`(setup→ready 진입)은 유지 — 게임 판정 무관, 후속 통일 검토.
+
+> 위 2건 + WRPS-014/015(실기기 PASS)는 Build8.2 빌드로 실기기 재검증 후 최종 종결.
+
+---
+
 ## 🟧 P1 — 주요 (Major)
 
-### WRPS-042 — 전원 Ready 기반 게임 시작 트리거 통일 (사양 확정, 코드 미일치 → Build8.2)
-- **사양(확정 2026-06-22)**: ① 호스트는 벌칙 설정 권한만 / ② 벌칙 후 **호스트 포함 전원**이 각자 게임 준비 / ③ 활성 전원 ready 시 **마지막 ready 액션이 시작 트리거** / ④ **호스트 전용 시작 버튼 미사용** / ⑤ 재게임도 동일 / ⑥ 호스트 고유 권한 = 벌칙 설정·재게임 요청·방 관리/승계.
-- **현재 코드(불일치)**:
-  - `computePlayerStatuses`(game-logic.mjs:58)가 호스트를 `HOST`로 분류 → `getActivePlayers()`/`areAllActivePlayersReady()`에서 **호스트 제외**(호스트는 ready 안 누름).
-  - `showReadyScreen`(7801~7809)이 호스트에게 **`hostStartBtn`(게임 시작) 노출 + `myReadyBtn` 숨김**. → 사양 ④ 위반(시작 버튼 존재), 사양 ②/③ 위반(호스트 ready 미참여).
-  - 잔존: `hostStartBtn`(HTML 2627, ref 6262, showReadyScreen 7803/7807, `updateHostStartButton` 7851), `lobbyHostStartBtn`(HTML 2602, ref 9468), i18n `ready.hostStart`/`ready.rematchStart`.
-  - 단, 비호스트 전원 ready 시 **auto-start는 동작**(`fetchParticipants`/`triggerReplayIfLastReady`) → 호스트 버튼은 사실상 중복.
-- **위험/난이도**: 호스트를 active player로 포함시키면 **elimination(소거)·술래 상한(=비호스트−1)·판정**에 파급(게임-로직 단일소스 `src/game-logic.mjs` + `elimination.test.mjs` 39케이스 영향). **비국소 변경, 별도 QA 필요.**
-- **분류**: **Build8.2 수정 대상**. build 7(TestFlight 업로드 완료)에는 즉석 반영하지 않음.
-- **상태**: 🔴 QA 발견 / 사양 확정 / **코드 불일치 확인됨** — Build8.2 구현 대기. 상세 구현 옵션은 `FEATURE_DECISION_HISTORY.md` §11 참조.
-
-### WRPS-015 — 카운트다운 기기간 시차 (late-arrival 보정 공백)
-- **증상**: 늦게 이벤트를 받은 기기가 카운트다운 단계가 밀림.
-- **현재 메커니즘**: `runCountdown`(6304)이 `getCountdownStartAt()`+`serverNow()`로 예정시각까지 대기 후 동시 시작. 단 이벤트가 예정시각 **경과 후** 도착하면 `waitMs<=40` → 스킵 없이 고정 sleep(900+700ms) 풀재생.
-- **Lineage A 대안**: `commit_timestamp` 기준 `elapsedMs`만큼 카운트다운 **건너뛰기**(`145e954`) — late-arrival 보정.
-- **상태**: 🟡 부분완화(대체구현 존재) · late-arrival skip 미적용
+### WRPS-015 — 카운트다운 기기간 시차 → **실기기 PASS(Build8.1)**
+- 2026-06-22 TestFlight 실기기에서 동기화 정상 확인 → **종결**. (late-arrival 보정 코드 미적용이나 실사용 문제 없음 확인)
 
 ### WRPS-026 — 3인 호스트 빠짐 판정 프리즈 (실기기 미검증)
 - **코드**: `startHostJudgeBackstop`(6362)로 `getCountdownStartAt()+11s` 백스톱 보장 — 로직 존재.

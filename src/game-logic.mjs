@@ -46,16 +46,18 @@ export function judgePure(active) {
   return result;
 }
 
-// 각 참가자의 상태를 단일 규칙으로 도출한다(흩어진 isSafe/isLoser/isHost 판단 통합).
+// 각 참가자의 상태를 단일 규칙으로 도출한다(확정 술래/안전/활성).
 // participants = [{ id, isHost, choice }]
-// 우선순위: HOST > 확정 술래 > 확정 안전 > ACTIVE. choice 마커는 확정 배열의 폴백.
+// WRPS-042/043(2026-06-22): 호스트도 일반 플레이어로 가위바위보에 참여한다(심판 모델 폐지).
+//   → isHost는 게임 상태 판정에 영향을 주지 않는다(방 관리/벌칙설정/승계 전용 플래그).
+//   PLAYER_STATUS.HOST는 하위호환을 위해 상수만 유지(더는 부여되지 않음).
+// 우선순위: 확정 술래 > 확정 안전 > ACTIVE. choice 마커는 확정 배열의 폴백.
 export function computePlayerStatuses(participants, confirmedSafeIds = [], confirmedLoserIds = []) {
   const safe = new Set(confirmedSafeIds || []);
   const loser = new Set(confirmedLoserIds || []);
   const map = {};
   (participants || []).forEach((p) => {
     if (!p || !p.id) return;
-    if (p.isHost) { map[p.id] = PLAYER_STATUS.HOST; return; }
     if (loser.has(p.id) || p.choice === '__loser__') { map[p.id] = PLAYER_STATUS.LOSER_CONFIRMED; return; }
     if (safe.has(p.id) || p.choice === '__safe__') { map[p.id] = PLAYER_STATUS.WINNER_CONFIRMED; return; }
     map[p.id] = PLAYER_STATUS.ACTIVE;
@@ -63,7 +65,14 @@ export function computePlayerStatuses(participants, confirmedSafeIds = [], confi
   return map;
 }
 
-// 호스트를 제외하고 아직 술래/안전이 확정되지 않은(ACTIVE) 플레이어 id 목록.
+// 선택 가능한 최대 술래 수 = 플레이어 수 - 1 (최소 1명의 승자가 남아야 게임 종료).
+// WRPS-043: 호스트도 플레이어이므로 playerCount는 호스트 포함 전체 참가자 수다.
+//   N명 → 1 ~ (N-1) 선택 가능. 2명이면 1, 3명이면 1~2, 4명이면 1~3 ...
+export function maxLoserCountFor(playerCount) {
+  return Math.max(1, (Number(playerCount) || 0) - 1);
+}
+
+// 아직 술래/안전이 확정되지 않은(ACTIVE) 플레이어 id 목록(WRPS-042/043: 호스트 포함).
 export function getActiveIds(participants, confirmedSafeIds = [], confirmedLoserIds = []) {
   const statuses = computePlayerStatuses(participants, confirmedSafeIds, confirmedLoserIds);
   return (participants || [])

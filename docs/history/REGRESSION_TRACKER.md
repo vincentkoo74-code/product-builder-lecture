@@ -64,6 +64,10 @@
 | 2026-06-22 | WRPS-014 | 3 | **Build8.1 수정** — `markReady` 제스처 언락(빈 발화) | iOS 실기기 검증 대기 |
 | 2026-06-22 | WRPS-018 | 3 | **Build8.1 수정** — `fetchParticipants` 3초 폴링 복구 안전망 | 실기기 검증 대기 |
 | 2026-06-22 | WRPS-041 | — | **Build8.1 문서 수정** — GAME_LOGIC.md 자동시작 정정 | 드리프트 해소 |
+| 2026-06-22 | WRPS-043 | 1 | **재발 발견** (Build8.1 실기기 QA) — 3인 게임 술래 2명 선택 불가 | 다중 술래 회귀 |
+| 2026-06-22 | WRPS-043 | 1 | **Build8.2 수정** — Model P(호스트=플레이어), getMaxLoserCount=전체−1, maxLoserCountFor 단일소스 | 실기기 재검증 대기 |
+| 2026-06-22 | WRPS-042 | 3 | **Build8.2 수정** — 호스트도 ready 버튼, 시작 버튼 폐지(WRPS-043과 동시 해결) | 실기기 재검증 대기 |
+| 2026-06-22 | WRPS-014/015 | — | **실기기 PASS** (Build8.1 TestFlight) → 종결 | closed |
 
 ---
 
