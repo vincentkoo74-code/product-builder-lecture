@@ -6348,7 +6348,7 @@
       labelEl.textContent = roundLabel;
       void numEl.offsetWidth;
       numEl.className = "count-anim countdown-intro";
-      void speak(t("voice.intro"), 1.12, 1.08);
+      void playVoiceClip("intro", t("voice.intro"), 1.12, 1.08);
       await sleep(900);
 
       // 2단계: "가위바위 보!" / "Rock paper scissors, shoot!" / "じゃんけんぽん！"
@@ -6367,7 +6367,7 @@
       numEl.className = "count-anim countdown-go";
       // iOS Safari can distort overlapped/cancelled speech, so keep the call playful but single-pass.
       const spokenGo = currentLocale === "en" ? t("countdown.go") : `${go1} ${go2}`;
-      void speak(spokenGo, 1.18, 1.12);
+      void playVoiceClip("go", spokenGo, 1.18, 1.12);
       await sleep(700);
 
       overlay.classList.add("hidden");
@@ -6706,8 +6706,8 @@
         renderRoundResult("gameOver", roundLosers.length, remainingSlots);
         showScreen("screenRoundResult");
         setTimeout(() => playFinalFanfare(), 400);
-        if (myResult === "lose") setTimeout(() => speak(t("voice.becameLoser"), 1.4, 1.0), 2200);
-        else if (myResult === "win") setTimeout(() => speak(t("voice.gameOver"), 1.4, 1.0), 2200);
+        if (myResult === "lose") setTimeout(() => playVoiceClip("becameLoser", t("voice.becameLoser"), 1.4, 1.0), 2200);
+        else if (myResult === "win") setTimeout(() => playVoiceClip("gameOver", t("voice.gameOver"), 1.4, 1.0), 2200);
       } else if (roundLosers.length > remainingSlots) {
         state.confirmedSafeIds = [...prevSafeIds, ...roundWinners.map(p => p.id)];
         renderRoundResult("tooMany", roundLosers.length, remainingSlots);
@@ -6718,9 +6718,9 @@
         renderRoundResult("tooFew", roundLosers.length, remainingSlots);
         showScreen("screenRoundResult");
         if (roundLosers.length > 0 && myResult === "lose") {
-          setTimeout(() => speak(t("voice.becameLoser"), 1.4, 1.0), 800);
+          setTimeout(() => playVoiceClip("becameLoser", t("voice.becameLoser"), 1.4, 1.0), 800);
         } else if (myResult === "win") {
-          setTimeout(() => speak(t("voice.continue"), 1.4, 0.9), 800);
+          setTimeout(() => playVoiceClip("continue", t("voice.continue"), 1.4, 0.9), 800);
         }
         scheduleRematchAutoAdvance();
       }
@@ -7945,6 +7945,8 @@ function summarizeGameStats(rows) {
       if (window.speechSynthesis && !isMuted()) {
         try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch (e) { /* unlock 실패는 무음일 뿐 앱 동작 무관 */ }
       }
+      // WRPS-014 연장: 녹음 음성(HTMLAudio)도 같은 제스처에서 언락 → 참가자 폰 mp3 재생 보장.
+      unlockVoiceAudio();
       if (getOnlineMode()) {
         try {
           await Promise.race([
@@ -8465,6 +8467,7 @@ function summarizeGameStats(rows) {
       const btn = $("muteToggleBtn");
       if (btn) btn.textContent = v ? "🔇" : "🔊";
       if (v && window.speechSynthesis) speechSynthesis.cancel();
+      if (v && __voiceAudioEl) { try { __voiceAudioEl.pause(); __voiceAudioEl.currentTime = 0; } catch (e) {} }
     }
     window.toggleMute = function() {
       setMuted(!isMuted());
@@ -8562,6 +8565,83 @@ function summarizeGameStats(rows) {
         u.onerror = resolve;
         speechSynthesis.speak(u);
         setTimeout(resolve, 1500);
+      });
+    }
+
+    // === 한국어 녹음 음성 클립 (없으면 기존 TTS로 폴백) ===
+    // 매핑 표만 고치면 트리거↔파일 연결을 바꿀 수 있다. 한국어(ko)에만 녹음을 적용하고
+    // 영어/일본어 및 매핑 없는 트리거(go 등)는 기존 speak() TTS를 그대로 사용한다.
+    // 파일명은 사용자가 녹음한 원본 그대로(공백 포함)이며 encodeURI로 URL 인코딩한다.
+    const VOICE_CLIP_BASE = "ASSETS/rps/voice/";
+    const VOICE_CLIPS = {
+      ko: {
+        intro: "ko/ko_game_start.mp3",   // "안내면 술래" (카운트다운 1단계)
+        becameLoser: "ko/ko_lose.mp3",   // 술래 확정(졌을 때)
+        gameOver: "ko/ko_you win.mp3",   // 게임 종료(이겼을 때)
+        continue: "ko/ko_safe.mp3",      // 라운드 계속(살았을 때)
+        // go: 전용 "가위바위보!" 녹음 없음 → TTS 폴백 유지
+      },
+    };
+
+    let __voiceAudioEl = null;
+    let __voiceUnlocked = false;
+
+    function getVoiceAudioEl() {
+      if (!__voiceAudioEl) {
+        __voiceAudioEl = new Audio();
+        __voiceAudioEl.preload = "auto";
+      }
+      return __voiceAudioEl;
+    }
+
+    function voiceClipSrc(eventKey) {
+      const set = VOICE_CLIPS[currentLocale];
+      const file = set && set[eventKey];
+      return file ? encodeURI(VOICE_CLIP_BASE + file) : null;
+    }
+
+    // WRPS-014 연장: markReady 사용자 제스처에서 HTMLAudio 재생을 사전 언락한다.
+    // 참가자 폰은 카운트다운을 WebSocket 이벤트(제스처 없음)로 받으므로 미리 풀어두지 않으면
+    // mp3가 차단된다. 소리 없이(volume 0) 짧게 재생→정지하여 채널만 연다.
+    function unlockVoiceAudio() {
+      if (__voiceUnlocked || isMuted()) return;
+      const src = voiceClipSrc("intro") || voiceClipSrc("becameLoser");
+      if (!src) return;
+      try {
+        const el = getVoiceAudioEl();
+        el.src = src;
+        el.volume = 0;
+        const p = el.play();
+        const finish = () => { try { el.pause(); el.currentTime = 0; } catch (e) {} el.volume = 1; __voiceUnlocked = true; };
+        if (p && p.then) p.then(finish).catch(() => { el.volume = 1; });
+        else finish();
+      } catch (e) { /* 언락 실패는 무음 폴백일 뿐 앱 동작 무관 */ }
+    }
+
+    // 녹음 클립이 있으면 재생, 없거나 재생 실패 시 기존 speak() TTS로 폴백한다.
+    // 반환 Promise는 재생/폴백 완료 시 resolve (호출부는 void 또는 setTimeout으로만 사용).
+    function playVoiceClip(eventKey, ttsText, pitch, rate) {
+      if (isMuted()) return Promise.resolve();
+      // 진행 중인 클립/TTS를 먼저 정리해 겹침을 막는다(기존 speak()의 cancel과 동일 취지).
+      try { if (__voiceAudioEl) { __voiceAudioEl.pause(); __voiceAudioEl.currentTime = 0; } } catch (e) {}
+      const src = voiceClipSrc(eventKey);
+      if (!src) return speak(ttsText, pitch, rate);
+      return new Promise(resolve => {
+        let settled = false;
+        const done = () => { if (settled) return; settled = true; resolve(); };
+        const fallback = () => { if (settled) return; settled = true; speak(ttsText, pitch, rate).then(resolve, resolve); };
+        try {
+          if (window.speechSynthesis) speechSynthesis.cancel();
+          const el = getVoiceAudioEl();
+          el.src = src;
+          el.volume = 1;
+          el.onended = done;
+          el.onerror = fallback;
+          const p = el.play();
+          if (p && p.then) p.catch(fallback);
+          // 안전망: onended가 오지 않아도 일정 시간 후 resolve (정지 방지).
+          setTimeout(done, 4000);
+        } catch (e) { fallback(); }
       });
     }
 
