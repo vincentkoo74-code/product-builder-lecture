@@ -8519,17 +8519,22 @@ function summarizeGameStats(rows) {
 
         const emitClick = () => {
           const now = ctx.currentTime;
+          // WRPS-048: 빠른 연타 시 클릭이 겹쳐 노이즈가 되는 것을 방지(최소 간격 45ms).
+          if (now - (window.__rpsLastClickAt || 0) < 0.045) return;
+          window.__rpsLastClickAt = now;
+          // WRPS-048: iOS/Material UI 감성의 짧고 묵직한 클릭 — 저역 바디(280→140Hz) +
+          // 로우패스로 기계적 고역을 깎고, 5ms 어택·50ms 디케이로 또렷하지만 가볍지 않게.
           const osc = ctx.createOscillator();
           const gain = ctx.createGain();
           const filter = ctx.createBiquadFilter();
-          osc.type = "triangle";
-          osc.frequency.setValueAtTime(1350, now);
-          osc.frequency.exponentialRampToValueAtTime(760, now + 0.035);
-          filter.type = "highpass";
-          filter.frequency.value = 420;
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(280, now);
+          osc.frequency.exponentialRampToValueAtTime(140, now + 0.04);
+          filter.type = "lowpass";
+          filter.frequency.value = 1200;
           gain.gain.setValueAtTime(0.0001, now);
-          gain.gain.exponentialRampToValueAtTime(0.13, now + 0.006);
-          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
+          gain.gain.exponentialRampToValueAtTime(0.16, now + 0.005);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
           osc.connect(filter);
           filter.connect(gain);
           gain.connect(ctx.destination);
