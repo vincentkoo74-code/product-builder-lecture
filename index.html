@@ -4209,6 +4209,7 @@
       countdownStartAt: 0,
       gameStarting: false,
       finishingRound: false,
+      resultVoiceKey: null, // WRPS-046: 라운드당 결과 음성 1회 재생 가드
       publishingRoundResult: false,
       newRoundResetting: false,
       joinScreenMode: "manual",
@@ -4857,6 +4858,7 @@
 	        state.playingEntryKey = null;
 	        state.gameStarting = false;
 	        state.finishingRound = false;
+	        state.resultVoiceKey = null; // WRPS-046: 새 게임 회차에서 결과 음성 가드 초기화
 	        resetLocalParticipantsForNewGameRound();
 
 	        if (getOnlineMode() && db && state.roomCode) {
@@ -5397,6 +5399,7 @@
       state.countdownStartAt = 0;
       state.playingEntryKey = null;
       state.advancingRound = false;
+      state.resultVoiceKey = null; // WRPS-046: 새 세션에서 결과 음성 가드 초기화
     }
 
     function resetRoomLocalState({ keepRoomCode = "" } = {}) {
@@ -5419,6 +5422,7 @@
       state.countdownStartAt = 0;
       state.advancingRound = false;
       state.autoStartInFlight = false;
+      state.resultVoiceKey = null; // WRPS-046: 새 방에서 결과 음성 가드 초기화
       if (state.rematchAdvanceTimer) { clearTimeout(state.rematchAdvanceTimer); state.rematchAdvanceTimer = null; }
       state.remainingSeconds = 5;
       state.onlineParticipantIds = [];
@@ -6611,6 +6615,16 @@
       }
     }
 
+    // WRPS-046: finishRoundLocal()은 result→game_over 상태 전이로 한 라운드에 2회 호출될 수
+    // 있다(통계 중복은 기존 가드로 방지됨). 결과 음성도 중복 재생되지 않도록 (게임회차:라운드)
+    // 단위로 1회만 재생한다. 다음 라운드/다음 게임은 키가 달라져 정상적으로 다시 재생된다.
+    function playResultVoiceOnce(eventKey, ttsText, pitch, rate, delayMs) {
+      const key = `${getGameRound()}:${state.round || 1}`;
+      if (state.resultVoiceKey === key) return;
+      state.resultVoiceKey = key;
+      setTimeout(() => playVoiceClip(eventKey, ttsText, pitch, rate), delayMs);
+    }
+
     async function finishRoundLocal() {
       if (state.finishingRound) return; // 중복 실행 방지
       state.finishingRound = true;
@@ -6714,8 +6728,8 @@
         renderRoundResult("gameOver", roundLosers.length, remainingSlots);
         showScreen("screenRoundResult");
         setTimeout(() => playFinalFanfare(), 400);
-        if (myResult === "lose") setTimeout(() => playVoiceClip("becameLoser", t("voice.becameLoser"), 1.4, 1.0), 2200);
-        else if (myResult === "win") setTimeout(() => playVoiceClip("gameOver", t("voice.gameOver"), 1.4, 1.0), 2200);
+        if (myResult === "lose") playResultVoiceOnce("becameLoser", t("voice.becameLoser"), 1.4, 1.0, 2200);
+        else if (myResult === "win") playResultVoiceOnce("gameOver", t("voice.gameOver"), 1.4, 1.0, 2200);
       } else if (roundLosers.length > remainingSlots) {
         state.confirmedSafeIds = [...prevSafeIds, ...roundWinners.map(p => p.id)];
         renderRoundResult("tooMany", roundLosers.length, remainingSlots);
@@ -6726,9 +6740,9 @@
         renderRoundResult("tooFew", roundLosers.length, remainingSlots);
         showScreen("screenRoundResult");
         if (roundLosers.length > 0 && myResult === "lose") {
-          setTimeout(() => playVoiceClip("becameLoser", t("voice.becameLoser"), 1.4, 1.0), 800);
+          playResultVoiceOnce("becameLoser", t("voice.becameLoser"), 1.4, 1.0, 800);
         } else if (myResult === "win") {
-          setTimeout(() => playVoiceClip("continue", t("voice.continue"), 1.4, 0.9), 800);
+          playResultVoiceOnce("continue", t("voice.continue"), 1.4, 0.9, 800);
         }
         scheduleRematchAutoAdvance();
       }
