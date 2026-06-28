@@ -3,7 +3,7 @@
 > **개발 시작 전 · 디버그 시작 전 · 버전업 전 · 릴리즈 전, 항상 이 파일을 먼저 연다.**
 > 상세는 `docs/history/`(BUG_MASTER_LEDGER / BUG_TIMELINE / ACTIVE_ISSUES / REGRESSION_TRACKER / RELEASE_QA_CHECKLIST / FEATURE_DECISION_HISTORY / KNOWN_BEHAVIORS / README).
 >
-> 최종 갱신: **2026-06-22 (Build8.2)** · 기준 브랜치: `fix/build6-regression-recovery` (iOS build 7→8 예정)
+> 최종 갱신: **2026-06-28 (Build8.4)** · 기준 브랜치: `fix/build6-regression-recovery` (iOS build 9 업로드됨, Build8.4는 10 업로드 예정)
 
 ---
 
@@ -17,8 +17,9 @@
 | **P3** | **2** | WRPS-019 · WRPS-021 |
 | 합계(미해결) | 6 | + Build8.1/8.2 수정 다수(실기기 검증 대기) |
 
-**실기기 PASS 종결**: WRPS-014(참가자 TTS) · WRPS-015(카운트다운 동기화).
-**Build8.2 코드 수정(실기기 재검증 대기)**: WRPS-042(전원 Ready 통일) · WRPS-043(다중 술래, 호스트=플레이어) · WRPS-013/018(재초대 고착).
+**실기기 PASS 종결**: WRPS-014(참가자 TTS). ⚠️ WRPS-015(카운트다운 동기화)는 **음성팩 후 재발→WRPS-047(Build8.4)로 추적**.
+**Build8.2 코드 수정(실기기 재검증 대기)**: WRPS-042(전원 Ready 통일) · WRPS-043(다중 술래) · WRPS-013/018(재초대 고착).
+**Build8.4 코드 수정(실기기 재검증 대기)**: 🔴 **WRPS-047(P0 카운트다운 동기화 회귀)** · WRPS-045/046(한국어 음성 혼재·2회재생) · WRPS-048(버튼음). codex-critic PASS·test 49/49.
 
 > P1 표기 3건은 핵심 미검증 게이트 기준. WRPS-037은 설계상 의도 동작(경쟁조건 보강 검토).
 
@@ -58,19 +59,21 @@
 
 ---
 
-## 🚦 릴리즈 상태: **Build8.3 (build 9) TestFlight 업로드 완료 · 실기기 QA 대기**
+## 🚦 릴리즈 상태: **Build8.4 코드 수정 완료 · 빌드 미업로드(build 9→10 필요) · 실기기 QA 대기**
 
-### 빌드/아카이브/업로드 게이트 (2026-06-22 Build8.3)
-- ✅ **ARCHIVE SUCCEEDED** · ✅ **IPA EXPORT SUCCEEDED**(`build/export-build8.3/WooriMaruRPS.ipa`)
-- ✅ **TestFlight UPLOAD SUCCEEDED** — build **9**, Delivery UUID `eb3547e1-7df0-4879-81cb-d2d2f2a160b8`(API Key 8FCAM7NFRL). **충돌 없음.**
-- ✅ npm test **49/49** · ✅ 블록 문법 OK · ✅ DB 스키마/RLS/Firebase 무변경
-- (이전) build 8(Build8.2) `47873144-…`, build 7(Build8.1) `8432a629-…`.
+### Build8.4 코드 게이트 (2026-06-28 — 한국어 음성 실기기 QA 결과)
+- ✅ **코드 수정 4건 독립 커밋**: WRPS-047(`db0d16a`,P0)·046(`8c8bc1d`)·045(`baebae2`)·048(`51d5c6a`).
+- ✅ **codex-critic 재검토 PASS**(WRPS-046 HIGH·047 MEDIUM 지적 → 보정 → Review Correction Loop 통과, critical/high 0).
+- ✅ npm test **49/49** · ✅ 인라인 JS 문법 OK · ✅ DB 스키마/RLS/Firebase/판정(game-logic.mjs) 무변경.
+- ⏳ **빌드 번호 아직 9** — Build8.4 실기기 QA를 위해 **9→10 bump + Archive + TestFlight 업로드 필요**.
 
-### 다음: 실기기 QA (build 9 설치 후)
-- ⏳ ASC **Processing** 완료 후 내부 테스터 설치 → 아래 체크리스트 수행.
-- 재검증 대상: **WRPS-044(호스트 승계 목록 동기화)** · WRPS-043(다중 술래 1~N-1) · WRPS-042(전원 Ready 시작) · WRPS-013/018(재초대 고착).
-- 미검증 게이트: WRPS-026(호스트 빠짐) · WRPS-036(멀티디바이스 매트릭스).
-> Internal TestFlight 배포 **완료**. 외부/스토어 릴리즈는 실기기 체크리스트 통과 전 NO-GO.
+### (이전) Build8.3 (build 9) 업로드 완료
+- ✅ TestFlight build **9**, Delivery UUID `eb3547e1-7df0-4879-81cb-d2d2f2a160b8`. (build 8=Build8.2, build 7=Build8.1)
+
+### 다음: build 10 업로드 후 실기기 QA
+- 신규 재검증: **WRPS-047(P0 카운트다운 동기화 — 멀티디바이스 매트릭스)** · WRPS-045/046(한국어 음성) · WRPS-048(버튼음 청취).
+- 기존 재검증 대상: WRPS-044/043/042/013/018, 미검증 게이트 WRPS-026/036.
+> 외부/스토어 릴리즈는 실기기 체크리스트(특히 WRPS-047 P0) 통과 전 **NO-GO**.
 
 ---
 

@@ -2,7 +2,7 @@
 
 > "한 번 고쳤는데 다시 나온" 또는 "한 분기에서 고쳤으나 출시 본류엔 없는" 문제를 전용 추적한다.
 > 회귀 발생 시: 같은 `WRPS-NNN` 유지 → 아래에 회차(round) 1줄 추가 → `ACTIVE_ISSUES.md`로 승격.
-> 갱신: 2026-06-22
+> 갱신: 2026-06-28 (Build8.4 — WRPS-047 회귀 + 045/046/048)
 
 ---
 
@@ -12,7 +12,7 @@
 |---|---|---|
 | **Critical** | 출시 차단, 데이터/진행 불가, 다수 사용자 영향 | (확정 0) |
 | **High** | 핵심 UX 손상, 일부 사용자 게임 불가/무음 | ~~WRPS-013, WRPS-014~~ → **Build8.1 코드 수정됨**(실기기 검증 대기) |
-| **Medium** | 조건부 발생, 우회 가능, 타이밍 의존 | WRPS-015, WRPS-037, WRPS-026, WRPS-036 |
+| **Medium** | 조건부 발생, 우회 가능, 타이밍 의존 | WRPS-015→**WRPS-047(회차3, Build8.4 보강·실기기 미검증)**, WRPS-037, WRPS-026, WRPS-036 |
 | **Low** | 경미·미관·기능 미도입 | WRPS-018, WRPS-019, WRPS-020, WRPS-034, WRPS-041, WRPS-021 |
 
 > **핵심 사실**: build8 마이그레이션(`82d7f57`)은 index.html을 +36줄(격리 Firebase 로더+디버그버튼)만 변경, 게임 로직 byte 동일 → **build8이 신규 주입한 회귀는 0건**. 아래 회귀는 전부 build6 이전부터 잠재.
@@ -29,7 +29,7 @@
 |---|---|---|---|
 | WRPS-013 | 재초대 수락 후 대기화면 고착 | 미반영 | **High(LIVE)** |
 | WRPS-014 | 참가자 TTS 미재생 | 미반영 | **High(LIVE)** |
-| WRPS-015 | 카운트다운 시차 | 대체구현(serverNow), late-arrival 갭 | Medium |
+| WRPS-015 | 카운트다운 시차 | 대체구현(serverNow), late-arrival 갭 → **회차3 재발=WRPS-047**(Build8.4: Date헤더 +500ms 보정·lead3600·캡4000) | Medium |
 | WRPS-016/017 | round=1 stale choice | 부분대체(fresh refetch) | Low~Medium |
 | WRPS-018 | participantWait 안전망 | 미반영 | Low(→WRPS-013 악화) |
 | WRPS-019 | 드롭 참가자 정리 | 미반영 | Low |
@@ -70,6 +70,12 @@
 | 2026-06-22 | WRPS-014/015 | — | **실기기 PASS** (Build8.1 TestFlight) → 종결 | closed |
 | 2026-06-22 | WRPS-044 | 1 | **신규 발견** (Build8.1 실기기) — 호스트 승계+퇴장 후 참가자 목록/HOST stale | Supabase REST 제어 테스트로 Case A(DB 정상/UI) 확정 |
 | 2026-06-22 | WRPS-044 | 1 | **Build8.3 수정** — rooms realtime + handleRoomUpdate 상태전이 시 강제 fetchParticipants(DELETE 의존 제거) | 실기기 재검증 대기 |
+| 2026-06-26 | — | — | **음성팩 적용**(03571d9) — 한국어 MC 녹음 mp3 + playVoiceClip 레이어 | WRPS-045/046 신규 유발, WRPS-047 재노출 계기 |
+| 2026-06-28 | WRPS-047 | **3** | **재발(WRPS-015 회차3)** — 멀티단말 카운트다운 비동기 시작. 실기기 QA에서 재확인 | 원인: Date헤더 초단위 floor clock offset + late-arrival |
+| 2026-06-28 | WRPS-047 | 3 | **Build8.4 수정**(`db0d16a`) — syncServerClock +500ms 중앙보정·샘플5, lead 3600, sleep캡 4000 | 실기기 멀티디바이스 매트릭스 재검증 필수 |
+| 2026-06-28 | WRPS-045 | 1 | **신규 발견+Build8.4 수정**(`baebae2`) — MC/TTS 혼재. go를 VOICE_SILENT로 무음(intro 풀구호 커버) | 실기기 검증 대기 |
+| 2026-06-28 | WRPS-046 | 1 | **신규 발견+Build8.4 수정**(`8c8bc1d`) — 결과음성 2회. playResultVoiceOnce 라운드당 1회 | 실기기 검증 대기 |
+| 2026-06-28 | WRPS-048 | — | **개선+Build8.4**(`51d5c6a`) — 버튼 효과음 묵직한 클릭음+연타 디바운스 | 실기기 청취 확인 대기 |
 
 ---
 

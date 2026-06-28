@@ -1,13 +1,31 @@
 # 🔴 ACTIVE ISSUES — 현재 살아있는 문제만
 
 > **닫히지 않은 문제만** 우선순위별로 관리한다. 해결되면 이 문서에서 제거하고 `BUG_MASTER_LEDGER.md`에 `현재 상태=해결`로 기록한다.
-> 기준 코드: `fix/build6-regression-recovery` (= build8) · 갱신: 2026-06-22 (Build8.1 코드 수정 + **TestFlight 업로드 완료**)
+> 기준 코드: `fix/build6-regression-recovery` (= build8) · 갱신: 2026-06-28 (**Build8.4** 코드 수정 — 한국어 음성 실기기 QA 결과)
 
-집계: **P0 0건 · P1 2건 · P2 2건 · P3 2건** (총 6건 미해결) · Build8.2(WRPS-042/043)·Build8.3(WRPS-044) 코드 수정(실기기 재검증 대기)
+집계: **P0 0건 · P1 2건 · P2 2건 · P3 2건** (총 6건 미해결) · Build8.2(042/043)·8.3(044)·**8.4(045/046/047/048)** 코드 수정(실기기 재검증 대기)
 
-> ✅ **실기기 PASS 종결(Build8.1)**: WRPS-014(참가자 TTS) · WRPS-015(카운트다운 동기화).
-> ✅ **Build8.2 코드 수정(실기기 재검증 대기)**: WRPS-042(전원 Ready 통일) · WRPS-043(다중 술래, 호스트=플레이어).
-> 📦 **TestFlight**: build 7(Build8.1) 업로드 완료. Build8.2(build 8) 재업로드 준비 중.
+> ✅ **실기기 PASS 종결(Build8.1)**: WRPS-014(참가자 TTS) · WRPS-015(카운트다운 동기화) — 단 **WRPS-015는 음성팩 적용 후 재발 → WRPS-047(Build8.4)로 추적**.
+> ✅ **Build8.4 코드 수정(실기기 재검증 대기)**: WRPS-047(P0 카운트다운 동기화 회귀) · WRPS-045/046(음성) · WRPS-048(버튼음). codex-critic 재검토 PASS, npm test 49/49.
+> 📦 **TestFlight**: build 9(Build8.3) 업로드 완료. **Build8.4는 아직 미업로드 — build 9→10 bump 필요**.
+
+---
+
+## ✅ Build8.4 코드 수정 완료 (한국어 음성 실기기 QA 결과 · 실기기 재검증 대기)
+
+### WRPS-047 (P0) — 멀티단말 카운트다운 비동기 시작 → 보강 [회귀: WRPS-015 회차3]
+- **원인**: HTTP `Date` 헤더 초단위 floor로 기기간 clock offset 최대 ~1s 오차 + realtime late-arrival 시 즉시 시작.
+- **수정(`db0d16a`)**: `syncServerClock` +500ms 중앙보정·샘플 3→5, `getNextCountdownStartAt` lead 2800→3600ms, `runCountdown` sleep 캡 3000→4000. 판정/Firebase 무변경.
+- **잔여**: 런타임 특성상 단위테스트 불가 → **실기기 멀티디바이스 매트릭스(BUILD4_P0_QA_MATRIX) 재검증 필수**. 닫기 전 NO-GO.
+
+### WRPS-045 (P1) — 한국어 MC음성/TTS 혼재 → 수정
+- `go`("가위바위보") 등 매핑 공백이 TTS 폴백 → intro(MC)와 혼재. `VOICE_SILENT` 센티넬로 `ko.go` 무음(풀구호 ko_game_start.mp3가 커버). MP3 이벤트는 speechSynthesis 미사용 보장. (`baebae2`)
+
+### WRPS-046 (P1) — 게임 결과 음성 2회 재생 → 수정
+- `finishRoundLocal` result→game_over 2회 호출 시 결과음성 무가드. `playResultVoiceOnce`(키=gameRound:round)로 1회. 새 게임/방 경계 3곳서 키 초기화. (`8c8bc1d`)
+
+### WRPS-048 (P2) — 버튼 효과음 개선
+- `playButtonClickSound` 합성음 재설계(sine 280→140Hz·lowpass·50ms) + 45ms 연타 디바운스. 음성과 별도 AudioContext. (`51d5c6a`)
 
 ---
 

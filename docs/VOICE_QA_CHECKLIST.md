@@ -1,17 +1,20 @@
 # 🎙️ 한국어 녹음 음성 적용 — 실기기 QA 체크리스트
 
 > 대상: `ASSETS/rps/voice/ko/` 녹음 음성 + `playVoiceClip()` 재생 레이어
-> 기준 브랜치: `fix/build6-regression-recovery` · 적용일: 2026-06-26
+> 기준 브랜치: `fix/build6-regression-recovery` · 적용일: 2026-06-26 · **갱신: 2026-06-28 (Build8.4 / WRPS-045)**
 
 ## 매핑 (코드: `index.html` VOICE_CLIPS)
 
-| 트리거 | 파일 | 시점 | 신뢰도 |
+| 트리거 | 파일 | 시점 | 비고 |
 |---|---|---|---|
-| intro | `ko_game_start.mp3` | 카운트다운 1단계("안내면 술래") | 中 — **들어보고 확인** |
-| go | (녹음 없음 → TTS) | 카운트다운 2단계("가위바위 보!") | — |
+| intro | `ko_game_start.mp3` | 카운트다운 1+2단계 **전체 구호** | ✅ 풀구호("안내면 술래 … 가위바위보!") — 사용자 청취 확인 |
+| go | **VOICE_SILENT (무음)** | 카운트다운 2단계 | **WRPS-045**: intro 풀구호가 커버 → 별도 재생/TTS 없음(혼재 제거) |
 | becameLoser | `ko_lose.mp3` | 술래 확정(내가 졌을 때) | 中 |
 | gameOver | `ko_you win.mp3` | 게임 종료(내가 이겼을 때) | 低 — **들어보고 확인** |
 | continue | `ko_safe.mp3` | 라운드 계속(내가 살았을 때) | 中 |
+
+> **WRPS-045(Build8.4)**: MP3가 매핑된 이벤트는 절대 speechSynthesis(TTS)를 쓰지 않음. `VOICE_SILENT` 이벤트는 재생·진행클립 중단·TTS 모두 안 함. TTS 폴백은 영/일 및 매핑 없는 이벤트에만.
+> **WRPS-046(Build8.4)**: 결과 음성(becameLoser/gameOver/continue)은 `playResultVoiceOnce`로 라운드당 1회만 재생.
 
 > 미사용 녹음(보류): `ko_ready`, `ko_rock(1)`, `ko_paper(1)`, `ko_scissors(1)`, `ko_mc ment_scissors`, `ko_jrudge_scissor`, `ko_game_start_simple` — 현재 게임 흐름에 트리거 없음(추가 시 판정/카운트다운 로직 변경 필요).
 > 매핑이 틀리면 `index.html`의 `VOICE_CLIPS.ko` 표 한 줄만 고치면 됨.
