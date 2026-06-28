@@ -8595,14 +8595,21 @@ function summarizeGameStats(rows) {
     // 영어/일본어 및 매핑 없는 트리거(go 등)는 기존 speak() TTS를 그대로 사용한다.
     // 파일명은 사용자가 녹음한 원본 그대로(공백 포함)이며 encodeURI로 URL 인코딩한다.
     const VOICE_CLIP_BASE = "ASSETS/rps/voice/";
+    // WRPS-045: 매핑 값이 VOICE_SILENT면 "의도적 무음"(다른 클립이 이미 그 대사를 포함)으로
+    // 처리해 TTS 폴백도 하지 않는다. → MP3 이벤트는 절대 speechSynthesis를 쓰지 않고,
+    // MP3가 정말 없는 이벤트(영/일 go 등)에서만 TTS로 폴백한다.
+    const VOICE_SILENT = "@silent";
     const VOICE_CLIPS = {
       ko: {
-        intro: "ko/ko_game_start.mp3",   // "안내면 술래" (카운트다운 1단계)
+        // ko_game_start.mp3 = "안내면 술래 … 가위바위보!" 전체 구호(사용자 청취 확인, 2026-06-27).
+        // intro 단계에서 한 번 재생되어 go("가위바위보") 대사까지 모두 포함한다.
+        intro: "ko/ko_game_start.mp3",   // 카운트다운 1+2단계 전체 구호
+        go: VOICE_SILENT,                // intro 풀구호가 커버 → 별도 재생/ TTS 없음(혼재 제거)
         becameLoser: "ko/ko_lose.mp3",   // 술래 확정(졌을 때)
         gameOver: "ko/ko_you win.mp3",   // 게임 종료(이겼을 때)
         continue: "ko/ko_safe.mp3",      // 라운드 계속(살았을 때)
-        // go: 전용 "가위바위보!" 녹음 없음 → TTS 폴백 유지
       },
+      // 영어/일본어: 녹음 미적용 → 전 이벤트 기존 TTS 사용(혼재 없음).
     };
 
     let __voiceAudioEl = null;
@@ -8616,10 +8623,16 @@ function summarizeGameStats(rows) {
       return __voiceAudioEl;
     }
 
+    function isVoiceSilent(eventKey) {
+      const set = VOICE_CLIPS[currentLocale];
+      return !!set && set[eventKey] === VOICE_SILENT;
+    }
+
     function voiceClipSrc(eventKey) {
       const set = VOICE_CLIPS[currentLocale];
       const file = set && set[eventKey];
-      return file ? encodeURI(VOICE_CLIP_BASE + file) : null;
+      if (!file || file === VOICE_SILENT) return null;
+      return encodeURI(VOICE_CLIP_BASE + file);
     }
 
     // WRPS-014 연장: markReady 사용자 제스처에서 HTMLAudio 재생을 사전 언락한다.
@@ -8644,6 +8657,9 @@ function summarizeGameStats(rows) {
     // 반환 Promise는 재생/폴백 완료 시 resolve (호출부는 void 또는 setTimeout으로만 사용).
     function playVoiceClip(eventKey, ttsText, pitch, rate) {
       if (isMuted()) return Promise.resolve();
+      // WRPS-045: 무음 이벤트(go 등 — 다른 클립이 대사를 포함)는 아무것도 재생하지 않는다.
+      // 진행 중인 클립을 중단해서도 안 되므로 정리 로직 이전에 즉시 반환한다.
+      if (isVoiceSilent(eventKey)) return Promise.resolve();
       // 진행 중인 클립/TTS를 먼저 정리해 겹침을 막는다(기존 speak()의 cancel과 동일 취지).
       try { if (__voiceAudioEl) { __voiceAudioEl.pause(); __voiceAudioEl.currentTime = 0; } } catch (e) {}
       const src = voiceClipSrc(eventKey);
