@@ -7,7 +7,7 @@
 
 > ✅ **실기기 PASS 종결(Build8.1)**: WRPS-014(참가자 TTS) · WRPS-015(카운트다운 동기화) — 단 **WRPS-015는 음성팩 적용 후 재발 → WRPS-047(Build8.4)로 추적**.
 > ✅ **Build8.4 코드 수정(실기기 재검증 대기)**: WRPS-047(P0 카운트다운 동기화 회귀) · WRPS-045/046(음성) · WRPS-048(버튼음). codex-critic 재검토 PASS, npm test 49/49.
-> 📦 **TestFlight**: build 9(Build8.3) 업로드 완료. **Build8.4는 아직 미업로드 — build 9→10 bump 필요**.
+> 📦 **TestFlight**: **Build8.4 = build 13 업로드 완료**(2026-06-28, Delivery UUID `f99e8308-…`, Processing VALID). Export 자동증가로 archive 10→IPA 13. (이전 Build8.3=build 9)
 
 ---
 

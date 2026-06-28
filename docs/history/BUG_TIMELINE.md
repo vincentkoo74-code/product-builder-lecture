@@ -136,6 +136,23 @@ ID는 `BUG_MASTER_LEDGER.md`의 `WRPS-NNN`을 참조한다.
 
 ---
 
+## Build 8.4 — 한국어 음성 실기기 QA 결과 4건 수정 (2026-06-28)
+
+- **신규 버그**: WRPS-045(한국어 MC음성/TTS 혼재), WRPS-046(결과음성 2회 재생), WRPS-048(버튼 효과음 가벼움·개선).
+- **재발(회귀)**: **WRPS-047 = WRPS-015 회차3**(멀티단말 카운트다운 비동기 시작) — 06-22 실기기 PASS 후 음성팩 환경에서 재노출.
+- **수정(클라이언트 `index.html` 단일, 판정/Firebase 무변경)**:
+  - WRPS-047(`db0d16a`,P0): `syncServerClock` HTTP Date 초단위 floor **+500ms 중앙보정**·샘플 3→5, lead 2800→3600ms, runCountdown sleep캡 3000→4000.
+  - WRPS-046(`8c8bc1d`): `playResultVoiceOnce`(키=gameRound:round) 라운드당 1회 + 새 게임/방 경계 3곳 키 초기화.
+  - WRPS-045(`baebae2`): `VOICE_SILENT` 센티넬로 `ko.go` 무음(intro 풀구호가 커버), MP3 이벤트 TTS 미사용 보장.
+  - WRPS-048(`51d5c6a`): `playButtonClickSound` 합성음 재설계(sine 280→140Hz·lowpass·50ms)+45ms 연타 디바운스.
+- **검증**: **codex-critic 1차→보정→재검토 PASS**(WRPS-046 HIGH·047 MEDIUM 지적 반영, Review Correction Loop 완료). vitest **49/49**, 인라인 JS 문법 OK, build:web/cap sync OK.
+- **문서**: BUG_MASTER_LEDGER/ACTIVE_ISSUES/REGRESSION_TRACKER/QA_STATUS/VOICE_QA_CHECKLIST 갱신(`499ac08`).
+- **빌드/업로드**: ARCHIVE/EXPORT SUCCEEDED. ExportOptions `manageAppVersionAndBuildNumber=true`로 ASC 기존(9~12) 회피 **archive 10 → IPA 13 자동 증가**. repo `CURRENT_PROJECT_VERSION` 13으로 정정.
+  - ✅ **TestFlight 업로드 완료**(2026-06-28) — build **13**, UPLOAD SUCCEEDED, Delivery UUID `f99e8308-eb20-46f9-b9c3-36ca25ae83ac`, API Key `8FCAM7NFRL`+Issuer. **충돌 없음**. **Processing = VALID**. build 13 IPA에 Build8.4 코드 포함 확인.
+  - **다음**: 내부 테스터 실기기 재검증 — WRPS-047(P0 멀티디바이스 매트릭스)·045/046/048 + 기존 044/043/042/013/018.
+
+---
+
 ## (다음) Build 9+ — 여기에 누적
 
 > 새 Build 작업 시작 시 이 아래에 섹션 추가. 형식: 신규 버그 / 해결 버그 / 재발 / 미완 검증 / 릴리즈 판정.

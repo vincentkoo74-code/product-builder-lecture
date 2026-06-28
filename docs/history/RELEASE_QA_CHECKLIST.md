@@ -2,10 +2,12 @@
 
 > 모든 Build를 Archive/TestFlight/스토어에 올리기 **전** 이 체크리스트를 통과해야 한다.
 > 한 항목이라도 ❌면 `QA_STATUS.md` 판정은 **NO-GO**.
-> 갱신: 2026-06-22
+> 갱신: 2026-06-28 (Build8.4)
 
 > 📦 **Build8.1 릴리즈 로그**: build 7, TestFlight 업로드 ✅(Delivery UUID `8432a629-…`).
 > 📦 **Build8.2 릴리즈 로그**(2026-06-22): WRPS-042/043(호스트=플레이어) 수정 → npm test 44/44 → Archive ✅ → IPA export ✅ → **TestFlight 업로드 ✅**(build 8, Delivery UUID `47873144-873f-4360-8725-a7c3817ab3d6`, API Key `8FCAM7NFRL`, 충돌 없음). **3절(실기기) QA 대기**.
+> 📦 **Build8.3 릴리즈 로그**(2026-06-22): WRPS-044 수정 → **TestFlight 업로드 ✅**(build 9, Delivery UUID `eb3547e1-…`).
+> 📦 **Build8.4 릴리즈 로그**(2026-06-28): WRPS-045/046/047/048 수정 → codex-critic PASS → npm test 49/49 → Archive ✅ → IPA export ✅ → **TestFlight 업로드 ✅**(build **13**, Delivery UUID `f99e8308-eb20-46f9-b9c3-36ca25ae83ac`, API Key `8FCAM7NFRL`+Issuer `fbcda81d-…`, 충돌 없음, **Processing VALID**). ⚠️ Export `manageAppVersionAndBuildNumber=true`로 archive 10→IPA 13 자동증가(repo CURRENT_PROJECT_VERSION 13 정정). **3절(실기기) QA 대기 — WRPS-047 P0 멀티디바이스 매트릭스 포함**.
 
 ---
 

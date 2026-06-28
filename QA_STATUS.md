@@ -59,21 +59,26 @@
 
 ---
 
-## 🚦 릴리즈 상태: **Build8.4 코드 수정 완료 · 빌드 미업로드(build 9→10 필요) · 실기기 QA 대기**
+## 🚦 릴리즈 상태: **Build8.4 (build 13) TestFlight 업로드 완료 · Processing VALID · 실기기 QA 대기**
 
 ### Build8.4 코드 게이트 (2026-06-28 — 한국어 음성 실기기 QA 결과)
 - ✅ **코드 수정 4건 독립 커밋**: WRPS-047(`db0d16a`,P0)·046(`8c8bc1d`)·045(`baebae2`)·048(`51d5c6a`).
 - ✅ **codex-critic 재검토 PASS**(WRPS-046 HIGH·047 MEDIUM 지적 → 보정 → Review Correction Loop 통과, critical/high 0).
 - ✅ npm test **49/49** · ✅ 인라인 JS 문법 OK · ✅ DB 스키마/RLS/Firebase/판정(game-logic.mjs) 무변경.
-- ⏳ **빌드 번호 아직 9** — Build8.4 실기기 QA를 위해 **9→10 bump + Archive + TestFlight 업로드 필요**.
 
-### (이전) Build8.3 (build 9) 업로드 완료
-- ✅ TestFlight build **9**, Delivery UUID `eb3547e1-7df0-4879-81cb-d2d2f2a160b8`. (build 8=Build8.2, build 7=Build8.1)
+### 빌드/업로드 게이트 (2026-06-28 Build8.4)
+- ✅ **ARCHIVE SUCCEEDED**(`build/MaruRPS-Build8.4.xcarchive`) · ✅ **EXPORT SUCCEEDED**(`build/export-build8.4/WooriMaruRPS.ipa`, 49.2MB)
+- ✅ **TestFlight UPLOAD SUCCEEDED** — build **13**, Delivery UUID `f99e8308-eb20-46f9-b9c3-36ca25ae83ac`. **충돌 없음.**
+- ✅ **Processing = VALID**(ASC API `/v1/builds` 확인). build 13 IPA에 Build8.4 코드 포함 검증 완료.
+- ⚠️ **빌드번호 주의**: ExportOptions `manageAppVersionAndBuildNumber=true`로 Export가 ASC 기존 빌드(9~12)를 피해 **archive 10 → IPA 13 자동 증가**. repo `CURRENT_PROJECT_VERSION`는 실제 출하분과 일치하도록 **13**으로 정정. (ASC 실제 이력: build 9~12는 06-22~06-26 업로드분, 13=Build8.4)
+- API Key: `8FCAM7NFRL` + Issuer `fbcda81d-…`(`~/.appstoreconnect/asc-upload.env`, git 제외).
 
-### 다음: build 10 업로드 후 실기기 QA
+### (이전) Build8.3 = ASC build 9, Delivery `eb3547e1-…`(2026-06-22).
+
+### 다음: build 13 설치 후 실기기 QA
 - 신규 재검증: **WRPS-047(P0 카운트다운 동기화 — 멀티디바이스 매트릭스)** · WRPS-045/046(한국어 음성) · WRPS-048(버튼음 청취).
 - 기존 재검증 대상: WRPS-044/043/042/013/018, 미검증 게이트 WRPS-026/036.
-> 외부/스토어 릴리즈는 실기기 체크리스트(특히 WRPS-047 P0) 통과 전 **NO-GO**.
+> Internal TestFlight 배포 **완료**. 외부/스토어 릴리즈는 실기기 체크리스트(특히 WRPS-047 P0) 통과 전 **NO-GO**.
 
 ---
 
