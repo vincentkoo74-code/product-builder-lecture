@@ -7009,6 +7009,19 @@ function summarizeGameStats(rows) {
 }
       /*__GAME_LOGIC_END__*/
 
+      // ── v2 엔진(WRPS-049 STEP2.2) — 빌드 시 dist에만 번들 주입(아래 마커). root는 비어있음. ──
+      // game-logic 블록 뒤에 위치해야 번들이 judgePure 등 인라인 심볼을 참조할 수 있다.
+      /*__ENGINE_V2_START__*/
+      /*__ENGINE_V2_END__*/
+      // v2 활성 플래그(STEP2.2: 기본 OFF = legacy 모드 유지, NO MIX). 섀도우도 기본 OFF.
+      const ENGINE_V2_ENABLED = false;
+      const ENGINE_V2_SHADOW = false;
+      // 엔진 인스턴스: 번들이 주입된 dist에서만 생성. 미주입(root)·미지원 환경은 null = 완전 inert.
+      const __engineV2 = (typeof RPSEngineV2 !== 'undefined' && RPSEngineV2 && RPSEngineV2.createEngine)
+        ? RPSEngineV2.createEngine({ now: () => serverNow() })
+        : null;
+      if (__engineV2) { try { window.__rpsEngineV2 = __engineV2; } catch (e) {} } // 디버그/섀도우 검증용
+
     // 상태→순수 판정 어댑터: 확정 안전/술래는 그대로 win/lose, 나머지 활성자만 judgePure.
     // (기존 호출부 호환: judgeRound(state.participants) 시그니처 유지)
     function judgeRound(participants) {

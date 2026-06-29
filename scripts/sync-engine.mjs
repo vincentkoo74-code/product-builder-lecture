@@ -9,7 +9,10 @@
 //
 // 이 단계(2.1)는 번들 "생성/검증"만 한다. index.html 주입(2.2)·동작 연결(이후)은 별도 단계.
 
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+
+const ENGINE_START = '/*__ENGINE_V2_START__*/';
+const ENGINE_END = '/*__ENGINE_V2_END__*/';
 
 // 의존성 순서(앞이 먼저 정의되어야 함). game-logic 심볼은 외부(인라인) 스코프에서 제공된다.
 const ENGINE_FILES = [
@@ -51,6 +54,31 @@ export async function buildEngineBundle({ baseUrl = new URL('../', import.meta.u
   const body = parts.join('\n\n');
   const ret = `  return { ${PUBLIC_API.join(', ')} };`;
   return `const RPSEngineV2 = (function () {\n${body}\n\n${ret}\n})();`;
+}
+
+/**
+ * 엔진 번들을 대상 HTML 의 ENGINE_V2 마커 블록에 주입한다(기본: dist/index.html).
+ * 라이브 root index.html 은 건드리지 않는다 — 빌드 산출물(dist)에만 주입(STEP2.2 안전 정책).
+ */
+export async function syncEngine({
+  htmlPath = new URL('../dist/index.html', import.meta.url),
+} = {}) {
+  const html = await readFile(htmlPath, 'utf8');
+  const startIdx = html.indexOf(ENGINE_START);
+  const endIdx = html.lastIndexOf(ENGINE_END);
+  if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
+    throw new Error(`sync-engine: marker block not found in ${htmlPath}. Expected ${ENGINE_START} … ${ENGINE_END}`);
+  }
+  const bundle = await buildEngineBundle();
+  const before = html.slice(0, startIdx + ENGINE_START.length);
+  const after = html.slice(endIdx);
+  const block = `\n      // ⚠️ 자동 생성 — 직접 수정 금지. 원본: engine/*.mjs (scripts/sync-engine.mjs)\n${bundle}\n      `;
+  const next = `${before}${block}${after}`;
+  if (next !== html) {
+    await writeFile(htmlPath, next, 'utf8');
+    return true;
+  }
+  return false;
 }
 
 // 직접 실행 시: 번들을 stdout 으로 출력(검증용).
