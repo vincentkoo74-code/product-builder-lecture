@@ -4210,6 +4210,7 @@
       gameStarting: false,
       finishingRound: false,
       resultVoiceKey: null, // WRPS-046: 라운드당 결과 음성 1회 재생 가드
+      resultSfxKey: null,   // 라운드당 결과 효과음(win/lose/draw) 1회 재생 가드
       publishingRoundResult: false,
       newRoundResetting: false,
       joinScreenMode: "manual",
@@ -4859,6 +4860,7 @@
 	        state.gameStarting = false;
 	        state.finishingRound = false;
 	        state.resultVoiceKey = null; // WRPS-046: 새 게임 회차에서 결과 음성 가드 초기화
+	        state.resultSfxKey = null;   // 결과 효과음 가드 초기화
 	        resetLocalParticipantsForNewGameRound();
 
 	        if (getOnlineMode() && db && state.roomCode) {
@@ -5266,6 +5268,17 @@
 	          return;
 	        }
 
+	        // 입장/퇴장 사운드: 참가자 ID diff. 최초 채움(oldParticipants 비었을 때)·재구독은 무음(storm 방지).
+	        // 폴링/realtime 모두 oldParticipants 기준이라 같은 입퇴장이 중복 발화되지 않는다.
+	        try {
+	          if (oldParticipants.length > 0) {
+	            const oldIds = new Set(oldParticipants.map(p => p.id));
+	            const newIds = new Set(data.map(p => p.id));
+	            if (data.some(p => !oldIds.has(p.id))) SoundManager.playJoinMeow();
+	            if (oldParticipants.some(p => !newIds.has(p.id) && p.id !== state.currentUserId)) SoundManager.playLeaveMeow();
+	          }
+	        } catch (e) {}
+
 	        state.participants = data;
         updateSelectedCount();
         renderAll();
@@ -5400,6 +5413,7 @@
       state.playingEntryKey = null;
       state.advancingRound = false;
       state.resultVoiceKey = null; // WRPS-046: 새 세션에서 결과 음성 가드 초기화
+      state.resultSfxKey = null;   // 결과 효과음 가드 초기화
     }
 
     function resetRoomLocalState({ keepRoomCode = "" } = {}) {
@@ -5423,6 +5437,7 @@
       state.advancingRound = false;
       state.autoStartInFlight = false;
       state.resultVoiceKey = null; // WRPS-046: 새 방에서 결과 음성 가드 초기화
+      state.resultSfxKey = null;   // 결과 효과음 가드 초기화
       if (state.rematchAdvanceTimer) { clearTimeout(state.rematchAdvanceTimer); state.rematchAdvanceTimer = null; }
       state.remainingSeconds = 5;
       state.onlineParticipantIds = [];
@@ -6331,6 +6346,8 @@
     }
 
     async function runCountdown() {
+      // M-2: 카운트다운 직전 오디오 컨텍스트 resume(OS 인터럽트로 재-suspend된 경우 복구).
+      try { SoundManager.unlock(); } catch (e) {}
       const overlay = $("countdownOverlay");
       const numEl = $("countdownNumber");
       const labelEl = $("countdownLabel");
@@ -6625,6 +6642,18 @@
       setTimeout(() => playVoiceClip(eventKey, ttsText, pitch, rate), delayMs);
     }
 
+    // 결과 효과음(win/lose/draw)도 finishRoundLocal 2회 호출 시 중복되지 않도록 라운드당 1회.
+    function playResultSfxOnce(kind, delayMs = 400) {
+      const key = `${getGameRound()}:${state.round || 1}`;
+      if (state.resultSfxKey === key) return;
+      state.resultSfxKey = key;
+      setTimeout(() => {
+        if (kind === "win") SoundManager.playWin();
+        else if (kind === "lose") SoundManager.playLose();
+        else if (kind === "draw") SoundManager.playDraw();
+      }, delayMs);
+    }
+
     async function finishRoundLocal() {
       if (state.finishingRound) return; // 중복 실행 방지
       state.finishingRound = true;
@@ -6701,7 +6730,8 @@
         }
         renderRoundResult("gameOver", activePlayers.length, remainingSlots);
         showScreen("screenRoundResult");
-        setTimeout(() => playFinalFanfare(), 400);
+        // 전원 술래 확정·종료: 본인이 술래면 패배음, 살아남았으면(이전 안전) 승리 팡파레
+        playResultSfxOnce(isConfirmedLoser() ? "lose" : "win");
         state.finishingRound = false;
         return;
       }
@@ -6710,6 +6740,7 @@
         if (iPlayedThisRound) recordMyAccountGameResult("draw");
         renderRoundResult("draw", 0, remainingSlots);
         showScreen("screenRoundResult");
+        playResultSfxOnce("draw", 300); // 무승부 전용 사운드
         state.finishingRound = false;
         return;
       }
@@ -6727,7 +6758,8 @@
 	        }
         renderRoundResult("gameOver", roundLosers.length, remainingSlots);
         showScreen("screenRoundResult");
-        setTimeout(() => playFinalFanfare(), 400);
+        // 게임 종료: 승자=arcade 팡파레, 패자(술래)=low-tone decay
+        playResultSfxOnce(myResult === "win" ? "win" : "lose");
         if (myResult === "lose") playResultVoiceOnce("becameLoser", t("voice.becameLoser"), 1.4, 1.0, 2200);
         else if (myResult === "win") playResultVoiceOnce("gameOver", t("voice.gameOver"), 1.4, 1.0, 2200);
       } else if (roundLosers.length > remainingSlots) {
@@ -6740,9 +6772,10 @@
         renderRoundResult("tooFew", roundLosers.length, remainingSlots);
         showScreen("screenRoundResult");
         if (roundLosers.length > 0 && myResult === "lose") {
+          playResultSfxOnce("lose", 600); // 라운드 술래 확정: 패배음
           playResultVoiceOnce("becameLoser", t("voice.becameLoser"), 1.4, 1.0, 800);
         } else if (myResult === "win") {
-          playResultVoiceOnce("continue", t("voice.continue"), 1.4, 0.9, 800);
+          playResultVoiceOnce("continue", t("voice.continue"), 1.4, 0.9, 800); // 계속: 음성만(SFX 없음)
         }
         scheduleRematchAutoAdvance();
       }
@@ -7961,14 +7994,10 @@ function summarizeGameStats(rows) {
       const btn = $("myReadyBtn");
       btn.disabled = true;
       setBtnText(btn, t("lobby.readyPreparing"));
-      // WRPS-014: 모바일 user-gesture 컨텍스트(준비 버튼 클릭)에서 speechSynthesis를 사전 언락.
-      // 이후 카운트다운 TTS는 WebSocket 이벤트 경로(제스처 없음)에서 호출되어 참가자 단말에서 차단되므로,
-      // 여기서 빈 발화로 미리 잠금 해제해야 참가자 폰에서도 "안내면 술래 가위바위보" 음성이 재생된다.
-      if (window.speechSynthesis && !isMuted()) {
-        try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch (e) { /* unlock 실패는 무음일 뿐 앱 동작 무관 */ }
-      }
-      // WRPS-014 연장: 녹음 음성(HTMLAudio)도 같은 제스처에서 언락 → 참가자 폰 mp3 재생 보장.
-      unlockVoiceAudio();
+      // WRPS-014: 모바일 user-gesture(준비 버튼 클릭)에서 오디오 컨텍스트를 사전 언락한다.
+      // 참가자 폰은 카운트다운을 WebSocket 이벤트(제스처 없음)로 받으므로 미리 풀어두지 않으면
+      // 녹음 음성이 차단된다. SoundManager.unlock()이 AudioContext resume + 디코드 워밍을 수행.
+      SoundManager.unlock();
       if (getOnlineMode()) {
         try {
           await Promise.race([
@@ -8424,61 +8453,269 @@ function summarizeGameStats(rows) {
       $("accountStatsPopup").classList.add("hidden");
     }
 
-    function playFanfare() {
-      try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        // Sarcastic "congratulations" fanfare for the loser: rapid ascending notes
-        const notes = [392, 494, 587, 698, 784];
-        let t = ctx.currentTime + 0.05;
-        notes.forEach((freq, i) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain); gain.connect(ctx.destination);
-          osc.type = 'square';
-          osc.frequency.value = freq;
-          gain.gain.setValueAtTime(0.25, t + i * 0.12);
-          gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + 0.25);
-          osc.start(t + i * 0.12);
-          osc.stop(t + i * 0.12 + 0.3);
-        });
-      } catch(e) {}
-    }
+    // ===================================================================
+    // 🔊 SoundManager — VOICE CLIP ONLY 오디오 엔진 (v2.0)
+    //   - TTS 완전 금지 / fallback 금지: ko 녹음 클립만, en/ja는 음성 OFF
+    //   - preloadAll(): 앱 시작 시 mp3 → AudioBuffer 디코드 캐시
+    //   - 보이스 채널: 단일 재생(mutex) + 우선순위 선점 + eventId 중복제거
+    //   - 효과음(버튼/결과/입퇴장): 음성을 끊지 않는 별도 노드로 믹스(WebAudio 합성)
+    //   - 재생 실패 시 무음 + console 경고(로그 필수)
+    // ===================================================================
+    const SoundManager = (() => {
+      const VOICE_BASE = "ASSETS/rps/voice/";
+      const SILENT = "@silent";
+      // 한국어 전용 녹음. en/ja는 정책상 음성 OFF(효과음만) — 2026-06-29.
+      const CLIPS = {
+        ko: {
+          intro: "ko/ko_game_start.mp3", // "안내면 술래 … 가위바위보!" 전체 구호(go까지 커버)
+          go: SILENT,                    // intro 풀구호가 커버 → 별도 재생/TTS 없음
+          becameLoser: "ko/ko_lose.mp3",
+          gameOver: "ko/ko_you win.mp3",
+          continue: "ko/ko_safe.mp3",
+        },
+      };
+      // 우선순위(클수록 선점): RESULT > FLOW
+      const PRI = { gameOver: 3, becameLoser: 3, continue: 3, intro: 2, go: 2 };
 
-    function playFinalFanfare() {
-      try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        // Big festive fanfare: two phrase melody
-        const melody = [
-          [523,0.0],[659,0.15],[784,0.30],[1047,0.45],[784,0.65],[1047,0.80],
-          [659,1.05],[784,1.20],[523,1.40]
-        ];
-        melody.forEach(([freq, offset]) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain); gain.connect(ctx.destination);
-          osc.type = 'triangle';
-          osc.frequency.value = freq;
-          const t = ctx.currentTime + offset;
-          gain.gain.setValueAtTime(0.35, t);
-          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
-          osc.start(t); osc.stop(t + 0.4);
+      let ctx = null, masterGain = null, preloadPromise = null;
+      const buffers = new Map();      // src → AudioBuffer
+      const loading = new Map();       // src → in-flight decode Promise (L-3: 이중 디코드 방지)
+      const seenEvents = new Set();    // eventId 중복제거
+      let voiceNode = null, voicePriority = -1;
+      let lastButtonAt = 0;
+
+      function audioCtx() {
+        if (!ctx) {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (AC) ctx = new AC();
+        }
+        return ctx;
+      }
+      // 모든 사운드는 master 게인을 거쳐 출력 → 음소거 시 in-flight 합성음까지 즉시 차단(M-1).
+      function master() {
+        const c = audioCtx();
+        if (!c) return null;
+        if (!masterGain) { masterGain = c.createGain(); masterGain.gain.value = 1; masterGain.connect(c.destination); }
+        return masterGain;
+      }
+      function unmuteGain() {
+        const m = master(); if (!m) return;
+        const c = audioCtx();
+        m.gain.cancelScheduledValues(c.currentTime);
+        m.gain.setValueAtTime(1, c.currentTime);
+      }
+      function clipPath(eventKey, locale) {
+        const set = CLIPS[locale];
+        const f = set && set[eventKey];
+        if (!f || f === SILENT) return null;
+        return encodeURI(VOICE_BASE + f);
+      }
+      function isSilent(eventKey, locale) {
+        const set = CLIPS[locale];
+        return !!set && set[eventKey] === SILENT;
+      }
+      function loadBuffer(src) {
+        if (buffers.has(src)) return Promise.resolve(buffers.get(src));
+        if (loading.has(src)) return loading.get(src);      // L-3: 동시 호출 시 디코드 1회
+        const c = audioCtx();
+        if (!c) return Promise.resolve(null);
+        const p = (async () => {
+          try {
+            const res = await fetch(src);
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            const buf = await c.decodeAudioData(await res.arrayBuffer());
+            buffers.set(src, buf);
+            return buf;
+          } catch (e) {
+            console.warn("[SoundManager] preload/decode 실패:", src, e?.message || e);
+            return null;
+          } finally {
+            loading.delete(src);
+          }
+        })();
+        loading.set(src, p);
+        return p;
+      }
+      // M-3: 전부 성공해야 완료 고정. 일부 실패 시 preloadPromise를 비워 다음 unlock에서 재시도.
+      function preloadAll() {
+        if (preloadPromise) return preloadPromise;
+        const srcs = new Set();
+        for (const locale of Object.keys(CLIPS))
+          for (const key of Object.keys(CLIPS[locale])) {
+            const p = clipPath(key, locale);
+            if (p) srcs.add(p);
+          }
+        preloadPromise = Promise.all([...srcs].map(loadBuffer)).then(results => {
+          if (results.some(b => b === null)) preloadPromise = null; // 재시도 허용
         });
-        // Crowd cheer: white noise burst
-        const bufLen = ctx.sampleRate * 1.5;
-        const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
-        const data = buf.getChannelData(0);
-        for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * 0.15;
-        const noise = ctx.createBufferSource();
-        noise.buffer = buf;
-        const noiseGain = ctx.createGain();
-        noise.connect(noiseGain); noiseGain.connect(ctx.destination);
-        const noiseStart = ctx.currentTime + 1.6;
-        noiseGain.gain.setValueAtTime(0, noiseStart);
-        noiseGain.gain.linearRampToValueAtTime(0.4, noiseStart + 0.2);
-        noiseGain.gain.exponentialRampToValueAtTime(0.001, noiseStart + 1.4);
-        noise.start(noiseStart); noise.stop(noiseStart + 1.5);
-      } catch(e) {}
-    }
+        return preloadPromise;
+      }
+      function resumeThen(fn) {
+        const c = audioCtx();
+        if (!c) return;
+        const run = () => { unmuteGain(); fn(); };   // M-1: 음소거 해제 후 재생(이전 mute 0게인 복구)
+        if (c.state === "suspended") c.resume().then(run).catch(() => {});
+        else run();
+      }
+      // iOS/모바일: 사용자 제스처에서 AudioContext 언락 + 디코드 워밍
+      function unlock() {
+        const c = audioCtx();
+        if (c && c.state === "suspended") c.resume().catch(() => {});
+        preloadAll(); // 멱등 — 미완/실패분 재시도
+      }
+      function stopVoice() {
+        if (voiceNode) { try { voiceNode.stop(); } catch (e) {} try { voiceNode.disconnect(); } catch (e) {} voiceNode = null; }
+        voicePriority = -1;
+      }
+      // 보이스 재생: mutex(1개) + 우선순위 선점 + eventId 중복제거. fallback/TTS 없음.
+      function playVoice(eventKey, opts = {}) {
+        if (isMuted()) return;
+        const locale = currentLocale;
+        if (isSilent(eventKey, locale)) return;          // 의도적 무음
+        const src = clipPath(eventKey, locale);
+        if (!src) {
+          if (CLIPS[locale]) console.warn("[SoundManager] 클립 없음(무음, no-TTS):", eventKey, locale);
+          return;                                        // en/ja 등: 음성 OFF
+        }
+        const id = opts.eventId;
+        if (id != null) {
+          if (seenEvents.has(id)) return;                // 중복 이벤트 무시
+          seenEvents.add(id);
+          if (seenEvents.size > 256) seenEvents.clear();
+        }
+        const pri = PRI[eventKey] ?? 1;
+        const start = (buf) => {
+          if (!buf) { console.warn("[SoundManager] 버퍼 없음(무음):", src); return; }
+          if (voiceNode && pri < voicePriority) return;  // 낮은 우선순위는 드롭(현재 유지)
+          const c = audioCtx();
+          if (!c) return;
+          stopVoice();
+          const node = c.createBufferSource();
+          node.buffer = buf;
+          const g = c.createGain(); g.gain.value = 1;
+          node.connect(g); g.connect(master());
+          node.onended = () => { if (voiceNode === node) { voiceNode = null; voicePriority = -1; } };
+          voiceNode = node; voicePriority = pri;
+          try { node.start(); } catch (e) { console.warn("[SoundManager] start 실패:", e?.message || e); }
+        };
+        resumeThen(() => {
+          const cached = buffers.get(src);
+          if (cached) start(cached);
+          else loadBuffer(src).then(start);              // 캐시 미스: 로드 후 재생
+        });
+      }
+      // 음소거: 보이스 정지 + master 게인 즉시 0 → 진행 중인 합성 SFX(최대 0.8s)도 즉시 차단(M-1).
+      // 다음 재생 시 resumeThen→unmuteGain()이 게인을 1로 복구한다.
+      function stopAll() {
+        stopVoice();
+        const m = master(); if (!m) return;
+        const c = audioCtx();
+        m.gain.cancelScheduledValues(c.currentTime);
+        m.gain.setValueAtTime(0.0001, c.currentTime);
+      }
+
+      // ── 효과음(WebAudio 합성) — 음성을 끊지 않는 독립 노드 ──
+      function playButton() {
+        if (isMuted()) return;
+        resumeThen(() => {
+          const c = audioCtx(); if (!c) return;
+          const now = c.currentTime;
+          if (now - lastButtonAt < 0.045) return;        // 연타 노이즈 방지(WRPS-048)
+          lastButtonAt = now;
+          const osc = c.createOscillator(), g = c.createGain(), f = c.createBiquadFilter();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(280, now);
+          osc.frequency.exponentialRampToValueAtTime(140, now + 0.04);
+          f.type = "lowpass"; f.frequency.value = 1200;
+          g.gain.setValueAtTime(0.0001, now);
+          g.gain.exponentialRampToValueAtTime(0.16, now + 0.005);
+          g.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+          osc.connect(f); f.connect(g); g.connect(master());
+          osc.start(now); osc.stop(now + 0.06);
+        });
+      }
+      // 승리: 밝고 빠른 arcade fanfare(상승 아르페지오)
+      function playWin() {
+        if (isMuted()) return;
+        resumeThen(() => {
+          const c = audioCtx(); if (!c) return;
+          const now = c.currentTime;
+          [[784,0],[988,0.08],[1175,0.16],[1568,0.26]].forEach(([fr, o]) => {
+            const osc = c.createOscillator(), g = c.createGain();
+            osc.type = "square"; osc.frequency.value = fr;
+            const t = now + o;
+            g.gain.setValueAtTime(0.0001, t);
+            g.gain.exponentialRampToValueAtTime(0.22, t + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+            osc.connect(g); g.connect(master()); osc.start(t); osc.stop(t + 0.2);
+          });
+        });
+      }
+      // 패배: low-tone decay(하강 + 로우패스 + 긴 감쇠) — 명확한 실패감
+      function playLose() {
+        if (isMuted()) return;
+        resumeThen(() => {
+          const c = audioCtx(); if (!c) return;
+          const now = c.currentTime;
+          const osc = c.createOscillator(), g = c.createGain(), f = c.createBiquadFilter();
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(220, now);
+          osc.frequency.exponentialRampToValueAtTime(70, now + 0.7);
+          f.type = "lowpass"; f.frequency.setValueAtTime(900, now);
+          f.frequency.exponentialRampToValueAtTime(200, now + 0.7);
+          g.gain.setValueAtTime(0.0001, now);
+          g.gain.exponentialRampToValueAtTime(0.25, now + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, now + 0.78);
+          osc.connect(f); f.connect(g); g.connect(master());
+          osc.start(now); osc.stop(now + 0.8);
+        });
+      }
+      // 무승부: 중립 두 음(결판 안 남) — 승/패와 구분되는 별도 사운드
+      function playDraw() {
+        if (isMuted()) return;
+        resumeThen(() => {
+          const c = audioCtx(); if (!c) return;
+          const now = c.currentTime;
+          [0, 0.16].forEach(o => {
+            const osc = c.createOscillator(), g = c.createGain();
+            osc.type = "triangle"; osc.frequency.value = 440;
+            const t = now + o;
+            g.gain.setValueAtTime(0.0001, t);
+            g.gain.exponentialRampToValueAtTime(0.18, t + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+            osc.connect(g); g.connect(master()); osc.start(t); osc.stop(t + 0.16);
+          });
+        });
+      }
+      // 입장/퇴장: meow(밴드패스) + pitch up/down + fade-in/out
+      function meow(rising) {
+        if (isMuted()) return;
+        resumeThen(() => {
+          const c = audioCtx(); if (!c) return;
+          const now = c.currentTime, dur = 0.42;
+          const osc = c.createOscillator(), g = c.createGain(), f = c.createBiquadFilter();
+          osc.type = "sawtooth";
+          const f0 = rising ? 420 : 760, f1 = rising ? 780 : 360;
+          osc.frequency.setValueAtTime(f0, now);
+          osc.frequency.linearRampToValueAtTime((f0 + f1) / 2 * (rising ? 1.05 : 0.95), now + dur * 0.5);
+          osc.frequency.linearRampToValueAtTime(f1, now + dur);
+          f.type = "bandpass"; f.frequency.value = 1100; f.Q.value = 5;
+          g.gain.setValueAtTime(0.0001, now);
+          g.gain.linearRampToValueAtTime(0.2, now + (rising ? dur * 0.45 : 0.05)); // 입장 fade-in
+          g.gain.exponentialRampToValueAtTime(0.0001, now + dur);                  // 퇴장 fade-out
+          osc.connect(f); f.connect(g); g.connect(master());
+          osc.start(now); osc.stop(now + dur + 0.02);
+        });
+      }
+
+      return {
+        preloadAll, unlock, playVoice, stopAll,
+        isSilent: (k) => isSilent(k, currentLocale),
+        clipPath: (k) => clipPath(k, currentLocale),
+        playButton, playWin, playLose, playDraw,
+        playJoinMeow: () => meow(true), playLeaveMeow: () => meow(false),
+      };
+    })();
 
     // 음소거 상태 (localStorage 영속)
     function isMuted() {
@@ -8488,8 +8725,7 @@ function summarizeGameStats(rows) {
       localStorage.setItem("rpsMuted", v ? "1" : "0");
       const btn = $("muteToggleBtn");
       if (btn) btn.textContent = v ? "🔇" : "🔊";
-      if (v && window.speechSynthesis) speechSynthesis.cancel();
-      if (v && __voiceAudioEl) { try { __voiceAudioEl.pause(); __voiceAudioEl.currentTime = 0; } catch (e) {} }
+      if (v) { try { SoundManager.stopAll(); } catch (e) {} }
     }
     window.toggleMute = function() {
       setMuted(!isMuted());
@@ -8509,184 +8745,36 @@ function summarizeGameStats(rows) {
       } catch (e) {}
     }
 
-    function playButtonClickSound() {
-      if (isMuted()) return;
-      try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        const ctx = window.__rpsButtonAudioCtx || new AudioCtx();
-        window.__rpsButtonAudioCtx = ctx;
-
-        const emitClick = () => {
-          const now = ctx.currentTime;
-          // WRPS-048: 빠른 연타 시 클릭이 겹쳐 노이즈가 되는 것을 방지(최소 간격 45ms).
-          if (now - (window.__rpsLastClickAt || 0) < 0.045) return;
-          window.__rpsLastClickAt = now;
-          // WRPS-048: iOS/Material UI 감성의 짧고 묵직한 클릭 — 저역 바디(280→140Hz) +
-          // 로우패스로 기계적 고역을 깎고, 5ms 어택·50ms 디케이로 또렷하지만 가볍지 않게.
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          const filter = ctx.createBiquadFilter();
-          osc.type = "sine";
-          osc.frequency.setValueAtTime(280, now);
-          osc.frequency.exponentialRampToValueAtTime(140, now + 0.04);
-          filter.type = "lowpass";
-          filter.frequency.value = 1200;
-          gain.gain.setValueAtTime(0.0001, now);
-          gain.gain.exponentialRampToValueAtTime(0.16, now + 0.005);
-          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
-          osc.connect(filter);
-          filter.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(now);
-          osc.stop(now + 0.06);
-        };
-
-        if (ctx.state === "suspended") {
-          ctx.resume().then(emitClick).catch(() => {});
-        } else {
-          emitClick();
-        }
-      } catch (e) {}
-    }
+    // 버튼 클릭음 호환 래퍼 → SoundManager
+    function playButtonClickSound() { SoundManager.playButton(); }
 
     function shouldSkipButtonClickSound(button) {
       return button?.classList?.contains("choice-button") || button?.closest?.("#screenGame");
     }
 
     document.addEventListener("pointerdown", (event) => {
+      // 어떤 탭이든 오디오 컨텍스트 언락(첫 제스처에서 모바일 mp3/효과음 재생 보장)
+      try { SoundManager.unlock(); } catch (e) {}
       const button = event.target.closest?.("button");
       if (!button || button.disabled || button.getAttribute("aria-disabled") === "true") return;
       triggerButtonHaptic();
       if (!shouldSkipButtonClickSound(button)) playButtonClickSound();
     }, { passive: true });
 
-    const CHILD_VOICE_KEYWORDS = [
-      "child", "kid", "boy", "girl", "junior", "young",
-      "어린", "아이", "아동", "こども", "子供", "少年", "少女"
-    ];
-
-    function chooseChildFriendlyVoice(lang) {
-      const voices = speechSynthesis.getVoices?.() || [];
-      const sameLang = voices.filter(v => (v.lang || "").toLowerCase().startsWith(lang.toLowerCase().slice(0, 2)));
-      return sameLang.find(v => CHILD_VOICE_KEYWORDS.some(k => v.name.toLowerCase().includes(k.toLowerCase())))
-        || sameLang.find(v => v.localService)
-        || sameLang[0]
-        || null;
+    // === 음성 재생 호환 래퍼 (VOICE CLIP ONLY — TTS 금지, SoundManager 위임) ===
+    // 기존 호출부 시그니처 playVoiceClip(eventKey, ttsText, pitch, rate)를 유지하되
+    // ttsText/pitch/rate는 무시한다(녹음 클립만 재생, 폴백 없음).
+    // eventId는 playingEntryKey 기반으로 부여해 같은 라운드 중복 재생을 막는다.
+    function playVoiceClip(eventKey) {
+      const eventId = state && state.playingEntryKey
+        ? state.playingEntryKey + ":" + eventKey
+        : undefined;
+      SoundManager.playVoice(eventKey, { eventId });
+      return Promise.resolve(); // 호출부의 void/setTimeout/.then 호환
     }
-
-    function speak(text, pitch = 1.25, rate = 0.92) {
-      return new Promise(resolve => {
-        if (!window.speechSynthesis || isMuted()) { resolve(); return; }
-        speechSynthesis.cancel();
-        if (speechSynthesis.paused) speechSynthesis.resume();
-        const u = new SpeechSynthesisUtterance(text);
-        // locale별 BCP47 태그 — 브라우저가 매칭 보이스 선택
-        const langMap = { ko: "ko-KR", en: "en-US", ja: "ja-JP" };
-        u.lang = langMap[currentLocale] || "ko-KR";
-        u.voice = chooseChildFriendlyVoice(u.lang);
-        // 지나치게 높은 pitch는 모바일 WebView에서 귀신처럼 들릴 수 있어 상한을 둔다.
-        u.pitch = Math.min(Math.max(pitch, 1.05), 1.45);
-        u.rate = Math.min(Math.max(rate, 0.82), 1.02);
-        u.onend = resolve;
-        u.onerror = resolve;
-        speechSynthesis.speak(u);
-        setTimeout(resolve, 1500);
-      });
-    }
-
-    // === 한국어 녹음 음성 클립 (없으면 기존 TTS로 폴백) ===
-    // 매핑 표만 고치면 트리거↔파일 연결을 바꿀 수 있다. 한국어(ko)에만 녹음을 적용하고
-    // 영어/일본어 및 매핑 없는 트리거(go 등)는 기존 speak() TTS를 그대로 사용한다.
-    // 파일명은 사용자가 녹음한 원본 그대로(공백 포함)이며 encodeURI로 URL 인코딩한다.
-    const VOICE_CLIP_BASE = "ASSETS/rps/voice/";
-    // WRPS-045: 매핑 값이 VOICE_SILENT면 "의도적 무음"(다른 클립이 이미 그 대사를 포함)으로
-    // 처리해 TTS 폴백도 하지 않는다. → MP3 이벤트는 절대 speechSynthesis를 쓰지 않고,
-    // MP3가 정말 없는 이벤트(영/일 go 등)에서만 TTS로 폴백한다.
-    const VOICE_SILENT = "@silent";
-    const VOICE_CLIPS = {
-      ko: {
-        // ko_game_start.mp3 = "안내면 술래 … 가위바위보!" 전체 구호(사용자 청취 확인, 2026-06-27).
-        // intro 단계에서 한 번 재생되어 go("가위바위보") 대사까지 모두 포함한다.
-        intro: "ko/ko_game_start.mp3",   // 카운트다운 1+2단계 전체 구호
-        go: VOICE_SILENT,                // intro 풀구호가 커버 → 별도 재생/ TTS 없음(혼재 제거)
-        becameLoser: "ko/ko_lose.mp3",   // 술래 확정(졌을 때)
-        gameOver: "ko/ko_you win.mp3",   // 게임 종료(이겼을 때)
-        continue: "ko/ko_safe.mp3",      // 라운드 계속(살았을 때)
-      },
-      // 영어/일본어: 녹음 미적용 → 전 이벤트 기존 TTS 사용(혼재 없음).
-    };
-
-    let __voiceAudioEl = null;
-    let __voiceUnlocked = false;
-
-    function getVoiceAudioEl() {
-      if (!__voiceAudioEl) {
-        __voiceAudioEl = new Audio();
-        __voiceAudioEl.preload = "auto";
-      }
-      return __voiceAudioEl;
-    }
-
-    function isVoiceSilent(eventKey) {
-      const set = VOICE_CLIPS[currentLocale];
-      return !!set && set[eventKey] === VOICE_SILENT;
-    }
-
-    function voiceClipSrc(eventKey) {
-      const set = VOICE_CLIPS[currentLocale];
-      const file = set && set[eventKey];
-      if (!file || file === VOICE_SILENT) return null;
-      return encodeURI(VOICE_CLIP_BASE + file);
-    }
-
-    // WRPS-014 연장: markReady 사용자 제스처에서 HTMLAudio 재생을 사전 언락한다.
-    // 참가자 폰은 카운트다운을 WebSocket 이벤트(제스처 없음)로 받으므로 미리 풀어두지 않으면
-    // mp3가 차단된다. 소리 없이(volume 0) 짧게 재생→정지하여 채널만 연다.
-    function unlockVoiceAudio() {
-      if (__voiceUnlocked || isMuted()) return;
-      const src = voiceClipSrc("intro") || voiceClipSrc("becameLoser");
-      if (!src) return;
-      try {
-        const el = getVoiceAudioEl();
-        el.src = src;
-        el.volume = 0;
-        const p = el.play();
-        const finish = () => { try { el.pause(); el.currentTime = 0; } catch (e) {} el.volume = 1; __voiceUnlocked = true; };
-        if (p && p.then) p.then(finish).catch(() => { el.volume = 1; });
-        else finish();
-      } catch (e) { /* 언락 실패는 무음 폴백일 뿐 앱 동작 무관 */ }
-    }
-
-    // 녹음 클립이 있으면 재생, 없거나 재생 실패 시 기존 speak() TTS로 폴백한다.
-    // 반환 Promise는 재생/폴백 완료 시 resolve (호출부는 void 또는 setTimeout으로만 사용).
-    function playVoiceClip(eventKey, ttsText, pitch, rate) {
-      if (isMuted()) return Promise.resolve();
-      // WRPS-045: 무음 이벤트(go 등 — 다른 클립이 대사를 포함)는 아무것도 재생하지 않는다.
-      // 진행 중인 클립을 중단해서도 안 되므로 정리 로직 이전에 즉시 반환한다.
-      if (isVoiceSilent(eventKey)) return Promise.resolve();
-      // 진행 중인 클립/TTS를 먼저 정리해 겹침을 막는다(기존 speak()의 cancel과 동일 취지).
-      try { if (__voiceAudioEl) { __voiceAudioEl.pause(); __voiceAudioEl.currentTime = 0; } } catch (e) {}
-      const src = voiceClipSrc(eventKey);
-      if (!src) return speak(ttsText, pitch, rate);
-      return new Promise(resolve => {
-        let settled = false;
-        const done = () => { if (settled) return; settled = true; resolve(); };
-        const fallback = () => { if (settled) return; settled = true; speak(ttsText, pitch, rate).then(resolve, resolve); };
-        try {
-          if (window.speechSynthesis) speechSynthesis.cancel();
-          const el = getVoiceAudioEl();
-          el.src = src;
-          el.volume = 1;
-          el.onended = done;
-          el.onerror = fallback;
-          const p = el.play();
-          if (p && p.then) p.catch(fallback);
-          // 안전망: onended가 오지 않아도 일정 시간 후 resolve (정지 방지).
-          setTimeout(done, 4000);
-        } catch (e) { fallback(); }
-      });
-    }
+    function unlockVoiceAudio() { SoundManager.unlock(); }
+    function isVoiceSilent(eventKey) { return SoundManager.isSilent(eventKey); }
+    function voiceClipSrc(eventKey) { return SoundManager.clipPath(eventKey); }
 
     function sleep(ms) {
       return new Promise(resolve => setTimeout(resolve, ms));
@@ -9400,6 +9488,8 @@ function summarizeGameStats(rows) {
     async function initFromUrl() {
       try {
         initNativeOAuthListener();
+        // 앱 시작 시 음성 클립을 디코드 캐시(비차단) → 카운트다운 시 즉시 재생(지연 0)
+        SoundManager.preloadAll();
         // 서버 시각 오프셋을 미리 측정(비차단) → 게임 시작 동기화 정확도 향상
         syncServerClock();
         const params = new URLSearchParams(location.search);
