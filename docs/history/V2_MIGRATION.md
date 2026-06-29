@@ -9,7 +9,7 @@
 | # | 단계 | 상태 |
 |---|---|---|
 | 1 | v2 engine core를 별도 브랜치/PR로 보존 | 🟢 **진행/완료(이 문서)** |
-| 2 | client migration STEP1 (호스트 판정→엔진 섀도우) | 🟡 진행중 — 2.1 번들러 ✅ / 2.2a 주입 ✅ / 2.2b 섀도우 ✅(런타임 수집 대기) |
+| 2 | client migration STEP1 (호스트 판정→엔진 섀도우) | 🟡 — 2.1 번들러 ✅ / 2.2a 주입 ✅ / 2.2b 섀도우 ✅ / 2.2c 하드닝 ✅(실기기 drift 대기) |
 | 3 | audio event reaction 전환 | ⬜ 대기 |
 | 4 | sync/host/result flow server-authoritative 전환 | ⬜ 대기(전송계층 C/B/A 결정 필요) |
 | 5 | 실기기 QA | ⬜ 대기 |
@@ -64,6 +64,15 @@
 - **남은 리스크**: LOW(기본 OFF). 단 **런타임 실측치(실게임 match rate·drift·audio dup)는 flag ON QA 빌드로 플레이해야 수집**됨 — 코드로 산출 불가.
 - **다음 단계**: STEP 2.2c — 전체 이벤트 미러링(join/leave/countdown/action → `__engineV2.ingest`)로 ordering·audio 차원까지 섀도우 확장 + flag ON QA로 실측 수집. 이후 STEP3(audio)·STEP4(권위, 전송계층 결정 후).
 - **rollback**: `git revert <STEP2.2b 커밋>`. flag OFF라 동작 동일.
+
+### STEP 2.2c — pre-live hardening (flag flip 없음, 엔진+테스트만)
+- **변경 파일**: `engine/events.mjs`(PLAYER_READY 추가), `engine/GameEngine.mjs`(readyIds 상태+리셋+핸들러), `tests/engine-stress.test.mjs`(신규), `V2_MIGRATION.md`.
+- **변경 목적**: 라이브 스위치 전, 결정론으로 검증 가능한 차원(순서/중복/커버리지/패리티)을 스트레스로 확정. 커버리지 갭(`ready`) 보완.
+- **영향 범위**: 엔진/테스트만(feature 브랜치). `index.html` 무변경, flag 그대로 OFF. RC/main/라이브 무영향.
+- **테스트 결과(결정론)**: 92/92. 이벤트 커버리지 **8/8(100%)** · 순서(셔플/역순/지연→동일 수렴) · 중복 스팸(100×)→적용 1·stale 거부 · 오디오 dedup→1 · reconnect 수렴 · host-transfer mid-event 일관 · **패리티 1000케이스(2~6인) 100%**.
+- **남은 리스크**: 실기기 **wall-clock sync drift / 실오디오 / 멀티디바이스 부하**는 코드로 불가 → flag ON QA 빌드 + 실기기 측정 필요(WRPS-047 연계).
+- **다음 단계**: 실기기 섀도우 측정(`ENGINE_V2_SHADOW=true` QA 빌드) → GATE(drift<100ms) 확인 후에만 STEP 2.3(라이브 스위치) 검토.
+- **rollback**: `git revert <2.2c 커밋>`. 엔진 추가분만, flag OFF라 동작 동일.
 
 ## 검증 메트릭 수집 방법(런타임)
 QA/dev 빌드에서 `ENGINE_V2_SHADOW=true`로 두고 실게임 플레이 → 콘솔 `[SHADOW-WRPS049]` 로그 + `window.__rpsShadowMetrics`({total, match, mismatch, mismatches})로 실측 match rate 확인. **READINESS GATE**: match ≥99% · critical mismatch 0 · (drift/ordering은 STEP2.2c 이벤트 미러링 후 측정).

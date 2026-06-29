@@ -21,6 +21,7 @@ export function initialState() {
     confirmedLoserIds: [],
     confirmedSafeIds: [],
     targetLoserCount: 1,
+    readyIds: [],               // 준비 완료한 플레이어 id(전원 ready 판단 근거)
     roundChoices: {},           // id → base ('rock'|'paper'|'scissors')
     lastResult: null,           // { outcome, perPlayer:{id:'win'|'lose'|'draw'}, isComplete }
     audioEvents: [],            // [{ type, dedup, ts, data }] — 클라이언트가 반응(중복키 1회)
@@ -48,6 +49,7 @@ export function applyEvent(state, ev) {
     participants: state.participants.map((p) => ({ ...p })),
     confirmedLoserIds: [...state.confirmedLoserIds],
     confirmedSafeIds: [...state.confirmedSafeIds],
+    readyIds: [...state.readyIds],
     roundChoices: { ...state.roundChoices },
     audioEvents: [...state.audioEvents],
     audioKeys: [...state.audioKeys],
@@ -64,6 +66,7 @@ export function applyEvent(state, ev) {
       s.round = 1;
       s.confirmedLoserIds = [];
       s.confirmedSafeIds = [];
+      s.readyIds = [];
       s.roundChoices = {};
       s.targetLoserCount = Math.min(
         Math.max(1, Number(p.targetLoserCount) || 1),
@@ -71,6 +74,10 @@ export function applyEvent(state, ev) {
       );
       s.phase = 'ready';
       s.lastResult = null;
+      break;
+    }
+    case EVENT_TYPES.PLAYER_READY: {
+      if (p.playerId) s.readyIds = [...new Set([...s.readyIds, p.playerId])];
       break;
     }
     case EVENT_TYPES.COUNTDOWN_START: {
@@ -112,6 +119,7 @@ export function applyEvent(state, ev) {
     case EVENT_TYPES.NEXT_ROUND: {
       s.round = (state.round || 1) + 1;
       s.roundChoices = {};
+      s.readyIds = [];
       s.phase = 'ready';
       s.lastResult = null;
       break;

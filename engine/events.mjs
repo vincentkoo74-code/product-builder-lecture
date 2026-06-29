@@ -7,6 +7,7 @@
 
 export const EVENT_TYPES = Object.freeze({
   GAME_START: 'GAME_START',         // 게임 시작(참가자·목표 술래 수 확정)
+  PLAYER_READY: 'PLAYER_READY',      // 플레이어 준비 완료(전원 ready → 시작 트리거 근거)
   COUNTDOWN_START: 'COUNTDOWN_START',// 카운트다운 시작(서버 시각 기준 동시 시작)
   COUNTDOWN_END: 'COUNTDOWN_END',    // 카운트다운 종료 → 선택 단계
   PLAYER_ACTION: 'PLAYER_ACTION',    // 플레이어 선택(가위/바위/보)
