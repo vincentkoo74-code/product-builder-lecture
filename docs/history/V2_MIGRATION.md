@@ -9,7 +9,7 @@
 | # | 단계 | 상태 |
 |---|---|---|
 | 1 | v2 engine core를 별도 브랜치/PR로 보존 | 🟢 **진행/완료(이 문서)** |
-| 2 | client migration STEP1 (호스트 판정→엔진 섀도우) | ⬜ 대기 |
+| 2 | client migration STEP1 (호스트 판정→엔진 섀도우) | 🟡 진행중 — 2.1 번들러 ✅ / 2.2 주입+섀도우 ⬜ |
 | 3 | audio event reaction 전환 | ⬜ 대기 |
 | 4 | sync/host/result flow server-authoritative 전환 | ⬜ 대기(전송계층 C/B/A 결정 필요) |
 | 5 | 실기기 QA | ⬜ 대기 |
@@ -32,3 +32,17 @@
 - **남은 리스크**: LOW(추가·무회귀). 단 `game-logic.mjs`가 main에 없어 엔진 PR은 main이 아닌 **RC 브랜치에 스택**(base=`fix/build6-regression-recovery`).
 - **다음 단계**: STEP 2 — `finishRoundLocal` 등 호스트 판정을 엔진으로 **섀도우 계산**(flag OFF, 기존 결과와 대조만, 동작 무변경).
 - **rollback**: `git branch -D feature/rps-v2-engine`(브랜치 폐기) + 원격 PR close. 라이브/RC/main 영향 없으므로 즉시 무해 복구.
+
+---
+
+## STEP 2 — client migration STEP1 (호스트 판정 → 엔진 섀도우)
+대규모 주입 전에 안전 슬라이스로 분할: **2.1 번들러 → 2.2 주입+섀도우(flag OFF)**.
+
+### STEP 2.1 — 엔진 인라인 번들러 (index.html 무변경)
+- **변경 파일**: `scripts/sync-engine.mjs`(신규), `tests/engine-bundle.test.mjs`(신규).
+- **변경 목적**: 엔진(.mjs 모듈)을 인라인 `<script>`에 넣을 단일 IIFE 번들로 변환·검증. game-logic 패턴과 동일하게 index.html 인라인 스코프에서 동작하도록 준비.
+- **영향 범위**: 0(추가 모듈만). `index.html`·`build:web`·iOS·DB 무변경. 번들은 아직 어디서도 사용 안 함(inert).
+- **테스트 결과**: 76/76 PASS. 신규 4케이스 — 모듈구문 잔존 0, 공개 API 노출, **인라인 번들+game-logic 결합 라운드 판정 정확(h:win/a:lose)**, replay 일치.
+- **남은 리스크**: LOW. index.html 주입(2.2) 시 ~900줄 인라인 추가 예정이라, 주입 후 인라인 JS 문법검증·동작무변경 확인 필수.
+- **다음 단계**: STEP 2.2 — `sync-engine`를 build에 연결, index.html에 `/*__ENGINE_V2_START/END__*/` 마커 주입, `RPSEngineV2` 전역 노출(inert). 이어서 `finishRoundLocal`에 **flag OFF 섀도우 판정+대조 로깅**(동작 무변경).
+- **rollback**: 두 신규 파일 삭제(`git rm scripts/sync-engine.mjs tests/engine-bundle.test.mjs`) 또는 커밋 revert. 라이브 무영향.
