@@ -83,5 +83,14 @@
 - **다음 단계**: flag ON QA 빌드 실기기 측정으로 wall-clock drift<100ms 확인 → STEP 2.3.
 - **rollback**: `git revert <FINAL 커밋>`. 추가분만, 동작 무변경.
 
+### STEP 2.2c FINAL+ — 타이밍 정규화(ClockSync, latency/jitter)
+- **변경 파일**: `engine/clock-sync.mjs`(신규), `scripts/sync-engine.mjs`(번들 노출), `tests/engine-clock-sync.test.mjs`(신규), `V2_MIGRATION.md`.
+- **변경 목적**: RTT 샘플로 각 디바이스가 server offset 추정(롤링 중앙값, last 5) + 적응형 지터버퍼(50~120ms) → 동일 serverTs를 같은 서버 순간으로 정렬. 게임로직/이벤트/엔진 무수정(별도 계층).
+- **영향 범위**: 엔진/테스트만(feature). index.html/flag/라이브 무변경. 아직 런타임 미배선(legacy syncServerClock 유지).
+- **테스트 결과(시뮬)**: 100/100. offset 추정 ≈ -skew(대칭 RTT 오차<10ms), 멀티디바이스 정렬 **스프레드<100ms**(0/100/300/500ms 지연+스큐), 지터버퍼 클램프.
+- **남은 리스크**: **실 wall-clock drift·가시적 UI desync는 실기기 측정**. 알고리즘 정렬은 입증, 실측은 device QA.
+- **다음 단계**: 런타임 배선(legacy syncServerClock → ClockSync 교체) + flag ON QA 실기기 측정. STEP 2.3 전 최종 게이트.
+- **rollback**: `git revert <ClockSync 커밋>`. 추가분, 미배선이라 동작 무변경.
+
 ## 검증 메트릭 수집 방법(런타임)
 QA/dev 빌드에서 `ENGINE_V2_SHADOW=true`로 두고 실게임 플레이 → 콘솔 `[SHADOW-WRPS049]` 로그 + `window.__rpsShadowMetrics`({total, match, mismatch, mismatches})로 실측 match rate 확인. **READINESS GATE**: match ≥99% · critical mismatch 0 · (drift/ordering은 STEP2.2c 이벤트 미러링 후 측정).

@@ -24,6 +24,7 @@ const ENGINE_FILES = [
   'engine/index.mjs',
   'engine/client-binding.mjs',
   'engine/sync.mjs',
+  'engine/clock-sync.mjs',
 ];
 
 // IIFE 가 반환(노출)할 공개 심볼.
@@ -31,7 +32,7 @@ const PUBLIC_API = [
   'EVENT_TYPES', 'SOUND_EVENTS', 'makeEvent',
   'createEventBus', 'createEventLog', 'initialState', 'applyEvent',
   'createEngine', 'engineStateToView', 'audioEventsToSounds', 'createClient',
-  'createSyncLayer',
+  'createSyncLayer', 'createClockSync',
 ];
 
 function stripModuleSyntax(src) {
