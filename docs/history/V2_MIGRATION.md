@@ -9,7 +9,7 @@
 | # | 단계 | 상태 |
 |---|---|---|
 | 1 | v2 engine core를 별도 브랜치/PR로 보존 | 🟢 **진행/완료(이 문서)** |
-| 2 | client migration STEP1 (호스트 판정→엔진 섀도우) | 🟡 진행중 — 2.1 번들러 ✅ / 2.2a 주입(inert) ✅ / 2.2b 섀도우 ⬜ |
+| 2 | client migration STEP1 (호스트 판정→엔진 섀도우) | 🟡 진행중 — 2.1 번들러 ✅ / 2.2a 주입 ✅ / 2.2b 섀도우 ✅(런타임 수집 대기) |
 | 3 | audio event reaction 전환 | ⬜ 대기 |
 | 4 | sync/host/result flow server-authoritative 전환 | ⬜ 대기(전송계층 C/B/A 결정 필요) |
 | 5 | 실기기 QA | ⬜ 대기 |
@@ -55,3 +55,15 @@
 - **남은 리스크**: LOW. 엔진 IIFE는 parse 시 실행되나 createEngine만(부수효과 0, game-logic 미호출), STEP2.1 실평가 테스트로 안전 입증. `typeof RPSEngineV2` 가드로 미주입 환경 무해.
 - **다음 단계**: STEP 2.2b — `finishRoundLocal`에 **`ENGINE_V2_SHADOW` 게이트 섀도우 판정 + 기존 결과 대조 로깅**(동작 무변경). 이후 STEP3(audio)·STEP4(권위 전환, 전송계층 결정 후).
 - **rollback**: `git revert <STEP2.2a 커밋>`. flag OFF라 되돌려도 동작 동일. 라이브/RC/main 무영향.
+
+### STEP 2.2b — 섀도우 검증 계층(production 무변경)
+- **변경 파일**: `index.html`(+56: 섀도우 헬퍼 2 + finishRoundLocal 4훅), `tests/engine-parity.test.mjs`(신규), `docs/history/V2_MIGRATION.md`.
+- **변경 목적**: 엔진 reducer로 라운드 결과를 **병렬 계산**해 legacy와 대조·로깅(`window.__rpsShadowMetrics`). 실제 권위 전환 전 결정론 일치 검증.
+- **영향 범위**: `ENGINE_V2_SHADOW=false` 기본 → 전부 no-op. UI/state/audio/host **무변경**(읽기+console 로그만). 4훅 모두 flag 가드.
+- **테스트 결과**: 83/83. **패리티 스윕**(2/3/4인 × 목표 2종, 모든 choice 조합) 엔진==game-logic **100% 일치, mismatch 0**. root·dist 인라인 JS OK.
+- **남은 리스크**: LOW(기본 OFF). 단 **런타임 실측치(실게임 match rate·drift·audio dup)는 flag ON QA 빌드로 플레이해야 수집**됨 — 코드로 산출 불가.
+- **다음 단계**: STEP 2.2c — 전체 이벤트 미러링(join/leave/countdown/action → `__engineV2.ingest`)로 ordering·audio 차원까지 섀도우 확장 + flag ON QA로 실측 수집. 이후 STEP3(audio)·STEP4(권위, 전송계층 결정 후).
+- **rollback**: `git revert <STEP2.2b 커밋>`. flag OFF라 동작 동일.
+
+## 검증 메트릭 수집 방법(런타임)
+QA/dev 빌드에서 `ENGINE_V2_SHADOW=true`로 두고 실게임 플레이 → 콘솔 `[SHADOW-WRPS049]` 로그 + `window.__rpsShadowMetrics`({total, match, mismatch, mismatches})로 실측 match rate 확인. **READINESS GATE**: match ≥99% · critical mismatch 0 · (drift/ordering은 STEP2.2c 이벤트 미러링 후 측정).

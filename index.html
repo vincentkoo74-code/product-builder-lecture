@@ -6721,6 +6721,9 @@
       const allDraw = activePlayers.length > 0 && activePlayers.every(p => p.lastResult === "draw");
       const iPlayedThisRound = activePlayers.some(p => p.id === state.currentUserId);
 
+      // WRPS-049 섀도우: 분기 전에 엔진 결과를 병렬 계산(flag OFF면 no-op). 비교는 각 종료지점에서.
+      __engineV2ShadowComputeRound(activePlayers, prevLoserIds, prevSafeIds, targetCount);
+
       // 중도 퇴장 등으로 남은 활성자가 남은 술래 슬롯 이하 → 더 가릴 수 없으므로 전원 술래 확정·종료.
       // (예: 1명만 남아 무한 무승부에 빠지는 deadlock 방지 — 항목 7/10)
       if (activePlayers.length > 0 && activePlayers.length <= remainingSlots) {
@@ -6732,6 +6735,7 @@
         showScreen("screenRoundResult");
         // 전원 술래 확정·종료: 본인이 술래면 패배음, 살아남았으면(이전 안전) 승리 팡파레
         playResultSfxOnce(isConfirmedLoser() ? "lose" : "win");
+        __engineV2ShadowCompare("gameOver");
         state.finishingRound = false;
         return;
       }
@@ -6741,6 +6745,7 @@
         renderRoundResult("draw", 0, remainingSlots);
         showScreen("screenRoundResult");
         playResultSfxOnce("draw", 300); // 무승부 전용 사운드
+        __engineV2ShadowCompare("allDraw");
         state.finishingRound = false;
         return;
       }
@@ -6779,6 +6784,11 @@
         }
         scheduleRematchAutoAdvance();
       }
+      // WRPS-049 섀도우: fall-through 분기(gameOver/tooMany/tooFew) 종료 시 대조(라벨은 조건으로 도출)
+      __engineV2ShadowCompare(
+        roundLosers.length === remainingSlots ? "gameOver"
+          : (roundLosers.length > remainingSlots ? "tooMany" : "tooFew")
+      );
       state.finishingRound = false;
     }
 
@@ -7021,6 +7031,52 @@ function summarizeGameStats(rows) {
         ? RPSEngineV2.createEngine({ now: () => serverNow() })
         : null;
       if (__engineV2) { try { window.__rpsEngineV2 = __engineV2; } catch (e) {} } // 디버그/섀도우 검증용
+
+      // ── WRPS-049 STEP2.2b 섀도우(검증 전용) ──────────────────────────────
+      // production을 전혀 건드리지 않고, v2 엔진 reducer로 라운드 결과를 "병렬 계산"해 legacy와 대조·로깅.
+      // ENGINE_V2_SHADOW=false면 전부 no-op. UI/state/audio 절대 변경 안 함(읽기+로그만).
+      function __engineV2ShadowComputeRound(activePlayers, prevLoserIds, prevSafeIds, targetCount) {
+        state.__shadowRound = null;
+        if (!ENGINE_V2_SHADOW || typeof RPSEngineV2 === 'undefined' || !RPSEngineV2 || !RPSEngineV2.applyEvent) return;
+        try {
+          const E = RPSEngineV2;
+          const s = E.initialState();
+          s.participants = activePlayers.map(p => ({ id: p.id, isHost: false }));
+          s.confirmedLoserIds = [...prevLoserIds];
+          s.confirmedSafeIds = [...prevSafeIds];
+          s.targetLoserCount = targetCount;
+          s.gameRound = getGameRound();
+          s.round = state.round || 1;
+          s.roundChoices = {};
+          activePlayers.forEach(p => { const b = getChoiceBase(p.choice); if (b) s.roundChoices[p.id] = b; });
+          const after = E.applyEvent(s, E.makeEvent(E.EVENT_TYPES.ROUND_RESULT, {}, { seq: 0, ts: serverNow() }));
+          state.__shadowRound = {
+            outcome: after.lastResult ? after.lastResult.outcome : null,
+            loserIds: after.confirmedLoserIds || [],
+            safeIds: after.confirmedSafeIds || [],
+            eventId: getGameRound() + ':' + (state.round || 1),
+          };
+        } catch (e) { console.warn('[SHADOW-WRPS049] compute error:', e && e.message); }
+      }
+      function __engineV2ShadowCompare(legacyOutcome) {
+        if (!ENGINE_V2_SHADOW || !state.__shadowRound) return;
+        const sh = state.__shadowRound;
+        const norm = a => JSON.stringify([...(a || [])].sort());
+        const loserMatch = norm(state.confirmedLoserIds) === norm(sh.loserIds);
+        const safeMatch = norm(state.confirmedSafeIds) === norm(sh.safeIds);
+        const match = loserMatch && safeMatch; // 게임 효과(확정 술래/안전) 일치 = 핵심 기준
+        const M = (window.__rpsShadowMetrics = window.__rpsShadowMetrics || { total: 0, match: 0, mismatch: 0, mismatches: [] });
+        M.total++; if (match) M.match++; else M.mismatch++;
+        const rec = {
+          eventId: sh.eventId,
+          legacy: { outcome: legacyOutcome, loser: [...(state.confirmedLoserIds || [])].sort(), safe: [...(state.confirmedSafeIds || [])].sort() },
+          shadow: { outcome: sh.outcome, loser: [...sh.loserIds].sort(), safe: [...sh.safeIds].sort() },
+          match,
+        };
+        if (!match) M.mismatches.push(rec);
+        (match ? console.log : console.warn)('[SHADOW-WRPS049]', match ? 'MATCH' : 'MISMATCH', JSON.stringify(rec));
+        state.__shadowRound = null;
+      }
 
     // 상태→순수 판정 어댑터: 확정 안전/술래는 그대로 win/lose, 나머지 활성자만 judgePure.
     // (기존 호출부 호환: judgeRound(state.participants) 시그니처 유지)
