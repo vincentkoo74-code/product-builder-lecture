@@ -23,6 +23,7 @@ const ENGINE_FILES = [
   'engine/adapters/supabase.mjs',
   'engine/index.mjs',
   'engine/client-binding.mjs',
+  'engine/sync.mjs',
 ];
 
 // IIFE 가 반환(노출)할 공개 심볼.
@@ -30,6 +31,7 @@ const PUBLIC_API = [
   'EVENT_TYPES', 'SOUND_EVENTS', 'makeEvent',
   'createEventBus', 'createEventLog', 'initialState', 'applyEvent',
   'createEngine', 'engineStateToView', 'audioEventsToSounds', 'createClient',
+  'createSyncLayer',
 ];
 
 function stripModuleSyntax(src) {

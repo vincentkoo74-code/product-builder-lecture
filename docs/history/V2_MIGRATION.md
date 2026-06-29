@@ -74,5 +74,14 @@
 - **다음 단계**: 실기기 섀도우 측정(`ENGINE_V2_SHADOW=true` QA 빌드) → GATE(drift<100ms) 확인 후에만 STEP 2.3(라이브 스위치) 검토.
 - **rollback**: `git revert <2.2c 커밋>`. 엔진 추가분만, flag OFF라 동작 동일.
 
+### STEP 2.2c FINAL — 동기화 계층(SyncLayer) + 멀티디바이스 시뮬레이션
+- **변경 파일**: `engine/sync.mjs`(신규 SyncLayer), `scripts/sync-engine.mjs`(번들 노출), `tests/engine-sync.test.mjs`(신규), `V2_MIGRATION.md`.
+- **변경 목적**: 전송↔엔진 사이 **서버시각 권위 + 순서 정규화 + drift 계측** 계층. 게임로직/UI/이벤트구조 무변경.
+- **영향 범위**: 엔진+테스트만(feature). index.html/flag/라이브 무변경. SyncLayer는 계측·정책만(게임 이벤트 드롭 안 함=안전).
+- **테스트 결과(결정론 시뮬)**: 96/96. 3디바이스(0/200/500ms 지연+클럭스큐) **동일 상태 수렴**, ordering mismatch **0**, replay **100%**, host-transfer mid-round + reconnect 수렴. before(도착순)=발산 가능 / after(SyncLayer)=항상 수렴.
+- **남은 리스크**: **실 wall-clock drift는 코드로 측정 불가**(실기기 네트워크). 엔진은 "주어진 이벤트→모든 기기 동일 수렴(논리 drift 0)"만 보장. 가시적 drift는 countdownStartAt 서버시각 앵커(legacy WRPS-047) + 실기기 측정.
+- **다음 단계**: flag ON QA 빌드 실기기 측정으로 wall-clock drift<100ms 확인 → STEP 2.3.
+- **rollback**: `git revert <FINAL 커밋>`. 추가분만, 동작 무변경.
+
 ## 검증 메트릭 수집 방법(런타임)
 QA/dev 빌드에서 `ENGINE_V2_SHADOW=true`로 두고 실게임 플레이 → 콘솔 `[SHADOW-WRPS049]` 로그 + `window.__rpsShadowMetrics`({total, match, mismatch, mismatches})로 실측 match rate 확인. **READINESS GATE**: match ≥99% · critical mismatch 0 · (drift/ordering은 STEP2.2c 이벤트 미러링 후 측정).
