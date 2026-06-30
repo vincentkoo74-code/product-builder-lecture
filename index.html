@@ -7043,8 +7043,11 @@ function summarizeGameStats(rows) {
       /*__ENGINE_V2_END__*/
       // ── QA 계측 플래그(WES Instrumented QA Build) ──────────────────────
       // 기본 OFF = production 동작 그대로. ?qa=1(URL) / debug 모드 / localStorage('rpsQA') 로만 활성.
+      // __QA_BUILD__: 출시 빌드는 false. QA_BUILD=1 빌드 시 build-web.mjs가 dist에서 true로 치환(네이티브 자동-ON).
+      const __QA_BUILD__ = false /*__QA_BUILD_FLAG__*/;
       const QA_ENABLED = (() => {
         try {
+          if (__QA_BUILD__) return true;
           const p = new URLSearchParams(location.search);
           if (p.get('qa') === '1') localStorage.setItem('rpsQA', '1');
           if (p.get('qa') === '0') localStorage.removeItem('rpsQA');
