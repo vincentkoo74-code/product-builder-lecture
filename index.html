@@ -4313,6 +4313,9 @@
         offsets.sort((a, b) => a - b);
         serverClockOffsetMs = offsets[Math.floor(offsets.length / 2)]; // 중앙값(이상치 방어)
       }
+      // QA(WRPS-036): 추정된 서버-로컬 오프셋 + 샘플 분포(드리프트 원인 추적).
+      try { QA.emit('clocksync', { wrps: 'WRPS-036', eventType: 'CLOCK_SYNC', offsetMs: serverClockOffsetMs,
+        samples: offsets.length, spreadMs: offsets.length ? (offsets[offsets.length - 1] - offsets[0]) : null }); } catch (e) {}
     }
     // 게임 시작 예정 시각: 서버 시각 기준 + 네트워크/전파 지연 흡수용 lead.
     // WRPS-047: realtime 전파가 느린 단말이 startAt을 이미 지나친 채 수신해 즉시(늦게) 시작하는
@@ -5274,8 +5277,19 @@
 	          if (oldParticipants.length > 0) {
 	            const oldIds = new Set(oldParticipants.map(p => p.id));
 	            const newIds = new Set(data.map(p => p.id));
-	            if (data.some(p => !oldIds.has(p.id))) SoundManager.playJoinMeow();
-	            if (oldParticipants.some(p => !newIds.has(p.id) && p.id !== state.currentUserId)) SoundManager.playLeaveMeow();
+	            const joined = data.filter(p => !oldIds.has(p.id)).map(p => p.id);
+	            const left = oldParticipants.filter(p => !newIds.has(p.id) && p.id !== state.currentUserId).map(p => p.id);
+	            if (joined.length) SoundManager.playJoinMeow();
+	            if (left.length) SoundManager.playLeaveMeow();
+	            // QA(WRPS-053/056): 입퇴장/호스트 상태. hostChanged·stale 감지.
+	            const newHost = (data.find(p => p.is_host) || {}).id || null;
+	            const oldHost = (oldParticipants.find(p => p.is_host) || {}).id || null;
+	            if (joined.length || left.length || newHost !== oldHost) {
+	              QA.emit('lobby', { wrps: 'WRPS-053', eventType: 'PARTICIPANT_UPDATE',
+	                participantJoinTs: joined.length ? Date.now() : null, participantLeaveTs: left.length ? Date.now() : null,
+	                joined, left, hostId: newHost, hostChanged: newHost !== oldHost, count: data.length,
+	                staleParticipantDetected: data.some(p => p.id === oldHost && !p.is_host && newHost && newHost !== oldHost) });
+	            }
 	          }
 	        } catch (e) {}
 
@@ -6356,6 +6370,10 @@
       const scheduledStartAt = getCountdownStartAt();
       // 예정 시각은 서버 시간 도메인 → 로컬도 serverNow()로 평가해야 기기 간 동시 시작이 보장됨.
       const waitMs = scheduledStartAt ? Math.max(0, scheduledStartAt - serverNow()) : 0;
+      // QA(WRPS-026/036): 카운트다운 시작 드리프트 — 이 단말의 serverNow가 예정 startAt을 얼마나 벗어났나.
+      QA.emit('metric', { wrps: 'WRPS-036', eventType: 'COUNTDOWN_START', round: state.round,
+        countdownStartServerTs: scheduledStartAt, countdownClientStartTs: serverNow(), offsetMs: serverClockOffsetMs,
+        countdownDriftMs: scheduledStartAt ? (serverNow() - scheduledStartAt) : null, waitMs });
       if (waitMs > 40) {
         numEl.className = "countdown-waiting";
         numEl.style.fontSize = "";
@@ -7023,14 +7041,99 @@ function summarizeGameStats(rows) {
       // game-logic 블록 뒤에 위치해야 번들이 judgePure 등 인라인 심볼을 참조할 수 있다.
       /*__ENGINE_V2_START__*/
       /*__ENGINE_V2_END__*/
-      // v2 활성 플래그(STEP2.2: 기본 OFF = legacy 모드 유지, NO MIX). 섀도우도 기본 OFF.
+      // ── QA 계측 플래그(WES Instrumented QA Build) ──────────────────────
+      // 기본 OFF = production 동작 그대로. ?qa=1(URL) / debug 모드 / localStorage('rpsQA') 로만 활성.
+      const QA_ENABLED = (() => {
+        try {
+          const p = new URLSearchParams(location.search);
+          if (p.get('qa') === '1') localStorage.setItem('rpsQA', '1');
+          if (p.get('qa') === '0') localStorage.removeItem('rpsQA');
+          return localStorage.getItem('rpsQA') === '1'
+            || p.get('qa') === '1'
+            || localStorage.getItem('rpsDebugMode') === '1';
+        } catch (e) { return false; }
+      })();
+      // v2 활성 플래그(STEP2.2: 기본 OFF). 섀도우/계측은 QA 빌드에서만 ON(대조 메트릭 수집).
       const ENGINE_V2_ENABLED = false;
-      const ENGINE_V2_SHADOW = false;
-      // 엔진 인스턴스: 번들이 주입된 dist에서만 생성. 미주입(root)·미지원 환경은 null = 완전 inert.
+      const ENGINE_V2_SHADOW = QA_ENABLED;
+      const QA_INSTRUMENTATION = QA_ENABLED;
       const __engineV2 = (typeof RPSEngineV2 !== 'undefined' && RPSEngineV2 && RPSEngineV2.createEngine)
         ? RPSEngineV2.createEngine({ now: () => serverNow() })
         : null;
       if (__engineV2) { try { window.__rpsEngineV2 = __engineV2; } catch (e) {} } // 디버그/섀도우 검증용
+
+      // ── QA 계측 코어 ──────────────────────────────────────────────────
+      // OFF면 모든 QA.emit은 no-op. ON이면 [PREFIX] JSON 콘솔 로그 + window.__qaMetrics 누적.
+      const QA = (() => {
+        const m = {
+          session: Math.random().toString(36).slice(2, 10),
+          counts: { metric: 0, audioDup: 0, audioMissing: 0, audioFallback: 0, orderingMismatch: 0, staleParticipant: 0, hostChanged: 0 },
+          drift: [], countdownDrift: [], resultDrift: [], audioDelay: [], recent: [],
+        };
+        const PREFIX = { metric: '[QA-METRIC]', shadow: '[SHADOW-WRPS049]', clocksync: '[CLOCKSYNC]', audio: '[AUDIO-METRIC]', lobby: '[LOBBY-METRIC]', auth: '[AUTH-METRIC]' };
+        function base() {
+          let dev = 'Web';
+          try {
+            dev = (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform())
+              || (/iPad/.test(navigator.userAgent) ? 'iPad' : /iPhone/.test(navigator.userAgent) ? 'iPhone' : 'Web');
+          } catch (e) {}
+          return { session: m.session, roomId: state.roomCode || null, playerId: state.currentUserId || null, deviceRole: state.role || null, deviceType: dev };
+        }
+        function emit(channel, data) {
+          if (!QA_INSTRUMENTATION) return;
+          const rec = Object.assign(base(), { ts: Date.now() }, data || {});
+          m.counts.metric++;
+          m.recent.push(rec); if (m.recent.length > 300) m.recent.shift();
+          if (Number.isFinite(rec.driftMs)) m.drift.push(rec.driftMs);
+          if (Number.isFinite(rec.countdownDriftMs)) m.countdownDrift.push(rec.countdownDriftMs);
+          if (Number.isFinite(rec.resultDriftMs)) m.resultDrift.push(rec.resultDriftMs);
+          if (Number.isFinite(rec.audioDelayMs)) m.audioDelay.push(rec.audioDelayMs);
+          if (rec.audioDuplicated) m.counts.audioDup++;
+          if (rec.audioMissing) m.counts.audioMissing++;
+          if (rec.audioFallbackUsed) m.counts.audioFallback++;
+          if (rec.staleParticipantDetected) m.counts.staleParticipant++;
+          if (rec.hostChanged) m.counts.hostChanged++;
+          try { console.log(PREFIX[channel] || PREFIX.metric, JSON.stringify(rec)); } catch (e) {}
+        }
+        const avg = a => (a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : 0);
+        const mx = a => (a.length ? Math.max(...a) : 0);
+        function summary() {
+          const sm = window.__rpsShadowMetrics || { total: 0, match: 0, mismatch: 0 };
+          return {
+            session: m.session, metrics: m.counts.metric,
+            driftAvgMs: avg(m.drift), driftMaxMs: mx(m.drift),
+            countdownDriftAvgMs: avg(m.countdownDrift), countdownDriftMaxMs: mx(m.countdownDrift),
+            resultDriftAvgMs: avg(m.resultDrift),
+            audioDelayAvgMs: avg(m.audioDelay), audioDelayMaxMs: mx(m.audioDelay),
+            audioDuplicate: m.counts.audioDup, audioMissing: m.counts.audioMissing, audioFallback: m.counts.audioFallback,
+            orderingMismatch: m.counts.orderingMismatch, staleParticipant: m.counts.staleParticipant, hostChanged: m.counts.hostChanged,
+            shadowTotal: sm.total, shadowMatch: sm.match, shadowMismatch: sm.mismatch,
+          };
+        }
+        function copyText() { return JSON.stringify({ summary: summary(), recent: m.recent.slice(-50) }, null, 2); }
+        return { emit, summary, copyText, _m: m, get enabled() { return QA_INSTRUMENTATION; } };
+      })();
+      if (QA_INSTRUMENTATION) { try { window.__qaMetrics = QA; } catch (e) {} }
+
+      // QA 빌드에서만 표시되는 메트릭 복사 버튼(요약 + 최근 50 로그 → 클립보드, 실패 시 콘솔).
+      function setupQAPanel() {
+        if (!QA_INSTRUMENTATION || typeof document === 'undefined') return;
+        try {
+          const btn = document.createElement('button');
+          btn.id = 'qaCopyBtn';
+          btn.textContent = 'QA📋';
+          btn.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:99999;font-size:12px;padding:6px 9px;background:#111;color:#0f0;border:1px solid #0f0;border-radius:6px;opacity:.85';
+          btn.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            const txt = QA.copyText();
+            try { await navigator.clipboard.writeText(txt); btn.textContent = 'QA✓'; }
+            catch (e) { console.log('[QA-METRIC] SUMMARY', txt); btn.textContent = 'QA(log)'; }
+            setTimeout(() => { btn.textContent = 'QA📋'; }, 1500);
+          });
+          (document.body || document.documentElement).appendChild(btn);
+          console.log('[QA-METRIC] QA build instrumentation ENABLED. session=', QA._m.session);
+        } catch (e) {}
+      }
 
       // ── WRPS-049 STEP2.2b 섀도우(검증 전용) ──────────────────────────────
       // production을 전혀 건드리지 않고, v2 엔진 reducer로 라운드 결과를 "병렬 계산"해 legacy와 대조·로깅.
@@ -7075,6 +7178,13 @@ function summarizeGameStats(rows) {
         };
         if (!match) M.mismatches.push(rec);
         (match ? console.log : console.warn)('[SHADOW-WRPS049]', match ? 'MATCH' : 'MISMATCH', JSON.stringify(rec));
+        // QA(WRPS-026): 결과 메트릭 — legacy vs shadow 결과/일치 + 내 결과값.
+        try {
+          const myResult = (state.participants.find(p => p.id === state.currentUserId) || {}).lastResult || null;
+          QA.emit('metric', { wrps: 'WRPS-026', eventType: 'ROUND_RESULT', eventId: sh.eventId,
+            resultServerTs: serverNow(), resultRenderedTs: Date.now(), resultValue: myResult,
+            legacyOutcome, shadowOutcome: sh.outcome, shadowMatch: match });
+        } catch (e) {}
         state.__shadowRound = null;
       }
 
@@ -8638,23 +8748,28 @@ function summarizeGameStats(rows) {
       }
       // 보이스 재생: mutex(1개) + 우선순위 선점 + eventId 중복제거. fallback/TTS 없음.
       function playVoice(eventKey, opts = {}) {
+        const qaT0 = Date.now();
         if (isMuted()) return;
         const locale = currentLocale;
         if (isSilent(eventKey, locale)) return;          // 의도적 무음
         const src = clipPath(eventKey, locale);
         if (!src) {
           if (CLIPS[locale]) console.warn("[SoundManager] 클립 없음(무음, no-TTS):", eventKey, locale);
+          try { QA.emit('audio', { wrps: 'WRPS-051', eventType: 'VOICE', audioKey: eventKey, locale, audioMissing: !!CLIPS[locale] }); } catch (e) {}
           return;                                        // en/ja 등: 음성 OFF
         }
         const id = opts.eventId;
         if (id != null) {
-          if (seenEvents.has(id)) return;                // 중복 이벤트 무시
+          if (seenEvents.has(id)) {                       // 중복 이벤트 무시
+            try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioEventId: id, audioDuplicated: true }); } catch (e) {}
+            return;
+          }
           seenEvents.add(id);
           if (seenEvents.size > 256) seenEvents.clear();
         }
         const pri = PRI[eventKey] ?? 1;
         const start = (buf) => {
-          if (!buf) { console.warn("[SoundManager] 버퍼 없음(무음):", src); return; }
+          if (!buf) { console.warn("[SoundManager] 버퍼 없음(무음):", src); try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioMissing: true }); } catch (e) {} return; }
           if (voiceNode && pri < voicePriority) return;  // 낮은 우선순위는 드롭(현재 유지)
           const c = audioCtx();
           if (!c) return;
@@ -8666,6 +8781,7 @@ function summarizeGameStats(rows) {
           node.onended = () => { if (voiceNode === node) { voiceNode = null; voicePriority = -1; } };
           voiceNode = node; voicePriority = pri;
           try { node.start(); } catch (e) { console.warn("[SoundManager] start 실패:", e?.message || e); }
+          try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioScheduledTs: qaT0, audioPlayStartTs: Date.now(), audioDelayMs: Date.now() - qaT0, audioFallbackUsed: false }); } catch (e) {}
         };
         resumeThen(() => {
           const cached = buffers.get(src);
@@ -9557,6 +9673,14 @@ function summarizeGameStats(rows) {
     async function initFromUrl() {
       try {
         initNativeOAuthListener();
+        if (QA_INSTRUMENTATION) {
+          setupQAPanel(); // QA 빌드: 메트릭 복사 버튼 + 활성 로그
+          // Auth(WRPS-050): OAuth 복귀 감지(읽기 전용 관찰, 흐름 무변경). 상세 provider/실패사유는 흐름 소유자가 추가.
+          try {
+            const oauthReturn = (location.hash || '').includes('access_token') || new URLSearchParams(location.search).has('code');
+            if (oauthReturn) QA.emit('auth', { wrps: 'WRPS-050', eventType: 'AUTH_RETURN', authCallbackTs: Date.now() });
+          } catch (e) {}
+        }
         // 앱 시작 시 음성 클립을 디코드 캐시(비차단) → 카운트다운 시 즉시 재생(지연 0)
         SoundManager.preloadAll();
         // 서버 시각 오프셋을 미리 측정(비차단) → 게임 시작 동기화 정확도 향상
