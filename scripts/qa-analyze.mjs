@@ -6,10 +6,14 @@
 // 사용:  node scripts/qa-analyze.mjs <metrics.json>   (또는 stdin 파이프)
 //   metrics.json = { summary?, recent: [...] }  또는  [ {QA record}, ... ]
 
-const N = (v) => (Number.isFinite(v) ? v : null);
-const absFinite = (v) => (Number.isFinite(v) ? Math.abs(v) : null);
 const avg = (a) => (a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : null);
 const max = (a) => (a.length ? Math.max(...a) : null);
+// p: 0~100 백분위(선형 보간 없이 nearest-rank).
+const pct = (a, p) => {
+  if (!a.length) return null;
+  const s = [...a].sort((x, y) => x - y);
+  return s[Math.min(s.length - 1, Math.ceil((p / 100) * s.length) - 1)];
+};
 
 export function analyzeQAMetrics(input) {
   const recent = Array.isArray(input) ? input : (input && Array.isArray(input.recent) ? input.recent : []);
@@ -34,11 +38,15 @@ export function analyzeQAMetrics(input) {
     devices: [...new Set(recent.map((r) => r.deviceType).filter(Boolean))],
     countdownDriftAvgMs: avg(countdownDrift),
     countdownDriftMaxMs: max(countdownDrift),
+    countdownDriftP95Ms: pct(countdownDrift, 95),
+    countdownDriftP99Ms: pct(countdownDrift, 99),
     driftAvgMs: avg(genericDrift),
     driftMaxMs: max(genericDrift),
     clockOffsetMs: offsets.length ? offsets[offsets.length - 1] : null,
+    clockOffsetMaxMs: max(offsets.map(Math.abs)),
     audioDelayAvgMs: avg(audioDelay),
     audioDelayMaxMs: max(audioDelay),
+    audioDelayP95Ms: pct(audioDelay, 95),
     audioDuplicate: audioDup,
     audioMissing,
     orderingMismatch,
