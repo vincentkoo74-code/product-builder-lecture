@@ -94,3 +94,11 @@
 
 ## 검증 메트릭 수집 방법(런타임)
 QA/dev 빌드에서 `ENGINE_V2_SHADOW=true`로 두고 실게임 플레이 → 콘솔 `[SHADOW-WRPS049]` 로그 + `window.__rpsShadowMetrics`({total, match, mismatch, mismatches})로 실측 match rate 확인. **READINESS GATE**: match ≥99% · critical mismatch 0 · (drift/ordering은 STEP2.2c 이벤트 미러링 후 측정).
+
+### Instrumented QA Build (build 14) — 실기기 Evidence 수집용
+- **변경 파일**: `index.html`(QA 계측 코어 + 6도메인 훅), `ios/.../project.pbxproj`(13→14). dist/ios public은 빌드 산출물.
+- **목적**: WRPS-026/036/Audio/Lobby/Auth Root Cause 분석용 메트릭을 실기기에서 수집(WES §9 Evidence). 게임로직/판정/UX 무변경.
+- **활성**: `QA_ENABLED`(= localStorage `rpsQA=1` / `?qa=1` / debug 모드). 기본 OFF=production 동작. QA 빌드에서 ON 시 `[QA-METRIC]`등 JSON 로그 + 화면 우하단 QA📋 복사 버튼 + `window.__qaMetrics`.
+- **계측**: Countdown drift, Result+shadow 대조, ClockSync offset, Lobby join/leave/host/stale, Audio delay/dup/missing, Auth return.
+- **업로드**: TestFlight build **14**, Delivery UUID `f7001d7f-8fc2-48ed-85b1-12ae681b5080`, 충돌 없음. 전체 100/100.
+- **rollback**: `git revert 2929ef4`. 기본 OFF라 production 무영향.
