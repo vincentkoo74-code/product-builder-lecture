@@ -2,7 +2,8 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <!-- WRPS-063: viewport lock — 게임 신뢰(공정성)를 위해 확대/축소/이동 금지(DR-17). -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>마루의 가위바위보 · K-파티 게임</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -118,6 +119,9 @@
       justify-content: center;
       align-items: center;
       overflow: hidden;
+      /* WRPS-063(DR-17): 더블탭 확대·핀치줌·러버밴드 이동 금지. 내부 스크롤은 유지. */
+      touch-action: manipulation;
+      overscroll-behavior: none;
     }
 
     .app {
