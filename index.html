@@ -5338,6 +5338,19 @@
           }
         }
 
+        // WRPS-061: 결과화면 고착 복구 안전망(WRPS-018 대칭). 참가자 이탈 등으로 권위 status가
+        // 이미 다음 단계(lobby/waiting)로 진행했는데도 이 기기가 결과화면(stale 목록)에 갇혀 있으면
+        // status에 맞는 화면으로 재동기화한다. handleRoomUpdate는 status "변경" 시에만 전이하므로
+        // 전이 이벤트를 놓친 동일-status 고착은 여기(3초 폴링)에서만 풀 수 있다.
+        {
+          const resultScreen = $("screenRoundResult");
+          const onResult = resultScreen && !resultScreen.classList.contains("hidden");
+          if (onResult && (state.status === "lobby" || state.status === "waiting")) {
+            if (state.status === "lobby") { showScreen("screenLobby"); renderLobby(); }
+            else { state.role === "host" ? showHostRoom() : showScreen("screenParticipantWait"); }
+          }
+        }
+
         if (state.role === "host") {
           const safeIds = state.confirmedSafeIds || [];
           const loserIds = state.confirmedLoserIds || [];

@@ -54,6 +54,11 @@ describe('WRPS-056 room lifecycle', () => {
     expect(n).toBe(3);
   });
 
+  it('WRPS-061: 결과화면 고착 복구 백스톱이 존재한다 (status advanced인데 result 화면)', () => {
+    expect(html).toContain("const onResult = resultScreen && !resultScreen.classList.contains(\"hidden\")");
+    expect(html).toMatch(/onResult && \(state\.status === "lobby" \|\| state\.status === "waiting"\)/);
+  });
+
   it('메인 인라인 <script> 블록이 여전히 유효하다', () => {
     const blocks = html.match(/<script>([\s\S]*?)<\/script>/g) || [];
     let ok = 0;
