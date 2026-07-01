@@ -8,9 +8,14 @@ import { analyzeQAMetrics } from './qa-analyze.mjs';
 import { rootCauseCandidates, fiveWhysDraft } from './rootcause-analyze.mjs';
 import { analyzeHistory } from './history-analyze.mjs';
 import { computeGate, parseOpenBugs } from './release-gate.mjs';
+import { normalizeExport, buildReportJSON } from './qa-export.mjs';
 
 export async function buildQAReport(metrics, opts = {}) {
-  const analysis = analyzeQAMetrics(metrics);
+  // Build16: 표준 입력으로 정규화(디바이스 export/{recent}/배열 모두 수용) + BUILD_MANIFEST 연결.
+  const norm = normalizeExport(metrics);
+  const manifest = norm.manifest || {};
+  const buildLabel = opts.build || (manifest.build != null ? `build${manifest.build}` : 'build15');
+  const analysis = analyzeQAMetrics({ recent: norm.recent });
   const cands = rootCauseCandidates(analysis);
   const top = cands[0] || null;
   const five = fiveWhysDraft(analysis);
@@ -26,9 +31,16 @@ export async function buildQAReport(metrics, opts = {}) {
   const r = analysis.report;
   const L = [];
   L.push('# QA ANALYZER REPORT');
-  L.push(`- Build: ${opts.build || 'build14'}`);
+  L.push(`- Build: ${buildLabel}`);
   L.push(`- Device: ${opts.device || (r.devices || []).join('/') || 'N/A'}`);
   L.push(`- Scenario: ${opts.scenario || 'N/A'}`);
+  // Build16: BUILD_MANIFEST.json 연결(Evidence 출처 식별).
+  if (manifest.build != null || manifest.git_commit) {
+    L.push(`- Manifest: build ${manifest.build ?? '?'} · commit ${(manifest.git_commit || 'unknown').slice(0, 12)} · qa_enabled ${manifest.qa_enabled ?? '?'}`);
+  }
+  if (norm.session && norm.session.roomId) {
+    L.push(`- Session: room ${norm.session.roomId} · devices ${norm.session.deviceCount ?? '?'}`);
+  }
   L.push('');
   L.push('## Metrics Summary');
   L.push(`- Samples: ${r.samples} (sessions ${r.sessions})`);
@@ -65,7 +77,14 @@ export async function buildQAReport(metrics, opts = {}) {
   L.push(`- 추천 Fix 여부: ${top && top.confidence >= 85 ? '높은 confidence — 코드 정독으로 Root Cause 확정 후 Fix 검토' : 'Evidence 추가 수집 후 재판단(확정 전 Fix 금지)'}`);
   L.push('- 다음 Sprint: Root Cause 확정 시 WES Fix→Regression→Gate 루프');
 
-  return { markdown: L.join('\n'), analysis, candidates: cands, gate, history };
+  // Build16: 표준 qa-report.json(Analyzer 산출물) 동봉 — manifest 연결.
+  const reportJSON = buildReportJSON(norm, {
+    analysis,
+    build: manifest.build,
+    issues: (cands || []).map((c) => c.wrps).filter(Boolean),
+  });
+
+  return { markdown: L.join('\n'), analysis, candidates: cands, gate, history, reportJSON };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -75,5 +94,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const opt = (name) => { const i = args.indexOf('--' + name); return i >= 0 ? args[i + 1] : null; };
   const metrics = JSON.parse(file ? readFileSync(file, 'utf8') : readFileSync(0, 'utf8'));
   const out = await buildQAReport(metrics, { build: opt('build'), device: opt('device'), scenario: opt('scenario') });
-  console.log(out.markdown);
+  // --json → 표준 qa-report.json, 기본 → Markdown 리포트.
+  console.log(args.includes('--json') ? JSON.stringify(out.reportJSON, null, 2) : out.markdown);
 }

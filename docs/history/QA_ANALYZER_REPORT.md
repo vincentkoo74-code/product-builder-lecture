@@ -3,6 +3,15 @@
 > WES v2.1 QA Analyzer Platform 출력 예시. 실 사용: `node scripts/qa-report.mjs <기기별 metrics.json> --build 14 --device iPhone --scenario "WRPS-026 3인 재대결"`
 > 입력은 build14 QA 빌드의 `window.__qaMetrics.copyText()` 결과(또는 [QA-METRIC] 레코드 배열).
 
+## Build16 QA 자동화 파이프라인 (신규)
+
+Build16부터 실기기 플레이만으로 표준 Evidence를 자동 수집한다.
+- **앱(QA 빌드)**: 세션 자동 시작(`QA_SESSION_START`) → 게임/방 종료 시 자동 스냅샷 → `window.__qaMetrics.export()`가 표준 입력 **qa-metrics.json** 산출(`manifest`+`session`+`summary`+`recent`+`snapshots`). `copyText()`/`summary()`는 유지. `BUILD_MANIFEST.json`을 자동 연결.
+- **Analyzer**: `scripts/qa-export.mjs`가 어떤 형태(디바이스 export/`{recent}`/배열/copyText JSON)든 표준화 → `buildReportJSON()`이 **qa-report.json**(`manifest`/`session`/`metrics`/`releaseGate`/`issues`) 생성.
+- **리포트**: `node scripts/qa-report.mjs <qa-metrics.json>` → Markdown(+`--json`으로 qa-report.json). 헤더에 Manifest(build/commit/qa_enabled)·Session(room/devices) 연결.
+
+실기기 흐름: build 설치 → 플레이 → `QA📋`(copyText) 또는 콘솔의 `__qaMetrics.export()` JSON 복사 → 전달 → `node scripts/qa-report.mjs`.
+
 ---
 
 ## 예시 출력 (샘플 메트릭 — 드리프트 초과 시나리오)

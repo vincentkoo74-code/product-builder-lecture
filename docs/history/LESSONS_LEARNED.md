@@ -53,3 +53,17 @@
 
 **Design Rule**:
 - **DR-6 음성은 단일 소스 정책**(녹음 또는 TTS 중 하나로 통일, 로케일별 분리). MP3 매핑된 이벤트는 절대 TTS 사용 안 함.
+
+---
+
+## Build15/16 — QA 자동화 기반 (신규)
+
+**Build15**: `__QA_BUILD__` 플래그로 QA 계측을 네이티브에서 자동 ON. root `index.html`은 항상 false, dist 사본만 `QA_BUILD=1`일 때 true 치환 → 출시 빌드 영향 0. `BUILD_MANIFEST.json`을 dist에 생성해 Evidence 출처(build/commit/qa_enabled) 식별. TestFlight build 15 VALID.
+
+**Build16**: 앱이 QA Record를 자동으로 남긴다. 세션 자동 시작 + 게임/방 종료 시 자동 스냅샷 + `__qaMetrics.export()` 표준 입력. `scripts/qa-export.mjs`로 Analyzer 입력을 표준화(어떤 형태든 수용) → `qa-report.json` 생성.
+
+**Lesson**:
+- 전역 함수 래핑(자동 스냅샷)은 **전역이 모두 정의된 이후**에 설치해야 한다. `bootAppWhenReady()`가 `window.endGame` 할당보다 먼저 호출되므로, 래핑을 QA 코어 초기화 지점이 아닌 전역 할당 뒤에 배치.
+- 래핑은 원본을 그대로 위임(snapshot 후 `apply`)해 **게임 로직 무변경**을 보장. `__qaWrapped` 가드로 중복 래핑 방지.
+
+**Design Rule**: DR-11(Sprint 사전점검), DR-12(QA 계측 자동화).

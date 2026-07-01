@@ -15,3 +15,5 @@
 | DR-8 | 라이브 RC는 Strangler Fig로만 전환(추가 모듈+flag OFF+섀도우 후 점진). big-bang 금지. | WRPS-049 |
 | DR-9 | 권위자가 라운드 비참가일 때도 라운드 종료 트리거 이중화(전원 완료 즉시 + 서버시각 백스톱). | WRPS-026 |
 | DR-10 | Device-gated 결함은 (계측 빌드 → 자동 메트릭 Analyzer → Gate 평가) 파이프라인으로 Evidence 기반 확정. 추측 분석 금지. | WRPS-026/036, WES Sprint |
+| DR-11 | 새 Sprint/Build 시작 전 환경 자동 사전점검(pwd·branch·working tree·origin 동기화·쓰기권한·remote). 하나라도 비정상이면 Build 시작 금지. | Build15 EPERM 중단, WES |
+| DR-12 | QA 계측 자동화: 앱은 QA 빌드에서 세션 자동 시작·게임/방 종료 시 자동 스냅샷·`__qaMetrics.export()`로 표준 입력 산출. BUILD_MANIFEST로 Evidence 출처를 식별. 사용자는 플레이만. | Build16, WES |

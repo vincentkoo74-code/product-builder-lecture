@@ -7070,8 +7070,10 @@ function summarizeGameStats(rows) {
       const QA = (() => {
         const m = {
           session: Math.random().toString(36).slice(2, 10),
+          startedAt: Date.now(),   // Build16: QA 세션 자동 시작 시각
+          manifest: null,          // Build16: BUILD_MANIFEST.json 연결(비동기 로드)
           counts: { metric: 0, audioDup: 0, audioMissing: 0, audioFallback: 0, orderingMismatch: 0, staleParticipant: 0, hostChanged: 0 },
-          drift: [], countdownDrift: [], resultDrift: [], audioDelay: [], recent: [],
+          drift: [], countdownDrift: [], resultDrift: [], audioDelay: [], recent: [], snapshots: [],
         };
         const PREFIX = { metric: '[QA-METRIC]', shadow: '[SHADOW-WRPS049]', clocksync: '[CLOCKSYNC]', audio: '[AUDIO-METRIC]', lobby: '[LOBBY-METRIC]', auth: '[AUTH-METRIC]' };
         function base() {
@@ -7113,10 +7115,44 @@ function summarizeGameStats(rows) {
             shadowTotal: sm.total, shadowMatch: sm.match, shadowMismatch: sm.mismatch,
           };
         }
+        // Build16: 세션 메타(qa-metrics.json / qa-report.json 표준 필드).
+        function sessionInfo() {
+          const b = base();
+          let deviceCount = null;
+          try { deviceCount = (state.participants || []).length || null; } catch (e) {}
+          return {
+            sessionId: m.session, roomId: b.roomId, startedAt: m.startedAt, endedAt: Date.now(),
+            deviceType: b.deviceType, deviceRole: b.deviceRole, deviceCount,
+          };
+        }
+        // Build16: 게임/방 종료 시 자동 스냅샷(요약 고정 기록).
+        function snapshot(reason) {
+          if (!QA_INSTRUMENTATION) return null;
+          const snap = { reason: reason || 'manual', ts: Date.now(), summary: summary() };
+          m.snapshots.push(snap); if (m.snapshots.length > 50) m.snapshots.shift();
+          try { console.log('[QA-METRIC] SNAPSHOT', JSON.stringify(snap)); } catch (e) {}
+          return snap;
+        }
+        // Build16: Analyzer 표준 입력(qa-metrics.json) 전체 export. copyText는 경량 클립보드용 유지.
+        function exportMetrics() {
+          return { manifest: m.manifest, session: sessionInfo(), summary: summary(),
+                   recent: m.recent.slice(), snapshots: m.snapshots.slice() };
+        }
         function copyText() { return JSON.stringify({ summary: summary(), recent: m.recent.slice(-50) }, null, 2); }
-        return { emit, summary, copyText, _m: m, get enabled() { return QA_INSTRUMENTATION; } };
+        return { emit, summary, snapshot, export: exportMetrics, copyText, _m: m, get enabled() { return QA_INSTRUMENTATION; } };
       })();
       if (QA_INSTRUMENTATION) { try { window.__qaMetrics = QA; } catch (e) {} }
+
+      // Build16: BUILD_MANIFEST.json 연결 + QA 세션 자동 시작 기록(게임 로직 무관, 관찰만).
+      if (QA_INSTRUMENTATION) {
+        try {
+          fetch('BUILD_MANIFEST.json', { cache: 'no-store' })
+            .then((r) => (r && r.ok ? r.json() : null))
+            .then((j) => { if (j) QA._m.manifest = j; })
+            .catch(() => {});
+        } catch (e) {}
+        try { QA.emit('metric', { eventType: 'QA_SESSION_START', startedAt: QA._m.startedAt }); } catch (e) {}
+      }
 
       // QA 빌드에서만 표시되는 메트릭 복사 버튼(요약 + 최근 50 로그 → 클립보드, 실패 시 콘솔).
       function setupQAPanel() {
@@ -9854,6 +9890,28 @@ function summarizeGameStats(rows) {
     window.showAuthScreen = showAuthScreen;
     window.loginWithSns = loginWithSns;
     window.playAsGuest = playAsGuest;
+
+    // Build16: 게임/방 종료 시 자동 QA 스냅샷. 원본 전역을 감싸 스냅샷 후 그대로 위임(게임 로직 무변경).
+    // QA 빌드에서만 동작. 전역이 모두 정의된 이 시점 이후에 설치해야 안전하다.
+    if (typeof QA_INSTRUMENTATION !== 'undefined' && QA_INSTRUMENTATION) {
+      try {
+        ['endGame', 'leaveRoom', 'leaveRoomForce'].forEach((fn) => {
+          const orig = window[fn];
+          if (typeof orig !== 'function' || orig.__qaWrapped) return;
+          const wrapped = function () {
+            try { window.__qaMetrics && window.__qaMetrics.snapshot(fn); } catch (e) {}
+            return orig.apply(this, arguments);
+          };
+          wrapped.__qaWrapped = true;
+          window[fn] = wrapped;
+        });
+      } catch (e) {}
+      try {
+        window.addEventListener('pagehide', () => {
+          try { window.__qaMetrics && window.__qaMetrics.snapshot('pagehide'); } catch (e) {}
+        });
+      } catch (e) {}
+    }
 
     // ===== Phase 2: 게임 루프 + 로비 관리 =====
 
