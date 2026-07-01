@@ -9960,7 +9960,12 @@ function summarizeGameStats(rows) {
       // 활성 전원 ready 시 마지막 ready가 자동 시작 트리거(fetchParticipants lobby 분기).
       const lobbyStartBtn = $("lobbyHostStartBtn");
       if (lobbyStartBtn) lobbyStartBtn.classList.add("hidden");
-      if (btn) btn.classList.remove("hidden");
+      // WRPS-053(DR-15): 대기/탈락(safe/loser/waiting) player는 UI-passive — ready 버튼 비노출.
+      // 라운드1/로비에선 아무도 safe/loser/waiting이 아니므로 전원 노출(정상). 게임 중에만 게이팅 발동.
+      if (btn) {
+        if (isCurrentRoundParticipant()) btn.classList.remove("hidden");
+        else btn.classList.add("hidden");
+      }
 
       const list = $("lobbyParticipantList");
       // 호스트는 "준비대기"가 아니라 HOST 배지로 표시(항목 6). 단일 배지 함수 사용.
@@ -9981,6 +9986,12 @@ function summarizeGameStats(rows) {
     async function markReadyFromLobby() {
       const me = state.participants.find(p => p.id === state.currentUserId);
       if (!me || me.is_ready) return;
+      // WRPS-053(DR-15): 대기/탈락 player는 ready 불가 — 해당 대기화면으로 유도(markReady와 동일 게이트).
+      if (!isCurrentRoundParticipant()) {
+        if (isSafeParticipant()) showScreen("screenWinnerWait");
+        else if (isConfirmedLoser()) showLoserWaitScreen();
+        return;
+      }
 
       const btn = $("lobbyReadyBtn");
       if (btn) { btn.disabled = true; setBtnText(btn, t("lobby.readyPreparing")); }
