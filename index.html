@@ -7641,9 +7641,15 @@ function summarizeGameStats(rows) {
       try {
         const { data: rooms } = await db.from('rooms').select('id,status').in('id', recentRooms);
         (rooms || []).forEach(room => {
-          if (room.status !== "reinviting") return;
-          if (room.id === state.roomCode && state.role === "host") return;
           const seenKey = `${room.id}:reinviting`;
+          // WRPS-054: reinviting 창이 닫히면(다른 status) dedup을 해제한다. 이렇게 해야
+          // 같은 방에 재초대가 "다시" 열릴 때 이전 사이클에 이미 본 기기도 새 초대로 인식한다.
+          // (기존엔 seenKey가 영구 억제되어 반복 재초대가 일부 기기에만 전달되는 랜덤 누락 발생)
+          if (room.status !== "reinviting") {
+            if (state.seenInviteRooms[seenKey]) delete state.seenInviteRooms[seenKey];
+            return;
+          }
+          if (room.id === state.roomCode && state.role === "host") return;
           if (state.seenInviteRooms[seenKey]) return;
           state.seenInviteRooms[seenKey] = Date.now();
           showInvitePopupForRoom(room.id);
