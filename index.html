@@ -4670,8 +4670,11 @@
 	      }));
 	    }
 
-	    function archiveCurrentRoundStats(reason = "new_round") {
-	      const rows = (state.participants || [])
+	    // WRPS-056: priorParticipants 지정 시 그 구성으로 아카이빙(참가자 변경 경로에서 state.participants가
+	    // 이미 새 집합으로 덮인 뒤 호출되어도 직전 세션을 올바르게 태깅하기 위함 — codex-critic C).
+	    function archiveCurrentRoundStats(reason = "new_round", priorParticipants = null) {
+	      const source = (priorParticipants && priorParticipants.length) ? priorParticipants : (state.participants || []);
+	      const rows = source
 	        .filter(p => Number(p.wins || 0) || Number(p.losses || 0) || Number(p.draws || 0) || Number(p.penalties || 0))
 	        .map(p => ({
 	          id: p.id,
@@ -4691,7 +4694,7 @@
 	          reason,
 	          roomCode: state.roomCode || "",
 	          gameRound: getGameRound(),
-	          participantSig: getParticipantSignature(), // WRPS-056: 세션(참가자 구성) 식별자
+	          participantSig: getParticipantSignature(source), // WRPS-056: 세션(참가자 구성) 식별자
 	          rematchRound: state.round || 1,
 	          penalty: getPenaltyText(),
 	          participants: rows
@@ -4857,11 +4860,13 @@
 	      return null;
 	    }
 
-	    async function beginNewGameRound({ status = "lobby", increment = true, reason = "new_round" } = {}) {
+	    async function beginNewGameRound({ status = "lobby", increment = true, reason = "new_round", priorParticipants = null } = {}) {
 	      if (state.newRoundResetting) return;
 	      state.newRoundResetting = true;
 	      try {
-	        if (hasCurrentGameRoundActivity()) archiveCurrentRoundStats(reason);
+	        // WRPS-056: 참가자 변경 경로는 priorParticipants(직전 구성)로 아카이빙해 세션 오귀속 방지.
+	        const archiveSource = (priorParticipants && priorParticipants.length) ? priorParticipants : state.participants;
+	        if (hasCurrentGameRoundActivity(archiveSource)) archiveCurrentRoundStats(reason, archiveSource);
 	        resetTransientRoundUi();
 	        state.confirmedSafeIds = [];
 	        state.confirmedLoserIds = [];
@@ -4995,7 +5000,7 @@
         droppedIds.forEach(id => delete state.droppedSince[id]);
         renderAll();
         if (shouldStartNewRound) {
-          await beginNewGameRound({ status: "lobby", increment: true, reason: "participant_dropped" });
+          await beginNewGameRound({ status: "lobby", increment: true, reason: "participant_dropped", priorParticipants: beforeDrop });
         }
       } finally {
         state.cleaningDropped = false;
@@ -5290,7 +5295,7 @@
 
 	        if (state.role === "host" && !state.newRoundResetting && shouldResetForParticipantChange(oldParticipants, data)) {
 	          state.participants = data;
-	          await beginNewGameRound({ status: "lobby", increment: true, reason: "participant_or_host_changed" });
+	          await beginNewGameRound({ status: "lobby", increment: true, reason: "participant_or_host_changed", priorParticipants: oldParticipants });
 	          renderAll();
 	          return;
 	        }
@@ -8428,13 +8433,15 @@ function summarizeGameStats(rows) {
         const shouldIncrement = hasCurrentGameRoundActivity();
         await db.from('participants').update({ is_host: true }).eq('id', newHostId);
         await db.from('participants').delete().eq('id', state.currentUserId);
+        const beforeTransfer = [...state.participants]; // WRPS-056: 직전 세션 구성 캡처(멤버십 변경 전)
         state.participants = state.participants
           .filter(p => p.id !== state.currentUserId)
           .map(p => ({ ...p, is_host: p.id === newHostId ? true : p.is_host }));
         await beginNewGameRound({
           status: "waiting",
           increment: shouldIncrement,
-          reason: "host_transferred_after_round_activity"
+          reason: "host_transferred_after_round_activity",
+          priorParticipants: beforeTransfer
         });
       }
       clearRealtime();
@@ -8456,11 +8463,12 @@ function summarizeGameStats(rows) {
       }
       // 나(술래)를 호스트로 승격
       await db.from('participants').update({ is_host: true }).eq('id', state.currentUserId);
+      const beforePromote = [...state.participants]; // WRPS-056: 직전 세션 구성 캡처(호스트 교체 전)
       state.participants = state.participants.map(p => ({
         ...p,
         is_host: p.id === state.currentUserId
       }));
-      await beginNewGameRound({ status: "waiting", increment: true, reason: "loser_became_next_host" });
+      await beginNewGameRound({ status: "waiting", increment: true, reason: "loser_became_next_host", priorParticipants: beforePromote });
       state.role = "host";
       state.confirmedSafeIds = [];
       state.confirmedLoserIds = [];

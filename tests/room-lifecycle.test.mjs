@@ -20,9 +20,20 @@ describe('WRPS-056 room lifecycle', () => {
     expect(body).not.toMatch(/entry\.gameRound[^\n]*===/);
   });
 
-  it('archiveCurrentRoundStats가 participantSig(세션 식별자)를 저장한다', () => {
+  it('archiveCurrentRoundStats가 priorParticipants(직전 구성) 기준으로 sig를 태깅한다', () => {
     const body = fnBody('archiveCurrentRoundStats');
-    expect(body).toMatch(/participantSig:\s*getParticipantSignature\(\)/);
+    // codex-critic C: 참가자 변경 경로에서 state.participants가 이미 새 집합으로 덮인 뒤 호출되므로
+    // 반드시 source(priorParticipants) 기준으로 서명해야 한다.
+    expect(body).toContain('priorParticipants');
+    expect(body).toMatch(/participantSig:\s*getParticipantSignature\(source\)/);
+  });
+
+  it('membership/host 변경 4개 경로 모두 priorParticipants(직전 구성)를 전달한다', () => {
+    // codex-critic: state.participants 선교체 → sig 오귀속 버그 클래스 전수 차단.
+    expect(html).toMatch(/reason: "participant_or_host_changed", priorParticipants: oldParticipants/); // host-reset
+    expect(html).toMatch(/reason: "participant_dropped", priorParticipants: beforeDrop/);              // dropped cleanup
+    expect(html).toMatch(/priorParticipants: beforeTransfer/);                                          // transferHostAndLeave
+    expect(html).toMatch(/reason: "loser_became_next_host", priorParticipants: beforePromote/);         // becomeNextHost
   });
 
   it('1인 방 destroy 전이 가드가 존재한다 (oldParticipants>1 → data===1)', () => {
