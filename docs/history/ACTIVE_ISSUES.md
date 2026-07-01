@@ -113,3 +113,10 @@
 2. WRPS-014 참가자 TTS — **Build8.1 수정됨**, iOS 실기기 검증 필요
 3. WRPS-026 호스트 빠짐 프리즈 (P1) — 코드 OK, 실기기 미검증
 4. WRPS-036 멀티디바이스 매트릭스 54셀 (P1) — 미수행
+
+## Build16 Device QA — OPEN (Triage 완료, Fix 미착수) 2026-07-01
+> 원장: `docs/BUILD16_QA_PLAN.md`. Critical 10 + Evidence-gated 4 → Release NOT READY.
+- **Critical(코드 Root Cause 확정)**: WRPS-053(UI권한), 054(invite), 055(join/leave audio), 056(room lifecycle), 061(결과화면 고착), 062(다중술래), 063(viewport)
+- **Critical(Evidence-gated, build15 계측 선행)**: WRPS-058/059/060/064(sync drift·지연)
+- **High**: WRPS-050(oauth), 051/052/057(audio), 065(QR), 066(닉네임), 067(직전결과)
+- **Medium/Low(Build16 제외 polish)**: WRPS-068/069/070/071
