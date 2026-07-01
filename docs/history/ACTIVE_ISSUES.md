@@ -120,3 +120,15 @@
 - **Critical(Evidence-gated, build15 계측 선행)**: WRPS-058/059/060/064(sync drift·지연)
 - **High**: WRPS-050(oauth), 051/052/057(audio), 065(QR), 066(닉네임), 067(직전결과)
 - **Medium/Low(Build16 제외 polish)**: WRPS-068/069/070/071
+
+## Build16 (build 16) — 반영 상태 (2026-07-01)
+**Fixed & pushed (test+codex-critic 검증)**:
+- WRPS-063 viewport lock (c920c08) · WRPS-053 lobby UI 권한 (3b63527)
+- WRPS-056 session 기록 분리 + 1인 방 destroy (b55b5c5, critic 4R 종결)
+- WRPS-061 결과화면 고착 백스톱 (8d6e829) · WRPS-054 invite dedup lifecycle (78a0401)
+
+**Evidence-gated (build16 실기기 QA 후 착수 — 추측 수정 금지/DR-10)**:
+- WRPS-062 다중술래 전체재게임 오전환 (finishRoundLocal 코드결함 미발견 → 런타임 Evidence 필요)
+- WRPS-058 선택타이머 drift · WRPS-059 결과전환 drift · WRPS-060 6R 지연급증 · WRPS-064 Zero Doubt 집합
+
+**미착수 (다음 코드 세션)**: WRPS-050 oauth restore, 066 닉네임, 065 QR, 051/052/055/057 audio, 067/068.

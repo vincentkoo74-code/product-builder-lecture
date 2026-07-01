@@ -16,4 +16,10 @@
 | DR-9 | 권위자가 라운드 비참가일 때도 라운드 종료 트리거 이중화(전원 완료 즉시 + 서버시각 백스톱). | WRPS-026 |
 | DR-10 | Device-gated 결함은 (계측 빌드 → 자동 메트릭 Analyzer → Gate 평가) 파이프라인으로 Evidence 기반 확정. 추측 분석 금지. | WRPS-026/036, WES Sprint |
 | DR-11 | 새 Sprint/Build 시작 전 환경 자동 사전점검(pwd·branch·working tree·origin 동기화·쓰기권한·remote). 하나라도 비정상이면 Build 시작 금지. | Build15 EPERM 중단, WES |
+| DR-13 | 참가자 lifecycle side-effect(입퇴장 오디오/리스트)는 per-device local diff가 아닌 authoritative 이벤트에서 파생 (제안). | WRPS-055 |
+| DR-14 | Room participant set 변경 = 새 game session(참가자 서명으로 기록 분리). | WRPS-056 |
+| DR-15 | 대기/탈락(waiting/disqualified) player는 다음 유효 라운드까지 UI-passive. | WRPS-053 |
+| DR-16 | 오디오는 모든 기기에서 event-covered·deduped·metric-visible (제안). | WRPS-051/052/055/057 |
+| DR-17 | 게임 신뢰를 위해 앱 viewport를 잠근다(user-scalable=no, touch-action). | WRPS-063 |
+| DR-18 | OAuth return은 정확한 game context 복원 또는 명시적 실패 (제안). | WRPS-050 |
 | DR-12 | QA 계측 자동화: 앱은 QA 빌드에서 세션 자동 시작·게임/방 종료 시 자동 스냅샷·`__qaMetrics.export()`로 표준 입력 산출. BUILD_MANIFEST로 Evidence 출처를 식별. 사용자는 플레이만. | Build16, WES |
