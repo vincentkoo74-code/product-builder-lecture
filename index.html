@@ -3280,6 +3280,7 @@
         "toast.codeRequired": "방 코드를 입력해주세요.",
         "toast.nameRequired": "닉네임을 입력해주세요.",
         "toast.roomNotFound": "존재하지 않는 방입니다.",
+        "toast.roomClosedAlone": "혼자 남아 방이 종료되었어요. 홈으로 이동합니다.",
         "toast.joinLocked": "모든 참여자가 준비를 완료해서 새로 참가할 수 없습니다.",
         "toast.penaltyRequired": "벌칙을 입력해주세요.",
         "toast.penaltyNotSet": "먼저 벌칙을 설정해주세요.",
@@ -3620,6 +3621,7 @@
         "toast.codeRequired": "Please enter a room code.",
         "toast.nameRequired": "Please enter a nickname.",
         "toast.roomNotFound": "Room not found.",
+        "toast.roomClosedAlone": "You're the only one left — the room was closed. Returning home.",
         "toast.joinLocked": "All players are ready — you can't join now.",
         "toast.penaltyRequired": "Please enter a penalty.",
         "toast.penaltyNotSet": "Please set a penalty first.",
@@ -3957,6 +3959,7 @@
         "toast.codeRequired": "部屋コードを入力してください。",
         "toast.nameRequired": "ニックネームを入力してください。",
         "toast.roomNotFound": "存在しない部屋です。",
+        "toast.roomClosedAlone": "一人になったため部屋を終了しました。ホームに戻ります。",
         "toast.joinLocked": "全員準備完了で新規参加できません。",
         "toast.penaltyRequired": "罰ゲームを入力してください。",
         "toast.penaltyNotSet": "先に罰ゲームを設定してください。",
@@ -4688,6 +4691,7 @@
 	          reason,
 	          roomCode: state.roomCode || "",
 	          gameRound: getGameRound(),
+	          participantSig: getParticipantSignature(), // WRPS-056: 세션(참가자 구성) 식별자
 	          rematchRound: state.round || 1,
 	          penalty: getPenaltyText(),
 	          participants: rows
@@ -4711,7 +4715,11 @@
 
 	    // 보관된 모든 라운드 + 현재 진행 중인 라운드를 합쳐 참가자별 누적 전적을 계산한다.
 	    // roomCode 기준으로 분리되므로 다른 방 기록과 섞이지 않는다.
-	    function buildRoomStatsSummary(roomCode, liveParticipants = []) {
+	    // WRPS-056(DR-14): 세션 = "참가자 구성(서명)". 참가자 집합이 바뀌면 새 세션이라 이전 구성의
+	    // 전적과 섞이지 않게 현재 서명으로 한정 집계한다. 같은 구성으로 여러 판 재대결하면 서명이
+	    // 동일하므로 누적을 유지한다(gameRound는 재대결마다 증가하므로 세션 식별자로 부적합 — codex-critic).
+	    // 이전 세션 데이터는 삭제하지 않고 보존(직전 결과 조회용). sessionSig 명시 시 특정 세션만 집계.
+	    function buildRoomStatsSummary(roomCode, liveParticipants = [], sessionSig = null) {
 	      const totals = new Map();
 	      const addRows = (rows) => {
 	        (rows || []).forEach(p => {
@@ -4733,7 +4741,11 @@
 	        });
 	      };
 
-	      const archive = getRoomStatsArchive(roomCode);
+	      // 현재 참가자 구성(서명)에 속한 아카이브만 집계 → 참가자 변경 시 이전 세션 분리, 동일 구성은 누적.
+	      const sig = sessionSig != null ? sessionSig
+	        : getParticipantSignature((liveParticipants && liveParticipants.length) ? liveParticipants : state.participants);
+	      const archive = getRoomStatsArchive(roomCode)
+	        .filter(entry => (entry.participantSig || null) === sig);
 	      // 보관된 이전 라운드(오래된 → 최신)
 	      [...archive].reverse().forEach(entry => addRows(entry.participants));
 	      // 아직 보관되지 않은 현재 진행 라운드
@@ -5267,6 +5279,14 @@
 	            newP.is_ready = true;
 	          }
 	        });
+
+	        // WRPS-056(DR-14): 다인 방에서 나 혼자 남으면(others 전원 이탈) 방 폭파 + 홈 복귀.
+	        // 전이 가드(oldParticipants>1 → data===1): 방 생성 직후 1인 대기 상태는 제외.
+	        if (oldParticipants.length > 1 && data.length === 1 && data[0] && data[0].id === state.currentUserId) {
+	          state.participants = data;
+	          await destroyRoomAndGoHome("last_participant");
+	          return;
+	        }
 
 	        if (state.role === "host" && !state.newRoundResetting && shouldResetForParticipantChange(oldParticipants, data)) {
 	          state.participants = data;
@@ -8364,6 +8384,24 @@ function summarizeGameStats(rows) {
       state.confirmedLoserIds = [];
       state.gameStarting = false;
       goHome();
+    }
+
+    // WRPS-056(DR-14): 마지막 1인만 남은 방을 폭파하고 홈으로. 남은 참가자(fetchParticipants)가 호출.
+    async function destroyRoomAndGoHome(reason = "room_destroyed") {
+      try {
+        if (getOnlineMode() && db && state.roomCode) {
+          try { await db.from('participants').delete().eq('room_id', state.roomCode); } catch (e) {}
+          try { await db.from('rooms').delete().eq('id', state.roomCode); } catch (e) {}
+        }
+      } finally {
+        try { QA.emit('lobby', { wrps: 'WRPS-056', eventType: 'ROOM_DESTROYED', reason }); } catch (e) {}
+        try { showToast(t("toast.roomClosedAlone")); } catch (e) {}
+        clearRealtime();
+        state.confirmedSafeIds = [];
+        state.confirmedLoserIds = [];
+        state.gameStarting = false;
+        goHome();
+      }
     }
 
     function showNextHostPopup() {
