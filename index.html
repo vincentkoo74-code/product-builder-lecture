@@ -2,7 +2,8 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <!-- WRPS-063: viewport lock — 게임 신뢰(공정성)를 위해 확대/축소/이동 금지(DR-17). -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>마루의 가위바위보 · K-파티 게임</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -118,6 +119,9 @@
       justify-content: center;
       align-items: center;
       overflow: hidden;
+      /* WRPS-063(DR-17): 더블탭 확대·핀치줌·러버밴드 이동 금지. 내부 스크롤은 유지. */
+      touch-action: manipulation;
+      overscroll-behavior: none;
     }
 
     .app {
@@ -3276,6 +3280,7 @@
         "toast.codeRequired": "방 코드를 입력해주세요.",
         "toast.nameRequired": "닉네임을 입력해주세요.",
         "toast.roomNotFound": "존재하지 않는 방입니다.",
+        "toast.roomClosedAlone": "혼자 남아 방이 종료되었어요. 홈으로 이동합니다.",
         "toast.joinLocked": "모든 참여자가 준비를 완료해서 새로 참가할 수 없습니다.",
         "toast.penaltyRequired": "벌칙을 입력해주세요.",
         "toast.penaltyNotSet": "먼저 벌칙을 설정해주세요.",
@@ -3616,6 +3621,7 @@
         "toast.codeRequired": "Please enter a room code.",
         "toast.nameRequired": "Please enter a nickname.",
         "toast.roomNotFound": "Room not found.",
+        "toast.roomClosedAlone": "You're the only one left — the room was closed. Returning home.",
         "toast.joinLocked": "All players are ready — you can't join now.",
         "toast.penaltyRequired": "Please enter a penalty.",
         "toast.penaltyNotSet": "Please set a penalty first.",
@@ -3953,6 +3959,7 @@
         "toast.codeRequired": "部屋コードを入力してください。",
         "toast.nameRequired": "ニックネームを入力してください。",
         "toast.roomNotFound": "存在しない部屋です。",
+        "toast.roomClosedAlone": "一人になったため部屋を終了しました。ホームに戻ります。",
         "toast.joinLocked": "全員準備完了で新規参加できません。",
         "toast.penaltyRequired": "罰ゲームを入力してください。",
         "toast.penaltyNotSet": "先に罰ゲームを設定してください。",
@@ -4313,6 +4320,9 @@
         offsets.sort((a, b) => a - b);
         serverClockOffsetMs = offsets[Math.floor(offsets.length / 2)]; // 중앙값(이상치 방어)
       }
+      // QA(WRPS-036): 추정된 서버-로컬 오프셋 + 샘플 분포(드리프트 원인 추적).
+      try { QA.emit('clocksync', { wrps: 'WRPS-036', eventType: 'CLOCK_SYNC', offsetMs: serverClockOffsetMs,
+        samples: offsets.length, spreadMs: offsets.length ? (offsets[offsets.length - 1] - offsets[0]) : null }); } catch (e) {}
     }
     // 게임 시작 예정 시각: 서버 시각 기준 + 네트워크/전파 지연 흡수용 lead.
     // WRPS-047: realtime 전파가 느린 단말이 startAt을 이미 지나친 채 수신해 즉시(늦게) 시작하는
@@ -4660,8 +4670,11 @@
 	      }));
 	    }
 
-	    function archiveCurrentRoundStats(reason = "new_round") {
-	      const rows = (state.participants || [])
+	    // WRPS-056: priorParticipants 지정 시 그 구성으로 아카이빙(참가자 변경 경로에서 state.participants가
+	    // 이미 새 집합으로 덮인 뒤 호출되어도 직전 세션을 올바르게 태깅하기 위함 — codex-critic C).
+	    function archiveCurrentRoundStats(reason = "new_round", priorParticipants = null) {
+	      const source = (priorParticipants && priorParticipants.length) ? priorParticipants : (state.participants || []);
+	      const rows = source
 	        .filter(p => Number(p.wins || 0) || Number(p.losses || 0) || Number(p.draws || 0) || Number(p.penalties || 0))
 	        .map(p => ({
 	          id: p.id,
@@ -4681,6 +4694,7 @@
 	          reason,
 	          roomCode: state.roomCode || "",
 	          gameRound: getGameRound(),
+	          participantSig: getParticipantSignature(source), // WRPS-056: 세션(참가자 구성) 식별자
 	          rematchRound: state.round || 1,
 	          penalty: getPenaltyText(),
 	          participants: rows
@@ -4704,7 +4718,11 @@
 
 	    // 보관된 모든 라운드 + 현재 진행 중인 라운드를 합쳐 참가자별 누적 전적을 계산한다.
 	    // roomCode 기준으로 분리되므로 다른 방 기록과 섞이지 않는다.
-	    function buildRoomStatsSummary(roomCode, liveParticipants = []) {
+	    // WRPS-056(DR-14): 세션 = "참가자 구성(서명)". 참가자 집합이 바뀌면 새 세션이라 이전 구성의
+	    // 전적과 섞이지 않게 현재 서명으로 한정 집계한다. 같은 구성으로 여러 판 재대결하면 서명이
+	    // 동일하므로 누적을 유지한다(gameRound는 재대결마다 증가하므로 세션 식별자로 부적합 — codex-critic).
+	    // 이전 세션 데이터는 삭제하지 않고 보존(직전 결과 조회용). sessionSig 명시 시 특정 세션만 집계.
+	    function buildRoomStatsSummary(roomCode, liveParticipants = [], sessionSig = null) {
 	      const totals = new Map();
 	      const addRows = (rows) => {
 	        (rows || []).forEach(p => {
@@ -4726,7 +4744,11 @@
 	        });
 	      };
 
-	      const archive = getRoomStatsArchive(roomCode);
+	      // 현재 참가자 구성(서명)에 속한 아카이브만 집계 → 참가자 변경 시 이전 세션 분리, 동일 구성은 누적.
+	      const sig = sessionSig != null ? sessionSig
+	        : getParticipantSignature((liveParticipants && liveParticipants.length) ? liveParticipants : state.participants);
+	      const archive = getRoomStatsArchive(roomCode)
+	        .filter(entry => (entry.participantSig || null) === sig);
 	      // 보관된 이전 라운드(오래된 → 최신)
 	      [...archive].reverse().forEach(entry => addRows(entry.participants));
 	      // 아직 보관되지 않은 현재 진행 라운드
@@ -4838,11 +4860,13 @@
 	      return null;
 	    }
 
-	    async function beginNewGameRound({ status = "lobby", increment = true, reason = "new_round" } = {}) {
+	    async function beginNewGameRound({ status = "lobby", increment = true, reason = "new_round", priorParticipants = null } = {}) {
 	      if (state.newRoundResetting) return;
 	      state.newRoundResetting = true;
 	      try {
-	        if (hasCurrentGameRoundActivity()) archiveCurrentRoundStats(reason);
+	        // WRPS-056: 참가자 변경 경로는 priorParticipants(직전 구성)로 아카이빙해 세션 오귀속 방지.
+	        const archiveSource = (priorParticipants && priorParticipants.length) ? priorParticipants : state.participants;
+	        if (hasCurrentGameRoundActivity(archiveSource)) archiveCurrentRoundStats(reason, archiveSource);
 	        resetTransientRoundUi();
 	        state.confirmedSafeIds = [];
 	        state.confirmedLoserIds = [];
@@ -4976,7 +5000,7 @@
         droppedIds.forEach(id => delete state.droppedSince[id]);
         renderAll();
         if (shouldStartNewRound) {
-          await beginNewGameRound({ status: "lobby", increment: true, reason: "participant_dropped" });
+          await beginNewGameRound({ status: "lobby", increment: true, reason: "participant_dropped", priorParticipants: beforeDrop });
         }
       } finally {
         state.cleaningDropped = false;
@@ -5261,9 +5285,17 @@
 	          }
 	        });
 
+	        // WRPS-056(DR-14): 다인 방에서 나 혼자 남으면(others 전원 이탈) 방 폭파 + 홈 복귀.
+	        // 전이 가드(oldParticipants>1 → data===1): 방 생성 직후 1인 대기 상태는 제외.
+	        if (oldParticipants.length > 1 && data.length === 1 && data[0] && data[0].id === state.currentUserId) {
+	          state.participants = data;
+	          await destroyRoomAndGoHome("last_participant");
+	          return;
+	        }
+
 	        if (state.role === "host" && !state.newRoundResetting && shouldResetForParticipantChange(oldParticipants, data)) {
 	          state.participants = data;
-	          await beginNewGameRound({ status: "lobby", increment: true, reason: "participant_or_host_changed" });
+	          await beginNewGameRound({ status: "lobby", increment: true, reason: "participant_or_host_changed", priorParticipants: oldParticipants });
 	          renderAll();
 	          return;
 	        }
@@ -5274,8 +5306,19 @@
 	          if (oldParticipants.length > 0) {
 	            const oldIds = new Set(oldParticipants.map(p => p.id));
 	            const newIds = new Set(data.map(p => p.id));
-	            if (data.some(p => !oldIds.has(p.id))) SoundManager.playJoinMeow();
-	            if (oldParticipants.some(p => !newIds.has(p.id) && p.id !== state.currentUserId)) SoundManager.playLeaveMeow();
+	            const joined = data.filter(p => !oldIds.has(p.id)).map(p => p.id);
+	            const left = oldParticipants.filter(p => !newIds.has(p.id) && p.id !== state.currentUserId).map(p => p.id);
+	            if (joined.length) SoundManager.playJoinMeow();
+	            if (left.length) SoundManager.playLeaveMeow();
+	            // QA(WRPS-053/056): 입퇴장/호스트 상태. hostChanged·stale 감지.
+	            const newHost = (data.find(p => p.is_host) || {}).id || null;
+	            const oldHost = (oldParticipants.find(p => p.is_host) || {}).id || null;
+	            if (joined.length || left.length || newHost !== oldHost) {
+	              QA.emit('lobby', { wrps: 'WRPS-053', eventType: 'PARTICIPANT_UPDATE',
+	                participantJoinTs: joined.length ? Date.now() : null, participantLeaveTs: left.length ? Date.now() : null,
+	                joined, left, hostId: newHost, hostChanged: newHost !== oldHost, count: data.length,
+	                staleParticipantDetected: data.some(p => p.id === oldHost && !p.is_host && newHost && newHost !== oldHost) });
+	            }
 	          }
 	        } catch (e) {}
 
@@ -5292,6 +5335,19 @@
           const waitScreen = $("screenParticipantWait");
           if (waitScreen && !waitScreen.classList.contains("hidden")) {
             showReadyScreen();
+          }
+        }
+
+        // WRPS-061: 결과화면 고착 복구 안전망(WRPS-018 대칭). 참가자 이탈 등으로 권위 status가
+        // 이미 다음 단계(lobby/waiting)로 진행했는데도 이 기기가 결과화면(stale 목록)에 갇혀 있으면
+        // status에 맞는 화면으로 재동기화한다. handleRoomUpdate는 status "변경" 시에만 전이하므로
+        // 전이 이벤트를 놓친 동일-status 고착은 여기(3초 폴링)에서만 풀 수 있다.
+        {
+          const resultScreen = $("screenRoundResult");
+          const onResult = resultScreen && !resultScreen.classList.contains("hidden");
+          if (onResult && (state.status === "lobby" || state.status === "waiting")) {
+            if (state.status === "lobby") { showScreen("screenLobby"); renderLobby(); }
+            else { state.role === "host" ? showHostRoom() : showScreen("screenParticipantWait"); }
           }
         }
 
@@ -6356,6 +6412,10 @@
       const scheduledStartAt = getCountdownStartAt();
       // 예정 시각은 서버 시간 도메인 → 로컬도 serverNow()로 평가해야 기기 간 동시 시작이 보장됨.
       const waitMs = scheduledStartAt ? Math.max(0, scheduledStartAt - serverNow()) : 0;
+      // QA(WRPS-026/036): 카운트다운 시작 드리프트 — 이 단말의 serverNow가 예정 startAt을 얼마나 벗어났나.
+      QA.emit('metric', { wrps: 'WRPS-036', eventType: 'COUNTDOWN_START', round: state.round,
+        countdownStartServerTs: scheduledStartAt, countdownClientStartTs: serverNow(), offsetMs: serverClockOffsetMs,
+        countdownDriftMs: scheduledStartAt ? (serverNow() - scheduledStartAt) : null, waitMs });
       if (waitMs > 40) {
         numEl.className = "countdown-waiting";
         numEl.style.fontSize = "";
@@ -6721,6 +6781,9 @@
       const allDraw = activePlayers.length > 0 && activePlayers.every(p => p.lastResult === "draw");
       const iPlayedThisRound = activePlayers.some(p => p.id === state.currentUserId);
 
+      // WRPS-049 섀도우: 분기 전에 엔진 결과를 병렬 계산(flag OFF면 no-op). 비교는 각 종료지점에서.
+      __engineV2ShadowComputeRound(activePlayers, prevLoserIds, prevSafeIds, targetCount);
+
       // 중도 퇴장 등으로 남은 활성자가 남은 술래 슬롯 이하 → 더 가릴 수 없으므로 전원 술래 확정·종료.
       // (예: 1명만 남아 무한 무승부에 빠지는 deadlock 방지 — 항목 7/10)
       if (activePlayers.length > 0 && activePlayers.length <= remainingSlots) {
@@ -6732,6 +6795,7 @@
         showScreen("screenRoundResult");
         // 전원 술래 확정·종료: 본인이 술래면 패배음, 살아남았으면(이전 안전) 승리 팡파레
         playResultSfxOnce(isConfirmedLoser() ? "lose" : "win");
+        __engineV2ShadowCompare("gameOver");
         state.finishingRound = false;
         return;
       }
@@ -6741,6 +6805,7 @@
         renderRoundResult("draw", 0, remainingSlots);
         showScreen("screenRoundResult");
         playResultSfxOnce("draw", 300); // 무승부 전용 사운드
+        __engineV2ShadowCompare("allDraw");
         state.finishingRound = false;
         return;
       }
@@ -6779,6 +6844,11 @@
         }
         scheduleRematchAutoAdvance();
       }
+      // WRPS-049 섀도우: fall-through 분기(gameOver/tooMany/tooFew) 종료 시 대조(라벨은 조건으로 도출)
+      __engineV2ShadowCompare(
+        roundLosers.length === remainingSlots ? "gameOver"
+          : (roundLosers.length > remainingSlots ? "tooMany" : "tooFew")
+      );
       state.finishingRound = false;
     }
 
@@ -7008,6 +7078,196 @@ function summarizeGameStats(rows) {
   });
 }
       /*__GAME_LOGIC_END__*/
+
+      // ── v2 엔진(WRPS-049 STEP2.2) — 빌드 시 dist에만 번들 주입(아래 마커). root는 비어있음. ──
+      // game-logic 블록 뒤에 위치해야 번들이 judgePure 등 인라인 심볼을 참조할 수 있다.
+      /*__ENGINE_V2_START__*/
+      /*__ENGINE_V2_END__*/
+      // ── QA 계측 플래그(WES Instrumented QA Build) ──────────────────────
+      // 기본 OFF = production 동작 그대로. ?qa=1(URL) / debug 모드 / localStorage('rpsQA') 로만 활성.
+      // __QA_BUILD__: 출시 빌드는 false. QA_BUILD=1 빌드 시 build-web.mjs가 dist에서 true로 치환(네이티브 자동-ON).
+      const __QA_BUILD__ = false /*__QA_BUILD_FLAG__*/;
+      const QA_ENABLED = (() => {
+        try {
+          if (__QA_BUILD__) return true;
+          const p = new URLSearchParams(location.search);
+          if (p.get('qa') === '1') localStorage.setItem('rpsQA', '1');
+          if (p.get('qa') === '0') localStorage.removeItem('rpsQA');
+          return localStorage.getItem('rpsQA') === '1'
+            || p.get('qa') === '1'
+            || localStorage.getItem('rpsDebugMode') === '1';
+        } catch (e) { return false; }
+      })();
+      // v2 활성 플래그(STEP2.2: 기본 OFF). 섀도우/계측은 QA 빌드에서만 ON(대조 메트릭 수집).
+      const ENGINE_V2_ENABLED = false;
+      const ENGINE_V2_SHADOW = QA_ENABLED;
+      const QA_INSTRUMENTATION = QA_ENABLED;
+      const __engineV2 = (typeof RPSEngineV2 !== 'undefined' && RPSEngineV2 && RPSEngineV2.createEngine)
+        ? RPSEngineV2.createEngine({ now: () => serverNow() })
+        : null;
+      if (__engineV2) { try { window.__rpsEngineV2 = __engineV2; } catch (e) {} } // 디버그/섀도우 검증용
+
+      // ── QA 계측 코어 ──────────────────────────────────────────────────
+      // OFF면 모든 QA.emit은 no-op. ON이면 [PREFIX] JSON 콘솔 로그 + window.__qaMetrics 누적.
+      const QA = (() => {
+        const m = {
+          session: Math.random().toString(36).slice(2, 10),
+          startedAt: Date.now(),   // Build16: QA 세션 자동 시작 시각
+          manifest: null,          // Build16: BUILD_MANIFEST.json 연결(비동기 로드)
+          counts: { metric: 0, audioDup: 0, audioMissing: 0, audioFallback: 0, orderingMismatch: 0, staleParticipant: 0, hostChanged: 0 },
+          drift: [], countdownDrift: [], resultDrift: [], audioDelay: [], recent: [], snapshots: [],
+        };
+        const PREFIX = { metric: '[QA-METRIC]', shadow: '[SHADOW-WRPS049]', clocksync: '[CLOCKSYNC]', audio: '[AUDIO-METRIC]', lobby: '[LOBBY-METRIC]', auth: '[AUTH-METRIC]' };
+        function base() {
+          let dev = 'Web';
+          try {
+            dev = (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform())
+              || (/iPad/.test(navigator.userAgent) ? 'iPad' : /iPhone/.test(navigator.userAgent) ? 'iPhone' : 'Web');
+          } catch (e) {}
+          return { session: m.session, roomId: state.roomCode || null, playerId: state.currentUserId || null, deviceRole: state.role || null, deviceType: dev };
+        }
+        function emit(channel, data) {
+          if (!QA_INSTRUMENTATION) return;
+          const rec = Object.assign(base(), { ts: Date.now() }, data || {});
+          m.counts.metric++;
+          m.recent.push(rec); if (m.recent.length > 300) m.recent.shift();
+          if (Number.isFinite(rec.driftMs)) m.drift.push(rec.driftMs);
+          if (Number.isFinite(rec.countdownDriftMs)) m.countdownDrift.push(rec.countdownDriftMs);
+          if (Number.isFinite(rec.resultDriftMs)) m.resultDrift.push(rec.resultDriftMs);
+          if (Number.isFinite(rec.audioDelayMs)) m.audioDelay.push(rec.audioDelayMs);
+          if (rec.audioDuplicated) m.counts.audioDup++;
+          if (rec.audioMissing) m.counts.audioMissing++;
+          if (rec.audioFallbackUsed) m.counts.audioFallback++;
+          if (rec.staleParticipantDetected) m.counts.staleParticipant++;
+          if (rec.hostChanged) m.counts.hostChanged++;
+          try { console.log(PREFIX[channel] || PREFIX.metric, JSON.stringify(rec)); } catch (e) {}
+        }
+        const avg = a => (a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : 0);
+        const mx = a => (a.length ? Math.max(...a) : 0);
+        function summary() {
+          const sm = window.__rpsShadowMetrics || { total: 0, match: 0, mismatch: 0 };
+          return {
+            session: m.session, metrics: m.counts.metric,
+            driftAvgMs: avg(m.drift), driftMaxMs: mx(m.drift),
+            countdownDriftAvgMs: avg(m.countdownDrift), countdownDriftMaxMs: mx(m.countdownDrift),
+            resultDriftAvgMs: avg(m.resultDrift),
+            audioDelayAvgMs: avg(m.audioDelay), audioDelayMaxMs: mx(m.audioDelay),
+            audioDuplicate: m.counts.audioDup, audioMissing: m.counts.audioMissing, audioFallback: m.counts.audioFallback,
+            orderingMismatch: m.counts.orderingMismatch, staleParticipant: m.counts.staleParticipant, hostChanged: m.counts.hostChanged,
+            shadowTotal: sm.total, shadowMatch: sm.match, shadowMismatch: sm.mismatch,
+          };
+        }
+        // Build16: 세션 메타(qa-metrics.json / qa-report.json 표준 필드).
+        function sessionInfo() {
+          const b = base();
+          let deviceCount = null;
+          try { deviceCount = (state.participants || []).length || null; } catch (e) {}
+          return {
+            sessionId: m.session, roomId: b.roomId, startedAt: m.startedAt, endedAt: Date.now(),
+            deviceType: b.deviceType, deviceRole: b.deviceRole, deviceCount,
+          };
+        }
+        // Build16: 게임/방 종료 시 자동 스냅샷(요약 고정 기록).
+        function snapshot(reason) {
+          if (!QA_INSTRUMENTATION) return null;
+          const snap = { reason: reason || 'manual', ts: Date.now(), summary: summary() };
+          m.snapshots.push(snap); if (m.snapshots.length > 50) m.snapshots.shift();
+          try { console.log('[QA-METRIC] SNAPSHOT', JSON.stringify(snap)); } catch (e) {}
+          return snap;
+        }
+        // Build16: Analyzer 표준 입력(qa-metrics.json) 전체 export. copyText는 경량 클립보드용 유지.
+        function exportMetrics() {
+          return { manifest: m.manifest, session: sessionInfo(), summary: summary(),
+                   recent: m.recent.slice(), snapshots: m.snapshots.slice() };
+        }
+        function copyText() { return JSON.stringify({ summary: summary(), recent: m.recent.slice(-50) }, null, 2); }
+        return { emit, summary, snapshot, export: exportMetrics, copyText, _m: m, get enabled() { return QA_INSTRUMENTATION; } };
+      })();
+      if (QA_INSTRUMENTATION) { try { window.__qaMetrics = QA; } catch (e) {} }
+
+      // Build16: BUILD_MANIFEST.json 연결 + QA 세션 자동 시작 기록(게임 로직 무관, 관찰만).
+      if (QA_INSTRUMENTATION) {
+        try {
+          fetch('BUILD_MANIFEST.json', { cache: 'no-store' })
+            .then((r) => (r && r.ok ? r.json() : null))
+            .then((j) => { if (j) QA._m.manifest = j; })
+            .catch(() => {});
+        } catch (e) {}
+        try { QA.emit('metric', { eventType: 'QA_SESSION_START', startedAt: QA._m.startedAt }); } catch (e) {}
+      }
+
+      // QA 빌드에서만 표시되는 메트릭 복사 버튼(요약 + 최근 50 로그 → 클립보드, 실패 시 콘솔).
+      function setupQAPanel() {
+        if (!QA_INSTRUMENTATION || typeof document === 'undefined') return;
+        try {
+          const btn = document.createElement('button');
+          btn.id = 'qaCopyBtn';
+          btn.textContent = 'QA📋';
+          btn.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:99999;font-size:12px;padding:6px 9px;background:#111;color:#0f0;border:1px solid #0f0;border-radius:6px;opacity:.85';
+          btn.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            const txt = QA.copyText();
+            try { await navigator.clipboard.writeText(txt); btn.textContent = 'QA✓'; }
+            catch (e) { console.log('[QA-METRIC] SUMMARY', txt); btn.textContent = 'QA(log)'; }
+            setTimeout(() => { btn.textContent = 'QA📋'; }, 1500);
+          });
+          (document.body || document.documentElement).appendChild(btn);
+          console.log('[QA-METRIC] QA build instrumentation ENABLED. session=', QA._m.session);
+        } catch (e) {}
+      }
+
+      // ── WRPS-049 STEP2.2b 섀도우(검증 전용) ──────────────────────────────
+      // production을 전혀 건드리지 않고, v2 엔진 reducer로 라운드 결과를 "병렬 계산"해 legacy와 대조·로깅.
+      // ENGINE_V2_SHADOW=false면 전부 no-op. UI/state/audio 절대 변경 안 함(읽기+로그만).
+      function __engineV2ShadowComputeRound(activePlayers, prevLoserIds, prevSafeIds, targetCount) {
+        state.__shadowRound = null;
+        if (!ENGINE_V2_SHADOW || typeof RPSEngineV2 === 'undefined' || !RPSEngineV2 || !RPSEngineV2.applyEvent) return;
+        try {
+          const E = RPSEngineV2;
+          const s = E.initialState();
+          s.participants = activePlayers.map(p => ({ id: p.id, isHost: false }));
+          s.confirmedLoserIds = [...prevLoserIds];
+          s.confirmedSafeIds = [...prevSafeIds];
+          s.targetLoserCount = targetCount;
+          s.gameRound = getGameRound();
+          s.round = state.round || 1;
+          s.roundChoices = {};
+          activePlayers.forEach(p => { const b = getChoiceBase(p.choice); if (b) s.roundChoices[p.id] = b; });
+          const after = E.applyEvent(s, E.makeEvent(E.EVENT_TYPES.ROUND_RESULT, {}, { seq: 0, ts: serverNow() }));
+          state.__shadowRound = {
+            outcome: after.lastResult ? after.lastResult.outcome : null,
+            loserIds: after.confirmedLoserIds || [],
+            safeIds: after.confirmedSafeIds || [],
+            eventId: getGameRound() + ':' + (state.round || 1),
+          };
+        } catch (e) { console.warn('[SHADOW-WRPS049] compute error:', e && e.message); }
+      }
+      function __engineV2ShadowCompare(legacyOutcome) {
+        if (!ENGINE_V2_SHADOW || !state.__shadowRound) return;
+        const sh = state.__shadowRound;
+        const norm = a => JSON.stringify([...(a || [])].sort());
+        const loserMatch = norm(state.confirmedLoserIds) === norm(sh.loserIds);
+        const safeMatch = norm(state.confirmedSafeIds) === norm(sh.safeIds);
+        const match = loserMatch && safeMatch; // 게임 효과(확정 술래/안전) 일치 = 핵심 기준
+        const M = (window.__rpsShadowMetrics = window.__rpsShadowMetrics || { total: 0, match: 0, mismatch: 0, mismatches: [] });
+        M.total++; if (match) M.match++; else M.mismatch++;
+        const rec = {
+          eventId: sh.eventId,
+          legacy: { outcome: legacyOutcome, loser: [...(state.confirmedLoserIds || [])].sort(), safe: [...(state.confirmedSafeIds || [])].sort() },
+          shadow: { outcome: sh.outcome, loser: [...sh.loserIds].sort(), safe: [...sh.safeIds].sort() },
+          match,
+        };
+        if (!match) M.mismatches.push(rec);
+        (match ? console.log : console.warn)('[SHADOW-WRPS049]', match ? 'MATCH' : 'MISMATCH', JSON.stringify(rec));
+        // QA(WRPS-026): 결과 메트릭 — legacy vs shadow 결과/일치 + 내 결과값.
+        try {
+          const myResult = (state.participants.find(p => p.id === state.currentUserId) || {}).lastResult || null;
+          QA.emit('metric', { wrps: 'WRPS-026', eventType: 'ROUND_RESULT', eventId: sh.eventId,
+            resultServerTs: serverNow(), resultRenderedTs: Date.now(), resultValue: myResult,
+            legacyOutcome, shadowOutcome: sh.outcome, shadowMatch: match });
+        } catch (e) {}
+        state.__shadowRound = null;
+      }
 
     // 상태→순수 판정 어댑터: 확정 안전/술래는 그대로 win/lose, 나머지 활성자만 judgePure.
     // (기존 호출부 호환: judgeRound(state.participants) 시그니처 유지)
@@ -7381,9 +7641,15 @@ function summarizeGameStats(rows) {
       try {
         const { data: rooms } = await db.from('rooms').select('id,status').in('id', recentRooms);
         (rooms || []).forEach(room => {
-          if (room.status !== "reinviting") return;
-          if (room.id === state.roomCode && state.role === "host") return;
           const seenKey = `${room.id}:reinviting`;
+          // WRPS-054: reinviting 창이 닫히면(다른 status) dedup을 해제한다. 이렇게 해야
+          // 같은 방에 재초대가 "다시" 열릴 때 이전 사이클에 이미 본 기기도 새 초대로 인식한다.
+          // (기존엔 seenKey가 영구 억제되어 반복 재초대가 일부 기기에만 전달되는 랜덤 누락 발생)
+          if (room.status !== "reinviting") {
+            if (state.seenInviteRooms[seenKey]) delete state.seenInviteRooms[seenKey];
+            return;
+          }
+          if (room.id === state.roomCode && state.role === "host") return;
           if (state.seenInviteRooms[seenKey]) return;
           state.seenInviteRooms[seenKey] = Date.now();
           showInvitePopupForRoom(room.id);
@@ -8144,6 +8410,24 @@ function summarizeGameStats(rows) {
       goHome();
     }
 
+    // WRPS-056(DR-14): 마지막 1인만 남은 방을 폭파하고 홈으로. 남은 참가자(fetchParticipants)가 호출.
+    async function destroyRoomAndGoHome(reason = "room_destroyed") {
+      try {
+        if (getOnlineMode() && db && state.roomCode) {
+          try { await db.from('participants').delete().eq('room_id', state.roomCode); } catch (e) {}
+          try { await db.from('rooms').delete().eq('id', state.roomCode); } catch (e) {}
+        }
+      } finally {
+        try { QA.emit('lobby', { wrps: 'WRPS-056', eventType: 'ROOM_DESTROYED', reason }); } catch (e) {}
+        try { showToast(t("toast.roomClosedAlone")); } catch (e) {}
+        clearRealtime();
+        state.confirmedSafeIds = [];
+        state.confirmedLoserIds = [];
+        state.gameStarting = false;
+        goHome();
+      }
+    }
+
     function showNextHostPopup() {
       const list = $("nextHostList");
       list.innerHTML = "";
@@ -8168,13 +8452,15 @@ function summarizeGameStats(rows) {
         const shouldIncrement = hasCurrentGameRoundActivity();
         await db.from('participants').update({ is_host: true }).eq('id', newHostId);
         await db.from('participants').delete().eq('id', state.currentUserId);
+        const beforeTransfer = [...state.participants]; // WRPS-056: 직전 세션 구성 캡처(멤버십 변경 전)
         state.participants = state.participants
           .filter(p => p.id !== state.currentUserId)
           .map(p => ({ ...p, is_host: p.id === newHostId ? true : p.is_host }));
         await beginNewGameRound({
           status: "waiting",
           increment: shouldIncrement,
-          reason: "host_transferred_after_round_activity"
+          reason: "host_transferred_after_round_activity",
+          priorParticipants: beforeTransfer
         });
       }
       clearRealtime();
@@ -8196,11 +8482,12 @@ function summarizeGameStats(rows) {
       }
       // 나(술래)를 호스트로 승격
       await db.from('participants').update({ is_host: true }).eq('id', state.currentUserId);
+      const beforePromote = [...state.participants]; // WRPS-056: 직전 세션 구성 캡처(호스트 교체 전)
       state.participants = state.participants.map(p => ({
         ...p,
         is_host: p.id === state.currentUserId
       }));
-      await beginNewGameRound({ status: "waiting", increment: true, reason: "loser_became_next_host" });
+      await beginNewGameRound({ status: "waiting", increment: true, reason: "loser_became_next_host", priorParticipants: beforePromote });
       state.role = "host";
       state.confirmedSafeIds = [];
       state.confirmedLoserIds = [];
@@ -8569,23 +8856,28 @@ function summarizeGameStats(rows) {
       }
       // 보이스 재생: mutex(1개) + 우선순위 선점 + eventId 중복제거. fallback/TTS 없음.
       function playVoice(eventKey, opts = {}) {
+        const qaT0 = Date.now();
         if (isMuted()) return;
         const locale = currentLocale;
         if (isSilent(eventKey, locale)) return;          // 의도적 무음
         const src = clipPath(eventKey, locale);
         if (!src) {
           if (CLIPS[locale]) console.warn("[SoundManager] 클립 없음(무음, no-TTS):", eventKey, locale);
+          try { QA.emit('audio', { wrps: 'WRPS-051', eventType: 'VOICE', audioKey: eventKey, locale, audioMissing: !!CLIPS[locale] }); } catch (e) {}
           return;                                        // en/ja 등: 음성 OFF
         }
         const id = opts.eventId;
         if (id != null) {
-          if (seenEvents.has(id)) return;                // 중복 이벤트 무시
+          if (seenEvents.has(id)) {                       // 중복 이벤트 무시
+            try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioEventId: id, audioDuplicated: true }); } catch (e) {}
+            return;
+          }
           seenEvents.add(id);
           if (seenEvents.size > 256) seenEvents.clear();
         }
         const pri = PRI[eventKey] ?? 1;
         const start = (buf) => {
-          if (!buf) { console.warn("[SoundManager] 버퍼 없음(무음):", src); return; }
+          if (!buf) { console.warn("[SoundManager] 버퍼 없음(무음):", src); try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioMissing: true }); } catch (e) {} return; }
           if (voiceNode && pri < voicePriority) return;  // 낮은 우선순위는 드롭(현재 유지)
           const c = audioCtx();
           if (!c) return;
@@ -8597,6 +8889,7 @@ function summarizeGameStats(rows) {
           node.onended = () => { if (voiceNode === node) { voiceNode = null; voicePriority = -1; } };
           voiceNode = node; voicePriority = pri;
           try { node.start(); } catch (e) { console.warn("[SoundManager] start 실패:", e?.message || e); }
+          try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioScheduledTs: qaT0, audioPlayStartTs: Date.now(), audioDelayMs: Date.now() - qaT0, audioFallbackUsed: false }); } catch (e) {}
         };
         resumeThen(() => {
           const cached = buffers.get(src);
@@ -9488,6 +9781,14 @@ function summarizeGameStats(rows) {
     async function initFromUrl() {
       try {
         initNativeOAuthListener();
+        if (QA_INSTRUMENTATION) {
+          setupQAPanel(); // QA 빌드: 메트릭 복사 버튼 + 활성 로그
+          // Auth(WRPS-050): OAuth 복귀 감지(읽기 전용 관찰, 흐름 무변경). 상세 provider/실패사유는 흐름 소유자가 추가.
+          try {
+            const oauthReturn = (location.hash || '').includes('access_token') || new URLSearchParams(location.search).has('code');
+            if (oauthReturn) QA.emit('auth', { wrps: 'WRPS-050', eventType: 'AUTH_RETURN', authCallbackTs: Date.now() });
+          } catch (e) {}
+        }
         // 앱 시작 시 음성 클립을 디코드 캐시(비차단) → 카운트다운 시 즉시 재생(지연 0)
         SoundManager.preloadAll();
         // 서버 시각 오프셋을 미리 측정(비차단) → 게임 시작 동기화 정확도 향상
@@ -9659,6 +9960,28 @@ function summarizeGameStats(rows) {
     window.loginWithSns = loginWithSns;
     window.playAsGuest = playAsGuest;
 
+    // Build16: 게임/방 종료 시 자동 QA 스냅샷. 원본 전역을 감싸 스냅샷 후 그대로 위임(게임 로직 무변경).
+    // QA 빌드에서만 동작. 전역이 모두 정의된 이 시점 이후에 설치해야 안전하다.
+    if (typeof QA_INSTRUMENTATION !== 'undefined' && QA_INSTRUMENTATION) {
+      try {
+        ['endGame', 'leaveRoom', 'leaveRoomForce'].forEach((fn) => {
+          const orig = window[fn];
+          if (typeof orig !== 'function' || orig.__qaWrapped) return;
+          const wrapped = function () {
+            try { window.__qaMetrics && window.__qaMetrics.snapshot(fn); } catch (e) {}
+            return orig.apply(this, arguments);
+          };
+          wrapped.__qaWrapped = true;
+          window[fn] = wrapped;
+        });
+      } catch (e) {}
+      try {
+        window.addEventListener('pagehide', () => {
+          try { window.__qaMetrics && window.__qaMetrics.snapshot('pagehide'); } catch (e) {}
+        });
+      } catch (e) {}
+    }
+
     // ===== Phase 2: 게임 루프 + 로비 관리 =====
 
     // 로비 화면 렌더링
@@ -9702,7 +10025,12 @@ function summarizeGameStats(rows) {
       // 활성 전원 ready 시 마지막 ready가 자동 시작 트리거(fetchParticipants lobby 분기).
       const lobbyStartBtn = $("lobbyHostStartBtn");
       if (lobbyStartBtn) lobbyStartBtn.classList.add("hidden");
-      if (btn) btn.classList.remove("hidden");
+      // WRPS-053(DR-15): 대기/탈락(safe/loser/waiting) player는 UI-passive — ready 버튼 비노출.
+      // 라운드1/로비에선 아무도 safe/loser/waiting이 아니므로 전원 노출(정상). 게임 중에만 게이팅 발동.
+      if (btn) {
+        if (isCurrentRoundParticipant()) btn.classList.remove("hidden");
+        else btn.classList.add("hidden");
+      }
 
       const list = $("lobbyParticipantList");
       // 호스트는 "준비대기"가 아니라 HOST 배지로 표시(항목 6). 단일 배지 함수 사용.
@@ -9723,6 +10051,12 @@ function summarizeGameStats(rows) {
     async function markReadyFromLobby() {
       const me = state.participants.find(p => p.id === state.currentUserId);
       if (!me || me.is_ready) return;
+      // WRPS-053(DR-15): 대기/탈락 player는 ready 불가 — 해당 대기화면으로 유도(markReady와 동일 게이트).
+      if (!isCurrentRoundParticipant()) {
+        if (isSafeParticipant()) showScreen("screenWinnerWait");
+        else if (isConfirmedLoser()) showLoserWaitScreen();
+        return;
+      }
 
       const btn = $("lobbyReadyBtn");
       if (btn) { btn.disabled = true; setBtnText(btn, t("lobby.readyPreparing")); }

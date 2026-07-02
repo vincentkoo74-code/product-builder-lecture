@@ -100,3 +100,36 @@ build8 = build6 + 격리된 Firebase 스캐폴딩(+36줄). 게임 로직 byte �
 - **문서 드리프트**: WRPS-041.
 
 > 상세 근거: `BUG_TIMELINE.md`(빌드별), `REGRESSION_TRACKER.md`(재발), `ACTIVE_ISSUES.md`(살아있는 문제).
+
+---
+
+## Build16 Device QA Triage (2026-07-01) — WRPS-050~071 신규 등록
+
+> 상세: `docs/BUILD16_QA_PLAN.md` (Evidence·5Whys·Root Cause·범위). 아래는 요약 인덱스.
+
+| ID | 제목 | Sev | Regression | Build16 |
+|----|------|-----|-----------|---------|
+| WRPS-050 | 로그인 후 게임 자동복귀 실패 | High | 신규 | ✅ |
+| WRPS-051 | Countdown "가위바위보" clip 매핑(go=SILENT) | High | 신규(정책) | ✅ |
+| WRPS-052 | Audio 커버리지/상태머신(local trigger) | High | WRPS-046 계열 | ✅ |
+| WRPS-053 | 대기/탈락자 재게임/준비 버튼 노출 | Critical | WRPS-029 계열 | ✅ |
+| WRPS-054 | Restart 초대 일부만·room 섞임 | Critical | WRPS-025 계열 | ✅ |
+| WRPS-055 | Join/Leave meow 일부 기기만 | Critical | 신규 | ✅ |
+| WRPS-056 | 참가자 변동 room/round/record reset 미작동+1인 방 | Critical | WRPS-025 계열 | ✅ |
+| WRPS-057 | Button Sound/Haptic 랜덤 누락 | High | WRPS-048 계열 | ✅ |
+| WRPS-058 | 선택 5초 타이머 시작/종료 기기차 | Critical | WRPS-036/047 재발후보 | 계측확정후 |
+| WRPS-059 | 결과화면 전환 시점 기기차 | Critical | WRPS-036 계열 | 계측확정후 |
+| WRPS-060 | 6라운드 이후 전환/결과 지연 급증 | Critical | 신규 | 계측확정후 |
+| WRPS-061 | 이탈 시 결과화면 고착+stale 리스트 | Critical | WRPS-044/026 계열 | ✅ |
+| WRPS-062 | 다중 술래 판정 오류+전체 재게임 오전환 | Critical | WRPS-043 재발후보 | ✅ |
+| WRPS-063 | 화면 확대/축소/이동(viewport 미잠금) | Critical | 신규 | ✅ |
+| WRPS-064 | Zero Doubt 동기화 신뢰(집합 지표) | Critical | WRPS-026/036 계열 | 계측+개별Fix |
+| WRPS-065 | QR 벌칙설정 후 잔존 | High | 신규 | ✅ |
+| WRPS-066 | 닉네임 정책/변경 UI | High | 신규(정책) | ✅ |
+| WRPS-067 | 직전 게임 결과 미노출 | High | WRPS-024 재발후보 | ✅ |
+| WRPS-068 | 내기록 닫기 버튼 문구 불일치 | Low | WRPS-030/034 계열 | ✅(경미) |
+| WRPS-069 | 승/패/무 효과음 품질 | Medium | 신규 | ❌(polish) |
+| WRPS-070 | 가위바위보 텍스트/애니메이션 부재 | Medium | 신규 | ❌(polish) |
+| WRPS-071 | 화면 공백/QR/버튼 촉감 polish | Medium | 신규 | ❌(polish) |
+
+**신규 최대 WRPS = 071. 상태 = 전부 OPEN(Triage 완료, Fix 미착수 — 범위 승인 대기).**
