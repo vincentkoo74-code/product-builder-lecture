@@ -41,16 +41,30 @@ describe('WRPS-052 — iOS 음성 재생 복구 + 진단 계측', () => {
   it('stopVoice는 fallback HTMLAudioElement도 정지한다', () => {
     expect(html).toMatch(/function stopVoice\(\)[\s\S]{0,200}voiceFallbackEl\.pause\(\)/);
   });
+
+  it('우선순위 선점 가드는 두 채널(WebAudio+fallback)을 모두 검사한다 (HIGH-1)', () => {
+    // start()와 playVoiceFallback() 양쪽 모두 (voiceNode || voiceFallbackEl) 검사
+    expect((html.match(/\(voiceNode \|\| voiceFallbackEl\) && pri < voicePriority/g) || []).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('구조적 decode 실패는 재fetch 없이 즉시 fallback으로 short-circuit한다 (M-1)', () => {
+    expect(html).toMatch(/const prevErr = loadErrors\.get\(src\);[\s\S]{0,120}prevErr\.stage === 'decode'[\s\S]{0,40}return Promise\.resolve\(null\)/);
+  });
 });
 
 describe('WRPS-072 — ROUND_RESULT metric 중복 제거', () => {
-  it('eventId별 1회 가드(M.seenResult)를 초기화한다', () => {
-    expect(html).toContain('if (!M.seenResult) M.seenResult = new Set();');
+  it('state에 resultMetricKey 가드를 초기화한다(WRPS-046 패턴)', () => {
+    expect(html).toContain('resultMetricKey: null,');
   });
 
-  it('ROUND_RESULT emit은 동일 eventId면 재기록하지 않는다', () => {
-    expect(html).toMatch(/if \(!M\.seenResult\.has\(sh\.eventId\)\)\s*\{[\s\S]{0,260}eventType: 'ROUND_RESULT'/);
-    expect(html).toMatch(/M\.seenResult\.add\(sh\.eventId\)/);
+  it('ROUND_RESULT emit은 동일 eventId면 재기록하지 않는다(단일 키 가드)', () => {
+    expect(html).toMatch(/if \(state\.resultMetricKey !== evId\)\s*\{[\s\S]{0,260}eventType: 'ROUND_RESULT'/);
+    expect(html).toContain('state.resultMetricKey = evId;');
+  });
+
+  it('가드 키는 방/게임 리셋 지점에서 초기화된다 (HIGH-2: 새 방 라운드1 누락 방지)', () => {
+    // resultVoiceKey/resultSfxKey와 동일 지점(3곳)에서 resultMetricKey도 리셋
+    expect((html.match(/state\.resultMetricKey = null/g) || []).length).toBeGreaterThanOrEqual(3);
   });
 
   it('finishRoundLocal 2회 호출은 설계임을 근거로 명시한다(판정/DB 중복 아님)', () => {

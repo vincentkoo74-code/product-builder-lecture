@@ -4218,6 +4218,7 @@
       finishingRound: false,
       resultVoiceKey: null, // WRPS-046: 라운드당 결과 음성 1회 재생 가드
       resultSfxKey: null,   // 라운드당 결과 효과음(win/lose/draw) 1회 재생 가드
+      resultMetricKey: null, // WRPS-072(Build18): 라운드당 ROUND_RESULT metric 1회 기록 가드
       publishingRoundResult: false,
       newRoundResetting: false,
       joinScreenMode: "manual",
@@ -4883,7 +4884,7 @@
 	        state.playingEntryKey = null;
 	        state.gameStarting = false;
 	        state.finishingRound = false;
-	        state.resultVoiceKey = null; // WRPS-046: 새 게임 회차에서 결과 음성 가드 초기화
+	        state.resultVoiceKey = null; state.resultMetricKey = null; // WRPS-046/072: 새 게임 회차에서 결과 음성/메트릭 가드 초기화
 	        state.resultSfxKey = null;   // 결과 효과음 가드 초기화
 	        resetLocalParticipantsForNewGameRound();
 
@@ -5468,7 +5469,7 @@
       state.countdownStartAt = 0;
       state.playingEntryKey = null;
       state.advancingRound = false;
-      state.resultVoiceKey = null; // WRPS-046: 새 세션에서 결과 음성 가드 초기화
+      state.resultVoiceKey = null; state.resultMetricKey = null; // WRPS-046/072: 새 세션에서 결과 음성/메트릭 가드 초기화
       state.resultSfxKey = null;   // 결과 효과음 가드 초기화
     }
 
@@ -5492,7 +5493,7 @@
       state.countdownStartAt = 0;
       state.advancingRound = false;
       state.autoStartInFlight = false;
-      state.resultVoiceKey = null; // WRPS-046: 새 방에서 결과 음성 가드 초기화
+      state.resultVoiceKey = null; state.resultMetricKey = null; // WRPS-046/072: 새 방에서 결과 음성/메트릭 가드 초기화
       state.resultSfxKey = null;   // 결과 효과음 가드 초기화
       if (state.rematchAdvanceTimer) { clearTimeout(state.rematchAdvanceTimer); state.rematchAdvanceTimer = null; }
       state.remainingSeconds = 5;
@@ -7192,7 +7193,7 @@ function summarizeGameStats(rows) {
         // ── Build17: QA 자동저장/파일 export (게임 로직 무변경, 관찰·기록만) ──────
         // 실기기 필드테스트 시 앱 종료/새로고침에도 QA JSON을 자동 확보하기 위한 계층.
         const QA_STORAGE_KEY = 'rpsQAReport.v1';
-        const QA_BUILD_LABEL = 'build17';
+        const QA_BUILD_LABEL = 'build18';
         function deviceInfo() {
           let platform = 'web', model = 'Web', osVersion = '';
           try {
@@ -7210,7 +7211,7 @@ function summarizeGameStats(rows) {
           return {
             schemaVersion: 'qa-report.v1',
             app: 'WoorimaruRPS',
-            build: '17',
+            build: '18',
             buildLabel: QA_BUILD_LABEL,
             createdAt: new Date().toISOString(),
             device: deviceInfo(),
@@ -7289,7 +7290,7 @@ function summarizeGameStats(rows) {
           const rep = buildReport(reason || 'manual');
           const json = JSON.stringify(rep, null, 2);
           const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '-').slice(0, 19); // YYYY-MM-DD-HH-MM-SS
-          const filename = 'qa-report-build17-' + stamp + '.json';
+          const filename = 'qa-report-build18-' + stamp + '.json';
           const Cap = (typeof window !== 'undefined') ? window.Capacitor : null;
           const FS = Cap && Cap.Plugins && Cap.Plugins.Filesystem;
           const Share = Cap && Cap.Plugins && Cap.Plugins.Share;
@@ -7300,7 +7301,7 @@ function summarizeGameStats(rows) {
               out.saved = true; out.uri = (w && w.uri) || null;
               console.log('[QA-REPORT] saved', filename, out.uri);
               if (Share && out.uri) {
-                try { await Share.share({ title: 'QA Report build17', text: filename, url: out.uri, dialogTitle: 'Export QA Report' }); out.shared = true; }
+                try { await Share.share({ title: 'QA Report build18', text: filename, url: out.uri, dialogTitle: 'Export QA Report' }); out.shared = true; }
                 catch (e) { console.warn('[QA-REPORT] share fail', e && e.message); }
               }
             } catch (e) { console.warn('[QA-REPORT] fs write fail', e && e.message); }
@@ -7414,7 +7415,6 @@ function summarizeGameStats(rows) {
         const safeMatch = norm(state.confirmedSafeIds) === norm(sh.safeIds);
         const match = loserMatch && safeMatch; // 게임 효과(확정 술래/안전) 일치 = 핵심 기준
         const M = (window.__rpsShadowMetrics = window.__rpsShadowMetrics || { total: 0, match: 0, mismatch: 0, mismatches: [] });
-        if (!M.seenResult) M.seenResult = new Set(); // Build18(WRPS-072): eventId별 ROUND_RESULT metric 1회 가드
         M.total++; if (match) M.match++; else M.mismatch++;
         const rec = {
           eventId: sh.eventId,
@@ -7426,12 +7426,14 @@ function summarizeGameStats(rows) {
         (match ? console.log : console.warn)('[SHADOW-WRPS049]', match ? 'MATCH' : 'MISMATCH', JSON.stringify(rec));
         // QA(WRPS-026): 결과 메트릭 — legacy vs shadow 결과/일치 + 내 결과값.
         // Build18(WRPS-072): finishRoundLocal은 result→game_over 전이로 라운드당 2회 이상 호출된다(설계, 6695 참조).
-        // 판정/DB 중복이 아니라 instrumentation 중복이므로 동일 eventId는 세션당 1회만 metric으로 남긴다.
+        // 판정/DB 중복이 아니라 instrumentation 중복 → WRPS-046과 동일하게 (게임회차:라운드) 단위 1회만 기록한다.
+        // 키는 resultVoiceKey/resultSfxKey와 같은 지점(방/게임 리셋)에서 초기화되어 새 방 라운드1 누락을 막는다(HIGH-2).
         try {
-          if (!M.seenResult.has(sh.eventId)) {
-            M.seenResult.add(sh.eventId);
+          const evId = sh.eventId; // `${getGameRound()}:${state.round||1}`
+          if (state.resultMetricKey !== evId) {
+            state.resultMetricKey = evId;
             const myResult = (state.participants.find(p => p.id === state.currentUserId) || {}).lastResult || null;
-            QA.emit('metric', { wrps: 'WRPS-026', eventType: 'ROUND_RESULT', eventId: sh.eventId,
+            QA.emit('metric', { wrps: 'WRPS-026', eventType: 'ROUND_RESULT', eventId: evId,
               resultServerTs: serverNow(), resultRenderedTs: Date.now(), resultValue: myResult,
               legacyOutcome, shadowOutcome: sh.outcome, shadowMatch: match });
           }
@@ -8982,6 +8984,9 @@ function summarizeGameStats(rows) {
       function loadBuffer(src) {
         if (buffers.has(src)) return Promise.resolve(buffers.get(src));
         if (loading.has(src)) return loading.get(src);      // L-3: 동시 호출 시 디코드 1회
+        // Build18(M-1): 구조적 디코드 실패(포맷)는 결정적이므로 재fetch/재decode 없이 즉시 fallback으로.
+        const prevErr = loadErrors.get(src);
+        if (prevErr && prevErr.stage === 'decode') return Promise.resolve(null);
         const c = audioCtx();
         if (!c) return Promise.resolve(null);
         const p = (async () => {
@@ -9064,7 +9069,7 @@ function summarizeGameStats(rows) {
         const pri = PRI[eventKey] ?? 1;
         const start = (buf) => {
           if (!buf) return;                              // Build18: 버퍼 실패는 호출부에서 fallback으로 라우팅
-          if (voiceNode && pri < voicePriority) return;  // 낮은 우선순위는 드롭(현재 유지)
+          if ((voiceNode || voiceFallbackEl) && pri < voicePriority) return;  // 낮은 우선순위 드롭(두 채널 공통 — HIGH-1)
           const c = audioCtx();
           if (!c) return;
           stopVoice();
@@ -9092,7 +9097,7 @@ function summarizeGameStats(rows) {
       function playVoiceFallback(src, eventKey, id, qaT0, pri) {
         const err = loadErrors.get(src) || null;
         if (isMuted()) return;                            // 무음 시 재생 안 함(masterGain 우회 방지)
-        if (voiceNode && pri < voicePriority) {           // 낮은 우선순위는 드롭(정책 일관)
+        if ((voiceNode || voiceFallbackEl) && pri < voicePriority) {  // 낮은 우선순위 드롭(두 채널 공통 — HIGH-1)
           try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: src, audioPlayed: false, audioDropped: true, audioFallbackUsed: true, audioMode: audioModeInfo(), loadError: err }); } catch (e) {}
           return;
         }
