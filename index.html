@@ -7113,8 +7113,9 @@ function summarizeGameStats(rows) {
         const m = {
           // Build17: sessionStorage 시딩 — in-place 새로고침에는 유지, 프로세스/WebView 종료 시 소멸.
           // 이로써 "새로고침(세션 연속)"과 "강제종료 후 재시작(진짜 복구)"을 실제로 구분한다(HIGH-1).
-          session: (() => { try { const k = 'rpsQASession'; let s = sessionStorage.getItem(k); if (!s) { s = Math.random().toString(36).slice(2, 10); sessionStorage.setItem(k, s); } return s; } catch (e) { return Math.random().toString(36).slice(2, 10); } })(),
-          startedAt: (() => { try { const k = 'rpsQAStartedAt'; let s = sessionStorage.getItem(k); if (!s) { s = String(Date.now()); sessionStorage.setItem(k, s); } return Number(s); } catch (e) { return Date.now(); } })(),   // Build16/17: QA 세션 시작 시각(새로고침 유지)
+          // QA OFF(출시 빌드)에서는 sessionStorage를 건드리지 않고 순수 계산만 한다(완전 no-op 계약 유지).
+          session: (() => { try { if (!QA_INSTRUMENTATION) return Math.random().toString(36).slice(2, 10); const k = 'rpsQASession'; let s = sessionStorage.getItem(k); if (!s) { s = Math.random().toString(36).slice(2, 10); sessionStorage.setItem(k, s); } return s; } catch (e) { return Math.random().toString(36).slice(2, 10); } })(),
+          startedAt: (() => { try { if (!QA_INSTRUMENTATION) return Date.now(); const k = 'rpsQAStartedAt'; let s = sessionStorage.getItem(k); if (!s) { s = String(Date.now()); sessionStorage.setItem(k, s); } return Number(s); } catch (e) { return Date.now(); } })(),   // Build16/17: QA 세션 시작 시각(QA ON일 때만 새로고침 유지)
           manifest: null,          // Build16: BUILD_MANIFEST.json 연결(비동기 로드)
           counts: { metric: 0, audioDup: 0, audioMissing: 0, audioFallback: 0, orderingMismatch: 0, staleParticipant: 0, hostChanged: 0 },
           drift: [], countdownDrift: [], resultDrift: [], audioDelay: [], recent: [], snapshots: [],

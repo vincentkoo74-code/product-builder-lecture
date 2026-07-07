@@ -13,23 +13,27 @@ const QA_BLOCK = (() => {
   return html.slice(start, anchor); // `const QA = (() => {...})();`
 })();
 
-function mapStorage(store) {
+function mapStorage(store, writes) {
   return {
     getItem: (k) => (store.has(k) ? store.get(k) : null),
-    setItem: (k, v) => { store.set(k, String(v)); },
-    removeItem: (k) => { store.delete(k); },
+    setItem: (k, v) => { if (writes) writes.push(['set', k, String(v)]); store.set(k, String(v)); },
+    removeItem: (k) => { if (writes) writes.push(['remove', k]); store.delete(k); },
     clear: () => store.clear(),
   };
 }
 
 // shared.local / shared.session Map을 넘기면 인스턴스 간 공유(= 새로고침/강제종료 시나리오 재현).
 // 새로고침: local+session 모두 공유. 강제종료: local 공유 + session 새 Map(프로세스 종료로 소멸).
+// enabled=false → 출시(QA OFF) 빌드 시뮬레이션.
 function loadQA(shared) {
   shared = shared || {};
+  const enabled = shared.enabled !== false;
   const store = shared.local || new Map();
   const ssStore = shared.session || new Map();
-  const localStorage = mapStorage(store);
-  const sessionStorage = mapStorage(ssStore);
+  const localWrites = [];
+  const sessionWrites = [];
+  const localStorage = mapStorage(store, localWrites);
+  const sessionStorage = mapStorage(ssStore, sessionWrites);
   const clipboard = { last: null, writeText: async (t) => { clipboard.last = t; } };
   const navigator = { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)', clipboard };
   const location = { href: 'https://example.test/app', search: '' };
@@ -40,8 +44,8 @@ function loadQA(shared) {
     'QA_INSTRUMENTATION', 'state', 'window', 'navigator', 'location', 'localStorage', 'sessionStorage', 'Intl', 'console',
     QA_BLOCK + '\n; return QA;'
   );
-  const QA = factory(true, state, win, navigator, location, localStorage, sessionStorage, Intl, quietConsole);
-  return { QA, store, ssStore, localStorage, sessionStorage, clipboard, win, state };
+  const QA = factory(enabled, state, win, navigator, location, localStorage, sessionStorage, Intl, quietConsole);
+  return { QA, store, ssStore, localStorage, sessionStorage, localWrites, sessionWrites, clipboard, win, state };
 }
 
 describe('Build17 QA persistence (Layer 1) — 실코드', () => {
@@ -85,6 +89,30 @@ describe('Build17 QA persistence (Layer 1) — 실코드', () => {
     expect(ctx.QA.flush('background')).toBe(true);
     const parsed = JSON.parse(ctx.store.get(ctx.QA.storageKey));
     expect(parsed.exportReason).toBe('background');
+  });
+});
+
+describe('Build17 비침습성 (QA OFF = 완전 no-op) — 실코드', () => {
+  it('QA OFF(출시 빌드)에서는 session/local storage에 아무 것도 쓰지 않는다', () => {
+    const ctx = loadQA({ enabled: false });
+    // IIFE 생성(session/startedAt 시딩 포함) 이후 어떤 저장도 없어야 한다.
+    expect(ctx.sessionWrites).toEqual([]);
+    expect(ctx.localWrites).toEqual([]);
+    // 세션 id는 여전히 순수 계산으로 생성된다.
+    expect(typeof ctx.QA._m.session).toBe('string');
+    expect(typeof ctx.QA._m.startedAt).toBe('number');
+    // 지속화 API도 no-op(false 반환, 미기록).
+    expect(ctx.QA.saveNow('debounced')).toBe(false);
+    expect(ctx.QA.flush('background')).toBe(false);
+    ctx.QA.scheduleSave();
+    expect(ctx.localWrites).toEqual([]);
+    expect(ctx.sessionWrites).toEqual([]);
+  });
+
+  it('QA ON에서는 session 시딩으로 sessionStorage에 정확히 2개 키만 쓴다', () => {
+    const ctx = loadQA();
+    const keys = ctx.sessionWrites.map((w) => w[1]).sort();
+    expect(keys).toEqual(['rpsQASession', 'rpsQAStartedAt']);
   });
 });
 
