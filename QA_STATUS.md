@@ -15,7 +15,12 @@
 - **Layer 2 파일 export**: `QA💾` 버튼 → `exportFile()` → `qa-report.v1` JSON을 Capacitor Filesystem `Documents`에 저장 + Share Sheet, 실패 시 클립보드 fallback. 파일명 `qa-report-build17-YYYY-MM-DD-HH-MM-SS.json`.
 - **스키마** `qa-report.v1`: `{schemaVersion,app,build,buildLabel,createdAt,device,session,qaMetrics,exportReason,previousSession,recoveredAt,userAgent,url,timezone}`.
 - 로그 prefix: `[QA-SAVE] [QA-FLUSH] [QA-RESTORE] [QA-REPORT] [QA-METRIC]`.
-- 신규 plugin 2개: `@capacitor/filesystem`, `@capacitor/share`. 테스트: `tests/qa-persistence.test.mjs`(실 IIFE 추출 14건), 전체 158 green.
+- 신규 plugin 2개: `@capacitor/filesystem`, `@capacitor/share`. 테스트: `tests/qa-persistence.test.mjs`(실 IIFE 추출 21건, reload-vs-kill 실재현 + QA-OFF no-op), 전체 165 green. codex-critic 2R PASS(HIGH 2 + MEDIUM 1 수정).
+- **TestFlight**: build 17 **VALID** (Delivery UUID `f84b6407-e366-4df9-842e-4ad99d58479f`, commit `552973d`, 브랜치 `fix/build17-qa-auto-save` origin push 완료, main 미머지).
+
+### Build17 1차 실기기 QA 결과 (2026-07-07)
+- ✅ **QA persistence/export = PASS** — 세션 복구(`gjrjs280`→`4075ozeq` `QA_SESSION_RECOVERED`) 및 background 생존 확인. 게임 판정 신호 정상(shadow 21/21, ordering 0, stale 0, hostChanged 0). → **persistence 목적 종결(닫음)**.
+- 🔎 후속(QA persistence와 분리, 게임 무변경): **WRPS-052** VOICE audioMissing 22건 · **WRPS-072** ROUND_RESULT metric 중복(instrumentation) · **WRPS-073** countdownDriftMs 명명/의미 재검토. 상세 `docs/history/ACTIVE_ISSUES.md`(Build17 Device QA 절).
 
 ---
 

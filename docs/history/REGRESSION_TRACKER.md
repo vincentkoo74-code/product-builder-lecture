@@ -19,6 +19,19 @@
 
 ---
 
+## Build17 Device QA 신규 관찰 (2026-07-07, 회귀여부 일부 미확정)
+> Evidence: `qa-report-build17-2026-07-07-05-28-37.json`. QA persistence는 PASS로 종결. 아래는 게임 무변경·별도 관리.
+
+| ID | 관찰 | 회귀 성격 | 상태 |
+|---|---|---|---|
+| **WRPS-052** | VOICE audioMissing 22건(intro/gameOver/becameLoser, ko) | **audio 클러스터 재발군**(WRPS-015→047, 045/046/048/051/055/057과 동류의 음성 무음/누락 재발) | 관찰(경로 확정 전 — 버퍼 미로딩 vs clip 누락) |
+| **WRPS-072** | ROUND_RESULT QA metric 2×/eventId | **회귀 아님(판정/DB 정상)** — client instrumentation 중복. 단 `finishRoundLocal` 이중호출 경로라 **WRPS-062(다중술래 오전환) 인접** | 신규 관찰(교차확인 필요) |
+| **WRPS-073** | countdownDriftMs 음수(≈ −waitMs) | 회귀 아님 — scheduled lead(설계상 정상), 명명 오해 소지 | 신규(명명/문서 개선 대상) |
+
+> 주의: WRPS-072의 `finishRoundLocal` 이중호출이 확인되면 **WRPS-062 Evidence로 승격** 검토(같은 함수 계보). 추측 수정 금지(DR-10).
+
+---
+
 ## 회귀/누락 상세 (재발 메커니즘)
 
 ### REG-A: Lineage A 미머지 누락 (구조적 회귀의 본질)
