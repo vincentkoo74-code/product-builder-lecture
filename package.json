@@ -31,7 +31,9 @@
   "dependencies": {
     "@capacitor/app": "^7.0.0",
     "@capacitor/browser": "^7.0.5",
+    "@capacitor/filesystem": "^7.1.8",
     "@capacitor/screen-orientation": "^7.0.0",
+    "@capacitor/share": "^7.0.4",
     "@supabase/supabase-js": "^2.108.1",
     "jose": "^6.2.3",
     "jsqr": "^1.4.0"

@@ -7116,6 +7116,8 @@ function summarizeGameStats(rows) {
           manifest: null,          // Build16: BUILD_MANIFEST.json 연결(비동기 로드)
           counts: { metric: 0, audioDup: 0, audioMissing: 0, audioFallback: 0, orderingMismatch: 0, staleParticipant: 0, hostChanged: 0 },
           drift: [], countdownDrift: [], resultDrift: [], audioDelay: [], recent: [], snapshots: [],
+          previousSession: null,   // Build17: 앱 재시작 시 복구한 직전 세션 리포트(1단계 지속화)
+          recoveredAt: null,       // Build17: 복구 시각(ISO)
         };
         const PREFIX = { metric: '[QA-METRIC]', shadow: '[SHADOW-WRPS049]', clocksync: '[CLOCKSYNC]', audio: '[AUDIO-METRIC]', lobby: '[LOBBY-METRIC]', auth: '[AUTH-METRIC]' };
         function base() {
@@ -7141,6 +7143,7 @@ function summarizeGameStats(rows) {
           if (rec.staleParticipantDetected) m.counts.staleParticipant++;
           if (rec.hostChanged) m.counts.hostChanged++;
           try { console.log(PREFIX[channel] || PREFIX.metric, JSON.stringify(rec)); } catch (e) {}
+          try { scheduleSave(); } catch (e) {} // Build17: 지속화 디바운스 예약
         }
         const avg = a => (a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : 0);
         const mx = a => (a.length ? Math.max(...a) : 0);
@@ -7173,6 +7176,7 @@ function summarizeGameStats(rows) {
           const snap = { reason: reason || 'manual', ts: Date.now(), summary: summary() };
           m.snapshots.push(snap); if (m.snapshots.length > 50) m.snapshots.shift();
           try { console.log('[QA-METRIC] SNAPSHOT', JSON.stringify(snap)); } catch (e) {}
+          try { flush('final-result'); } catch (e) {} // Build17: 게임/방 종료 스냅샷은 즉시 지속화
           return snap;
         }
         // Build16: Analyzer 표준 입력(qa-metrics.json) 전체 export. copyText는 경량 클립보드용 유지.
@@ -7181,12 +7185,124 @@ function summarizeGameStats(rows) {
                    recent: m.recent.slice(), snapshots: m.snapshots.slice() };
         }
         function copyText() { return JSON.stringify({ summary: summary(), recent: m.recent.slice(-50) }, null, 2); }
-        return { emit, summary, snapshot, export: exportMetrics, copyText, _m: m, get enabled() { return QA_INSTRUMENTATION; } };
+
+        // ── Build17: QA 자동저장/파일 export (게임 로직 무변경, 관찰·기록만) ──────
+        // 실기기 필드테스트 시 앱 종료/새로고침에도 QA JSON을 자동 확보하기 위한 계층.
+        const QA_STORAGE_KEY = 'rpsQAReport.v1';
+        const QA_BUILD_LABEL = 'build17';
+        function deviceInfo() {
+          let platform = 'web', model = 'Web', osVersion = '';
+          try {
+            if (window.Capacitor && window.Capacitor.getPlatform) platform = window.Capacitor.getPlatform();
+            const ua = navigator.userAgent || '';
+            model = /iPad/.test(ua) ? 'iPad' : /iPhone/.test(ua) ? 'iPhone' : /Android/.test(ua) ? 'Android' : 'Web';
+            const mo = ua.match(/OS (\d+[_\.]\d+)/); if (mo) osVersion = mo[1].replace(/_/g, '.');
+          } catch (e) {}
+          return { platform, model, osVersion };
+        }
+        // qa-report.v1 표준 스키마. exportReason: manual|debounced|background|final-result|app-start|recovery
+        function buildReport(exportReason) {
+          let tz = ''; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
+          const si = sessionInfo();
+          return {
+            schemaVersion: 'qa-report.v1',
+            app: 'WoorimaruRPS',
+            build: '17',
+            buildLabel: QA_BUILD_LABEL,
+            createdAt: new Date().toISOString(),
+            device: deviceInfo(),
+            session: { sessionId: m.session, startedAt: si.startedAt, endedAt: si.endedAt },
+            qaMetrics: exportMetrics(),
+            exportReason: exportReason || 'manual',
+            previousSession: m.previousSession || null,
+            recoveredAt: m.recoveredAt || null,
+            userAgent: (navigator && navigator.userAgent) || '',
+            url: (typeof location !== 'undefined' && location.href) || '',
+            timezone: tz,
+          };
+        }
+        // Layer 1: localStorage 지속화(동기·신뢰성 높음 — 강제종료에도 유지).
+        let saveTimer = null;
+        function saveNow(reason) {
+          if (!QA_INSTRUMENTATION) return false;
+          try {
+            const json = JSON.stringify(buildReport(reason || 'debounced'));
+            localStorage.setItem(QA_STORAGE_KEY, json);
+            console.log('[QA-SAVE]', reason || 'debounced', 'bytes=' + json.length, 'session=' + m.session);
+            return true;
+          } catch (e) { console.warn('[QA-SAVE] fail', e && e.message); return false; }
+        }
+        function scheduleSave() {
+          if (!QA_INSTRUMENTATION) return;
+          try { if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(() => { saveTimer = null; saveNow('debounced'); }, 2000); } catch (e) {}
+        }
+        // 즉시 flush(디바운스 취소) — background/pagehide/게임종료 시.
+        function flush(reason) {
+          try { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; } } catch (e) {}
+          const r = saveNow(reason || 'background');
+          try { console.log('[QA-FLUSH]', reason || 'background', 'ok=' + r); } catch (e) {}
+          return r;
+        }
+        // 앱 시작 시 직전 세션 복구(현재 세션 id는 분리 유지). 무한 중첩 방지로 1단계만 보존.
+        function restore() {
+          if (!QA_INSTRUMENTATION) return null;
+          try {
+            const raw = localStorage.getItem(QA_STORAGE_KEY);
+            if (!raw) return null;
+            const prev = JSON.parse(raw);
+            if (prev && prev.session && prev.session.sessionId && prev.session.sessionId !== m.session) {
+              if (prev.previousSession) prev.previousSession = { note: 'older-session-omitted', session: prev.previousSession.session || null };
+              m.previousSession = prev;
+              m.recoveredAt = new Date().toISOString();
+              console.log('[QA-RESTORE] recovered session=' + prev.session.sessionId, 'endedAt=' + prev.session.endedAt, 'reason=' + prev.exportReason);
+            }
+            return prev;
+          } catch (e) { console.warn('[QA-RESTORE] fail', e && e.message); return null; }
+        }
+        // Layer 2: 파일 export(Capacitor Filesystem Documents) + Share Sheet + 클립보드 fallback.
+        async function exportFile(reason) {
+          const rep = buildReport(reason || 'manual');
+          const json = JSON.stringify(rep, null, 2);
+          const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '-').slice(0, 19); // YYYY-MM-DD-HH-MM-SS
+          const filename = 'qa-report-build17-' + stamp + '.json';
+          const Cap = (typeof window !== 'undefined') ? window.Capacitor : null;
+          const FS = Cap && Cap.Plugins && Cap.Plugins.Filesystem;
+          const Share = Cap && Cap.Plugins && Cap.Plugins.Share;
+          const out = { filename, saved: false, shared: false, clipboard: false, uri: null };
+          if (FS) {
+            try {
+              const w = await FS.writeFile({ path: filename, data: json, directory: 'DOCUMENTS', encoding: 'utf8' });
+              out.saved = true; out.uri = (w && w.uri) || null;
+              console.log('[QA-REPORT] saved', filename, out.uri);
+              if (Share && out.uri) {
+                try { await Share.share({ title: 'QA Report build17', text: filename, url: out.uri, dialogTitle: 'Export QA Report' }); out.shared = true; }
+                catch (e) { console.warn('[QA-REPORT] share fail', e && e.message); }
+              }
+            } catch (e) { console.warn('[QA-REPORT] fs write fail', e && e.message); }
+          }
+          if (!out.saved) {
+            try { await navigator.clipboard.writeText(json); out.clipboard = true; console.log('[QA-REPORT] clipboard fallback ok', filename); }
+            catch (e) { console.log('[QA-REPORT] FULL', json); }
+          }
+          try { console.log('[QA-REPORT] result', JSON.stringify(out)); } catch (e) {}
+          return out;
+        }
+
+        return { emit, summary, snapshot, export: exportMetrics, copyText, _m: m, get enabled() { return QA_INSTRUMENTATION; },
+                 buildReport, saveNow, scheduleSave, flush, restore, exportFile, storageKey: QA_STORAGE_KEY };
       })();
       if (QA_INSTRUMENTATION) { try { window.__qaMetrics = QA; } catch (e) {} }
 
       // Build16: BUILD_MANIFEST.json 연결 + QA 세션 자동 시작 기록(게임 로직 무관, 관찰만).
       if (QA_INSTRUMENTATION) {
+        // Build17: 직전 세션 복구(강제종료/새로고침 후에도 QA 데이터 확보)를 먼저 수행.
+        try {
+          const prev = QA.restore();
+          if (prev && prev.session) {
+            QA.emit('metric', { eventType: 'QA_SESSION_RECOVERED', recoveredSessionId: prev.session.sessionId,
+              recoveredEndedAt: prev.session.endedAt, recoveredReason: prev.exportReason || null });
+          }
+        } catch (e) {}
         try {
           fetch('BUILD_MANIFEST.json', { cache: 'no-store' })
             .then((r) => (r && r.ok ? r.json() : null))
@@ -7194,6 +7310,8 @@ function summarizeGameStats(rows) {
             .catch(() => {});
         } catch (e) {}
         try { QA.emit('metric', { eventType: 'QA_SESSION_START', startedAt: QA._m.startedAt }); } catch (e) {}
+        // 새 세션의 첫 스냅샷을 즉시 지속화(복구된 previousSession 포함).
+        try { QA.saveNow('app-start'); } catch (e) {}
       }
 
       // QA 빌드에서만 표시되는 메트릭 복사 버튼(요약 + 최근 50 로그 → 클립보드, 실패 시 콘솔).
@@ -7212,6 +7330,23 @@ function summarizeGameStats(rows) {
             setTimeout(() => { btn.textContent = 'QA📋'; }, 1500);
           });
           (document.body || document.documentElement).appendChild(btn);
+
+          // Build17: 파일 저장/공유 버튼(Documents 저장 + Share Sheet, 실패 시 클립보드).
+          const saveBtn = document.createElement('button');
+          saveBtn.id = 'qaSaveBtn';
+          saveBtn.textContent = 'QA💾';
+          saveBtn.style.cssText = 'position:fixed;right:8px;bottom:44px;z-index:99999;font-size:12px;padding:6px 9px;background:#111;color:#0ff;border:1px solid #0ff;border-radius:6px;opacity:.85';
+          saveBtn.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            saveBtn.textContent = 'QA…';
+            try {
+              const r = await QA.exportFile('manual');
+              saveBtn.textContent = r.shared ? 'QA↗' : r.saved ? 'QA✓' : r.clipboard ? 'QA📋' : 'QA(log)';
+            } catch (e) { console.warn('[QA-REPORT] export error', e && e.message); saveBtn.textContent = 'QA✗'; }
+            setTimeout(() => { saveBtn.textContent = 'QA💾'; }, 1800);
+          });
+          (document.body || document.documentElement).appendChild(saveBtn);
+
           console.log('[QA-METRIC] QA build instrumentation ENABLED. session=', QA._m.session);
         } catch (e) {}
       }
@@ -9977,8 +10112,27 @@ function summarizeGameStats(rows) {
       } catch (e) {}
       try {
         window.addEventListener('pagehide', () => {
+          try { window.__qaMetrics && window.__qaMetrics.flush('background'); } catch (e) {}
           try { window.__qaMetrics && window.__qaMetrics.snapshot('pagehide'); } catch (e) {}
         });
+      } catch (e) {}
+      // Build17: 백그라운드 진입 시 즉시 flush(디바운스 취소) — 앱 종료/새로고침 손실 방지.
+      try {
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'hidden') {
+            try { window.__qaMetrics && window.__qaMetrics.flush('background'); } catch (e) {}
+          }
+        });
+      } catch (e) {}
+      try {
+        const appPlugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+        if (appPlugin && appPlugin.addListener) {
+          appPlugin.addListener('appStateChange', (st) => {
+            if (st && st.isActive === false) {
+              try { window.__qaMetrics && window.__qaMetrics.flush('background'); } catch (e) {}
+            }
+          });
+        }
       } catch (e) {}
     }
 
