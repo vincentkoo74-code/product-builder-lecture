@@ -3,7 +3,19 @@
 > **개발 시작 전 · 디버그 시작 전 · 버전업 전 · 릴리즈 전, 항상 이 파일을 먼저 연다.**
 > 상세는 `docs/history/`(BUG_MASTER_LEDGER / BUG_TIMELINE / ACTIVE_ISSUES / REGRESSION_TRACKER / RELEASE_QA_CHECKLIST / FEATURE_DECISION_HISTORY / KNOWN_BEHAVIORS / README).
 >
-> 최종 갱신: **2026-06-28 (Build8.4)** · 기준 브랜치: `fix/build6-regression-recovery` (iOS build 9 업로드됨, Build8.4는 10 업로드 예정)
+> 최종 갱신: **2026-07-07 (Build17)** · 기준 브랜치: `fix/build17-qa-auto-save` (iOS build 17 업로드 예정) · 이전 최종 갱신 2026-06-28(Build8.4)
+
+---
+
+## 🧪 Build17 — QA 기록 자동저장 (필드테스트 인프라, 게임 로직 무변경)
+
+> 목적: 실기기 필드테스트 시 앱 종료/새로고침/강제종료에도 QA JSON을 **자동 확보**. QA 계측(기본 OFF, `__QA_BUILD__`/`?qa=1`)에서만 동작 — production 무영향.
+
+- **Layer 1 지속화**: `window.__qaMetrics` → `localStorage['rpsQAReport.v1']`. emit마다 2s 디바운스 저장, `visibilitychange(hidden)`/`pagehide`/App 백그라운드/게임·방 종료 스냅샷 시 **즉시 flush**(디바운스 취소). 앱 시작 시 직전 세션 복구(`previousSession`/`recoveredAt`, sessionId 분리, 1단계 중첩 캡).
+- **Layer 2 파일 export**: `QA💾` 버튼 → `exportFile()` → `qa-report.v1` JSON을 Capacitor Filesystem `Documents`에 저장 + Share Sheet, 실패 시 클립보드 fallback. 파일명 `qa-report-build17-YYYY-MM-DD-HH-MM-SS.json`.
+- **스키마** `qa-report.v1`: `{schemaVersion,app,build,buildLabel,createdAt,device,session,qaMetrics,exportReason,previousSession,recoveredAt,userAgent,url,timezone}`.
+- 로그 prefix: `[QA-SAVE] [QA-FLUSH] [QA-RESTORE] [QA-REPORT] [QA-METRIC]`.
+- 신규 plugin 2개: `@capacitor/filesystem`, `@capacitor/share`. 테스트: `tests/qa-persistence.test.mjs`(실 IIFE 추출 14건), 전체 158 green.
 
 ---
 

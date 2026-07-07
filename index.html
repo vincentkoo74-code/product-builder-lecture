@@ -7111,8 +7111,10 @@ function summarizeGameStats(rows) {
       // OFF면 모든 QA.emit은 no-op. ON이면 [PREFIX] JSON 콘솔 로그 + window.__qaMetrics 누적.
       const QA = (() => {
         const m = {
-          session: Math.random().toString(36).slice(2, 10),
-          startedAt: Date.now(),   // Build16: QA 세션 자동 시작 시각
+          // Build17: sessionStorage 시딩 — in-place 새로고침에는 유지, 프로세스/WebView 종료 시 소멸.
+          // 이로써 "새로고침(세션 연속)"과 "강제종료 후 재시작(진짜 복구)"을 실제로 구분한다(HIGH-1).
+          session: (() => { try { const k = 'rpsQASession'; let s = sessionStorage.getItem(k); if (!s) { s = Math.random().toString(36).slice(2, 10); sessionStorage.setItem(k, s); } return s; } catch (e) { return Math.random().toString(36).slice(2, 10); } })(),
+          startedAt: (() => { try { const k = 'rpsQAStartedAt'; let s = sessionStorage.getItem(k); if (!s) { s = String(Date.now()); sessionStorage.setItem(k, s); } return Number(s); } catch (e) { return Date.now(); } })(),   // Build16/17: QA 세션 시작 시각(새로고침 유지)
           manifest: null,          // Build16: BUILD_MANIFEST.json 연결(비동기 로드)
           counts: { metric: 0, audioDup: 0, audioMissing: 0, audioFallback: 0, orderingMismatch: 0, staleParticipant: 0, hostChanged: 0 },
           drift: [], countdownDrift: [], resultDrift: [], audioDelay: [], recent: [], snapshots: [],
@@ -7223,44 +7225,66 @@ function summarizeGameStats(rows) {
         }
         // Layer 1: localStorage 지속화(동기·신뢰성 높음 — 강제종료에도 유지).
         let saveTimer = null;
+        let lastSaveAt = 0;
         function saveNow(reason) {
           if (!QA_INSTRUMENTATION) return false;
           try {
             const json = JSON.stringify(buildReport(reason || 'debounced'));
             localStorage.setItem(QA_STORAGE_KEY, json);
+            lastSaveAt = Date.now();
             console.log('[QA-SAVE]', reason || 'debounced', 'bytes=' + json.length, 'session=' + m.session);
             return true;
           } catch (e) { console.warn('[QA-SAVE] fail', e && e.message); return false; }
         }
+        // 디바운스 2s. 단, 연속 이벤트로 저장이 무한정 미뤄지지 않도록 최대 staleness 5s 보장(MEDIUM-2).
         function scheduleSave() {
           if (!QA_INSTRUMENTATION) return;
-          try { if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(() => { saveTimer = null; saveNow('debounced'); }, 2000); } catch (e) {}
+          try {
+            if (lastSaveAt && (Date.now() - lastSaveAt > 5000)) {
+              if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+              saveNow('debounced');
+              return;
+            }
+            if (saveTimer) clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => { saveTimer = null; saveNow('debounced'); }, 2000);
+          } catch (e) {}
         }
         // 즉시 flush(디바운스 취소) — background/pagehide/게임종료 시.
         function flush(reason) {
+          if (!QA_INSTRUMENTATION) return false;
           try { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; } } catch (e) {}
           const r = saveNow(reason || 'background');
           try { console.log('[QA-FLUSH]', reason || 'background', 'ok=' + r); } catch (e) {}
           return r;
         }
-        // 앱 시작 시 직전 세션 복구(현재 세션 id는 분리 유지). 무한 중첩 방지로 1단계만 보존.
+        // 앱 시작 시 직전 리포트를 보존한다. 새로고침/강제종료 어느 경로든 직전 데이터를 잃지 않도록
+        // 항상 previousSession으로 이월하되, 진짜 cross-session 재시작(강제종료/크래시)에만 recoveredAt을 단다.
+        // 무한 중첩 방지(1단계 stub) + 반복 재직렬화 비용 절감을 위해 recent/snapshots를 캡한다(MEDIUM-1).
         function restore() {
           if (!QA_INSTRUMENTATION) return null;
           try {
             const raw = localStorage.getItem(QA_STORAGE_KEY);
             if (!raw) return null;
             const prev = JSON.parse(raw);
-            if (prev && prev.session && prev.session.sessionId && prev.session.sessionId !== m.session) {
-              if (prev.previousSession) prev.previousSession = { note: 'older-session-omitted', session: prev.previousSession.session || null };
-              m.previousSession = prev;
-              m.recoveredAt = new Date().toISOString();
-              console.log('[QA-RESTORE] recovered session=' + prev.session.sessionId, 'endedAt=' + prev.session.endedAt, 'reason=' + prev.exportReason);
+            if (!prev || !prev.session || !prev.session.sessionId) return prev;
+            if (prev.previousSession) prev.previousSession = { note: 'older-session-omitted', session: prev.previousSession.session || null };
+            try {
+              if (prev.qaMetrics && Array.isArray(prev.qaMetrics.recent) && prev.qaMetrics.recent.length > 100) prev.qaMetrics.recent = prev.qaMetrics.recent.slice(-100);
+              if (prev.qaMetrics && Array.isArray(prev.qaMetrics.snapshots) && prev.qaMetrics.snapshots.length > 20) prev.qaMetrics.snapshots = prev.qaMetrics.snapshots.slice(-20);
+            } catch (e) {}
+            m.previousSession = prev; // 손실 방지: 재로드/강제종료 모두 직전 데이터를 이월
+            if (prev.session.sessionId !== m.session) {
+              m.recoveredAt = new Date().toISOString(); // 다른 sessionId = 프로세스/WebView 종료 후 재시작(진짜 복구)
+              console.log('[QA-RESTORE] cross-session recovered session=' + prev.session.sessionId, 'endedAt=' + prev.session.endedAt, 'reason=' + prev.exportReason);
+            } else {
+              console.log('[QA-RESTORE] same-session reload — carried previous report forward session=' + prev.session.sessionId);
             }
             return prev;
           } catch (e) { console.warn('[QA-RESTORE] fail', e && e.message); return null; }
         }
         // Layer 2: 파일 export(Capacitor Filesystem Documents) + Share Sheet + 클립보드 fallback.
         async function exportFile(reason) {
+          if (!QA_INSTRUMENTATION) return { filename: null, saved: false, shared: false, clipboard: false, uri: null };
           const rep = buildReport(reason || 'manual');
           const json = JSON.stringify(rep, null, 2);
           const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '-').slice(0, 19); // YYYY-MM-DD-HH-MM-SS
@@ -7298,7 +7322,8 @@ function summarizeGameStats(rows) {
         // Build17: 직전 세션 복구(강제종료/새로고침 후에도 QA 데이터 확보)를 먼저 수행.
         try {
           const prev = QA.restore();
-          if (prev && prev.session) {
+          // 진짜 cross-session 재시작(강제종료/크래시)에만 복구 메트릭을 남긴다(단순 새로고침 제외).
+          if (prev && prev.session && QA._m.recoveredAt) {
             QA.emit('metric', { eventType: 'QA_SESSION_RECOVERED', recoveredSessionId: prev.session.sessionId,
               recoveredEndedAt: prev.session.endedAt, recoveredReason: prev.exportReason || null });
           }
@@ -7336,13 +7361,16 @@ function summarizeGameStats(rows) {
           saveBtn.id = 'qaSaveBtn';
           saveBtn.textContent = 'QA💾';
           saveBtn.style.cssText = 'position:fixed;right:8px;bottom:44px;z-index:99999;font-size:12px;padding:6px 9px;background:#111;color:#0ff;border:1px solid #0ff;border-radius:6px;opacity:.85';
+          let exporting = false; // 연타 방지(Share in-progress reject 회피)
           saveBtn.addEventListener('click', async (ev) => {
             ev.stopPropagation();
-            saveBtn.textContent = 'QA…';
+            if (exporting) return;
+            exporting = true; saveBtn.disabled = true; saveBtn.textContent = 'QA…';
             try {
               const r = await QA.exportFile('manual');
               saveBtn.textContent = r.shared ? 'QA↗' : r.saved ? 'QA✓' : r.clipboard ? 'QA📋' : 'QA(log)';
             } catch (e) { console.warn('[QA-REPORT] export error', e && e.message); saveBtn.textContent = 'QA✗'; }
+            finally { exporting = false; saveBtn.disabled = false; }
             setTimeout(() => { saveBtn.textContent = 'QA💾'; }, 1800);
           });
           (document.body || document.documentElement).appendChild(saveBtn);

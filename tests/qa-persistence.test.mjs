@@ -6,33 +6,42 @@ import { readFileSync } from 'node:fs';
 // index.html 인라인 QA IIFE(실코드)를 그대로 추출해 mock 환경에서 실행한다(게임/판정 무관).
 
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-
-// ── 실코드 추출: `const QA = (() => { ... })();` 블록 ──────────────────────
-function loadQA() {
+const QA_BLOCK = (() => {
   const start = html.indexOf('const QA = (() => {');
   const anchor = html.indexOf('if (QA_INSTRUMENTATION) { try { window.__qaMetrics = QA;', start);
   if (start < 0 || anchor < 0) throw new Error('QA IIFE block not found in index.html');
-  const block = html.slice(start, anchor); // `const QA = (() => {...})();`
+  return html.slice(start, anchor); // `const QA = (() => {...})();`
+})();
 
-  const store = new Map();
-  const localStorage = {
+function mapStorage(store) {
+  return {
     getItem: (k) => (store.has(k) ? store.get(k) : null),
     setItem: (k, v) => { store.set(k, String(v)); },
     removeItem: (k) => { store.delete(k); },
     clear: () => store.clear(),
   };
+}
+
+// shared.local / shared.session Map을 넘기면 인스턴스 간 공유(= 새로고침/강제종료 시나리오 재현).
+// 새로고침: local+session 모두 공유. 강제종료: local 공유 + session 새 Map(프로세스 종료로 소멸).
+function loadQA(shared) {
+  shared = shared || {};
+  const store = shared.local || new Map();
+  const ssStore = shared.session || new Map();
+  const localStorage = mapStorage(store);
+  const sessionStorage = mapStorage(ssStore);
   const clipboard = { last: null, writeText: async (t) => { clipboard.last = t; } };
   const navigator = { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)', clipboard };
   const location = { href: 'https://example.test/app', search: '' };
   const state = { roomCode: 'ROOM1', currentUserId: 'u1', role: 'host', participants: [{ id: 'u1' }, { id: 'u2' }] };
   const win = { Capacitor: undefined, __rpsShadowMetrics: undefined };
-  const factory = new Function(
-    'QA_INSTRUMENTATION', 'state', 'window', 'navigator', 'location', 'localStorage', 'Intl', 'console',
-    block + '\n; return QA;'
-  );
   const quietConsole = { log: () => {}, warn: () => {}, error: () => {} };
-  const QA = factory(true, state, win, navigator, location, localStorage, Intl, quietConsole);
-  return { QA, store, localStorage, clipboard, win, state };
+  const factory = new Function(
+    'QA_INSTRUMENTATION', 'state', 'window', 'navigator', 'location', 'localStorage', 'sessionStorage', 'Intl', 'console',
+    QA_BLOCK + '\n; return QA;'
+  );
+  const QA = factory(true, state, win, navigator, location, localStorage, sessionStorage, Intl, quietConsole);
+  return { QA, store, ssStore, localStorage, sessionStorage, clipboard, win, state };
 }
 
 describe('Build17 QA persistence (Layer 1) — 실코드', () => {
@@ -58,6 +67,11 @@ describe('Build17 QA persistence (Layer 1) — 실코드', () => {
     expect(r.userAgent).toContain('iPhone');
   });
 
+  it('session id/startedAt는 sessionStorage에 시딩된다', () => {
+    expect(ctx.ssStore.get('rpsQASession')).toBe(ctx.QA._m.session);
+    expect(Number(ctx.ssStore.get('rpsQAStartedAt'))).toBe(ctx.QA._m.startedAt);
+  });
+
   it('saveNow는 localStorage에 리포트를 지속화한다', () => {
     expect(ctx.QA.saveNow('debounced')).toBe(true);
     const raw = ctx.store.get(ctx.QA.storageKey);
@@ -72,35 +86,50 @@ describe('Build17 QA persistence (Layer 1) — 실코드', () => {
     const parsed = JSON.parse(ctx.store.get(ctx.QA.storageKey));
     expect(parsed.exportReason).toBe('background');
   });
+});
 
-  it('restore는 직전 세션(다른 sessionId)을 previousSession으로 복구한다', () => {
-    // 강제종료된 직전 세션을 시뮬레이션: 다른 sessionId 리포트를 저장.
-    const prevReport = {
-      schemaVersion: 'qa-report.v1', build: '17', buildLabel: 'build17',
-      exportReason: 'background', createdAt: '2026-07-07T00:00:00.000Z',
-      session: { sessionId: 'OLDSESSION', startedAt: 1, endedAt: 2 },
-      qaMetrics: { summary: { metrics: 3 } },
-    };
-    ctx.store.set(ctx.QA.storageKey, JSON.stringify(prevReport));
-    const restored = ctx.QA.restore();
-    expect(restored).toBeTruthy();
-    expect(ctx.QA._m.previousSession).toBeTruthy();
-    expect(ctx.QA._m.previousSession.session.sessionId).toBe('OLDSESSION');
-    expect(typeof ctx.QA._m.recoveredAt).toBe('string');
-    // 복구 후 새 리포트는 previousSession을 포함한다.
-    const r = ctx.QA.buildReport('app-start');
-    expect(r.previousSession.session.sessionId).toBe('OLDSESSION');
+describe('Build17 세션 복구 판별 (HIGH-1 회귀 방지) — 실코드', () => {
+  it('강제종료 후 재시작(session 소멸)은 cross-session 복구로 처리한다', () => {
+    const shared = { local: new Map(), session: new Map() };
+    const a = loadQA(shared);
+    a.QA.emit('metric', { eventType: 'X' });
+    a.QA.saveNow('background');
+    const idA = a.QA._m.session;
+    // 프로세스 종료: localStorage는 유지되지만 sessionStorage는 소멸 → 새 Map.
+    const b = loadQA({ local: shared.local, session: new Map() });
+    expect(b.QA._m.session).not.toBe(idA); // 새 세션 id
+    b.QA.restore();
+    expect(b.QA._m.recoveredAt).toBeTruthy();            // 진짜 복구 라벨
+    expect(b.QA._m.previousSession).toBeTruthy();
+    expect(b.QA._m.previousSession.session.sessionId).toBe(idA);
+    // 복구된 previousSession이 새 리포트에 포함(데이터 손실 없음).
+    const r = b.QA.buildReport('app-start');
+    expect(r.previousSession.session.sessionId).toBe(idA);
     expect(r.recoveredAt).toBeTruthy();
   });
 
-  it('restore는 같은 sessionId(단순 새로고침 재로드)면 복구하지 않는다', () => {
-    const same = ctx.QA.buildReport('debounced');
-    ctx.store.set(ctx.QA.storageKey, JSON.stringify(same));
-    ctx.QA.restore();
-    expect(ctx.QA._m.previousSession).toBeFalsy();
+  it('단순 새로고침(session 유지)은 복구 라벨을 달지 않되 데이터는 이월한다', () => {
+    const shared = { local: new Map(), session: new Map() };
+    const a = loadQA(shared);
+    a.QA.emit('metric', { eventType: 'X' });
+    a.QA.saveNow('background');
+    const idA = a.QA._m.session;
+    // in-place 새로고침: localStorage + sessionStorage 모두 유지.
+    const b = loadQA(shared);
+    expect(b.QA._m.session).toBe(idA); // sessionStorage로 id 연속
+    b.QA.restore();
+    expect(b.QA._m.recoveredAt).toBeFalsy();   // 새로고침은 "복구" 아님
+    expect(b.QA._m.previousSession).toBeTruthy(); // 그러나 직전 데이터는 손실 없이 이월
+    expect(b.QA._m.previousSession.session.sessionId).toBe(idA);
+  });
+
+  it('새로고침 시 QA_SESSION_RECOVERED 메트릭은 남기지 않는다(정상 재실행 구분)', () => {
+    // 초기화 블록이 recoveredAt 유무로 게이팅함을 정적으로 보장.
+    expect(html).toMatch(/QA\.restore\(\)[\s\S]{0,200}QA\._m\.recoveredAt[\s\S]{0,200}QA_SESSION_RECOVERED/);
   });
 
   it('restore는 중첩 previousSession을 1단계로 축약(무한 성장 방지)한다', () => {
+    const ctx = loadQA();
     const prevReport = {
       schemaVersion: 'qa-report.v1',
       session: { sessionId: 'GEN2', endedAt: 2 }, exportReason: 'background',
@@ -112,6 +141,22 @@ describe('Build17 QA persistence (Layer 1) — 실코드', () => {
     const nested = ctx.QA._m.previousSession.previousSession;
     expect(nested.note).toBe('older-session-omitted');
     expect(nested.qaMetrics).toBeUndefined();
+  });
+
+  it('이월된 previousSession의 recent/snapshots는 캡된다(MEDIUM-1 재직렬화 비용)', () => {
+    const ctx = loadQA();
+    const prevReport = {
+      schemaVersion: 'qa-report.v1', session: { sessionId: 'BIG', endedAt: 2 }, exportReason: 'background',
+      qaMetrics: {
+        summary: {},
+        recent: Array.from({ length: 300 }, (_, i) => ({ i })),
+        snapshots: Array.from({ length: 50 }, (_, i) => ({ i })),
+      },
+    };
+    ctx.store.set(ctx.QA.storageKey, JSON.stringify(prevReport));
+    ctx.QA.restore();
+    expect(ctx.QA._m.previousSession.qaMetrics.recent.length).toBe(100);
+    expect(ctx.QA._m.previousSession.qaMetrics.snapshots.length).toBe(20);
   });
 });
 
@@ -151,8 +196,15 @@ describe('Build17 QA file export (Layer 2) — 실코드', () => {
 
 // ── IIFE 밖 배선(정적 계약) 회귀 방지 ─────────────────────────────────────
 describe('Build17 wiring contract (static)', () => {
+  it('session id는 sessionStorage로 시딩된다(HIGH-1)', () => {
+    expect(html).toContain("sessionStorage.getItem(k)");
+    expect(html).toContain("'rpsQASession'");
+  });
   it('emit은 디바운스 저장을 예약한다', () => {
     expect(html).toMatch(/scheduleSave\(\);\s*\}\s*catch \(e\) \{\}\s*\/\/ Build17/);
+  });
+  it('scheduleSave는 최대 staleness(5s)를 보장한다(MEDIUM-2)', () => {
+    expect(html).toMatch(/Date\.now\(\) - lastSaveAt > 5000/);
   });
   it('snapshot(게임/방 종료)은 즉시 flush한다', () => {
     expect(html).toContain("flush('final-result')");
@@ -166,9 +218,10 @@ describe('Build17 wiring contract (static)', () => {
     expect(html).toContain('QA.restore()');
     expect(html).toContain("QA.saveNow('app-start')");
   });
-  it('QA 저장 버튼(QA💾)이 exportFile을 호출한다', () => {
+  it('QA 저장 버튼(QA💾)이 exportFile을 호출하고 연타를 막는다', () => {
     expect(html).toContain('qaSaveBtn');
     expect(html).toContain("QA.exportFile('manual')");
+    expect(html).toMatch(/if \(exporting\) return;/);
   });
   it('QA 로그 prefix 5종이 존재한다', () => {
     ['[QA-SAVE]', '[QA-FLUSH]', '[QA-RESTORE]', '[QA-REPORT]', '[QA-METRIC]'].forEach((p) => {
