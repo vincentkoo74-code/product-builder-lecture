@@ -3,7 +3,20 @@
 > **개발 시작 전 · 디버그 시작 전 · 버전업 전 · 릴리즈 전, 항상 이 파일을 먼저 연다.**
 > 상세는 `docs/history/`(BUG_MASTER_LEDGER / BUG_TIMELINE / ACTIVE_ISSUES / REGRESSION_TRACKER / RELEASE_QA_CHECKLIST / FEATURE_DECISION_HISTORY / KNOWN_BEHAVIORS / README).
 >
-> 최종 갱신: **2026-07-07 (Build17)** · 기준 브랜치: `fix/build17-qa-auto-save` (iOS build 17 업로드 예정) · 이전 최종 갱신 2026-06-28(Build8.4)
+> 최종 갱신: **2026-07-08 (Build18)** · 기준 브랜치: `fix/build18-audio-metric-stabilization` (iOS build 18 TestFlight VALID) · 이전 최종 갱신 2026-07-07(Build17)
+
+---
+
+## 🎧 Build18 — iOS 음성 재생 복구 + ROUND_RESULT metric 중복 제거 (게임 로직 무변경)
+
+> 목적: Build17 1차 실기기 QA에서 발견된 WRPS-052(audioMissing 반복)·WRPS-072(metric 중복)를 최소 수정으로 해결.
+
+- **WRPS-052**: 음성 mp3는 유효·번들 정상(합성 SFX는 기기에서 재생됨) → 원인은 WebAudio `fetch`+`decodeAudioData` 파이프라인(WKWebView가 일부 mp3 ID3v2.4 태그를 디코드 거부)으로 국한. **HTMLAudioElement fallback**(`playVoiceFallback`) 추가 — 원인에 무관하게 네이티브 미디어 경로로 재생. QA metric에 `audioPlayed`/`audioSource`/`audioMode{muted,ctxState}`/`audioError`/`loadError{stage:fetch|http|decode,status,message}` 추가(무음/볼륨 문제와 코드경로 문제 구분).
+- **WRPS-072**: `finishRoundLocal()`은 `result→game_over` 전이로 라운드당 2회+ 호출되는 **설계**(line 6695, WRPS-046 기존 주석). SFX/음성은 이미 `resultVoiceKey`/`resultSfxKey`로 1회 가드되어 있었으나 QA metric은 누락 → `state.resultMetricKey`(동일 패턴)로 가드, 동일 3개 방/게임 리셋 지점에서 초기화(새 방 라운드1 metric 누락 방지).
+- **codex-critic 2R**: 1R FAIL(HIGH 2: fallback 채널 우선순위 가드 누락 · `M.seenResult` 미리셋으로 새 방 metric 누락) → 수정 → 2R **PASS — HIGH/Critical 0**.
+- 판정/서버/인증/UI/QA persistence 구조 무변경. Build17 persistence PASS 유지(QA-OFF 완전 no-op 재확인). +11 정적계약 테스트, 전체 **179 green**.
+- **TestFlight**: build 18 **VALID** (Delivery UUID `ce369251-4cbb-4781-a703-217956b9c49a`, commit `bcb12e1`, 브랜치 `fix/build18-audio-metric-stabilization`).
+- **다음**: 실기기 필드 QA로 intro/gameOver/becameLoser 음성 실재생 확인 + audioMissing 재발 여부 + ROUND_RESULT unique eventId 일치 확인.
 
 ---
 
