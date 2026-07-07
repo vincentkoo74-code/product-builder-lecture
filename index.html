@@ -7414,6 +7414,7 @@ function summarizeGameStats(rows) {
         const safeMatch = norm(state.confirmedSafeIds) === norm(sh.safeIds);
         const match = loserMatch && safeMatch; // 게임 효과(확정 술래/안전) 일치 = 핵심 기준
         const M = (window.__rpsShadowMetrics = window.__rpsShadowMetrics || { total: 0, match: 0, mismatch: 0, mismatches: [] });
+        if (!M.seenResult) M.seenResult = new Set(); // Build18(WRPS-072): eventId별 ROUND_RESULT metric 1회 가드
         M.total++; if (match) M.match++; else M.mismatch++;
         const rec = {
           eventId: sh.eventId,
@@ -7424,11 +7425,16 @@ function summarizeGameStats(rows) {
         if (!match) M.mismatches.push(rec);
         (match ? console.log : console.warn)('[SHADOW-WRPS049]', match ? 'MATCH' : 'MISMATCH', JSON.stringify(rec));
         // QA(WRPS-026): 결과 메트릭 — legacy vs shadow 결과/일치 + 내 결과값.
+        // Build18(WRPS-072): finishRoundLocal은 result→game_over 전이로 라운드당 2회 이상 호출된다(설계, 6695 참조).
+        // 판정/DB 중복이 아니라 instrumentation 중복이므로 동일 eventId는 세션당 1회만 metric으로 남긴다.
         try {
-          const myResult = (state.participants.find(p => p.id === state.currentUserId) || {}).lastResult || null;
-          QA.emit('metric', { wrps: 'WRPS-026', eventType: 'ROUND_RESULT', eventId: sh.eventId,
-            resultServerTs: serverNow(), resultRenderedTs: Date.now(), resultValue: myResult,
-            legacyOutcome, shadowOutcome: sh.outcome, shadowMatch: match });
+          if (!M.seenResult.has(sh.eventId)) {
+            M.seenResult.add(sh.eventId);
+            const myResult = (state.participants.find(p => p.id === state.currentUserId) || {}).lastResult || null;
+            QA.emit('metric', { wrps: 'WRPS-026', eventType: 'ROUND_RESULT', eventId: sh.eventId,
+              resultServerTs: serverNow(), resultRenderedTs: Date.now(), resultValue: myResult,
+              legacyOutcome, shadowOutcome: sh.outcome, shadowMatch: match });
+          }
         } catch (e) {}
         state.__shadowRound = null;
       }
@@ -8931,9 +8937,17 @@ function summarizeGameStats(rows) {
       let ctx = null, masterGain = null, preloadPromise = null;
       const buffers = new Map();      // src → AudioBuffer
       const loading = new Map();       // src → in-flight decode Promise (L-3: 이중 디코드 방지)
+      const loadErrors = new Map();    // Build18(WRPS-052): src → {stage,status,message} 디코드/페치 실패 진단
       const seenEvents = new Set();    // eventId 중복제거
       let voiceNode = null, voicePriority = -1;
+      let voiceFallbackEl = null;      // Build18: WebAudio 디코드 실패 시 HTMLAudioElement fallback 핸들
       let lastButtonAt = 0;
+      // Build18(WRPS-052): 무음/볼륨 문제 vs 코드경로 문제 구분용 QA 컨텍스트.
+      function audioModeInfo() {
+        let st = null; try { st = ctx ? ctx.state : null; } catch (e) {}
+        let mu = null; try { mu = isMuted(); } catch (e) {}
+        return { muted: mu, ctxState: st };
+      }
 
       function audioCtx() {
         if (!ctx) {
@@ -8971,14 +8985,21 @@ function summarizeGameStats(rows) {
         const c = audioCtx();
         if (!c) return Promise.resolve(null);
         const p = (async () => {
+          let status = null;
           try {
             const res = await fetch(src);
+            status = res.status;
             if (!res.ok) throw new Error("HTTP " + res.status);
-            const buf = await c.decodeAudioData(await res.arrayBuffer());
+            const ab = await res.arrayBuffer();
+            const buf = await c.decodeAudioData(ab);   // iOS WKWebView: 일부 mp3(ID3v2.4 등) 디코드 거부 가능 → stage=decode
             buffers.set(src, buf);
+            loadErrors.delete(src);
             return buf;
           } catch (e) {
-            console.warn("[SoundManager] preload/decode 실패:", src, e?.message || e);
+            // Build18(WRPS-052): 실패 단계 분류 — fetch(네트워크/경로) vs http(4xx/5xx) vs decode(포맷).
+            const stage = (status == null) ? 'fetch' : (status >= 400 ? 'http' : 'decode');
+            loadErrors.set(src, { stage, status, message: (e && e.message) || String(e) });
+            console.warn("[SoundManager] load 실패:", src, 'stage=' + stage, 'status=' + status, e?.message || e);
             return null;
           } finally {
             loading.delete(src);
@@ -9016,6 +9037,7 @@ function summarizeGameStats(rows) {
       }
       function stopVoice() {
         if (voiceNode) { try { voiceNode.stop(); } catch (e) {} try { voiceNode.disconnect(); } catch (e) {} voiceNode = null; }
+        if (voiceFallbackEl) { try { voiceFallbackEl.pause(); } catch (e) {} try { voiceFallbackEl.currentTime = 0; } catch (e) {} voiceFallbackEl = null; }
         voicePriority = -1;
       }
       // 보이스 재생: mutex(1개) + 우선순위 선점 + eventId 중복제거. fallback/TTS 없음.
@@ -9041,7 +9063,7 @@ function summarizeGameStats(rows) {
         }
         const pri = PRI[eventKey] ?? 1;
         const start = (buf) => {
-          if (!buf) { console.warn("[SoundManager] 버퍼 없음(무음):", src); try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioMissing: true }); } catch (e) {} return; }
+          if (!buf) return;                              // Build18: 버퍼 실패는 호출부에서 fallback으로 라우팅
           if (voiceNode && pri < voicePriority) return;  // 낮은 우선순위는 드롭(현재 유지)
           const c = audioCtx();
           if (!c) return;
@@ -9053,13 +9075,41 @@ function summarizeGameStats(rows) {
           node.onended = () => { if (voiceNode === node) { voiceNode = null; voicePriority = -1; } };
           voiceNode = node; voicePriority = pri;
           try { node.start(); } catch (e) { console.warn("[SoundManager] start 실패:", e?.message || e); }
-          try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioScheduledTs: qaT0, audioPlayStartTs: Date.now(), audioDelayMs: Date.now() - qaT0, audioFallbackUsed: false }); } catch (e) {}
+          // Build18(WRPS-052): audioPlayed=true + source/mode 기록(무음/볼륨 문제와 코드경로 문제 구분).
+          try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: src, audioPlayed: true, audioMissing: false, audioFallbackUsed: false, audioScheduledTs: qaT0, audioPlayStartTs: Date.now(), audioDelayMs: Date.now() - qaT0, audioMode: audioModeInfo() }); } catch (e) {}
         };
         resumeThen(() => {
           const cached = buffers.get(src);
-          if (cached) start(cached);
-          else loadBuffer(src).then(start);              // 캐시 미스: 로드 후 재생
+          if (cached) { start(cached); return; }
+          loadBuffer(src).then((buf) => {                // 캐시 미스: 로드 후 재생
+            if (buf) start(buf);
+            else playVoiceFallback(src, eventKey, id, qaT0, pri); // WebAudio 디코드 실패 → 네이티브 미디어 fallback
+          });
         });
+      }
+      // Build18(WRPS-052): WebAudio 디코드 실패 시 HTMLAudioElement로 재생(네이티브 미디어 파이프라인 —
+      // ID3v2.4 등 WKWebView decodeAudioData가 거부하는 mp3도 재생 가능). 실패 원인은 QA metric에 남긴다.
+      function playVoiceFallback(src, eventKey, id, qaT0, pri) {
+        const err = loadErrors.get(src) || null;
+        if (isMuted()) return;                            // 무음 시 재생 안 함(masterGain 우회 방지)
+        if (voiceNode && pri < voicePriority) {           // 낮은 우선순위는 드롭(정책 일관)
+          try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: src, audioPlayed: false, audioDropped: true, audioFallbackUsed: true, audioMode: audioModeInfo(), loadError: err }); } catch (e) {}
+          return;
+        }
+        try {
+          stopVoice();
+          const el = new Audio(src);
+          el.volume = 1;
+          voiceFallbackEl = el; voicePriority = pri;
+          el.onended = () => { if (voiceFallbackEl === el) { voiceFallbackEl = null; voicePriority = -1; } };
+          const emitOk = () => { try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: src, audioPlayed: true, audioMissing: false, audioFallbackUsed: true, audioScheduledTs: qaT0, audioPlayStartTs: Date.now(), audioDelayMs: Date.now() - qaT0, audioMode: audioModeInfo(), loadError: err }); } catch (e) {} };
+          const emitFail = (e) => { try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: src, audioPlayed: false, audioMissing: true, audioFallbackUsed: true, audioError: (e && e.message) || String(e), audioMode: audioModeInfo(), loadError: err }); } catch (_) {} };
+          const pr = el.play();
+          if (pr && pr.then) pr.then(emitOk).catch(emitFail);
+          else emitOk();
+        } catch (e) {
+          try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: src, audioPlayed: false, audioMissing: true, audioFallbackUsed: true, audioError: (e && e.message) || String(e), audioMode: audioModeInfo(), loadError: err }); } catch (_) {}
+        }
       }
       // 음소거: 보이스 정지 + master 게인 즉시 0 → 진행 중인 합성 SFX(최대 0.8s)도 즉시 차단(M-1).
       // 다음 재생 시 resumeThen→unmuteGain()이 게인을 1로 복구한다.
