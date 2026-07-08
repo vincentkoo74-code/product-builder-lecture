@@ -140,6 +140,7 @@
 
 ### WRPS-052 (High) — VOICE audioMissing 22건 [audio 클러스터] → **Build18 수정 후 Build19 TTS override 추가(둘 다 실기기 재검증 대기)**
 - **Build19 추가(WRPS-052-B19)**: Build18 필드QA에서 audioMissing=0 달성했으나 audioFallback 다수 확인(음성은 나오되 fallback 경유). 음성 문구 자체에 대한 재확인 요청 후 `TTS_OVERRIDE`로 intro(ko) 1건만 mp3보다 우선 처리(speechSynthesis, "안 내면 술래 가위바위보!!" 고정). commit `7eba7ed`. **DR-6 예외 명시 + Evidence-gated**(`docs/VOICE_QA_CHECKLIST.md` 6번 항목 — 실기기 가청 확인 전까지 미종결, `audioPlayed:true`가 실제 청취와 일치하는지 대조 필수).
+- **정정(2026-07-08)**: 실기기에서 "기계음(TTS)만 들리고 MC 목소리가 아님" 보고 → whisper 전사로 `ASSETS/rps/voice/ko/` 14개 파일 전수 확인. `ko_game_start.mp3`는 실제로 **"게임을 시작합니다."**(풀구호 아님 — 06-26/28 청취 기록이 오류였음)이고, **"가위바위보" 문구를 담은 사람 목소리 파일이 애초에 존재하지 않음**을 확정. TTS_OVERRIDE는 회귀가 아니라 유일한 정확 수단이었음. **사용자 결정: 신규 MC 녹음 준비될 때까지 TTS 유지**(보류). → **신규 backlog: "안 내면 술래 가위바위보!!" MC 성우 재녹음 필요**(성우 섭외/녹음, 코드 작업 아님).
 - **Build18 수정**: HTMLAudioElement fallback(`playVoiceFallback`, decode 실패 시 네이티브 미디어 경로) + 진단 필드(`loadError.stage` fetch/http/decode). commit `bcb12e1`, codex-critic 2R PASS, TestFlight build18 VALID(`ce369251-...`). **Evidence-gated**: 실기기 QA로 intro/gameOver/becameLoser 실재생 + `loadError.stage` 분포 확인 전까지 닫지 않음(DR-10).
 - **관찰**: 이전 세션 VOICE 22건 전부 `audioMissing=true` (intro 11 / gameOver 6 / becameLoser 5). ko 음성팩(참가자) 기준.
 - **코드 지점(무변경, 조사용)**: 두 emit 경로 존재 — `index.html:9044`(WRPS-052: 디코드 버퍼 null → `audioMissing:true`) 와 `index.html:9030`(WRPS-051: clipPath falsy → `audioMissing:!!CLIPS[locale]`, **플래그 의미 혼동 주의**).
@@ -155,7 +156,7 @@
 ## Build19 — RC 아님, 잔여 리스크 4건(실기기 QA 대기) — 2026-07-08
 > **상태: 실기기 QA 대기.** TestFlight build19 VALID(Delivery UUID `a133d610-9e50-40ec-ab2d-594e97730b5b`)는 업로드/설치 가능 상태일 뿐, 아래 4건이 실기기에서 확인되어야 RC로 확정한다(DR-10). 상세는 `QA_STATUS.md` Build19 절 / `docs/history/REGRESSION_TRACKER.md` Build19 절 참조.
 
-1. **intro TTS 실제 가청 여부**(WRPS-052-B19) — `onend`는 발화 완주만 보장, 무음 가능성 있음.
+1. **intro TTS 실제 가청 여부**(WRPS-052-B19) — `onend`는 발화 완주만 보장, 무음 가능성 있음. (2026-07-08: TTS 자체는 실기기에서 소리는 남을 확인함 — 사용자가 "기계음"이라 표현. 사람 MC 목소리 녹음 부재가 확정되어 신규 녹음 대기로 전환, 별도 backlog.)
 2. **다기기 동기화 gap**(WRPS-SYNC-B19) — `scripts/analyze-qa-sync.mjs` 코드 완성, 실측 데이터 없음.
 3. **host 데이터 레이스 재발**(WRPS-072-B19) — 재시도 예산(600ms) 초과 시 여전히 발생 가능.
 4. **`resolveElimination()` 미호출**(구조적, Build19 미착수) — `finishRoundLocal`의 손 중복구현과 조건 일치는 확인됐으나 향후 drift 위험.
