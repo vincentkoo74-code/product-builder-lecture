@@ -56,8 +56,8 @@ describe('Build17 QA persistence (Layer 1) — 실코드', () => {
     const r = ctx.QA.buildReport('manual');
     expect(r.schemaVersion).toBe('qa-report.v1');
     expect(r.app).toBe('WoorimaruRPS');
-    expect(r.build).toBe('18');
-    expect(r.buildLabel).toBe('build18');
+    expect(r.build).toBe('19');
+    expect(r.buildLabel).toBe('build19');
     expect(r.exportReason).toBe('manual');
     expect(typeof r.createdAt).toBe('string');
     expect(r.session && typeof r.session.sessionId).toBe('string');
@@ -195,8 +195,8 @@ describe('Build17 QA file export (Layer 2) — 실코드', () => {
     expect(out.saved).toBe(false);
     expect(out.clipboard).toBe(true);
     expect(ctx.clipboard.last).toContain('"schemaVersion": "qa-report.v1"');
-    // 파일명: 금지문자(: 등) 없음, build18 스탬프.
-    expect(out.filename).toMatch(/^qa-report-build18-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.json$/);
+    // 파일명: 금지문자(: 등) 없음, build19 스탬프.
+    expect(out.filename).toMatch(/^qa-report-build19-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.json$/);
     expect(out.filename).not.toContain(':');
   });
 
@@ -216,7 +216,7 @@ describe('Build17 QA file export (Layer 2) — 실코드', () => {
     expect(out.clipboard).toBe(false);
     expect(calls.write.directory).toBe('DOCUMENTS');
     expect(calls.write.encoding).toBe('utf8');
-    expect(calls.write.path).toMatch(/^qa-report-build18-.*\.json$/);
+    expect(calls.write.path).toMatch(/^qa-report-build19-.*\.json$/);
     expect(out.uri).toContain('file:///Documents/');
     expect(calls.share.url).toBe(out.uri);
   });
