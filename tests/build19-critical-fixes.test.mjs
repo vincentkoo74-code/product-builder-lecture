@@ -54,6 +54,15 @@ describe('WRPS-052-B19 — intro 음성 TTS override', () => {
     expect(html).toMatch(/function stopVoice\(\)[\s\S]{0,400}voiceTtsActive[\s\S]{0,80}speechSynthesis\.cancel\(\)/);
   });
 
+  it('TTS onend/onerror는 자기 자신(u)인지 식별 후에만 뮤텍스를 해제한다(codex-critic MEDIUM: stale 콜백 경쟁 방지)', () => {
+    // voiceNode/voiceFallbackEl의 identity-check 패턴(=== 비교)과 동일하게 currentTtsUtterance로 검증.
+    expect(html).toContain('let currentTtsUtterance = null;');
+    expect(html).toMatch(/u\.onend = \(\) => \{ if \(currentTtsUtterance !== u\) return;/);
+    expect(html).toMatch(/u\.onerror = \(ev\) => \{ if \(currentTtsUtterance !== u\) return;/);
+    // stopVoice가 취소 시 식별 토큰도 함께 정리(다음 발화가 이전 콜백에 오염되지 않도록).
+    expect(html).toMatch(/speechSynthesis\.cancel\(\); \} catch \(e\) \{\} voiceTtsActive = false; currentTtsUtterance = null; \}/);
+  });
+
   it('우선순위 가드는 TTS 채널을 포함해 세 채널 모두 검사한다', () => {
     expect((html.match(/\(voiceNode \|\| voiceFallbackEl \|\| voiceTtsActive\) && pri < voicePriority/g) || []).length).toBeGreaterThanOrEqual(2);
   });

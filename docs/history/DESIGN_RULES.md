@@ -10,7 +10,7 @@
 | DR-3 | lead > 애니메이션 대기 캡. 빠른 단말이 공유 startAt 전에 시작 금지. | WRPS-047 |
 | DR-4 | Audio = event reaction + eventId/round-key dedup. 결과음/효과음은 키 기반 1회. | WRPS-046/048 |
 | DR-5 | 2회 호출 가능한 전이(result→game_over 등)는 side-effect(통계·오디오)에 idempotency 가드. | WRPS-046/003 |
-| DR-6 | 음성 단일 소스 정책(녹음/TTS 중 하나, 로케일 분리). MP3 매핑 이벤트는 TTS 금지. | WRPS-045 |
+| DR-6 | 음성 단일 소스 정책(녹음/TTS 중 하나, 로케일 분리). MP3 매핑 이벤트는 TTS 금지.<br>**예외(Build19, WRPS-052-B19)**: mp3 asset 실제 내용에 대한 확인 불일치(사람 청취 기록과 재확인 요청이 상충) + 코드에 기존 TTS 구현이 전무했던 상황에서, 문구 정확성을 코드 레벨로 확정 보장하기 위해 `intro`(ko) 1개 이벤트에 한해 TTS_OVERRIDE로 mp3보다 우선. **DR-10 원칙대로 실기기 가청 확인 전까지 Evidence-gated**(닫지 않음) — TTS `onend`는 utterance 완주만 보장, 실제 가청 여부는 보장 못 함(WKWebView 오디오 세션 충돌 등으로 무음 가능). | WRPS-045, WRPS-052-B19 |
 | DR-7 | 런타임 UI/오디오/동기화 결함은 단위테스트가 못 잡는다 → 순수 로직 분리 + event-sourced 엔진 결정론 시뮬, 나머지는 실기기 QA. | WRPS-049 |
 | DR-8 | 라이브 RC는 Strangler Fig로만 전환(추가 모듈+flag OFF+섀도우 후 점진). big-bang 금지. | WRPS-049 |
 | DR-9 | 권위자가 라운드 비참가일 때도 라운드 종료 트리거 이중화(전원 완료 즉시 + 서버시각 백스톱). | WRPS-026 |

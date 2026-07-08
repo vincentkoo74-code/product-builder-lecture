@@ -9092,6 +9092,7 @@ function summarizeGameStats(rows) {
       let voiceNode = null, voicePriority = -1;
       let voiceFallbackEl = null;      // Build18: WebAudio 디코드 실패 시 HTMLAudioElement fallback 핸들
       let voiceTtsActive = false;      // Build19: TTS_OVERRIDE 재생 중 여부(우선순위 뮤텍스 3번째 채널)
+      let currentTtsUtterance = null;  // Build19(codex-critic MEDIUM): stale onend/onerror 콜백 식별용(voiceNode 패턴과 동일)
       let lastButtonAt = 0;
       function ttsAvailable() {
         return typeof window !== 'undefined' && !!window.speechSynthesis && typeof SpeechSynthesisUtterance !== 'undefined';
@@ -9195,7 +9196,7 @@ function summarizeGameStats(rows) {
       function stopVoice() {
         if (voiceNode) { try { voiceNode.stop(); } catch (e) {} try { voiceNode.disconnect(); } catch (e) {} voiceNode = null; }
         if (voiceFallbackEl) { try { voiceFallbackEl.pause(); } catch (e) {} try { voiceFallbackEl.currentTime = 0; } catch (e) {} voiceFallbackEl = null; }
-        if (voiceTtsActive) { try { window.speechSynthesis.cancel(); } catch (e) {} voiceTtsActive = false; }
+        if (voiceTtsActive) { try { window.speechSynthesis.cancel(); } catch (e) {} voiceTtsActive = false; currentTtsUtterance = null; }
         voicePriority = -1;
       }
       // Build19(WRPS-052-B19): TTS_OVERRIDE 재생(문구 정확성 보장). 우선순위/무음 정책은 기존 두 채널과 동일.
@@ -9210,12 +9211,15 @@ function summarizeGameStats(rows) {
           window.speechSynthesis.cancel(); // 이전 발화 잔여 큐 정리(중첩 방지)
           const u = new SpeechSynthesisUtterance(override.text);
           u.lang = override.lang || 'ko-KR';
-          voiceTtsActive = true; voicePriority = pri;
-          u.onend = () => { if (voiceTtsActive) voiceTtsActive = false; if (voicePriority === pri) voicePriority = -1; try { QA.emit('audio', { wrps: 'WRPS-052-B19', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: 'tts', ttsText: override.text, audioPlayed: true, audioMissing: false, audioScheduledTs: qaT0, audioPlayStartTs: Date.now(), audioDelayMs: Date.now() - qaT0, audioMode: audioModeInfo() }); } catch (e) {} };
-          u.onerror = (ev) => { voiceTtsActive = false; if (voicePriority === pri) voicePriority = -1; try { QA.emit('audio', { wrps: 'WRPS-052-B19', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: 'tts', ttsText: override.text, audioPlayed: false, audioMissing: true, audioError: (ev && ev.error) || 'tts-error', audioMode: audioModeInfo() }); } catch (e) {} };
+          voiceTtsActive = true; voicePriority = pri; currentTtsUtterance = u;
+          // Build19(codex-critic MEDIUM): voiceNode/voiceFallbackEl과 동일하게 콜백에서 자기 자신(u)인지
+          // 확인 — stopVoice()로 취소된 뒤 늦게 도착하는 이전 발화의 onend/onerror가 현재 재생 중인
+          // 새 발화의 뮤텍스 상태를 잘못 초기화하지 않도록 방지.
+          u.onend = () => { if (currentTtsUtterance !== u) return; voiceTtsActive = false; currentTtsUtterance = null; if (voicePriority === pri) voicePriority = -1; try { QA.emit('audio', { wrps: 'WRPS-052-B19', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: 'tts', ttsText: override.text, audioPlayed: true, audioMissing: false, audioScheduledTs: qaT0, audioPlayStartTs: Date.now(), audioDelayMs: Date.now() - qaT0, audioMode: audioModeInfo() }); } catch (e) {} };
+          u.onerror = (ev) => { if (currentTtsUtterance !== u) return; voiceTtsActive = false; currentTtsUtterance = null; if (voicePriority === pri) voicePriority = -1; try { QA.emit('audio', { wrps: 'WRPS-052-B19', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: 'tts', ttsText: override.text, audioPlayed: false, audioMissing: true, audioError: (ev && ev.error) || 'tts-error', audioMode: audioModeInfo() }); } catch (e) {} };
           window.speechSynthesis.speak(u);
         } catch (e) {
-          voiceTtsActive = false;
+          voiceTtsActive = false; currentTtsUtterance = null;
           try { QA.emit('audio', { wrps: 'WRPS-052-B19', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: 'tts', audioPlayed: false, audioMissing: true, audioError: (e && e.message) || String(e), audioMode: audioModeInfo() }); } catch (_) {}
         }
       }
