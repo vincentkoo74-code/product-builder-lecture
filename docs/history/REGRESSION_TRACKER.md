@@ -30,6 +30,13 @@
 
 > 주의: WRPS-072의 `finishRoundLocal` 이중호출이 확인되면 **WRPS-062 Evidence로 승격** 검토(같은 함수 계보). 추측 수정 금지(DR-10).
 
+## Build19 확정/후속 (2026-07-08)
+> Evidence: Build18 필드QA(host/participant JSON 직접 대조). WRPS-072는 위 "신규 관찰"에서 **원인 확정**으로 승격됨.
+
+- **WRPS-072 원인 확정**: instrumentation 중복이 아니라 **host 참가자 row 데이터레이스**(host resultValue:null 33% vs participant 0%, 동일 eventId 18초뒤 다른 outcome 재분류 1건 확인). `f5bb308`로 표적 수정(재조회 재시도+idempotency 가드). WRPS-062 인접 가설은 **기각**(별개 메커니즘 — round 재계산 자체가 원인이었지, 다중술래 오전환과 직접 연결되지 않음).
+- **신규 backlog(회귀 아님, 코드 품질)**: `src/game-logic.mjs`의 `resolveElimination()`(37개 테스트로 검증됨, `index.html`에 마커블록으로 자동 주입됨)이 **실제로는 어디서도 호출되지 않음** — `finishRoundLocal()`이 동일 로직을 손으로 중복 구현. 현재는 조건 대조로 일치 확인됐으나, 향후 한쪽만 수정되면 조용히 drift 가능. Build19에서는 판정 로직 변경 리스크를 늘리지 않기 위해 **의도적으로 미착수**(표적 수정 범위 밖). 차기 Sprint에서 `finishRoundLocal`이 `resolveElimination()`을 직접 호출하도록 리팩터링 검토(동작 무변경 목표, 낮은 리스크지만 핵심 판정 경로라 전용 세션 권장).
+- **WRPS-052-B19 신규**: intro TTS override(DR-6 예외, Evidence-gated) — 실기기 가청 확인 전까지 audioMissing/audioFallback 재발 여부와 별개로 열어둠.
+
 ---
 
 ## 회귀/누락 상세 (재발 메커니즘)

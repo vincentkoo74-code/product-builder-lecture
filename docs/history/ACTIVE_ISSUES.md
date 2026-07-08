@@ -138,13 +138,15 @@
 
 - ✅ **Build17 QA persistence/export — PASS(1차)**: 새 세션 `4075ozeq`가 이전 세션 `gjrjs280`(roomId QNWB, participant, 523s, metrics 57, exportReason `background`)을 `QA_SESSION_RECOVERED`로 복구. 앱 background/종료 후에도 QA 기록 생존 확인. 수동 `QA💾` export도 동작. **게임 판정**: shadow 21/21 match, orderingMismatch 0, staleParticipant 0, hostChanged 0 → 판정 로직 Critical/High 없음.
 
-### WRPS-052 (High) — VOICE audioMissing 22건 [audio 클러스터] → **Build18 코드 수정(실기기 재검증 대기)**
+### WRPS-052 (High) — VOICE audioMissing 22건 [audio 클러스터] → **Build18 수정 후 Build19 TTS override 추가(둘 다 실기기 재검증 대기)**
+- **Build19 추가(WRPS-052-B19)**: Build18 필드QA에서 audioMissing=0 달성했으나 audioFallback 다수 확인(음성은 나오되 fallback 경유). 음성 문구 자체에 대한 재확인 요청 후 `TTS_OVERRIDE`로 intro(ko) 1건만 mp3보다 우선 처리(speechSynthesis, "안 내면 술래 가위바위보!!" 고정). commit `7eba7ed`. **DR-6 예외 명시 + Evidence-gated**(`docs/VOICE_QA_CHECKLIST.md` 6번 항목 — 실기기 가청 확인 전까지 미종결, `audioPlayed:true`가 실제 청취와 일치하는지 대조 필수).
 - **Build18 수정**: HTMLAudioElement fallback(`playVoiceFallback`, decode 실패 시 네이티브 미디어 경로) + 진단 필드(`loadError.stage` fetch/http/decode). commit `bcb12e1`, codex-critic 2R PASS, TestFlight build18 VALID(`ce369251-...`). **Evidence-gated**: 실기기 QA로 intro/gameOver/becameLoser 실재생 + `loadError.stage` 분포 확인 전까지 닫지 않음(DR-10).
 - **관찰**: 이전 세션 VOICE 22건 전부 `audioMissing=true` (intro 11 / gameOver 6 / becameLoser 5). ko 음성팩(참가자) 기준.
 - **코드 지점(무변경, 조사용)**: 두 emit 경로 존재 — `index.html:9044`(WRPS-052: 디코드 버퍼 null → `audioMissing:true`) 와 `index.html:9030`(WRPS-051: clipPath falsy → `audioMissing:!!CLIPS[locale]`, **플래그 의미 혼동 주의**).
 - **Root Cause 후보(확정 전)**: (a) Capacitor iOS WebView에서 음성 asset fetch/decode 실패로 buffer 미로딩(가장 유력), (b) clip 경로 누락, (c) QA-OFF/ON 조건 분기. **추측 수정 금지(DR-10)** — 원시 레코드의 `wrps`/`audioKey`/`src` 필드로 경로 확정 후 착수. audio 클러스터(051/052/055/057, [[rps-design-rules]] Audio DR) 연계.
 
-### WRPS-072 (P2, 신규) — ROUND_RESULT QA metric 중복 기록 [instrumentation] → **Build18 코드 수정(실기기 재검증 대기)**
+### WRPS-072 (P2→High 재평가) — ROUND_RESULT QA metric 중복 기록 [instrumentation→**host 데이터레이스로 확정**] → **Build19 표적 수정(실기기 재검증 대기)**
+- **Build19 확정(WRPS-072-B19)**: Build18 실기기 필드QA(host vs participant JSON 직접 대조)로 원인 확정 — instrumentation 중복이 아니라 **host 자신의 참가자 row가 판정 시점에 최신이 아닌 데이터레이스**. host ROUND_RESULT 39건 중 13건(33%) resultValue:null(participant는 38건 중 0건), 같은 room·같은 eventId("4:1")가 18초 간격으로 다른 outcome(tooFew→tooMany)으로 재분류된 사례 확인. 판정 알고리즘(`resolveElimination`) 자체는 정확함(기존 37개 테스트로 검증). 수정: `fetchFreshParticipantsForResult()`(재조회 재시도, 최대 2×300ms) + `finishRoundLocal()` idempotency 가드(`state.lastRoundResolution`, 동일 round 재계산 금지). commit `f5bb308`, codex-critic 2R PASS. **Evidence-gated**: 실기기 QA로 host resultValue:null 재발 여부 + 동일 eventId 재분류 재발 여부 확인 전까지 닫지 않음.
 - **Build18 수정**: `state.resultMetricKey`(WRPS-046 패턴 재사용, 새 방/게임/세션 리셋 지점에서 초기화)로 eventId당 1회 가드. commit `bcb12e1`, codex-critic 2R PASS(1R에서 세션전역 Set 방식의 새 방 라운드1 누락 HIGH 발견→수정). **Evidence-gated**: 실기기 QA로 ROUND_RESULT unique eventId 일치 확인 전까지 닫지 않음.
 - **관찰**: ROUND_RESULT 21건 / unique eventId 11 (라운드 1~7,9~11 각 2회, 8 1회). shadowMatch/ordering 정상이라 **판정·DB 커밋 중복 아님**.
 - **메커니즘(코드 정독)**: 유일 emit `index.html:7429`(`__engineV2ShadowCompare` 내부). 단일 `finishRoundLocal` 호출당 compare는 1회만 발화(각 분기 return 또는 fall-through 6848 1회). 따라서 **`finishRoundLocal`이 동일 round에 대해 클라이언트에서 ~2회 실행**(낙관적 로컬 resolve + 호스트 결과 apply, 또는 realtime 재수신)되어 매번 compute+compare→metric 재발화한 것으로 판단.

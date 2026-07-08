@@ -3,7 +3,21 @@
 > **개발 시작 전 · 디버그 시작 전 · 버전업 전 · 릴리즈 전, 항상 이 파일을 먼저 연다.**
 > 상세는 `docs/history/`(BUG_MASTER_LEDGER / BUG_TIMELINE / ACTIVE_ISSUES / REGRESSION_TRACKER / RELEASE_QA_CHECKLIST / FEATURE_DECISION_HISTORY / KNOWN_BEHAVIORS / README).
 >
-> 최종 갱신: **2026-07-08 (Build18)** · 기준 브랜치: `fix/build18-audio-metric-stabilization` (iOS build 18 TestFlight VALID) · 이전 최종 갱신 2026-07-07(Build17)
+> 최종 갱신: **2026-07-08 (Build19)** · 기준 브랜치: `fix/build19-critical-rules-sync` (iOS build 19 TestFlight VALID) · 이전 최종 갱신 2026-07-08(Build18)
+
+---
+
+## 🚨 Build19 — Critical Fix Build (음성 TTS override / 다기기 동기화 / 판정 데이터레이스 방지 / QA 계측 강화)
+
+> Build18 RC 중단 후 진행. 지시된 4개 영역 중 2개는 조사 결과가 원래 진단과 달라 **표적 수정**으로 재조정(사용자 승인).
+
+- **WRPS-052-B19(음성)**: `docs/VOICE_QA_CHECKLIST.md`에 이미 인간 청취 확인 기록(06-26/28) 있고 파일 무변경 확인 → 반증 제시 후 "그래도 교체" 결정 + TTS 미구현 발견 → **intro(ko) 한정 TTS_OVERRIDE**("안 내면 술래 가위바위보!!", speechSynthesis) 추가, mp3는 폴백 유지. **DR-6 예외 명시(문서 갱신) + DR-10 Evidence-gated(실기기 가청 확인 전까지 미종결)**.
+- **WRPS-072-B19(판정 규칙)**: 전체 상태머신 재작성 대신, Build18 실측 QA(host vs participant JSON)에서 **host 자신의 참가자 row 데이터레이스**를 확인(host만 resultValue:null 33%, 동일 라운드 18초뒤 다른 결과로 재분류 사례) → `fetchFreshParticipantsForResult()`(최대 2회·300ms 재시도) + `finishRoundLocal()` idempotency 가드(`state.lastRoundResolution`). 판정 알고리즘(`resolveElimination`/`judgeRound`) 자체는 무변경(기존 37개 테스트로 이미 검증됨).
+- **WRPS-SYNC-B19(동기화)**: 결과/다음라운드/게임종료 전환에 scheduled-render 전무 확인(지시 정확) → `penalty` blob 재사용(`phaseScheduledAt`/`phaseKind`, DB 스키마 무변경)으로 4개 전환(countdown/result/nextRound/gameOver) 전부 서버시각 동기화. `SYNC_RENDER`/`SYNC_LATE_RENDER` metric + `scripts/analyze-qa-sync.mjs`(다기기 gap 분석기, PASS 기준 ≤1000ms). `syncServerClock()` 1회 재시도, `countdownStartServerTs:0` 시 `INVALID_COUNTDOWN_SERVER_TS` + 1회 복구시도.
+- **codex-critic 2R**: 1R FAIL(HIGH 1: TTS가 문서화된 DR-6을 갱신없이 위반+실기기 미검증 · MEDIUM 1: TTS 콜백 stale-race) → 문서화(DR-6 예외+Evidence-gated)+identity-token 수정 → 2R **PASS — HIGH/Critical 0**.
+- 판정/서버/인증/UI/QA-persistence 구조 무변경. +29 테스트(신규 3파일), 전체 **209 green**.
+- **TestFlight**: build 19 **VALID** (Delivery UUID `a133d610-9e50-40ec-ab2d-594e97730b5b`, commit `2c04341`, 브랜치 `fix/build19-critical-rules-sync`).
+- **다음**: 실기기 필드 QA로 (1) intro TTS 실제 가청 확인(Evidence-gated 해제 조건) (2) `analyze-qa-sync.mjs`로 다기기 SYNC_RENDER gap ≤1000ms 확인 (3) ROUND_RESULT resultValue:null/재분류 재발 여부(host) 확인.
 
 ---
 
