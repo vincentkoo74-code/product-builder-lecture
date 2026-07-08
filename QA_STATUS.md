@@ -9,6 +9,8 @@
 
 ## 🚨 Build19 — Critical Fix Build (음성 TTS override / 다기기 동기화 / 판정 데이터레이스 방지 / QA 계측 강화)
 
+> **상태: RC 아님 — 실기기 QA 대기(Evidence-gated).** TestFlight VALID는 업로드/설치 가능함을 의미할 뿐, 아래 잔여 리스크 4건이 실기기에서 확인되기 전까지 RC로 확정하지 않는다(DR-10).
+>
 > Build18 RC 중단 후 진행. 지시된 4개 영역 중 2개는 조사 결과가 원래 진단과 달라 **표적 수정**으로 재조정(사용자 승인).
 
 - **WRPS-052-B19(음성)**: `docs/VOICE_QA_CHECKLIST.md`에 이미 인간 청취 확인 기록(06-26/28) 있고 파일 무변경 확인 → 반증 제시 후 "그래도 교체" 결정 + TTS 미구현 발견 → **intro(ko) 한정 TTS_OVERRIDE**("안 내면 술래 가위바위보!!", speechSynthesis) 추가, mp3는 폴백 유지. **DR-6 예외 명시(문서 갱신) + DR-10 Evidence-gated(실기기 가청 확인 전까지 미종결)**.
@@ -17,7 +19,12 @@
 - **codex-critic 2R**: 1R FAIL(HIGH 1: TTS가 문서화된 DR-6을 갱신없이 위반+실기기 미검증 · MEDIUM 1: TTS 콜백 stale-race) → 문서화(DR-6 예외+Evidence-gated)+identity-token 수정 → 2R **PASS — HIGH/Critical 0**.
 - 판정/서버/인증/UI/QA-persistence 구조 무변경. +29 테스트(신규 3파일), 전체 **209 green**.
 - **TestFlight**: build 19 **VALID** (Delivery UUID `a133d610-9e50-40ec-ab2d-594e97730b5b`, commit `2c04341`, 브랜치 `fix/build19-critical-rules-sync`).
-- **다음**: 실기기 필드 QA로 (1) intro TTS 실제 가청 확인(Evidence-gated 해제 조건) (2) `analyze-qa-sync.mjs`로 다기기 SYNC_RENDER gap ≤1000ms 확인 (3) ROUND_RESULT resultValue:null/재분류 재발 여부(host) 확인.
+
+### 잔여 리스크 4건(실기기 QA 대기 — RC 확정 조건)
+1. **intro TTS 실제 가청 여부** — `speechSynthesis`의 `onend`는 발화 완주만 보장, 실제 소리가 났는지는 미보장(WKWebView 오디오 세션 충돌 시 무음 가능 — WRPS-014/051/052와 동일 실패군). `docs/VOICE_QA_CHECKLIST.md` 6번 항목.
+2. **다기기 동기화 gap** — `scripts/analyze-qa-sync.mjs` 코드는 완성했으나 실측 다기기 데이터 없음. PASS 기준 phase별 maxGapMs ≤1000ms.
+3. **host 데이터 레이스 재발 여부** — `fetchFreshParticipantsForResult()` 재시도(최대 600ms)로 완화했으나, 그 예산을 초과하는 극단적 지연에서는 여전히 최초(잘못된) 분류가 idempotency 가드로 영구 고정될 수 있음(codex-critic MEDIUM, 수용된 트레이드오프). `TAGGER_SNAPSHOT_GAVE_UP` metric 발생률로 확인 필요.
+4. **`resolveElimination()` 미호출(구조적, 회귀 아님)** — `src/game-logic.mjs`의 검증된 순수함수가 `index.html`에 주입만 되고 실제로는 `finishRoundLocal()`의 손 중복구현이 실행됨(현재 조건 일치 확인됨, 향후 drift 위험). Build19에서 의도적으로 미착수 — 차기 전용 세션 권장(`docs/history/REGRESSION_TRACKER.md` Build19 절 참조).
 
 ---
 

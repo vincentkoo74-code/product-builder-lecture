@@ -152,6 +152,14 @@
 - **메커니즘(코드 정독)**: 유일 emit `index.html:7429`(`__engineV2ShadowCompare` 내부). 단일 `finishRoundLocal` 호출당 compare는 1회만 발화(각 분기 return 또는 fall-through 6848 1회). 따라서 **`finishRoundLocal`이 동일 round에 대해 클라이언트에서 ~2회 실행**(낙관적 로컬 resolve + 호스트 결과 apply, 또는 realtime 재수신)되어 매번 compute+compare→metric 재발화한 것으로 판단.
 - **조치(향후, Build17 무변경)**: eventId seen-set으로 ROUND_RESULT emit dedupe + `finishRoundLocal` 동일 round 재진입 가드 조사. **finishRoundLocal 영역이라 [[WRPS-062]] 다중술래 오전환과 인접** — 이중호출 경로가 062 Evidence일 수 있어 교차확인. Critical 확대 금지(우선 instrumentation로 관리).
 
+## Build19 — RC 아님, 잔여 리스크 4건(실기기 QA 대기) — 2026-07-08
+> **상태: 실기기 QA 대기.** TestFlight build19 VALID(Delivery UUID `a133d610-9e50-40ec-ab2d-594e97730b5b`)는 업로드/설치 가능 상태일 뿐, 아래 4건이 실기기에서 확인되어야 RC로 확정한다(DR-10). 상세는 `QA_STATUS.md` Build19 절 / `docs/history/REGRESSION_TRACKER.md` Build19 절 참조.
+
+1. **intro TTS 실제 가청 여부**(WRPS-052-B19) — `onend`는 발화 완주만 보장, 무음 가능성 있음.
+2. **다기기 동기화 gap**(WRPS-SYNC-B19) — `scripts/analyze-qa-sync.mjs` 코드 완성, 실측 데이터 없음.
+3. **host 데이터 레이스 재발**(WRPS-072-B19) — 재시도 예산(600ms) 초과 시 여전히 발생 가능.
+4. **`resolveElimination()` 미호출**(구조적, Build19 미착수) — `finishRoundLocal`의 손 중복구현과 조건 일치는 확인됐으나 향후 drift 위험.
+
 ### WRPS-073 (P3, 신규) — countdownDriftMs 의미/명명 재검토 [metric semantics]
 - **관찰**: COUNTDOWN_START 11건, countdownDriftAvgMs ≈ -2469ms(−2987~−1506), waitMs 1506~2988ms. 체감 카운트다운 정상.
 - **정의(코드)**: `index.html:6418` `countdownDriftMs = scheduledStartAt ? (serverNow() - scheduledStartAt) : null`, `waitMs = max(0, scheduledStartAt - serverNow())`. 즉 클라가 예정시각보다 **먼저 이벤트 수신 후 대기**하는 설계라 음수는 정상(= −waitMs). **실제 drift가 아니라 scheduled lead**.

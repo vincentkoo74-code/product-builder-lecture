@@ -32,6 +32,8 @@
 
 ## Build19 확정/후속 (2026-07-08)
 > Evidence: Build18 필드QA(host/participant JSON 직접 대조). WRPS-072는 위 "신규 관찰"에서 **원인 확정**으로 승격됨.
+> **Build19 상태: RC 아님 — 실기기 QA 대기.** TestFlight VALID(`a133d610-...`)는 설치 가능 상태일 뿐, 아래 잔여 리스크 4건 확인 전까지 RC 확정 안 함(DR-10). 동일 목록이 `QA_STATUS.md`/`ACTIVE_ISSUES.md` Build19 절에도 기록됨.
+> 1. intro TTS 실제 가청 여부 2. 다기기 동기화 gap(analyze-qa-sync.mjs 실측 필요) 3. host 데이터 레이스 재발(600ms 재시도 예산 초과 시) 4. resolveElimination() 미호출(구조적, 아래 상세)
 
 - **WRPS-072 원인 확정**: instrumentation 중복이 아니라 **host 참가자 row 데이터레이스**(host resultValue:null 33% vs participant 0%, 동일 eventId 18초뒤 다른 outcome 재분류 1건 확인). `f5bb308`로 표적 수정(재조회 재시도+idempotency 가드). WRPS-062 인접 가설은 **기각**(별개 메커니즘 — round 재계산 자체가 원인이었지, 다중술래 오전환과 직접 연결되지 않음).
 - **신규 backlog(회귀 아님, 코드 품질)**: `src/game-logic.mjs`의 `resolveElimination()`(37개 테스트로 검증됨, `index.html`에 마커블록으로 자동 주입됨)이 **실제로는 어디서도 호출되지 않음** — `finishRoundLocal()`이 동일 로직을 손으로 중복 구현. 현재는 조건 대조로 일치 확인됐으나, 향후 한쪽만 수정되면 조용히 drift 가능. Build19에서는 판정 로직 변경 리스크를 늘리지 않기 위해 **의도적으로 미착수**(표적 수정 범위 밖). 차기 Sprint에서 `finishRoundLocal`이 `resolveElimination()`을 직접 호출하도록 리팩터링 검토(동작 무변경 목표, 낮은 리스크지만 핵심 판정 경로라 전용 세션 권장).
