@@ -33,12 +33,13 @@
 ## Build19 확정/후속 (2026-07-08)
 > Evidence: Build18 필드QA(host/participant JSON 직접 대조). WRPS-072는 위 "신규 관찰"에서 **원인 확정**으로 승격됨.
 > **Build19 상태: RC 아님 — 실기기 QA 대기.** TestFlight VALID(`a133d610-...`)는 설치 가능 상태일 뿐, 아래 잔여 리스크 4건 확인 전까지 RC 확정 안 함(DR-10). 동일 목록이 `QA_STATUS.md`/`ACTIVE_ISSUES.md` Build19 절에도 기록됨.
-> 1. intro TTS 실제 가청 여부 2. 다기기 동기화 gap(analyze-qa-sync.mjs 실측 필요) 3. host 데이터 레이스 재발(600ms 재시도 예산 초과 시) 4. resolveElimination() 미호출(구조적, 아래 상세)
+> 1. ~~intro TTS 실제 가청 여부~~(해소 — TTS 제거, 단어별 순차재생으로 대체. 신규 확인: 4박자 순서/겹침없음) 2. 다기기 동기화 gap(analyze-qa-sync.mjs 실측 필요) 3. host 데이터 레이스 재발(600ms 재시도 예산 초과 시) 4. resolveElimination() 미호출(구조적, 아래 상세)
 
 - **WRPS-072 원인 확정**: instrumentation 중복이 아니라 **host 참가자 row 데이터레이스**(host resultValue:null 33% vs participant 0%, 동일 eventId 18초뒤 다른 outcome 재분류 1건 확인). `f5bb308`로 표적 수정(재조회 재시도+idempotency 가드). WRPS-062 인접 가설은 **기각**(별개 메커니즘 — round 재계산 자체가 원인이었지, 다중술래 오전환과 직접 연결되지 않음).
 - **신규 backlog(회귀 아님, 코드 품질)**: `src/game-logic.mjs`의 `resolveElimination()`(37개 테스트로 검증됨, `index.html`에 마커블록으로 자동 주입됨)이 **실제로는 어디서도 호출되지 않음** — `finishRoundLocal()`이 동일 로직을 손으로 중복 구현. 현재는 조건 대조로 일치 확인됐으나, 향후 한쪽만 수정되면 조용히 drift 가능. Build19에서는 판정 로직 변경 리스크를 늘리지 않기 위해 **의도적으로 미착수**(표적 수정 범위 밖). 차기 Sprint에서 `finishRoundLocal`이 `resolveElimination()`을 직접 호출하도록 리팩터링 검토(동작 무변경 목표, 낮은 리스크지만 핵심 판정 경로라 전용 세션 권장).
 - **WRPS-052-B19 신규**: intro TTS override(DR-6 예외, Evidence-gated) — 실기기 가청 확인 전까지 audioMissing/audioFallback 재발 여부와 별개로 열어둠.
-- **WRPS-052-B19 정정(2026-07-08)**: 실기기 QA("기계음만 들림, MC 목소리 아님")를 계기로 whisper(OpenAI) 전사로 `ASSETS/rps/voice/ko/` 14개 파일 전수 재확인. `ko_game_start.mp3`="게임을 시작합니다."(06-26/28 "풀구호 청취확인" 기록은 오류로 판명), 전체 파일에 "가위바위보" 문구 없음 확정. TTS_OVERRIDE는 잘못된 대체가 아니라 **애초에 존재하지 않던 정확한 문구를 코드로 보장한 것**이었음. 사용자 결정으로 신규 MC 녹음 대기 상태 유지. **신규 backlog(코드 아님, 콘텐츠 제작)**: "안 내면 술래 가위바위보!!" MC 성우 재녹음 → 파일 교체 후 TTS_OVERRIDE 제거.
+- **WRPS-052-B19 정정(2026-07-08)**: 실기기 QA("기계음만 들림, MC 목소리 아님")를 계기로 whisper(OpenAI) 전사로 `ASSETS/rps/voice/ko/` 14개 파일 전수 재확인. `ko_game_start.mp3`="게임을 시작합니다."(06-26/28 "풀구호 청취확인" 기록은 오류로 판명), 전체 파일에 "가위바위보" 문구 없음 확정.
+- **WRPS-052-B19 최종 확정(같은 날)**: 사용자가 기존 단어별 녹음(`ko_scissors/rock/paper.mp3`)을 직접 청취로 확인 → **TTS_OVERRIDE 완전 제거**, `ko_game_ready.mp3`(구 `ko_ready.mp3`)+`ko_scissors/rock/paper.mp3` 4개 파일을 `runCountdown()` ko 전용 분기에서 순차 재생(준비→가위→바위→보). DR-6 위반 없음(전부 mp3, TTS 미사용). en/ja 무변경. **신규 backlog(코드 아님, 콘텐츠 제작)**: "안 내면 술래 가위바위보!!" 전체 구호는 여전히 사람 목소리 부재 — MC 성우 재녹음 시 재검토.
 
 ---
 

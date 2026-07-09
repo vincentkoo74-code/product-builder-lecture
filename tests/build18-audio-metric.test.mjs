@@ -42,9 +42,9 @@ describe('WRPS-052 — iOS 음성 재생 복구 + 진단 계측', () => {
     expect(html).toMatch(/function stopVoice\(\)[\s\S]{0,200}voiceFallbackEl\.pause\(\)/);
   });
 
-  it('우선순위 선점 가드는 세 채널(WebAudio+fallback+TTS)을 모두 검사한다 (HIGH-1, Build19에서 TTS 채널 추가)', () => {
-    // start()와 playVoiceFallback() 양쪽 모두 (voiceNode || voiceFallbackEl || voiceTtsActive) 검사
-    expect((html.match(/\(voiceNode \|\| voiceFallbackEl \|\| voiceTtsActive\) && pri < voicePriority/g) || []).length).toBeGreaterThanOrEqual(2);
+  it('우선순위 선점 가드는 두 채널(WebAudio+fallback)을 모두 검사한다 (HIGH-1; Build19-B에서 TTS 채널 제거 후 원복)', () => {
+    // start()와 playVoiceFallback() 양쪽 모두 (voiceNode || voiceFallbackEl) 검사
+    expect((html.match(/\(voiceNode \|\| voiceFallbackEl\) && pri < voicePriority/g) || []).length).toBeGreaterThanOrEqual(2);
   });
 
   it('구조적 decode 실패는 재fetch 없이 즉시 fallback으로 short-circuit한다 (M-1)', () => {

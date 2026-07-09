@@ -35,36 +35,37 @@ describe('WRPS-072-B19 — 라운드 재분류 방지(idempotency) + host 데이
   });
 });
 
-describe('WRPS-052-B19 — intro 음성 TTS override', () => {
-  it('TTS_OVERRIDE는 ko intro에 고정 문구를 지정한다', () => {
-    expect(html).toContain('const TTS_OVERRIDE = {');
-    expect(html).toContain('안 내면 술래 가위바위보!!');
-    expect(html).toContain("lang: \"ko-KR\"");
+describe('WRPS-052-B19 — intro 음성: TTS override 제거, 단어별 순차재생으로 대체', () => {
+  it('TTS 관련 코드/변수가 완전히 제거되었다(whisper 전사로 풀구호 녹음 부재 확정 후 되돌림)', () => {
+    expect(html).not.toMatch(/const TTS_OVERRIDE = \{/);
+    expect(html).not.toContain('voiceTtsActive');
+    expect(html).not.toContain('currentTtsUtterance');
+    expect(html).not.toContain('function playVoiceTts');
+    expect(html).not.toContain('function ttsAvailable');
   });
 
-  it('playVoice는 mp3보다 TTS_OVERRIDE를 우선 시도한다(가능한 경우)', () => {
-    expect(html).toMatch(/const override = TTS_OVERRIDE\[locale\] && TTS_OVERRIDE\[locale\]\[eventKey\];[\s\S]{0,80}if \(override && ttsAvailable\(\)\) \{ playVoiceTts\(eventKey, override, id, qaT0, pri\); return; \}/);
+  it('CLIPS.ko는 검증된 단어별 파일(준비/가위/바위/보)로 매핑되고, 존재하지 않는 ko_game_start.mp3 참조가 없다', () => {
+    expect(html).toContain('ready: "ko/ko_game_ready.mp3"');
+    expect(html).toContain('countScissors: "ko/ko_scissors.mp3"');
+    expect(html).toContain('countRock: "ko/ko_rock.mp3"');
+    expect(html).toContain('countPaper: "ko/ko_paper.mp3"');
+    // 코멘트에서 히스토리 설명용으로만 언급 가능 — CLIPS 매핑 값으로는 더 이상 존재하지 않아야 함.
+    expect(html).not.toMatch(/intro: "ko\/ko_game_start\.mp3"/);
   });
 
-  it('TTS 미지원 기기는 기존 mp3 경로로 자동 폴백한다(clipPath 로직이 override 체크 다음에 그대로 유지)', () => {
-    expect(html).toMatch(/if \(override && ttsAvailable\(\)\) \{ playVoiceTts\(eventKey, override, id, qaT0, pri\); return; \}\s*const src = clipPath\(eventKey, locale\);/);
+  it('runCountdown()은 ko 로케일에서 준비→가위→바위→보 4박자를 순차 재생한다', () => {
+    expect(html).toMatch(/if \(currentLocale === "ko"\) \{[\s\S]{0,400}const beats = \[/);
+    expect(html).toMatch(/key: "ready"[\s\S]{0,200}key: "countScissors"[\s\S]{0,200}key: "countRock"[\s\S]{0,200}key: "countPaper"/);
+    expect(html).toMatch(/for \(const beat of beats\) \{[\s\S]{0,300}void playVoiceClip\(beat\.key\);[\s\S]{0,50}await sleep\(beat\.sleepMs\);/);
   });
 
-  it('stopVoice는 TTS도 취소한다(3채널 뮤텍스)', () => {
-    expect(html).toMatch(/function stopVoice\(\)[\s\S]{0,400}voiceTtsActive[\s\S]{0,80}speechSynthesis\.cancel\(\)/);
+  it('en/ja 로케일은 기존 intro/go 2단계 구조를 그대로 유지한다(회귀 방지)', () => {
+    expect(html).toMatch(/\} else \{[\s\S]{0,100}\/\/ 1단계: 인트로[\s\S]{0,300}void playVoiceClip\("intro", t\("voice\.intro"\), 1\.12, 1\.08\);/);
+    expect(html).toContain('void playVoiceClip("go", spokenGo, 1.18, 1.12);');
   });
 
-  it('TTS onend/onerror는 자기 자신(u)인지 식별 후에만 뮤텍스를 해제한다(codex-critic MEDIUM: stale 콜백 경쟁 방지)', () => {
-    // voiceNode/voiceFallbackEl의 identity-check 패턴(=== 비교)과 동일하게 currentTtsUtterance로 검증.
-    expect(html).toContain('let currentTtsUtterance = null;');
-    expect(html).toMatch(/u\.onend = \(\) => \{ if \(currentTtsUtterance !== u\) return;/);
-    expect(html).toMatch(/u\.onerror = \(ev\) => \{ if \(currentTtsUtterance !== u\) return;/);
-    // stopVoice가 취소 시 식별 토큰도 함께 정리(다음 발화가 이전 콜백에 오염되지 않도록).
-    expect(html).toMatch(/speechSynthesis\.cancel\(\); \} catch \(e\) \{\} voiceTtsActive = false; currentTtsUtterance = null; \}/);
-  });
-
-  it('우선순위 가드는 TTS 채널을 포함해 세 채널 모두 검사한다', () => {
-    expect((html.match(/\(voiceNode \|\| voiceFallbackEl \|\| voiceTtsActive\) && pri < voicePriority/g) || []).length).toBeGreaterThanOrEqual(2);
+  it('우선순위 가드는 두 채널(WebAudio+fallback)만 검사한다(TTS 채널 제거됨)', () => {
+    expect((html.match(/\(voiceNode \|\| voiceFallbackEl\) && pri < voicePriority/g) || []).length).toBeGreaterThanOrEqual(2);
   });
 });
 

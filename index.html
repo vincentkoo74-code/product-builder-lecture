@@ -6554,34 +6554,56 @@
         ? t("countdown.replay", { n: state.round })
         : t("countdown.roundLabel");
 
-      // 1단계: 인트로 ("안내면 술래" / "Ready!" / "最初はグー")
-      numEl.className = "countdown-intro";
-      numEl.style.fontSize = "";
-      numEl.textContent = t("countdown.intro");
-      labelEl.textContent = roundLabel;
-      void numEl.offsetWidth;
-      numEl.className = "count-anim countdown-intro";
-      void playVoiceClip("intro", t("voice.intro"), 1.12, 1.08);
-      await sleep(900);
-
-      // 2단계: "가위바위 보!" / "Rock paper scissors, shoot!" / "じゃんけんぽん！"
-      numEl.className = "countdown-go";
-      numEl.style.fontSize = "";
-      // 한국어/일본어는 "보!"/"ぽん！" 분리 강조, 영어는 통째로
-      const go1 = t("voice.go1");
-      const go2 = t("voice.go2");
-      if (currentLocale === "en") {
-        numEl.textContent = t("countdown.go");
+      if (currentLocale === "ko") {
+        // Build19-B(2026-07-08): "안내면 술래…가위바위보!" 풀구호 사람 목소리 녹음이 없음이 확정되어
+        // (WRPS-052-B19), 검증된 단어별 녹음(준비/가위/바위/보)을 4박자로 순차 재생하는 방식으로 대체.
+        // 각 박자 sleep은 해당 mp3 실측 길이(afinfo) + 여유 buffer.
+        const beats = [
+          { cls: "countdown-intro", text: "준비!", key: "ready", sleepMs: 800, showLabel: true },
+          { cls: "countdown-go", text: "가위!", key: "countScissors", sleepMs: 850, showLabel: false },
+          { cls: "countdown-go", text: "바위!", key: "countRock", sleepMs: 800, showLabel: false },
+          { cls: "countdown-go", text: "보!", key: "countPaper", sleepMs: 700, showLabel: false },
+        ];
+        for (const beat of beats) {
+          numEl.className = beat.cls;
+          numEl.style.fontSize = "";
+          numEl.textContent = beat.text;
+          labelEl.textContent = beat.showLabel ? roundLabel : "";
+          void numEl.offsetWidth;
+          numEl.className = "count-anim " + beat.cls;
+          void playVoiceClip(beat.key);
+          await sleep(beat.sleepMs);
+        }
       } else {
-        numEl.innerHTML = `${go1}<span class="countdown-go-emphasis"> ${go2}</span>`;
+        // 1단계: 인트로 ("Ready!" / "最初はグー")
+        numEl.className = "countdown-intro";
+        numEl.style.fontSize = "";
+        numEl.textContent = t("countdown.intro");
+        labelEl.textContent = roundLabel;
+        void numEl.offsetWidth;
+        numEl.className = "count-anim countdown-intro";
+        void playVoiceClip("intro", t("voice.intro"), 1.12, 1.08);
+        await sleep(900);
+
+        // 2단계: "Rock paper scissors, shoot!" / "じゃんけんぽん！"
+        numEl.className = "countdown-go";
+        numEl.style.fontSize = "";
+        // 일본어는 "ぽん！" 분리 강조, 영어는 통째로
+        const go1 = t("voice.go1");
+        const go2 = t("voice.go2");
+        if (currentLocale === "en") {
+          numEl.textContent = t("countdown.go");
+        } else {
+          numEl.innerHTML = `${go1}<span class="countdown-go-emphasis"> ${go2}</span>`;
+        }
+        labelEl.textContent = "";
+        void numEl.offsetWidth;
+        numEl.className = "count-anim countdown-go";
+        // iOS Safari can distort overlapped/cancelled speech, so keep the call playful but single-pass.
+        const spokenGo = currentLocale === "en" ? t("countdown.go") : `${go1} ${go2}`;
+        void playVoiceClip("go", spokenGo, 1.18, 1.12);
+        await sleep(700);
       }
-      labelEl.textContent = "";
-      void numEl.offsetWidth;
-      numEl.className = "count-anim countdown-go";
-      // iOS Safari can distort overlapped/cancelled speech, so keep the call playful but single-pass.
-      const spokenGo = currentLocale === "en" ? t("countdown.go") : `${go1} ${go2}`;
-      void playVoiceClip("go", spokenGo, 1.18, 1.12);
-      await sleep(700);
 
       overlay.classList.add("hidden");
       numEl.style.fontSize = "";
@@ -9066,23 +9088,23 @@ function summarizeGameStats(rows) {
       const VOICE_BASE = "ASSETS/rps/voice/";
       const SILENT = "@silent";
       // 한국어 전용 녹음. en/ja는 정책상 음성 OFF(효과음만) — 2026-06-29.
+      // Build19-B(2026-07-08): "안내면 술래…가위바위보!" 풀구호를 담은 사람 목소리 녹음이 존재하지
+      // 않음을 whisper 전사로 확정(ko_game_start.mp3는 실제로 "게임을 시작합니다."였음 — WRPS-052-B19).
+      // TTS_OVERRIDE 대신, 실제 검증된 단어별 녹음을 카운트다운에서 순차 재생하는 방식으로 대체
+      // (준비→가위→바위→보, runCountdown()에서 ko 로케일 전용 처리). intro/go 키는 ko에서 더 이상 사용 안 함.
       const CLIPS = {
         ko: {
-          intro: "ko/ko_game_start.mp3", // "안내면 술래 … 가위바위보!" 전체 구호(go까지 커버)
-          go: SILENT,                    // intro 풀구호가 커버 → 별도 재생/TTS 없음
+          ready: "ko/ko_game_ready.mp3",     // "준비"
+          countScissors: "ko/ko_scissors.mp3", // "가위"
+          countRock: "ko/ko_rock.mp3",         // "바위"
+          countPaper: "ko/ko_paper.mp3",       // "보"
           becameLoser: "ko/ko_lose.mp3",
           gameOver: "ko/ko_you win.mp3",
           continue: "ko/ko_safe.mp3",
         },
       };
-      // Build19(WRPS-052-B19): intro 문구 정확성 보장 — mp3 asset 내용에 대한 확인 불일치(사람 청취 기록은
-      // "안내면 술래…가위바위보!"로 일치하나, 재확인 요청으로 문구를 코드 레벨에서 확정 보장) → 해당 mp3를
-      // 우회하고 브라우저 네이티브 TTS(speechSynthesis)로 정확히 이 문구를 읽는다. 새 asset/의존성 없음.
-      const TTS_OVERRIDE = {
-        ko: { intro: { text: "안 내면 술래 가위바위보!!", lang: "ko-KR" } },
-      };
       // 우선순위(클수록 선점): RESULT > FLOW
-      const PRI = { gameOver: 3, becameLoser: 3, continue: 3, intro: 2, go: 2 };
+      const PRI = { gameOver: 3, becameLoser: 3, continue: 3, ready: 2, countScissors: 2, countRock: 2, countPaper: 2 };
 
       let ctx = null, masterGain = null, preloadPromise = null;
       const buffers = new Map();      // src → AudioBuffer
@@ -9091,12 +9113,7 @@ function summarizeGameStats(rows) {
       const seenEvents = new Set();    // eventId 중복제거
       let voiceNode = null, voicePriority = -1;
       let voiceFallbackEl = null;      // Build18: WebAudio 디코드 실패 시 HTMLAudioElement fallback 핸들
-      let voiceTtsActive = false;      // Build19: TTS_OVERRIDE 재생 중 여부(우선순위 뮤텍스 3번째 채널)
-      let currentTtsUtterance = null;  // Build19(codex-critic MEDIUM): stale onend/onerror 콜백 식별용(voiceNode 패턴과 동일)
       let lastButtonAt = 0;
-      function ttsAvailable() {
-        return typeof window !== 'undefined' && !!window.speechSynthesis && typeof SpeechSynthesisUtterance !== 'undefined';
-      }
       // Build18(WRPS-052): 무음/볼륨 문제 vs 코드경로 문제 구분용 QA 컨텍스트.
       function audioModeInfo() {
         let st = null; try { st = ctx ? ctx.state : null; } catch (e) {}
@@ -9196,32 +9213,7 @@ function summarizeGameStats(rows) {
       function stopVoice() {
         if (voiceNode) { try { voiceNode.stop(); } catch (e) {} try { voiceNode.disconnect(); } catch (e) {} voiceNode = null; }
         if (voiceFallbackEl) { try { voiceFallbackEl.pause(); } catch (e) {} try { voiceFallbackEl.currentTime = 0; } catch (e) {} voiceFallbackEl = null; }
-        if (voiceTtsActive) { try { window.speechSynthesis.cancel(); } catch (e) {} voiceTtsActive = false; currentTtsUtterance = null; }
         voicePriority = -1;
-      }
-      // Build19(WRPS-052-B19): TTS_OVERRIDE 재생(문구 정확성 보장). 우선순위/무음 정책은 기존 두 채널과 동일.
-      function playVoiceTts(eventKey, override, id, qaT0, pri) {
-        if (isMuted()) return;
-        if ((voiceNode || voiceFallbackEl || voiceTtsActive) && pri < voicePriority) {
-          try { QA.emit('audio', { wrps: 'WRPS-052-B19', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: 'tts', audioPlayed: false, audioDropped: true, audioMode: audioModeInfo() }); } catch (e) {}
-          return;
-        }
-        try {
-          stopVoice();
-          window.speechSynthesis.cancel(); // 이전 발화 잔여 큐 정리(중첩 방지)
-          const u = new SpeechSynthesisUtterance(override.text);
-          u.lang = override.lang || 'ko-KR';
-          voiceTtsActive = true; voicePriority = pri; currentTtsUtterance = u;
-          // Build19(codex-critic MEDIUM): voiceNode/voiceFallbackEl과 동일하게 콜백에서 자기 자신(u)인지
-          // 확인 — stopVoice()로 취소된 뒤 늦게 도착하는 이전 발화의 onend/onerror가 현재 재생 중인
-          // 새 발화의 뮤텍스 상태를 잘못 초기화하지 않도록 방지.
-          u.onend = () => { if (currentTtsUtterance !== u) return; voiceTtsActive = false; currentTtsUtterance = null; if (voicePriority === pri) voicePriority = -1; try { QA.emit('audio', { wrps: 'WRPS-052-B19', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: 'tts', ttsText: override.text, audioPlayed: true, audioMissing: false, audioScheduledTs: qaT0, audioPlayStartTs: Date.now(), audioDelayMs: Date.now() - qaT0, audioMode: audioModeInfo() }); } catch (e) {} };
-          u.onerror = (ev) => { if (currentTtsUtterance !== u) return; voiceTtsActive = false; currentTtsUtterance = null; if (voicePriority === pri) voicePriority = -1; try { QA.emit('audio', { wrps: 'WRPS-052-B19', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: 'tts', ttsText: override.text, audioPlayed: false, audioMissing: true, audioError: (ev && ev.error) || 'tts-error', audioMode: audioModeInfo() }); } catch (e) {} };
-          window.speechSynthesis.speak(u);
-        } catch (e) {
-          voiceTtsActive = false; currentTtsUtterance = null;
-          try { QA.emit('audio', { wrps: 'WRPS-052-B19', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: 'tts', audioPlayed: false, audioMissing: true, audioError: (e && e.message) || String(e), audioMode: audioModeInfo() }); } catch (_) {}
-        }
       }
       // 보이스 재생: mutex(1개) + 우선순위 선점 + eventId 중복제거.
       function playVoice(eventKey, opts = {}) {
@@ -9239,9 +9231,6 @@ function summarizeGameStats(rows) {
           if (seenEvents.size > 256) seenEvents.clear();
         }
         const pri = PRI[eventKey] ?? 1;
-        // Build19(WRPS-052-B19): TTS_OVERRIDE가 있으면 mp3보다 우선(문구 정확성 보장). 미지원 기기는 mp3로 폴백.
-        const override = TTS_OVERRIDE[locale] && TTS_OVERRIDE[locale][eventKey];
-        if (override && ttsAvailable()) { playVoiceTts(eventKey, override, id, qaT0, pri); return; }
         const src = clipPath(eventKey, locale);
         if (!src) {
           if (CLIPS[locale]) console.warn("[SoundManager] 클립 없음(무음, no-TTS):", eventKey, locale);
@@ -9250,7 +9239,7 @@ function summarizeGameStats(rows) {
         }
         const start = (buf) => {
           if (!buf) return;                              // Build18: 버퍼 실패는 호출부에서 fallback으로 라우팅
-          if ((voiceNode || voiceFallbackEl || voiceTtsActive) && pri < voicePriority) return;  // 낮은 우선순위 드롭(세 채널 공통 — HIGH-1)
+          if ((voiceNode || voiceFallbackEl) && pri < voicePriority) return;  // 낮은 우선순위 드롭(두 채널 공통 — HIGH-1)
           const c = audioCtx();
           if (!c) return;
           stopVoice();
@@ -9278,7 +9267,7 @@ function summarizeGameStats(rows) {
       function playVoiceFallback(src, eventKey, id, qaT0, pri) {
         const err = loadErrors.get(src) || null;
         if (isMuted()) return;                            // 무음 시 재생 안 함(masterGain 우회 방지)
-        if ((voiceNode || voiceFallbackEl || voiceTtsActive) && pri < voicePriority) {  // 낮은 우선순위 드롭(세 채널 공통 — HIGH-1)
+        if ((voiceNode || voiceFallbackEl) && pri < voicePriority) {  // 낮은 우선순위 드롭(두 채널 공통 — HIGH-1)
           try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioEventId: id || null, audioSource: src, audioPlayed: false, audioDropped: true, audioFallbackUsed: true, audioMode: audioModeInfo(), loadError: err }); } catch (e) {}
           return;
         }

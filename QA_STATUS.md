@@ -13,16 +13,15 @@
 >
 > Build18 RC 중단 후 진행. 지시된 4개 영역 중 2개는 조사 결과가 원래 진단과 달라 **표적 수정**으로 재조정(사용자 승인).
 
-- **WRPS-052-B19(음성)**: `docs/VOICE_QA_CHECKLIST.md`에 이미 인간 청취 확인 기록(06-26/28) 있고 파일 무변경 확인 → 반증 제시 후 "그래도 교체" 결정 + TTS 미구현 발견 → **intro(ko) 한정 TTS_OVERRIDE**("안 내면 술래 가위바위보!!", speechSynthesis) 추가, mp3는 폴백 유지. **DR-6 예외 명시(문서 갱신) + DR-10 Evidence-gated(실기기 가청 확인 전까지 미종결)**.
-  - **정정(2026-07-08)**: whisper 전사로 확인 결과 06-26/28 청취 기록이 **오류**였음 — `ko_game_start.mp3`는 "게임을 시작합니다."(풀구호 아님), 음성팩 14개 파일 전체에 "가위바위보" 문구 없음 확정. TTS는 회귀가 아니라 유일한 정확 문구 수단. 사용자 결정: **신규 MC 녹음 준비될 때까지 TTS 유지**. 신규 backlog: MC 성우 재녹음.
+- **WRPS-052-B19(음성) — 최종 확정**: intro(ko) TTS_OVERRIDE 도입(commit `7eba7ed`) → whisper 전사로 "가위바위보" 풀구호 사람 목소리 녹음 자체가 존재하지 않음 확정 → 사용자가 기존 단어별 녹음(가위/바위/보) 내용을 직접 청취 확인 → **TTS 완전 제거, `ko_game_ready.mp3`+`ko_scissors/rock/paper.mp3` 4개 파일 순차 재생(준비→가위→바위→보)으로 최종 대체**. DR-6 위반 없음(전부 mp3). en/ja 무변경. 신규 backlog(콘텐츠): 풀구호 MC 성우 재녹음.
 - **WRPS-072-B19(판정 규칙)**: 전체 상태머신 재작성 대신, Build18 실측 QA(host vs participant JSON)에서 **host 자신의 참가자 row 데이터레이스**를 확인(host만 resultValue:null 33%, 동일 라운드 18초뒤 다른 결과로 재분류 사례) → `fetchFreshParticipantsForResult()`(최대 2회·300ms 재시도) + `finishRoundLocal()` idempotency 가드(`state.lastRoundResolution`). 판정 알고리즘(`resolveElimination`/`judgeRound`) 자체는 무변경(기존 37개 테스트로 이미 검증됨).
 - **WRPS-SYNC-B19(동기화)**: 결과/다음라운드/게임종료 전환에 scheduled-render 전무 확인(지시 정확) → `penalty` blob 재사용(`phaseScheduledAt`/`phaseKind`, DB 스키마 무변경)으로 4개 전환(countdown/result/nextRound/gameOver) 전부 서버시각 동기화. `SYNC_RENDER`/`SYNC_LATE_RENDER` metric + `scripts/analyze-qa-sync.mjs`(다기기 gap 분석기, PASS 기준 ≤1000ms). `syncServerClock()` 1회 재시도, `countdownStartServerTs:0` 시 `INVALID_COUNTDOWN_SERVER_TS` + 1회 복구시도.
 - **codex-critic 2R**: 1R FAIL(HIGH 1: TTS가 문서화된 DR-6을 갱신없이 위반+실기기 미검증 · MEDIUM 1: TTS 콜백 stale-race) → 문서화(DR-6 예외+Evidence-gated)+identity-token 수정 → 2R **PASS — HIGH/Critical 0**.
 - 판정/서버/인증/UI/QA-persistence 구조 무변경. +29 테스트(신규 3파일), 전체 **209 green**.
 - **TestFlight**: build 19 **VALID** (Delivery UUID `a133d610-9e50-40ec-ab2d-594e97730b5b`, commit `2c04341`, 브랜치 `fix/build19-critical-rules-sync`).
 
-### 잔여 리스크 4건(실기기 QA 대기 — RC 확정 조건)
-1. **intro TTS 실제 가청 여부** — `speechSynthesis`의 `onend`는 발화 완주만 보장, 실제 소리가 났는지는 미보장(WKWebView 오디오 세션 충돌 시 무음 가능 — WRPS-014/051/052와 동일 실패군). `docs/VOICE_QA_CHECKLIST.md` 6번 항목.
+### 잔여 리스크(실기기 QA 대기 — RC 확정 조건)
+1. ~~intro TTS 실제 가청 여부~~ — **해소(2026-07-08)**: TTS 제거, 검증된 단어별 녹음(준비/가위/바위/보) 4박자 순차재생으로 대체. 신규 확인 필요: **4박자 순서/겹침·끊김 없이 재생되는지**(`docs/VOICE_QA_CHECKLIST.md` 1번 항목).
 2. **다기기 동기화 gap** — `scripts/analyze-qa-sync.mjs` 코드는 완성했으나 실측 다기기 데이터 없음. PASS 기준 phase별 maxGapMs ≤1000ms.
 3. **host 데이터 레이스 재발 여부** — `fetchFreshParticipantsForResult()` 재시도(최대 600ms)로 완화했으나, 그 예산을 초과하는 극단적 지연에서는 여전히 최초(잘못된) 분류가 idempotency 가드로 영구 고정될 수 있음(codex-critic MEDIUM, 수용된 트레이드오프). `TAGGER_SNAPSHOT_GAVE_UP` metric 발생률로 확인 필요.
 4. **`resolveElimination()` 미호출(구조적, 회귀 아님)** — `src/game-logic.mjs`의 검증된 순수함수가 `index.html`에 주입만 되고 실제로는 `finishRoundLocal()`의 손 중복구현이 실행됨(현재 조건 일치 확인됨, 향후 drift 위험). Build19에서 의도적으로 미착수 — 차기 전용 세션 권장(`docs/history/REGRESSION_TRACKER.md` Build19 절 참조).
