@@ -3,7 +3,16 @@
 > **개발 시작 전 · 디버그 시작 전 · 버전업 전 · 릴리즈 전, 항상 이 파일을 먼저 연다.**
 > 상세는 `docs/history/`(BUG_MASTER_LEDGER / BUG_TIMELINE / ACTIVE_ISSUES / REGRESSION_TRACKER / RELEASE_QA_CHECKLIST / FEATURE_DECISION_HISTORY / KNOWN_BEHAVIORS / README).
 >
-> 최종 갱신: **2026-07-08 (Build19)** · 기준 브랜치: `fix/build19-critical-rules-sync` (iOS build 19 TestFlight VALID) · 이전 최종 갱신 2026-07-08(Build18)
+> 최종 갱신: **2026-07-09 (Build20)** · 기준 브랜치: `fix/build19-critical-rules-sync` (iOS build 20 TestFlight VALID) · 이전 최종 갱신 2026-07-08(Build19)
+
+---
+
+## 🎙️ Build20 — 음성 TTS 제거, 검증된 단어별 순차재생으로 최종 교체
+
+> Build19의 TTS_OVERRIDE(intro)를 실기기 QA에서 "기계음, MC 목소리 아님"으로 확인 → 사용자가 기존 단어별 녹음(`ko_scissors/rock/paper.mp3`="가위"/"바위"/"보", `ko_game_ready.mp3`(구 `ko_ready.mp3`)="준비")을 직접 청취로 검증 → **TTS 코드 전부 제거**, `runCountdown()`의 ko 로케일 전용 분기에서 4개 파일 순차 재생(준비→가위→바위→보)으로 대체. en/ja 로케일은 기존 intro/go 2단계 구조 그대로(회귀 없음). DR-6(mp3매핑 이벤트 TTS금지) 완전 준수로 복귀.
+> codex-critic 경량 검토(사용자 승인 하에 신속 진행) **PASS — HIGH/Critical 0**. 테스트 208 green. 판정/서버/UI 무변경.
+> **TestFlight**: build 20 **VALID** (Delivery UUID `1431f37f-63e9-4f2c-8734-785ad65557ae`, commit `4a5943a`).
+> **다음**: 실기기 필드 QA — 4박자(준비→가위→바위→보) 순서대로 겹침/끊김 없이 재생되는지 확인(`docs/VOICE_QA_CHECKLIST.md` 1번 항목). Build19의 나머지 3개 잔여 리스크(다기기 동기화 gap / host 데이터 레이스 재발 / resolveElimination 미호출)는 그대로 유효.
 
 ---
 
