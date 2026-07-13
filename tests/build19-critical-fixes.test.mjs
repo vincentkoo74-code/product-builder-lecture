@@ -35,33 +35,13 @@ describe('WRPS-072-B19 — 라운드 재분류 방지(idempotency) + host 데이
   });
 });
 
-describe('WRPS-052-B19 — intro 음성: TTS override 제거, 단어별 순차재생으로 대체', () => {
-  it('TTS 관련 코드/변수가 완전히 제거되었다(whisper 전사로 풀구호 녹음 부재 확정 후 되돌림)', () => {
+describe('WRPS-052-B19 — TTS 코드는 완전히 제거된 상태로 유지된다(Build21에서 재확인)', () => {
+  it('TTS 관련 코드/변수가 존재하지 않는다(whisper 전사로 풀구호 녹음 부재 확정 후 되돌림, Build21에서 실제 MC 녹음으로 대체)', () => {
     expect(html).not.toMatch(/const TTS_OVERRIDE = \{/);
     expect(html).not.toContain('voiceTtsActive');
     expect(html).not.toContain('currentTtsUtterance');
     expect(html).not.toContain('function playVoiceTts');
     expect(html).not.toContain('function ttsAvailable');
-  });
-
-  it('CLIPS.ko는 검증된 단어별 파일(준비/가위/바위/보)로 매핑되고, 존재하지 않는 ko_game_start.mp3 참조가 없다', () => {
-    expect(html).toContain('ready: "ko/ko_game_ready.mp3"');
-    expect(html).toContain('countScissors: "ko/ko_scissors.mp3"');
-    expect(html).toContain('countRock: "ko/ko_rock.mp3"');
-    expect(html).toContain('countPaper: "ko/ko_paper.mp3"');
-    // 코멘트에서 히스토리 설명용으로만 언급 가능 — CLIPS 매핑 값으로는 더 이상 존재하지 않아야 함.
-    expect(html).not.toMatch(/intro: "ko\/ko_game_start\.mp3"/);
-  });
-
-  it('runCountdown()은 ko 로케일에서 준비→가위→바위→보 4박자를 순차 재생한다', () => {
-    expect(html).toMatch(/if \(currentLocale === "ko"\) \{[\s\S]{0,400}const beats = \[/);
-    expect(html).toMatch(/key: "ready"[\s\S]{0,200}key: "countScissors"[\s\S]{0,200}key: "countRock"[\s\S]{0,200}key: "countPaper"/);
-    expect(html).toMatch(/for \(const beat of beats\) \{[\s\S]{0,300}void playVoiceClip\(beat\.key\);[\s\S]{0,50}await sleep\(beat\.sleepMs\);/);
-  });
-
-  it('en/ja 로케일은 기존 intro/go 2단계 구조를 그대로 유지한다(회귀 방지)', () => {
-    expect(html).toMatch(/\} else \{[\s\S]{0,100}\/\/ 1단계: 인트로[\s\S]{0,300}void playVoiceClip\("intro", t\("voice\.intro"\), 1\.12, 1\.08\);/);
-    expect(html).toContain('void playVoiceClip("go", spokenGo, 1.18, 1.12);');
   });
 
   it('우선순위 가드는 두 채널(WebAudio+fallback)만 검사한다(TTS 채널 제거됨)', () => {

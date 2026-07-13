@@ -14,8 +14,9 @@ describe('WRPS-052 — iOS 음성 재생 복구 + 진단 계측', () => {
   });
 
   it('WebAudio 디코드 실패 시 HTMLAudioElement fallback으로 라우팅한다', () => {
+    // Build21: playVoiceFallback에 locale 파라미터 추가(QA audioLocale용) — 호출부도 함께 갱신됨
     expect(html).toContain('function playVoiceFallback(');
-    expect(html).toMatch(/loadBuffer\(src\)\.then\(\(buf\)\s*=>\s*\{[\s\S]{0,200}playVoiceFallback\(src, eventKey, id, qaT0, pri\)/);
+    expect(html).toMatch(/loadBuffer\(src\)\.then\(\(buf\)\s*=>\s*\{[\s\S]{0,200}playVoiceFallback\(src, eventKey, id, qaT0, pri, locale\)/);
     expect(html).toContain('const el = new Audio(src);');
   });
 
