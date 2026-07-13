@@ -7361,7 +7361,7 @@ function summarizeGameStats(rows) {
         // ── Build17: QA 자동저장/파일 export (게임 로직 무변경, 관찰·기록만) ──────
         // 실기기 필드테스트 시 앱 종료/새로고침에도 QA JSON을 자동 확보하기 위한 계층.
         const QA_STORAGE_KEY = 'rpsQAReport.v1';
-        const QA_BUILD_LABEL = 'build20';
+        const QA_BUILD_LABEL = 'build21';
         function deviceInfo() {
           let platform = 'web', model = 'Web', osVersion = '';
           try {
@@ -7379,7 +7379,7 @@ function summarizeGameStats(rows) {
           return {
             schemaVersion: 'qa-report.v1',
             app: 'WoorimaruRPS',
-            build: '20',
+            build: '21',
             buildLabel: QA_BUILD_LABEL,
             createdAt: new Date().toISOString(),
             device: deviceInfo(),
@@ -7458,7 +7458,7 @@ function summarizeGameStats(rows) {
           const rep = buildReport(reason || 'manual');
           const json = JSON.stringify(rep, null, 2);
           const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '-').slice(0, 19); // YYYY-MM-DD-HH-MM-SS
-          const filename = 'qa-report-build20-' + stamp + '.json';
+          const filename = 'qa-report-build21-' + stamp + '.json';
           const Cap = (typeof window !== 'undefined') ? window.Capacitor : null;
           const FS = Cap && Cap.Plugins && Cap.Plugins.Filesystem;
           const Share = Cap && Cap.Plugins && Cap.Plugins.Share;
@@ -7469,7 +7469,7 @@ function summarizeGameStats(rows) {
               out.saved = true; out.uri = (w && w.uri) || null;
               console.log('[QA-REPORT] saved', filename, out.uri);
               if (Share && out.uri) {
-                try { await Share.share({ title: 'QA Report build20', text: filename, url: out.uri, dialogTitle: 'Export QA Report' }); out.shared = true; }
+                try { await Share.share({ title: 'QA Report build21', text: filename, url: out.uri, dialogTitle: 'Export QA Report' }); out.shared = true; }
                 catch (e) { console.warn('[QA-REPORT] share fail', e && e.message); }
               }
             } catch (e) { console.warn('[QA-REPORT] fs write fail', e && e.message); }
