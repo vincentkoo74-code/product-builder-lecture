@@ -3,7 +3,31 @@
 > **개발 시작 전 · 디버그 시작 전 · 버전업 전 · 릴리즈 전, 항상 이 파일을 먼저 연다.**
 > 상세는 `docs/history/`(BUG_MASTER_LEDGER / BUG_TIMELINE / ACTIVE_ISSUES / REGRESSION_TRACKER / RELEASE_QA_CHECKLIST / FEATURE_DECISION_HISTORY / KNOWN_BEHAVIORS / README).
 >
-> 최종 갱신: **2026-07-09 (Build20)** · 기준 브랜치: `fix/build19-critical-rules-sync` (iOS build 20 TestFlight VALID) · 이전 최종 갱신 2026-07-08(Build19)
+> 최종 갱신: **2026-07-13 (Build21)** · 기준 브랜치: `fix/build21-multilingual-voice-polish` (iOS build 21 TestFlight VALID) · 이전 최종 갱신 2026-07-09(Build20)
+
+---
+
+## 🌐 Build21 — 다국어 음성(ko/ja/en) + Functional Self-Check — RC 후보(멀티기기 실기기 QA 대기)
+
+> **상태: RC 후보 — 최종 RC 확정은 멀티기기 실기기 QA JSON 확인 후 결정한다.** 코드/문서 관점의 자체 점검은 전부 PASS이나, 이는 RC 확정을 대체하지 않는다(DR-10).
+
+**Build21 Status**
+- Multilingual voice assets ko/ja/en: **PASS**, CEO 실기기 직접 확인 완료(3개 언어 전부 정상 청취)
+- Functional self-check: **PASS** (판정엔진/동기화/QA persistence/음성/room-participant 6개 영역 점검, Critical/High 0건)
+- TestFlight: **VALID** (build 21, Delivery UUID `10c8fcbe-9df5-408c-aca1-fa644929ac0f`)
+- Critical/High regressions: **none found**
+- Tests: **285/285 green**
+- Working tree: **clean**
+- Remaining verification: **멀티기기 실기기 field QA**(`docs/BUILD21_FIELD_QA_CHECKLIST.md` 참조)
+
+**경위**: Build19에서 TTS_OVERRIDE 도입 → 실기기 "기계음" 피드백 → Build20에서 TTS 제거, ko 단어별(준비/가위/바위/보) 4박자로 전환 → Build21에서 ElevenLabs로 ko/ja/en 3개 언어 각 8종(ready/countdownRps/retry/drawRetry/replayLosersOnly/replayWinnersOnly/taggerSelected/gameOver) 총 24개 mp3 생성, 카운트다운을 3개 언어 공통 2박자(ready→countdownRps)로 통일. `finishRoundLocal()`의 결과 음성도 개인관점(승자/패자 분기)에서 그룹공지로 재설계(개인 SFX는 유지). 판정/서버/동기화 로직은 diff 기준 무변경(codex-critic 2회 독립검증 PASS).
+
+**Known Low-Risk Notes (수정하지 않음 — Phase 1 RC 동안 기록만 유지)**
+1. `resolveElimination()`은 정의만 있고 `index.html`에서 직접 호출되지 않는다. 현재 production 흐름은 `finishRoundLocal()`의 동등한 분기 로직을 사용한다. 실제 버그가 재현되지 않는 한 Phase 1 RC 기간 중 리팩터링하지 않는다.
+2. 일부 요청된 QA 필드명이 실제 구현명과 다르다: `resultDisplayServerTs`/`nextRoundStartServerTs`/`renderGapMs`는 `phaseScheduledAt`/`phaseKind`/`gapMs`(또는 `maxGapMs`)로 구현되어 있다. 이것은 명명 불일치이며, 확인된 기능적 결함이 아니다.
+3. `staleParticipant`/`resultValue null`/`countdownStartServerTs 0`은 여전히 필드 QA JSON 확인이 필요하다. 유닛테스트는 멀티기기 런타임 동작을 완전히 증명할 수 없다.
+
+**다음**: 멀티기기 실기기 field QA. 체크리스트: `docs/BUILD21_FIELD_QA_CHECKLIST.md`.
 
 ---
 

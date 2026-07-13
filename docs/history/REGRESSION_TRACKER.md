@@ -41,6 +41,15 @@
 - **WRPS-052-B19 정정(2026-07-08)**: 실기기 QA("기계음만 들림, MC 목소리 아님")를 계기로 whisper(OpenAI) 전사로 `ASSETS/rps/voice/ko/` 14개 파일 전수 재확인. `ko_game_start.mp3`="게임을 시작합니다."(06-26/28 "풀구호 청취확인" 기록은 오류로 판명), 전체 파일에 "가위바위보" 문구 없음 확정.
 - **WRPS-052-B19 최종 확정(같은 날)**: 사용자가 기존 단어별 녹음(`ko_scissors/rock/paper.mp3`)을 직접 청취로 확인 → **TTS_OVERRIDE 완전 제거**, `ko_game_ready.mp3`(구 `ko_ready.mp3`)+`ko_scissors/rock/paper.mp3` 4개 파일을 `runCountdown()` ko 전용 분기에서 순차 재생(준비→가위→바위→보). DR-6 위반 없음(전부 mp3, TTS 미사용). en/ja 무변경. **신규 backlog(코드 아님, 콘텐츠 제작)**: "안 내면 술래 가위바위보!!" 전체 구호는 여전히 사람 목소리 부재 — MC 성우 재녹음 시 재검토.
 
+## Build21 확정/후속 (2026-07-13)
+> Evidence: CEO 실기기 직접 청취(ko/ja/en 3개 언어 PASS) + Functional Self-Check(코드 정적점검·테스트 285/285). **RC 후보 — 최종 RC 확정은 멀티기기 field QA JSON 확인 후 결정**(DR-10). 동일 목록이 `QA_STATUS.md`/`ACTIVE_ISSUES.md` Build21 절에도 기록됨.
+
+- **WRPS-052-B19 backlog 해소**: "안 내면 술래 가위바위보!!" 전체 구호 사람 목소리 부재 backlog가 ElevenLabs 다국어(ko/ja/en) 생성으로 해소됨. `countdownRps` 단일 오디오키로 통합(준비→countdownRps 2박자, 3개 언어 공통 구조). 실기기 청취 PASS 확인 완료.
+- **finishRoundLocal() 음성 재설계, 판정 로직 자체는 무변경**: 결과 음성을 개인관점(승자/패자 분기)에서 그룹공지(taggerSelected/drawRetry/replayLosersOnly/replayWinnersOnly)로 재설계. `state.confirmedSafeIds`/`confirmedLoserIds` 대입식·`renderRoundResult()` 인자·`scheduleRematchAutoAdvance()` 호출·`state.lastRoundResolution` 구조는 diff 기준 byte 단위로 동일(codex-critic 2회 독립검증 PASS). 개인 SFX(win/lose/draw)는 그대로 유지.
+- **`resolveElimination()` 미호출 backlog는 그대로 유지**(Build19부터 동일, Build21도 미착수 — 표적 범위 밖). `elimination.test.mjs` 37건이 `nextActiveIds`/`newConfirmedLoserIds`/`isComplete` 등 실제 상태를 검증함을 재확인(snapshot 아님).
+- **신규 관찰**: QA 필드 명명 불일치(`resultDisplayServerTs`/`nextRoundStartServerTs`/`renderGapMs` 요청명 vs `phaseScheduledAt`/`phaseKind`/`gapMs` 구현명) — 기능 결함 아님, Low 기록만.
+- **분석 도구 공백**: `resultValue` null count / `countdownStartServerTs` 0 count 자동집계 스크립트 없음(수동 jq 필요) — 이번 단계에서 신규 생성하지 않음(사용자 지시).
+
 ---
 
 ## 회귀/누락 상세 (재발 메커니즘)

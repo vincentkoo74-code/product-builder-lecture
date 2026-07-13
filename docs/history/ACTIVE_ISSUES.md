@@ -166,3 +166,11 @@
 - **관찰**: COUNTDOWN_START 11건, countdownDriftAvgMs ≈ -2469ms(−2987~−1506), waitMs 1506~2988ms. 체감 카운트다운 정상.
 - **정의(코드)**: `index.html:6418` `countdownDriftMs = scheduledStartAt ? (serverNow() - scheduledStartAt) : null`, `waitMs = max(0, scheduledStartAt - serverNow())`. 즉 클라가 예정시각보다 **먼저 이벤트 수신 후 대기**하는 설계라 음수는 정상(= −waitMs). **실제 drift가 아니라 scheduled lead**.
 - **조치(향후)**: 명칭을 `scheduledLeadMs` 또는 `countdownWaitDeltaMs`로 변경 검토 + 음수=정상 설계임을 문서화. 게임/판정 무관, Critical 아님.
+
+## Build21 — 다국어 음성(ko/ja/en) + Functional Self-Check — RC 후보(멀티기기 실기기 QA 대기) — 2026-07-13
+> **상태: RC 후보.** TestFlight build21 VALID(Delivery UUID `10c8fcbe-9df5-408c-aca1-fa644929ac0f`)는 업로드/설치 가능 상태일 뿐, 멀티기기 field QA JSON 확인 후 RC로 최종 확정한다(DR-10). ko/ja/en 음성은 CEO 실기기 직접 청취로 PASS 확인 완료. Functional self-check(판정엔진/동기화/QA persistence/음성/room-participant) Critical/High 0건, 285/285 테스트 green. 상세는 `QA_STATUS.md` Build21 절 / `docs/history/REGRESSION_TRACKER.md` Build21 절 / `docs/BUILD21_FIELD_QA_CHECKLIST.md` 참조.
+
+**Known Low-Risk Notes(수정하지 않음, Phase 1 RC 기간 중 기록만 유지)**:
+1. `resolveElimination()` 정의만 있고 `index.html`에서 직접 호출 안 됨(기존 backlog, Build19부터 동일, 회귀 아님). `finishRoundLocal()`의 동등 분기 로직이 실제 판정 수행. 실제 버그 재현 전까지 리팩터링하지 않음.
+2. 일부 QA 필드명이 요청명과 다름: `resultDisplayServerTs`/`nextRoundStartServerTs`/`renderGapMs` → 실제로는 `phaseScheduledAt`/`phaseKind`/`gapMs`(`maxGapMs`)로 구현됨. 명명 불일치일 뿐 기능 결함 아님.
+3. `staleParticipant`/`resultValue null`/`countdownStartServerTs 0`은 유닛테스트로 0을 보장하지 못함 — 멀티기기 field QA JSON으로만 최종 확인 가능.
