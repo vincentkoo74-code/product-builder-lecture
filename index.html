@@ -7539,7 +7539,7 @@ function summarizeGameStats(rows) {
         // ── Build17: QA 자동저장/파일 export (게임 로직 무변경, 관찰·기록만) ──────
         // 실기기 필드테스트 시 앱 종료/새로고침에도 QA JSON을 자동 확보하기 위한 계층.
         const QA_STORAGE_KEY = 'rpsQAReport.v1';
-        const QA_BUILD_LABEL = 'build21';
+        const QA_BUILD_LABEL = 'build22';
         function deviceInfo() {
           let platform = 'web', model = 'Web', osVersion = '';
           try {
@@ -7557,7 +7557,7 @@ function summarizeGameStats(rows) {
           return {
             schemaVersion: 'qa-report.v1',
             app: 'WoorimaruRPS',
-            build: '21',
+            build: '22',
             buildLabel: QA_BUILD_LABEL,
             createdAt: new Date().toISOString(),
             device: deviceInfo(),
@@ -7636,7 +7636,10 @@ function summarizeGameStats(rows) {
           const rep = buildReport(reason || 'manual');
           const json = JSON.stringify(rep, null, 2);
           const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '-').slice(0, 19); // YYYY-MM-DD-HH-MM-SS
-          const filename = 'qa-report-build21-' + stamp + '.json';
+          // Build22: 하드코딩된 'build21' 대신 QA_BUILD_LABEL을 사용해, 다음 빌드부터는 빌드
+          // 번호만 올리면 파일명도 자동으로 맞게 갱신되도록 한다(이번에 하드코딩 탓에 QA_BUILD_LABEL만
+          // build22로 바꿔도 파일명이 build21로 남아있던 불일치가 발견됨).
+          const filename = 'qa-report-' + QA_BUILD_LABEL + '-' + stamp + '.json';
           const Cap = (typeof window !== 'undefined') ? window.Capacitor : null;
           const FS = Cap && Cap.Plugins && Cap.Plugins.Filesystem;
           const Share = Cap && Cap.Plugins && Cap.Plugins.Share;
