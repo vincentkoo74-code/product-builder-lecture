@@ -31,7 +31,9 @@ describe('WRPS-072-B19 — 라운드 재분류 방지(idempotency) + host 데이
   });
 
   it('status=result/game_over 리스너는 fetchFreshParticipantsForResult를 거친 뒤에만 finishRoundLocal을 호출한다', () => {
-    expect(html).toMatch(/await fetchFreshParticipantsForResult\(state\.roomCode\);[\s\S]{0,120}finishRoundLocal\(\);/);
+    // Build22-B: waitForPhaseRender의 duplicate-skip 판정이 사이에 추가되어, finishRoundLocal()은
+    // 이제 resultIsFirstRender(첫 렌더)일 때만 호출된다(중복 렌더 시 재전환 방지) — 순서 보장 자체는 유지.
+    expect(html).toMatch(/await fetchFreshParticipantsForResult\(state\.roomCode\);[\s\S]{0,400}if \(resultIsFirstRender\) finishRoundLocal\(\);/);
   });
 });
 
@@ -59,9 +61,11 @@ describe('WRPS-036-B19 — clock sync 재시도 + 카운트다운 예정시각 �
     expect(html).toMatch(/eventType: 'CLOCK_SYNC', offsetMs: serverClockOffsetMs,\s*\n?\s*samples: offsets\.length, spreadMs, rttMs, synced: serverClockSynced/);
   });
 
-  it('countdownStartServerTs가 0/null이면 INVALID_COUNTDOWN_SERVER_TS를 남기고 1회 재조회를 시도한다', () => {
+  it('countdownStartServerTs가 0/null이면 INVALID_COUNTDOWN_SERVER_TS를 남기고 재조회를 시도한다', () => {
+    // Build22-A: 1회성 재조회는 바운드 재시도(최대 5회, waitForValidCountdownStart)로 강화되었고,
+    // 그래도 invalid면 하드블록(countdown 시작/voice 재생 안 함)으로 이어진다(build22 테스트 참조).
     expect(html).toContain("eventType: 'INVALID_COUNTDOWN_SERVER_TS'");
-    expect(html).toMatch(/if \(!scheduledStartAt\) \{[\s\S]{0,400}rooms'\)\.select\('penalty'\)/);
+    expect(html).toMatch(/async function waitForValidCountdownStart\(maxAttempts = 5, delayMs = 500\) \{[\s\S]{0,400}rooms'\)\.select\('penalty'\)/);
   });
 });
 

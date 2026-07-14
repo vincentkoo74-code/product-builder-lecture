@@ -2979,6 +2979,8 @@
         "common.leaveRoomShort": "게임방에서 나가기",
         "common.next": "다음",
         "common.starting": "시작 중...",
+        "common.syncError": "동기화 지연 — 다시 시도해주세요",
+        "common.retry": "다시 시도",
         "common.joining": "참가 중...",
         "common.timeUp": "⏱ 시간 초과",
         "common.secondsShort": "{n}초",
@@ -3339,6 +3341,8 @@
         "common.leaveRoomShort": "Exit Room",
         "common.next": "Next",
         "common.starting": "Starting...",
+        "common.syncError": "Sync delayed — please retry",
+        "common.retry": "Retry",
         "common.joining": "Joining...",
         "common.timeUp": "⏱ Time's up",
         "common.secondsShort": "{n}s",
@@ -3677,6 +3681,8 @@
         "common.leaveRoomShort": "部屋を出る",
         "common.next": "次へ",
         "common.starting": "開始中...",
+        "common.syncError": "同期が遅れています — もう一度お試しください",
+        "common.retry": "再試行",
         "common.joining": "参加中...",
         "common.timeUp": "⏱ 時間切れ",
         "common.secondsShort": "{n}秒",
@@ -4941,14 +4947,35 @@
 	    // Build19: 모든 기기가 같은 서버 시각에 전환을 표시하도록 대기 + SYNC_RENDER metric.
 	    // countdown의 waitMs 패턴과 동일(최대 4000ms 캡). scheduledAt이 없으면(구버전 host 등)
 	    // 즉시 표시(하위호환). 늦게 도착한 이벤트는 즉시 catch-up 렌더 후 lateRenderMs 기록.
+	    // Build22-B: result→game_over처럼 같은 라운드에 room.status가 두 번 바뀌는 경우(finishRoundLocal의
+	    // 2차 DB 쓰기), 이 함수가 phase="result"로 다시 호출된다. 이때 room.penalty의 phaseScheduledAt은
+	    // 갱신되지 않은 채(과거) 그대로 남아있어 "이미 몇 초 전에 지났어야 할 시각"으로 재평가되고,
+	    // lateRenderMs가 실제로는 늦은 적 없는데도 수 초대로 부풀어 SYNC_LATE_RENDER 오탐이 발생한다
+	    // (실측 QA: 동일 result phase에서 lateRenderMs 최대 3444ms/2456ms). phase/gameNo/round/
+	    // serverScheduledTs로 idempotency 키를 만들어, 이미 렌더된 조합이면 대기·재렌더 없이
+	    // duplicate-skip 메트릭만 남기고 즉시 반환한다. 반환값(false=중복)으로 호출부가 화면 재전환을
+	    // 건너뛸 수 있다.
 	    async function waitForPhaseRender(phase, scheduledAt, clientReceivedTs) {
+	      const gameNo = getGameRound();
+	      const round = state.round || 1;
+	      const renderKey = phase + ':' + gameNo + ':' + round + ':' + (scheduledAt || 0);
+	      if (!state.renderedPhaseKeys) state.renderedPhaseKeys = {};
+	      if (state.renderedPhaseKeys[renderKey]) {
+	        try {
+	          QA.emit('metric', { wrps: 'WRPS-SYNC-B22', eventType: 'SYNC_RENDER_DUPLICATE_SKIPPED', phase,
+	            roomId: state.roomCode || null, gameNo, round, serverScheduledTs: scheduledAt || null });
+	        } catch (e) {}
+	        return false;
+	      }
+	      state.renderedPhaseKeys[renderKey] = true;
+
 	      const waitMs = scheduledAt ? Math.max(0, scheduledAt - serverNow()) : 0;
 	      if (waitMs > 0) await sleep(Math.min(waitMs, 4000));
 	      const clientRenderedTs = Date.now();
 	      const lateRenderMs = scheduledAt ? Math.max(0, serverNow() - scheduledAt) : 0;
 	      try {
 	        QA.emit('metric', { wrps: 'WRPS-SYNC-B19', eventType: 'SYNC_RENDER', phase,
-	          roomId: state.roomCode || null, gameNo: getGameRound(), round: state.round || 1,
+	          roomId: state.roomCode || null, gameNo, round,
 	          serverScheduledTs: scheduledAt || null, clientReceivedTs: clientReceivedTs || null, clientRenderedTs,
 	          clockOffsetMs: serverClockOffsetMs,
 	          networkDelayMs: (clientReceivedTs != null) ? Math.max(0, clientRenderedTs - clientReceivedTs) : null,
@@ -4957,6 +4984,7 @@
 	          QA.emit('metric', { wrps: 'WRPS-SYNC-B19', eventType: 'SYNC_LATE_RENDER', phase, lateRenderMs, roomId: state.roomCode || null });
 	        }
 	      } catch (e) {}
+	      return true;
 	    }
 	    async function fetchFreshParticipantsForResult(roomCode, maxRetries = 2, delayMs = 300) {
 	      let data = null;
@@ -4979,9 +5007,26 @@
 	        try { QA.emit('metric', { wrps: 'WRPS-072-B19', eventType: 'TAGGER_SNAPSHOT_STALE', attempt, unresolvedIds: unresolved.map(p => p.id) }); } catch (e) {}
 	        if (attempt < maxRetries) await sleep(delayMs);
 	      }
-	      // 재시도 소진 후에도 미해결이면 무한 대기 대신 이상 신호만 남기고 현재 데이터로 진행.
+	      // Build22-C: 일반 재시도(maxRetries)를 다 써도 미해결이면 바로 포기하지 않고, 기존 루프와
+      // 별개로 "마지막 1회 더 긴 대기" 후 1회만 더 재조회한다(host의 publishHostRoundResult 커밋이
+      // 막판에 반영되는 케이스 방어). 이 마지막 시도도 딱 1회로 제한해 무한 대기가 되지 않는다.
+      let stillUnresolved = unresolvedOf(data);
+      if (stillUnresolved.length) {
+        try { QA.emit('metric', { wrps: 'WRPS-072-B22', eventType: 'TAGGER_SNAPSHOT_FINAL_WAIT', unresolvedIds: stillUnresolved.map(p => p.id), delayMs: delayMs * 2 }); } catch (e) {}
+        await sleep(delayMs * 2);
+        const res = await db.from('participants').select('*')
+          .eq('room_id', roomCode).order('created_at', { ascending: true });
+        if (res.data) {
+          data = res.data;
+          state.participants = data;
+          syncConfirmedIdsFromParticipants(data);
+          stillUnresolved = unresolvedOf(data);
+        }
+      }
+      // 재시도(및 마지막 긴 대기) 소진 후에도 미해결이면 무한 대기 대신 이상 신호만 남기고 현재
+      // 데이터로 진행한다. 이후 finishRoundLocal()이 이 스냅샷으로 hasStoredResults(서버 확정) 또는
+      // judgeRound 로컬 폴백 중 어느 경로로 판정하는지는 TAGGER_FALLBACK_SOURCE 메트릭에 남는다.
 	      try {
-	        const stillUnresolved = unresolvedOf(data);
 	        if (stillUnresolved.length) QA.emit('metric', { wrps: 'WRPS-072-B19', eventType: 'TAGGER_SNAPSHOT_GAVE_UP', unresolvedIds: stillUnresolved.map(p => p.id) });
 	      } catch (e) {}
 	      return data;
@@ -5168,6 +5213,23 @@
         state.participants.forEach(p => {
           if (isNonPlayingChoice(p.choice)) p.choice = null;
         });
+        // Build22-B: 새 게임 시작 시 waitForPhaseRender의 idempotency 키 맵도 함께 초기화
+        // (장시간 세션에서 게임을 여러 번 반복해도 메모리에 무한 누적되지 않도록).
+        // codex-critic 검증에서 발견된 회귀(1차): 이 바깥 if(room.round===1) 블록은 (위 주석대로)
+        // round=1인 동안 매 handleRoomUpdate마다 반복 실행된다 — confirmedSafeIds/LoserIds는
+        // 매번 리셋해도 안전(이후 DB로 재동기화)하지만, renderedPhaseKeys를 똑같이 매번 지우면
+        // 같은 라운드1 안에서 result→game_over 2차 전이가 올 때 Fix B가 직전에 기록한
+        // duplicate-skip 키까지 지워버려 dedup이 무력화된다(라운드1에 끝나는 게임마다 재발 —
+        // 오히려 가장 흔한 케이스).
+        // codex-critic 재검토(2차) 지적: round 기준 가드(state.round !== 1)는 정확성은 지키지만,
+        // "라운드1에서 끝나고 바로 다음 게임도 라운드1에서 끝나는" 세션이 이어지면 round가 세션
+        // 내내 1을 벗어나지 않아 renderedPhaseKeys가 절대 안 지워짐(메모리만 누적, 정확성은 무관 —
+        // 키에 gameNo도 포함되어 게임 간 오탐은 없음). gameNo(getGameRound())는 게임마다 반드시
+        // 바뀌므로 이걸로 가드하면 라운드 값과 무관하게 "새 게임 진입"을 정확히 1회만 감지한다.
+        if (state.renderedPhaseKeysGameNo !== state.gameRound) {
+          state.renderedPhaseKeys = {};
+          state.renderedPhaseKeysGameNo = state.gameRound;
+        }
       }
       state.round = room.round;
 
@@ -5202,8 +5264,11 @@
           if (db && state.roomCode) {
             await fetchFreshParticipantsForResult(state.roomCode);
           }
-          await waitForPhaseRender("result", resultScheduledAt, resultClientReceivedTs);
-          finishRoundLocal();
+          // Build22-B: waitForPhaseRender가 false(duplicate/skip)를 반환하면 이 phase는 이미
+          // 렌더된 것 — result→game_over 2차 전환 등 늦은 중복 업데이트로 재진입한 것이므로
+          // finishRoundLocal()을 다시 호출해 화면을 재전환하지 않는다(메트릭만 기록됨).
+          const resultIsFirstRender = await waitForPhaseRender("result", resultScheduledAt, resultClientReceivedTs);
+          if (resultIsFirstRender) finishRoundLocal();
         } else if (state.status === "playing") {
           await enterPlayingStateFromRoomUpdate();
         } else if (state.status === "ready") {
@@ -5211,17 +5276,20 @@
           const readyClientReceivedTs = Date.now();
           const readyPenaltyParsed = parsePenalty(room.penalty);
           const readyScheduledAt = (readyPenaltyParsed.phaseKind === "ready") ? readyPenaltyParsed.phaseScheduledAt : 0;
-          await waitForPhaseRender("nextRound", readyScheduledAt, readyClientReceivedTs);
-          if (iAmConfirmedLoser) {
-            showLoserWaitScreen();
-          } else if (iAmSafe) {
-            showScreen("screenWinnerWait");
-          } else if (isWaitingForNextGame(state.currentUserId)) {
-            showScreen("screenParticipantWait");
-          } else if (state.role === "host" && state.round === 1) {
-            showHostRoom(); // 1라운드 초기 설정은 호스트 방
-          } else {
-            showReadyScreen(); // 재대결(무승부 포함)은 호스트도 준비화면으로
+          // Build22-B: 동일하게 duplicate/skip이면 이미 표시된 대기화면을 다시 전환하지 않는다.
+          const readyIsFirstRender = await waitForPhaseRender("nextRound", readyScheduledAt, readyClientReceivedTs);
+          if (readyIsFirstRender) {
+            if (iAmConfirmedLoser) {
+              showLoserWaitScreen();
+            } else if (iAmSafe) {
+              showScreen("screenWinnerWait");
+            } else if (isWaitingForNextGame(state.currentUserId)) {
+              showScreen("screenParticipantWait");
+            } else if (state.role === "host" && state.round === 1) {
+              showHostRoom(); // 1라운드 초기 설정은 호스트 방
+            } else {
+              showReadyScreen(); // 재대결(무승부 포함)은 호스트도 준비화면으로
+            }
           }
         } else if (state.status === "waiting") {
           state.role === "host" ? showHostRoom() : showScreen("screenParticipantWait");
@@ -6503,6 +6571,69 @@
       }
     }
 
+    // Build22(A): countdownStartServerTs가 0/null이면 더 이상 "감지만 하고 진행"하지 않는다(Build19의
+    // waitMs:0 즉시진행이 기기간 카운트다운 desync의 실제 원인 — INVALID_COUNTDOWN_SERVER_TS는 찍히지만
+    // 카운트다운/음성이 그대로 시작됐음). 바운드 재시도(최대 5회, 500ms 간격 = 최대 2.5s) 동안 유효한
+    // scheduledStartAt을 재조회하고, 그래도 없으면 null을 반환해 호출부가 진행을 막게 한다.
+    async function waitForValidCountdownStart(maxAttempts = 5, delayMs = 500) {
+      let scheduledStartAt = getCountdownStartAt();
+      let attempt = 0;
+      while (!scheduledStartAt && attempt < maxAttempts) {
+        try { QA.emit('metric', { wrps: 'WRPS-036-B22', eventType: 'INVALID_COUNTDOWN_SERVER_TS', round: state.round, attempt }); } catch (e) {}
+        if (db && state.roomCode) {
+          try {
+            const { data: freshRoom } = await db.from('rooms').select('penalty').eq('id', state.roomCode).single();
+            if (freshRoom && freshRoom.penalty) scheduledStartAt = getCountdownStartAt(freshRoom.penalty);
+          } catch (e) {}
+        }
+        attempt++;
+        if (!scheduledStartAt && attempt < maxAttempts) await sleep(delayMs);
+      }
+      return scheduledStartAt || null;
+    }
+    // Build22(A): host는 항상 자체 복구 가능 — 새 countdownStartAt을 만들어 재발행한다(기존
+    // enterPlayingStateFromRoomUpdate 등에서 쓰는 것과 동일한 republish 패턴, status는 바꾸지 않음).
+    async function republishCountdownStartAsHost() {
+      state.countdownStartAt = getNextCountdownStartAt();
+      state.penalty = buildPenaltyValue({ gameRound: getGameRound(), countdownStartAt: state.countdownStartAt });
+      try {
+        if (getOnlineMode() && db && state.roomCode) {
+          await db.from('rooms').update({ penalty: state.penalty }).eq('id', state.roomCode);
+        }
+      } catch (e) {}
+      try { QA.emit('metric', { wrps: 'WRPS-036-B22', eventType: 'COUNTDOWN_SERVER_TS_REPUBLISHED', round: state.round, countdownStartAt: state.countdownStartAt }); } catch (e) {}
+      return state.countdownStartAt;
+    }
+    // Build22(A): 참가자(비host)가 바운드 재시도 후에도 유효한 시각을 못 받으면, 잘못된 로컬시각으로
+    // 몰래 진행(desync)하는 대신 명시적 에러 화면 + 수동 재시도 버튼을 보여준다("먹통"이 아니라
+    // 사용자가 상황을 보고 재시도/방나가기를 스스로 선택할 수 있게 — 기존 UI 구조 재사용, 개편 없음).
+    function showCountdownSyncError(overlay, numEl, labelEl, onRetry) {
+      try { QA.emit('metric', { wrps: 'WRPS-036-B22', eventType: 'COUNTDOWN_SYNC_FAILED', round: state.round }); } catch (e) {}
+      numEl.className = "countdown-waiting";
+      numEl.style.fontSize = "";
+      numEl.textContent = t("common.syncError");
+      labelEl.textContent = "";
+      let btn = document.getElementById('countdownRetryBtn');
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'countdownRetryBtn';
+        btn.type = 'button';
+        btn.style.cssText = 'margin-top:16px;padding:10px 20px;font-size:15px;border-radius:10px;border:none;background:#fff;color:#111;font-weight:800;';
+        overlay.appendChild(btn);
+      }
+      btn.textContent = t("common.retry");
+      btn.style.display = "";
+      btn.disabled = false;
+      btn.onclick = async () => {
+        // codex-critic 재검토(2차) 지적: display:none만으로는 동기 반영 전 빠른 연속 클릭이
+        // onclick을 두 번 큐잉해 runCountdownThenShowGame()이 중복 실행될 수 있다(이론적).
+        // disabled를 함께 걸어 두 번째 클릭 자체를 막는다.
+        btn.disabled = true;
+        btn.style.display = "none";
+        await onRetry();
+      };
+    }
+
     async function runCountdown() {
       // M-2: 카운트다운 직전 오디오 컨텍스트 resume(OS 인터럽트로 재-suspend된 경우 복구).
       try { SoundManager.unlock(); } catch (e) {}
@@ -6512,16 +6643,30 @@
       overlay.classList.remove("hidden");
 
       let scheduledStartAt = getCountdownStartAt();
-      // Build19: countdownStartServerTs가 0/null이면 로컬 시계만으로 카운트다운을 시작하는 것이므로
-      // 기기 간 동기화가 보장되지 않는다. 이상 신호를 남기고 방 데이터를 1회 짧게 재조회해 복구를
-      // 시도한다(무한 대기는 새로운 먹통 위험이라 시도만 하고, 실패해도 진행은 계속한다).
-      if (!scheduledStartAt) {
-        try { QA.emit('metric', { wrps: 'WRPS-036-B19', eventType: 'INVALID_COUNTDOWN_SERVER_TS', round: state.round }); } catch (e) {}
-        if (db && state.roomCode) {
-          try {
-            const { data: freshRoom } = await db.from('rooms').select('penalty').eq('id', state.roomCode).single();
-            if (freshRoom && freshRoom.penalty) scheduledStartAt = getCountdownStartAt(freshRoom.penalty);
-          } catch (e) {}
+      // Build22-A: countdownStartServerTs가 0/null이면 로컬 시계만으로 카운트다운을 시작하는 것이므로
+      // 기기 간 동기화가 보장되지 않는다. Build19까지는 1회 짧은 재조회 후 실패해도 그냥 진행했으나
+      // (waitMs:0으로 동기화 없이 시작 = 근본 원인), Build22부터는 바운드 재시도 후에도 invalid면
+      // COUNTDOWN_START 자체를 하드블록한다: host는 새 예약시각을 republish해 자가복구, participant는
+      // 명시적 에러+재시도 화면으로 안내하고 voice/카운트다운 시작을 모두 건너뛴다.
+      // 오프라인(단일기기 pass-play)은 애초에 기기간 동기화 대상이 아니므로(서버/방 없음) 이
+      // 하드블록은 온라인 모드에서만 적용한다 — 오프라인에서 misfire하면 매 라운드 불필요한
+      // 대기(waitForValidCountdownStart의 재시도 지연)만 유발한다.
+      if (!scheduledStartAt && getOnlineMode()) {
+        scheduledStartAt = await waitForValidCountdownStart();
+        if (!scheduledStartAt) {
+          const isHost = state.role === "host";
+          if (isHost) {
+            scheduledStartAt = await republishCountdownStartAsHost();
+          } else {
+            // codex-critic 검증에서 발견된 회귀: 여기서 bare runCountdown()만 재호출하면, 재시도가
+            // 성공해도 showScreen("screenGame")/beginRoundTimer()를 호출하는 유일한 지점인
+            // runCountdownThenShowGame()의 후속 로직을 절대 거치지 않아 참가자가 화면 전환 없이
+            // 멈춰버린다(오버레이는 사라졌지만 선택 화면으로 못 감). runCountdownThenShowGame()을
+            // 통째로 재호출해 성공 시 후속 화면 전환까지 동일하게 보장한다. 함수 선언 호이스팅으로
+            // 아래에 정의된 runCountdownThenShowGame을 여기서 참조해도 안전하다.
+            showCountdownSyncError(overlay, numEl, labelEl, async () => { await runCountdownThenShowGame(); });
+            return false;
+          }
         }
       }
       // 예정 시각은 서버 시간 도메인 → 로컬도 serverNow()로 평가해야 기기 간 동시 시작이 보장됨.
@@ -6600,6 +6745,7 @@
       overlay.classList.add("hidden");
       numEl.style.fontSize = "";
       numEl.innerHTML = "";
+      return true;
     }
 
     // 호스트가 이번 라운드에 참여하지 않을 때(우선안전/술래 확정)에는 선택 타이머가 없어
@@ -6633,7 +6779,14 @@
         state.gameStarting = false;
         return;
       }
-      await runCountdown();
+      const countdownOk = await runCountdown();
+      // Build22-A: countdownOk===false는 countdownStartServerTs invalid로 하드블록된 상태
+      // (participant 대기 화면에 재시도 버튼 노출 중) — 동기화 없이 로컬 게임 화면으로 진행하면
+      // 원래 버그(waitMs:0 진행)와 동일해지므로, 게임 화면 전환을 보류한다.
+      if (countdownOk === false) {
+        state.gameStarting = false;
+        return;
+      }
       if (!isCurrentRoundParticipant()) {
         if (isSafeParticipant()) showScreen("screenWinnerWait");
         else if (isConfirmedLoser()) showLoserWaitScreen();
@@ -6899,6 +7052,11 @@
 	      );
 	      const hasStoredResults = activeForStoredResult.length > 0 &&
 	        activeForStoredResult.every(p => hasConfirmedRoundResult(p.choice));
+	      // Build22-C: TAGGER_SNAPSHOT_GAVE_UP 이후 실제로 어느 데이터 소스로 판정했는지 QA에서
+	      // 바로 알 수 있도록 명시적으로 남긴다 — 'stored'=서버가 이미 확정한 win/lose 태그 사용,
+	      // 'localJudge'=이 단말이 참가자 raw choice로 judgeRound() 로컬 재계산(judgePure, 판정
+	      // 알고리즘 자체는 무변경). eventId로 어느 GAVE_UP 이벤트에 대응하는지 추적 가능.
+	      try { QA.emit('metric', { wrps: 'WRPS-072-B22', eventType: 'TAGGER_FALLBACK_SOURCE', source: hasStoredResults ? 'stored' : 'localJudge', eventId: roundEventId, activeCount: activeForStoredResult.length }); } catch (e) {}
 	      const result = {};
 	      if (hasStoredResults) {
 	        (state.confirmedSafeIds || []).forEach(id => { result[id] = "win"; });
@@ -7286,7 +7444,12 @@ function summarizeGameStats(rows) {
           session: (() => { try { if (!QA_INSTRUMENTATION) return Math.random().toString(36).slice(2, 10); const k = 'rpsQASession'; let s = sessionStorage.getItem(k); if (!s) { s = Math.random().toString(36).slice(2, 10); sessionStorage.setItem(k, s); } return s; } catch (e) { return Math.random().toString(36).slice(2, 10); } })(),
           startedAt: (() => { try { if (!QA_INSTRUMENTATION) return Date.now(); const k = 'rpsQAStartedAt'; let s = sessionStorage.getItem(k); if (!s) { s = String(Date.now()); sessionStorage.setItem(k, s); } return Number(s); } catch (e) { return Date.now(); } })(),   // Build16/17: QA 세션 시작 시각(QA ON일 때만 새로고침 유지)
           manifest: null,          // Build16: BUILD_MANIFEST.json 연결(비동기 로드)
-          counts: { metric: 0, audioDup: 0, audioMissing: 0, audioFallback: 0, orderingMismatch: 0, staleParticipant: 0, hostChanged: 0 },
+          counts: { metric: 0, audioDup: 0, audioMissing: 0, audioFallback: 0, orderingMismatch: 0, staleParticipant: 0, hostChanged: 0,
+            // Build22-D: recent[]가 300개 cap으로 오래된 이벤트를 잃어도 이 누적 카운터는 세션
+            // 전체 기간 동안 사라지지 않는다 — Build22 인수기준(countdownStartServerTs 0건,
+            // resultValue null 0건, syncLateRenderOver1000 0건 또는 duplicate-skip으로 처리)을
+            // recent[] 트리밍과 무관하게 QA 요약에서 바로 확인할 수 있게 한다.
+            countdownServerTsZero: 0, resultValueNull: 0, syncLateRenderOver1000: 0 },
           drift: [], countdownDrift: [], resultDrift: [], audioDelay: [], recent: [], snapshots: [],
           previousSession: null,   // Build17: 앱 재시작 시 복구한 직전 세션 리포트(1단계 지속화)
           recoveredAt: null,       // Build17: 복구 시각(ISO)
@@ -7314,13 +7477,17 @@ function summarizeGameStats(rows) {
           if (rec.audioFallbackUsed) m.counts.audioFallback++;
           if (rec.staleParticipantDetected) m.counts.staleParticipant++;
           if (rec.hostChanged) m.counts.hostChanged++;
+          // Build22-D: recent[] 트리밍과 무관한 세션 전체 누적 카운터.
+          if (rec.eventType === 'INVALID_COUNTDOWN_SERVER_TS') m.counts.countdownServerTsZero++;
+          if (rec.eventType === 'ROUND_RESULT' && rec.resultValue == null) m.counts.resultValueNull++;
+          if (rec.eventType === 'SYNC_LATE_RENDER') m.counts.syncLateRenderOver1000++;
           try { console.log(PREFIX[channel] || PREFIX.metric, JSON.stringify(rec)); } catch (e) {}
           try { scheduleSave(); } catch (e) {} // Build17: 지속화 디바운스 예약
         }
         const avg = a => (a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : 0);
         const mx = a => (a.length ? Math.max(...a) : 0);
         function summary() {
-          const sm = window.__rpsShadowMetrics || { total: 0, match: 0, mismatch: 0 };
+          const sm = window.__rpsShadowMetrics || { total: 0, match: 0, mismatch: 0, mismatches: [] };
           return {
             session: m.session, metrics: m.counts.metric,
             driftAvgMs: avg(m.drift), driftMaxMs: mx(m.drift),
@@ -7330,6 +7497,17 @@ function summarizeGameStats(rows) {
             audioDuplicate: m.counts.audioDup, audioMissing: m.counts.audioMissing, audioFallback: m.counts.audioFallback,
             orderingMismatch: m.counts.orderingMismatch, staleParticipant: m.counts.staleParticipant, hostChanged: m.counts.hostChanged,
             shadowTotal: sm.total, shadowMatch: sm.match, shadowMismatch: sm.mismatch,
+            // Build22-D: recent[]가 300개로 잘려도 shadowMismatch가 "언제/어느 라운드/무엇이"
+            // 달랐는지는 별도 보관해 추적 가능하게 한다(요약 카운터만으로는 위치 추적 불가했던
+            // 실측 QA 지적 반영). shadowMismatchEvents는 최근 최대 20건, lastShadowMismatchEvent는
+            // 가장 최근 1건을 별도 필드로도 노출(분석 스크립트가 배열 없이도 바로 확인 가능하도록).
+            shadowMismatchEvents: (sm.mismatches || []).slice(-20),
+            lastShadowMismatchEvent: (sm.mismatches && sm.mismatches.length) ? sm.mismatches[sm.mismatches.length - 1] : null,
+            // Build22-D: countdownStartServerTs 0 / resultValue null / syncLateRenderOver1000 —
+            // Build22 인수기준 3항목을 recent[] 트리밍과 무관하게 요약에서 바로 확인.
+            countdownServerTsZeroCount: m.counts.countdownServerTsZero,
+            resultValueNullCount: m.counts.resultValueNull,
+            syncLateRenderOver1000Count: m.counts.syncLateRenderOver1000,
           };
         }
         // Build16: 세션 메타(qa-metrics.json / qa-report.json 표준 필드).
@@ -7590,7 +7768,9 @@ function summarizeGameStats(rows) {
           shadow: { outcome: sh.outcome, loser: [...sh.loserIds].sort(), safe: [...sh.safeIds].sort() },
           match,
         };
-        if (!match) M.mismatches.push(rec);
+        // Build22-D: 무한 누적 방지(다른 QA 배열들과 동일한 cap 패턴, 100건). summary()가
+        // 최근 20건만 노출하므로 100은 충분한 여유.
+        if (!match) { M.mismatches.push(rec); if (M.mismatches.length > 100) M.mismatches.shift(); }
         (match ? console.log : console.warn)('[SHADOW-WRPS049]', match ? 'MATCH' : 'MISMATCH', JSON.stringify(rec));
         // QA(WRPS-026): 결과 메트릭 — legacy vs shadow 결과/일치 + 내 결과값.
         // Build18(WRPS-072): finishRoundLocal은 result→game_over 전이로 라운드당 2회 이상 호출된다(설계, 6695 참조).

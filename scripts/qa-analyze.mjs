@@ -31,6 +31,17 @@ export function analyzeQAMetrics(input) {
   const orderingMismatch = recent.filter((r) => r.orderingMismatch).length;
   const hostChanged = recent.filter((r) => r.hostChanged).length;
   const stale = recent.filter((r) => r.staleParticipantDetected).length;
+  // Build22-D: recent[]가 300개로 잘려도 이 CLI 분석기는 merge된(qa-merge.mjs) 전체 recent[]를
+  // 입력받을 수 있으므로, Build22 인수기준 3항목을 여기서도 직접 집계해 in-app summary()와
+  // 이중으로 확인 가능하게 한다.
+  const countdownServerTsZero = recent.filter((r) => r.eventType === 'INVALID_COUNTDOWN_SERVER_TS').length;
+  // resultValue 키 자체가 없는(구버전 fixture 등) 레코드는 "null로 기록됨"이 아니라 "추적 안 함"이므로
+  // 제외 — 실제로 키가 있고 값이 null인 경우만(WRPS-026 정상 emit은 항상 resultValue 키를 포함).
+  const resultValueNull = recent.filter((r) => r.eventType === 'ROUND_RESULT' && Object.prototype.hasOwnProperty.call(r, 'resultValue') && r.resultValue === null).length;
+  const syncLateRenderOver1000 = recent.filter((r) => r.eventType === 'SYNC_LATE_RENDER').length;
+  // Build22-B/C 가시성: 중복 렌더가 실제로 스킵되고 있는지, GAVE_UP이 발생하는지도 함께 노출.
+  const syncRenderDuplicateSkipped = recent.filter((r) => r.eventType === 'SYNC_RENDER_DUPLICATE_SKIPPED').length;
+  const taggerSnapshotGaveUp = recent.filter((r) => r.eventType === 'TAGGER_SNAPSHOT_GAVE_UP').length;
 
   const report = {
     samples: recent.length,
@@ -55,6 +66,11 @@ export function analyzeQAMetrics(input) {
     shadowMatchPct: shadowTotal ? Math.round((shadowMatchN / shadowTotal) * 1000) / 10 : null,
     hostChanged,
     staleParticipant: stale,
+    countdownServerTsZeroCount: countdownServerTsZero,
+    resultValueNullCount: resultValueNull,
+    syncLateRenderOver1000Count: syncLateRenderOver1000,
+    syncRenderDuplicateSkippedCount: syncRenderDuplicateSkipped,
+    taggerSnapshotGaveUpCount: taggerSnapshotGaveUp,
   };
 
   const verdict = (cond, hasData) => (!hasData ? 'NO-DATA' : (cond ? 'PASS' : 'FAIL'));
@@ -67,6 +83,11 @@ export function analyzeQAMetrics(input) {
     'Audio duplication = 0': verdict(audioDup === 0, hasAny),
     'Audio missing = 0': verdict(audioMissing === 0, hasAny),
     'Stale participant = 0': verdict(stale === 0, hasAny),
+    // Build22 인수기준(A/B/C 검증용).
+    'WRPS-036-B22 countdownStartServerTs 0 = 0': verdict(countdownServerTsZero === 0, hasAny),
+    'WRPS-026 resultValue null = 0': verdict(resultValueNull === 0, hasAny),
+    'WRPS-SYNC syncLateRenderOver1000 = 0': verdict(syncLateRenderOver1000 === 0, hasAny),
+    'WRPS-072 TAGGER_SNAPSHOT_GAVE_UP = 0': verdict(taggerSnapshotGaveUp === 0, hasAny),
   };
   const passed = Object.values(gate).filter((v) => v === 'PASS').length;
   const failed = Object.values(gate).filter((v) => v === 'FAIL').length;
