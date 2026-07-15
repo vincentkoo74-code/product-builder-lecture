@@ -69,7 +69,10 @@ describe('Build22-B — duplicate result render is skipped', () => {
   });
 
   it('result/game_over 리스너는 waitForPhaseRender가 첫 렌더일 때만 finishRoundLocal()을 호출한다', () => {
-    expect(html).toMatch(/const resultIsFirstRender = await waitForPhaseRender\("result", resultScheduledAt, resultClientReceivedTs\);\s*\n[\s\S]{0,20}if \(resultIsFirstRender\) finishRoundLocal\(\);/);
+    // Build24-A: waitForPhaseRender 호출 직후 finishRoundLocal()을 바로 부르는 대신, resultIsFirstRender
+    // 블록 안에서 스냅샷 재조회(SNAPSHOT_RETRY_DURATION 기록)를 거친 뒤 finishRoundLocal()을 호출하도록
+    // 바뀌었다 — "첫 렌더일 때만 호출"이라는 게이팅 자체는 그대로 유지(중첩 위치만 이동).
+    expect(html).toMatch(/const resultIsFirstRender = await waitForPhaseRender\("result", resultScheduledAt, resultClientReceivedTs\);\s*\n\s*if \(resultIsFirstRender\) \{[\s\S]{0,1600}finishRoundLocal\(\);\s*\n\s*\}/);
   });
 });
 

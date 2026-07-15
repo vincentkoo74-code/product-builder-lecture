@@ -32,8 +32,11 @@ describe('WRPS-072-B19 — 라운드 재분류 방지(idempotency) + host 데이
 
   it('status=result/game_over 리스너는 fetchFreshParticipantsForResult를 거친 뒤에만 finishRoundLocal을 호출한다', () => {
     // Build22-B: waitForPhaseRender의 duplicate-skip 판정이 사이에 추가되어, finishRoundLocal()은
-    // 이제 resultIsFirstRender(첫 렌더)일 때만 호출된다(중복 렌더 시 재전환 방지) — 순서 보장 자체는 유지.
-    expect(html).toMatch(/await fetchFreshParticipantsForResult\(state\.roomCode\);[\s\S]{0,400}if \(resultIsFirstRender\) finishRoundLocal\(\);/);
+    // resultIsFirstRender(첫 렌더)일 때만 호출된다(중복 렌더 시 재전환 방지) — 순서 보장 자체는 유지.
+    // Build24-A: waitForPhaseRender가 이제 fetchFreshParticipantsForResult보다 먼저 호출되지만
+    // (렌더-타이밍 측정과 스냅샷 재시도 대기를 분리), fetchFreshParticipantsForResult →
+    // finishRoundLocal의 상대 순서 자체(fetch가 반드시 먼저)는 그대로 유지된다.
+    expect(html).toMatch(/await fetchFreshParticipantsForResult\(state\.roomCode\);[\s\S]{0,900}finishRoundLocal\(\);/);
   });
 });
 
