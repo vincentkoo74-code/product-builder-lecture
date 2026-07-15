@@ -127,7 +127,9 @@ describe('Build21 — 게임 종료/재대결 음성(정적 계약)', () => {
     expect((html.match(/playGameOverVoiceOnce\(\);/g) || []).length).toBeGreaterThanOrEqual(2);
   });
   it('resetGameKeepRoom()은 retry 음성을 재생한다', () => {
-    expect(html).toMatch(/async function resetGameKeepRoom\(\)[\s\S]{0,200}void playVoiceClip\("retry"\);/);
+    // Build23: 함수 맨 앞에 부분 재경기 하드블록(blockPlayAgainIfPartialReplay)이 추가되어 간격이
+    // 늘어났다 — 판정/음성 로직 자체는 무변경, quantifier만 갱신.
+    expect(html).toMatch(/async function resetGameKeepRoom\(\)[\s\S]{0,600}void playVoiceClip\("retry"\);/);
   });
 });
 

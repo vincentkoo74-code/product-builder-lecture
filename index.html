@@ -4561,6 +4561,58 @@
       return active.length > 0 && active.every(p => p.is_ready);
     }
 
+    // Build23: "술래 선정이 완료됐는가"의 단일 진실 소스(state model A~C 구분의 핵심).
+    // room.status='result'는 gameOver(선정 완료)와 tooMany/tooFew(부분 재경기 진행 중) 모두에서
+    // 동일하게 유지된다(gameOver/fallthrough 분기만 명시적으로 'game_over'를 쓰고, tooMany/tooFew는
+    // DB status를 건드리지 않음) — 실기기 재현된 "한번더가 부분 재경기 중 클릭 가능"의 근본 원인은
+    // 여기 있다: 버튼 노출은 caseType(휘발성 렌더 인자)을 보고, handler 방어는 room.status(DB 필드)를
+    // 봐서 서로 다른 소스를 참조했다.
+    // codex-critic 검증에서 발견된 HIGH 회귀: 처음엔 confirmedLoserIds.length >= targetLoserCount
+    // 카운트 비교로 구현했으나, finishRoundLocal()의 "중도 퇴장 등으로 활성자가 남은 슬롯 이하"
+    // deadlock 방지 분기(예: 3명 술래 목표인데 활성자가 1명만 남아 그 1명까지 전부 술래로 확정하고
+    // gameOver로 조기 종료)에서는 confirmedLoserIds.length(target보다 적음)가 target에 절대 못
+    // 미쳐 "미완료"로 오판된다 — 이 경우 게임은 정당하게 끝났는데도 한번더/재초대 등 모든 리셋
+    // 경로가 영구 차단되는, 원래 버그보다 나쁜 새 회귀였다.
+    // 수정: getActivePlayers()(미확정 활성 참가자)가 비었는가로 판단한다. finishRoundLocal()의
+    // 모든 종료 분기(정상 gameOver/deadlock 조기종료 둘 다)는 이번 라운드 활성자 전원을
+    // confirmedSafeIds 또는 confirmedLoserIds로 반드시 분류하므로, 활성 풀이 비었다는 것 자체가
+    // resolveElimination()의 isComplete:true와 동치인 신뢰할 수 있는 신호다(카운트 비교 불필요).
+    // tooMany/tooFew/allDraw는 반대로 이번 라운드 활성자 중 일부가 항상 active로 남으므로 false.
+    // codex-critic 재검토(2차) LOW 지적: 참가자 자체가 비어있거나(state.participants=[]) 아직
+    // 로드되지 않은 상태에서는 getActivePlayers()도 자연히 0이 되어 "완료"로 오판될 수 있다(기존
+    // 카운트 비교 버전은 target이 항상 ≥1이라 우연히 이 경우도 안전하게 차단했었다). 현재 코드에서
+    // 이 함수가 참가자 없이 호출되는 경로는 확인되지 않았지만(결과 화면은 항상 참가자가 있어야
+    // 그려짐), 향후 호출부 추가에 대비해 명시적으로 방어한다.
+    function isTaggerSelectionComplete() {
+      return (state.participants || []).length > 0 && getActivePlayers().length === 0;
+    }
+
+    // "한번더"(전체 참여자로 새 게임) 버튼을 노출/허용해도 되는가.
+    // state model: A(선정 진행중)/B(부분 재경기 대기)에서는 false, C(선정 완료)에서만 true 가능.
+    function canShowPlayAgainButton() {
+      return state.role === "host" && isTaggerSelectionComplete();
+    }
+
+    // Build23: returnToLobbyAfterGame/resetGameKeepRoom 공용 하드블록. 버튼 노출 조건
+    // (canShowPlayAgainButton)이 레이스·중복클릭·향후 코드 변경 등 어떤 이유로 뚫려도, 실제
+    // "전체 참여자 리셋" 실행 직전에 다시 한 번 같은 진실 소스(isTaggerSelectionComplete)로
+    // 막는다 — 버튼 조건과 handler 조건이 서로 다른 소스(caseType vs room.status)를 봐서
+    // handler에는 방어가 전혀 없던 것이 실기기 재현의 근본 원인이었다(state.round 아님, room.status
+    // 'result'는 gameOver/tooMany/tooFew 모두에서 동일해 구분이 안 됨).
+    // 반환값: true=차단됨(호출부는 즉시 return해야 함), false=진행 가능.
+    function blockPlayAgainIfPartialReplay() {
+      if (isTaggerSelectionComplete()) return false;
+      try {
+        QA.emit('metric', { wrps: 'WRPS-PLAYAGAIN-B23', eventType: 'PLAY_AGAIN_BLOCKED_PARTIAL_REPLAY',
+          reason: 'partialReplayNotComplete',
+          activeCandidateCount: getActivePlayers().length, participantCount: (state.participants || []).length,
+          confirmedTaggerCount: (state.confirmedLoserIds || []).length, targetTaggerCount: getTargetLoserCount(),
+          outcome: state.lastRoundResolution ? state.lastRoundResolution.outcome : null,
+          gameNo: getGameRound(), round: state.round });
+      } catch (e) {}
+      return true;
+    }
+
     function isJoinLocked(participants = state.participants, status = state.status) {
       const players = participants.filter(p => !p.is_host);
       return status === "playing" || status === "result" || status === "stats" ||
@@ -7650,7 +7702,9 @@ function summarizeGameStats(rows) {
               out.saved = true; out.uri = (w && w.uri) || null;
               console.log('[QA-REPORT] saved', filename, out.uri);
               if (Share && out.uri) {
-                try { await Share.share({ title: 'QA Report build21', text: filename, url: out.uri, dialogTitle: 'Export QA Report' }); out.shared = true; }
+                // Build23: filename과 동일하게 하드코딩된 'build21' 대신 QA_BUILD_LABEL 사용(같은 종류의
+                // 불일치가 필드QA 리포트 제목에도 남아있던 것을 발견해 함께 수정).
+                try { await Share.share({ title: 'QA Report ' + QA_BUILD_LABEL, text: filename, url: out.uri, dialogTitle: 'Export QA Report' }); out.shared = true; }
                 catch (e) { console.warn('[QA-REPORT] share fail', e && e.message); }
               }
             } catch (e) { console.warn('[QA-REPORT] fs write fail', e && e.message); }
@@ -7784,9 +7838,13 @@ function summarizeGameStats(rows) {
           if (state.resultMetricKey !== evId) {
             state.resultMetricKey = evId;
             const myResult = (state.participants.find(p => p.id === state.currentUserId) || {}).lastResult || null;
+            // Build23: tooMany/tooFew 부분 재경기 진단을 위해 활성/술래 카운트를 함께 남긴다
+            // (요구사항 #8 — activeCandidates/targetTaggerCount/confirmedTaggerCount).
             QA.emit('metric', { wrps: 'WRPS-026', eventType: 'ROUND_RESULT', eventId: evId,
               resultServerTs: serverNow(), resultRenderedTs: Date.now(), resultValue: myResult,
-              legacyOutcome, shadowOutcome: sh.outcome, shadowMatch: match });
+              legacyOutcome, shadowOutcome: sh.outcome, shadowMatch: match,
+              activeCandidateCount: getActivePlayers().length, participantCount: (state.participants || []).length,
+              confirmedTaggerCount: (state.confirmedLoserIds || []).length, targetTaggerCount: getTargetLoserCount() });
           }
         } catch (e) {}
         state.__shadowRound = null;
@@ -7882,6 +7940,24 @@ function summarizeGameStats(rows) {
       penaltyBox.classList.add("hidden");
       finalBtns.classList.add("hidden");
       finalBtns.innerHTML = "";
+      // Build23: 매 라운드 결과 렌더마다 '한번더' 버튼의 노출/허용 상태를 QA에 남긴다 — 실기기에서
+      // 부분 재경기(tooMany/tooFew) 중 버튼이 보였다는 리포트를 캡션/개수와 함께 추적하기 위함.
+      try {
+        const playAgainReason = caseType === "gameOver" ? "complete"
+          : caseType === "tooMany" ? "partialReplayLosersOnly"
+          : caseType === "tooFew" ? "partialReplayWinnersOnly"
+          : caseType === "draw" ? "partialReplayDraw"
+          : "unknown";
+        // codex-critic 검증에서 발견된 회귀: visible을 caseType 기준으로 별도 계산하면 실제 DOM
+        // 게이트(canShowPlayAgainButton)와 값이 어긋날 수 있어(예: HIGH-fix 이전엔 deadlock
+        // gameOver에서 visible:true인데 enabled:false로 어긋나 QA 게이트가 못 잡았다) — 두 필드
+        // 모두 같은 함수 호출로 통일해 divergence 자체를 구조적으로 없앤다.
+        QA.emit('metric', { wrps: 'WRPS-PLAYAGAIN-B23', eventType: 'PLAY_AGAIN_BUTTON_STATE',
+          visible: canShowPlayAgainButton(), enabled: canShowPlayAgainButton(), reason: playAgainReason,
+          activeCandidateCount: getActivePlayers().length, participantCount: (state.participants || []).length,
+          confirmedTaggerCount: (state.confirmedLoserIds || []).length, targetTaggerCount: getTargetLoserCount(),
+          gameNo: getGameRound(), round: state.round });
+      } catch (e) {}
       const showManualNextRound = () => {
         if (!actionsDiv || !nextBtn) return;
         actionsDiv.style.display = state.role === "host" ? "" : "none";
@@ -7921,7 +7997,10 @@ function summarizeGameStats(rows) {
         if (actionsDiv) actionsDiv.style.display = "none";
         finalBtns.classList.remove("hidden");
         let html = "";
-        if (state.role === "host") {
+        // Build23: '한번더'(전체 참여자 새 게임) 버튼은 술래 선정이 실제로 완료된 경우에만 노출한다
+        // (caseType==='gameOver' 분기 안이라 구조적으로 항상 true여야 하지만, 방어적으로 명시 —
+        // 이 조건이 버튼 노출과 handler 하드블록 양쪽에서 쓰는 단일 진실 소스다).
+        if (canShowPlayAgainButton()) {
           html += `<button class="btn-success btn-full" onclick="window.returnToLobbyAfterGame()" style="margin-bottom:8px">${t("result.hostSettingsBtn")}</button>`;
         }
         html += `<button class="btn-light btn-full" onclick="window.showStatsPopup()" style="margin-bottom:8px">${t("result.viewStatsBtn")}</button>`;
@@ -8125,6 +8204,9 @@ function summarizeGameStats(rows) {
     }
 
 	    async function resetGameKeepRoom() {
+	      // Build23: 전체 참여자 리셋 직전 하드블록 — 부분 재경기(tooMany/tooFew) 미완료 상태면
+	      // 진행하지 않는다(요구사항 #3, resetGameKeepRoom 계열 함수 방어).
+	      if (blockPlayAgainIfPartialReplay()) return;
 	      await beginNewGameRound({
 	        status: "ready",
 	        increment: hasCurrentGameRoundActivity(),
@@ -10787,6 +10869,11 @@ function summarizeGameStats(rows) {
     // status='waiting' → 호스트는 screenHostRoom(벌칙 수정/게임 시작 가능), 참가자는 screenParticipantWait
     async function returnToLobbyAfterGame() {
       if (state.role !== "host") return;
+      // Build23: '한번더' 버튼 handler 하드블록 — 부분 재경기(tooMany/tooFew) 미완료 상태면 전체
+      // 참여자 리셋으로 진행하지 않는다. 기존 아래 room.status 체크('result'|'game_over')만으로는
+      // tooMany/tooFew도 'result' 상태를 그대로 유지해 gameOver와 구분되지 않았다(실기기 재현된
+      // 근본 원인) — 버튼이 어떤 경로로든 실수로 클릭 가능해져도 여기서 최종적으로 막는다.
+      if (blockPlayAgainIfPartialReplay()) return;
       // 수동 클릭 시 자동 타이머 정리
       if (state.gameOverTimeout) { clearTimeout(state.gameOverTimeout); state.gameOverTimeout = null; }
       stopGameOverCountdown();

@@ -4,7 +4,24 @@
 // 게임/앱 무변경 — 순수 분석 도구. Evidence 기반 의사결정만.
 //
 // 사용:  node scripts/qa-analyze.mjs <metrics.json>   (또는 stdin 파이프)
-//   metrics.json = { summary?, recent: [...] }  또는  [ {QA record}, ... ]
+//   metrics.json = { summary?, recent: [...] } / [ {QA record}, ... ] /
+//   qa-report.v1 실제 export 파일({ qaMetrics: { recent: [...] }, previousSession: {...} })
+//
+// Build23: 실측 필드QA(Build22)에서 QA💾로 저장한 실제 qa-report-buildNN-*.json 파일을 이
+// 분석기에 넣으면 recent가 top-level이 아니라 qaMetrics.recent에 중첩되어 있어(buildReport()
+// 스키마) 이 함수가 늘 빈 배열로 읽고 있었다(report.samples=0, 모든 게이트 NO-DATA로 보였을
+// 것 — CEO가 "QA export에 실제 게임 로그가 거의 없다"고 관찰한 현상의 실제 원인).
+// scripts/analyze-qa-sync.mjs는 이미 qaMetrics.recent를 올바르게 읽고 있었으므로 동일 패턴을
+// 재사용한다. 추가로 previousSession(직전 세션, 앱 재시작 시 복구)의 qaMetrics.recent도 함께
+// 병합해, background/재시작 직후 export해도 직전 게임의 실제 이벤트가 분석에서 누락되지 않게 한다.
+function extractRecent(obj) {
+  if (!obj) return [];
+  if (Array.isArray(obj)) return obj;
+  if (obj.qaMetrics && Array.isArray(obj.qaMetrics.recent)) return obj.qaMetrics.recent;
+  if (Array.isArray(obj.recent)) return obj.recent;
+  if (Array.isArray(obj.records)) return obj.records;
+  return [];
+}
 
 const avg = (a) => (a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : null);
 const max = (a) => (a.length ? Math.max(...a) : null);
@@ -16,7 +33,9 @@ const pct = (a, p) => {
 };
 
 export function analyzeQAMetrics(input) {
-  const recent = Array.isArray(input) ? input : (input && Array.isArray(input.recent) ? input.recent : []);
+  const current = extractRecent(input);
+  const previous = (input && !Array.isArray(input) && input.previousSession) ? extractRecent(input.previousSession) : [];
+  const recent = previous.length ? [...previous, ...current] : current;
   const pick = (pred, map) => recent.filter(pred).map(map).filter(Number.isFinite);
 
   const countdownDrift = pick((r) => Number.isFinite(r.countdownDriftMs), (r) => Math.abs(r.countdownDriftMs));
@@ -42,9 +61,14 @@ export function analyzeQAMetrics(input) {
   // Build22-B/C 가시성: 중복 렌더가 실제로 스킵되고 있는지, GAVE_UP이 발생하는지도 함께 노출.
   const syncRenderDuplicateSkipped = recent.filter((r) => r.eventType === 'SYNC_RENDER_DUPLICATE_SKIPPED').length;
   const taggerSnapshotGaveUp = recent.filter((r) => r.eventType === 'TAGGER_SNAPSHOT_GAVE_UP').length;
+  // Build23: '한번더' 부분 재경기 하드블록 가시성 — 실기기에서 실제로 몇 번 노출/차단됐는지.
+  const playAgainBlocked = recent.filter((r) => r.eventType === 'PLAY_AGAIN_BLOCKED_PARTIAL_REPLAY').length;
+  const playAgainVisibleDuringPartialReplay = recent.filter((r) =>
+    r.eventType === 'PLAY_AGAIN_BUTTON_STATE' && r.visible === true && r.reason !== 'complete').length;
 
   const report = {
     samples: recent.length,
+    previousSessionMerged: previous.length,
     sessions: [...new Set(recent.map((r) => r.session).filter(Boolean))].length,
     devices: [...new Set(recent.map((r) => r.deviceType).filter(Boolean))],
     countdownDriftAvgMs: avg(countdownDrift),
@@ -71,6 +95,8 @@ export function analyzeQAMetrics(input) {
     syncLateRenderOver1000Count: syncLateRenderOver1000,
     syncRenderDuplicateSkippedCount: syncRenderDuplicateSkipped,
     taggerSnapshotGaveUpCount: taggerSnapshotGaveUp,
+    playAgainBlockedCount: playAgainBlocked,
+    playAgainVisibleDuringPartialReplayCount: playAgainVisibleDuringPartialReplay,
   };
 
   const verdict = (cond, hasData) => (!hasData ? 'NO-DATA' : (cond ? 'PASS' : 'FAIL'));
@@ -88,6 +114,8 @@ export function analyzeQAMetrics(input) {
     'WRPS-026 resultValue null = 0': verdict(resultValueNull === 0, hasAny),
     'WRPS-SYNC syncLateRenderOver1000 = 0': verdict(syncLateRenderOver1000 === 0, hasAny),
     'WRPS-072 TAGGER_SNAPSHOT_GAVE_UP = 0': verdict(taggerSnapshotGaveUp === 0, hasAny),
+    // Build23 인수기준: 부분 재경기 중 '한번더' 노출 없음.
+    'WRPS-PLAYAGAIN-B23 visible during partial replay = 0': verdict(playAgainVisibleDuringPartialReplay === 0, hasAny),
   };
   const passed = Object.values(gate).filter((v) => v === 'PASS').length;
   const failed = Object.values(gate).filter((v) => v === 'FAIL').length;

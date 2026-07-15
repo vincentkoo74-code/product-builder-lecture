@@ -59,7 +59,8 @@ describe('WRPS-072 — ROUND_RESULT metric 중복 제거', () => {
   });
 
   it('ROUND_RESULT emit은 동일 eventId면 재기록하지 않는다(단일 키 가드)', () => {
-    expect(html).toMatch(/if \(state\.resultMetricKey !== evId\)\s*\{[\s\S]{0,260}eventType: 'ROUND_RESULT'/);
+    // Build23: activeCandidateCount 등 진단 필드가 추가되어 간격이 늘어났다 — 가드 로직 자체는 무변경.
+    expect(html).toMatch(/if \(state\.resultMetricKey !== evId\)\s*\{[\s\S]{0,500}eventType: 'ROUND_RESULT'/);
     expect(html).toContain('state.resultMetricKey = evId;');
   });
 
