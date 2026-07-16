@@ -88,7 +88,15 @@ describe('Build22-B — same phase late update does not re-render screen', () =>
     // codex-critic 재검토(2차) 지적: round 기준 가드(state.round !== 1)는 정확하지만 "라운드1에서
     // 끝나는 게임이 세션 내내 연속"되면 절대 안 지워져 메모리만 누적된다 — gameNo(getGameRound(),
     // 게임마다 반드시 변경)로 가드하면 round 값과 무관하게 "새 게임 진입"을 정확히 1회만 감지한다.
-    expect(html).toMatch(/if \(room\.round === 1\) \{[\s\S]{0,1300}if \(state\.renderedPhaseKeysGameNo !== state\.gameRound\) \{\s*\n\s*state\.renderedPhaseKeys = \{\};\s*\n\s*state\.renderedPhaseKeysGameNo = state\.gameRound;\s*\n\s*\}\s*\n\s*\}/);
+    // Build27(H1, codex-critic 재지적): 최초 수정(room.status !== 'game_over')은 game_over만 막았지만
+    // status:'result'의 동일 duplicate-echo 취약점(라운드1 tooMany/tooFew 재대결 예약 창에서 판정
+    // 결과가 조용히 소실될 수 있음)이 남아있어, 조건을 status 값 대신 gameNo 기반 1회성
+    // idempotency로 일반화했다. Build27(M1, codex-critic 2차 검증): gameRound 단독 비교는 한 세션
+    // 안에서 서로 다른 방이 우연히 같은 gameRound로 첫 게임을 끝내면 오판될 수 있어, 가드 키를
+    // `${roomCode}:${gameRound}`로 room-scope했다 — tests/build27-replay-force-start.test.mjs 참조.
+    // gameNo 기반 renderedPhaseKeys 가드 자체는 무변경 — 이제 리셋 블록 전체가 방·게임 조합당
+    // 정확히 1회만 실행되므로 "2차 전이에서 키가 안 지워진다"는 보장은 오히려 더 강해졌다.
+    expect(html).toMatch(/if \(room\.round === 1 && state\.confirmedIdsResetGameNo !== confirmedIdsResetKey\) \{[\s\S]{0,1300}if \(state\.renderedPhaseKeysGameNo !== state\.gameRound\) \{\s*\n\s*state\.renderedPhaseKeys = \{\};\s*\n\s*state\.renderedPhaseKeysGameNo = state\.gameRound;\s*\n\s*\}\s*\n\s*\}/);
   });
 
   it('시뮬레이션: 같은 게임(gameNo 불변) 안에서 handleRoomUpdate가 두 번(result→game_over, round=1 유지) 호출돼도 직전에 기록한 duplicate-skip 키가 살아남고, 다음 게임(gameNo 변경)에서는 정확히 초기화된다', () => {
