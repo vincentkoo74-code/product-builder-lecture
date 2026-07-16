@@ -5058,21 +5058,16 @@
 	        getChoiceBase(p.choice) &&
 	        !hasConfirmedRoundResult(p.choice)
 	      );
-	      // Build24-B: DB 재조회 전에 이미 로컬 state.participants가 완전히 신선한지(모든 활성
-	      // 참가자가 이미 서버 확정 결과를 갖고 있는지) 먼저 확인한다. host 자신이 방금
-	      // publishHostRoundResult()로 전원의 결과를 직접 써서 state.participants를 이미 최신으로
-	      // 갱신한 직후(같은 클라이언트, 같은 세션)라면, 굳이 한 번 더 DB 왕복을 할 필요가 없다 —
-	      // 이 불필요한 왕복 자체가 스냅샷 재시도 예산을 소모해 GAVE_UP까지 가는 경로를 앞당기는
-	      // 원인 중 하나였다(codex-critic Build24 분석, Candidate B). host로만 제한하는 이유:
-	      // host는 "방금 이 데이터를 직접 쓴 당사자"라는 강한 근거가 있지만, participant는 다른
-	      // 기기(host)가 쓴 데이터를 관찰하는 입장이라 로컬 state.participants가 완전해 보여도
-	      // 로스터(참가자 입장/퇴장) 변화를 놓쳤을 가능성을 배제할 수 없다 — 그 경우까지 스킵하면
-	      // 새로 생긴 위험이 되므로, 근거가 확실한 host 케이스에만 적용한다(보수적 범위).
-	      // 판정 알고리즘은 무관 — "입력 스냅샷을 언제/얼마나 다시 가져오는가"만 최적화한다.
-	      if (state.role === "host" && unresolvedOf(state.participants).length === 0 && (state.participants || []).length > 0) {
-	        try { QA.emit('metric', { wrps: 'WRPS-072-B24', eventType: 'TAGGER_SNAPSHOT_ALREADY_FRESH', skippedRefetch: true }); } catch (e) {}
-	        return state.participants;
-	      }
+	      // Build24-B ROLLBACK(실기기 재현 회귀로 제거, room PP2C): host가 방금 publishHostRoundResult()로
+	      // 직접 쓴 데이터라도 "완전히 신선하다"고 판단해 DB 재조회를 스킵하면, 이 함수가 매 시도마다
+	      // 호출하는 syncConfirmedIdsFromParticipants(data)도 함께 건너뛰게 되어 state.confirmedSafeIds/
+	      // LoserIds가 재정규화되지 않는다 — 그 결과 실기기에서 2인 게임(target=1) gameOver 라운드에서
+	      // host의 "한번더" 버튼이 activeCandidateCount=2/confirmedTaggerCount=0로 오분류되어
+	      // visible=false로 영구 숨겨지는 회귀가 재현됨(resultValue:null, shadowMismatch:true 동반).
+	      // GAVE_UP 빈도 감소라는 이점보다 판정 정확성이 우선이므로 이 최적화는 완전히 롤백한다 —
+	      // host/participant 구분 없이 항상 아래 재시도 루프(및 매 시도의 syncConfirmedIdsFromParticipants
+	      // 호출)를 거친다. 판정 알고리즘(judgeRound/judgePure/resolveElimination)과 Build23 partial
+	      // replay guard는 애초에 이 함수와 무관 — 무변경.
 	      for (let attempt = 0; attempt <= maxRetries; attempt++) {
 	        const res = await db.from('participants').select('*')
 	          .eq('room_id', roomCode).order('created_at', { ascending: true });

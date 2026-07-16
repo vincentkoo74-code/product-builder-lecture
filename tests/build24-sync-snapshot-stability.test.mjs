@@ -239,67 +239,101 @@ describe('Build24-A — render-timing measurement decoupled from snapshot-retry 
   });
 });
 
-describe('Build24-B — snapshot re-fetch skipped when host local snapshot already fresh', () => {
-  it('host이고 로컬 state.participants가 이미 완전히 신선하면 DB 재조회를 건너뛰고 TAGGER_SNAPSHOT_ALREADY_FRESH를 남긴다', async () => {
-    const state = {
-      role: 'host', roomCode: 'ROOM1', confirmedSafeIds: ['p3'], confirmedLoserIds: [],
-      participants: [
-        { id: 'p1', choice: 'rock|win' },
-        { id: 'p2', choice: 'paper|lose' },
-        { id: 'p3', choice: '__safe__' },
-      ],
-    };
-    let dbCalled = false;
-    const db = { from: () => { dbCalled = true; return { select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: [] }) }) }) }; } };
-    const { fetchFreshParticipantsForResult, emitted } = loadFetchFreshParticipantsForResult({ state, db });
-    const result = await fetchFreshParticipantsForResult('ROOM1');
-    expect(dbCalled).toBe(false);
-    expect(result).toBe(state.participants);
-    expect(emitted.some((e) => e.eventType === 'TAGGER_SNAPSHOT_ALREADY_FRESH')).toBe(true);
-    // Build24 인수기준: 이 경로에서는 GAVE_UP/STALE/FINAL_WAIT에 도달할 기회 자체가 없다(재조회 자체를
-    // 안 하므로) — host resultValueNullCount/TAGGER_SNAPSHOT_GAVE_UP 감소를 구조적으로 보장.
-    expect(emitted.some((e) => e.eventType === 'TAGGER_SNAPSHOT_GAVE_UP')).toBe(false);
-    expect(emitted.some((e) => e.eventType === 'TAGGER_SNAPSHOT_STALE')).toBe(false);
+describe('Build24-B ROLLBACK — 실기기 회귀(room PP2C) 재현 및 수정 확인', () => {
+  // 근본 원인: host-only fast-path("이미 신선해 보이면 재조회 스킵")가 syncConfirmedIdsFromParticipants()
+  // 호출까지 함께 건너뛰어, state.confirmedSafeIds/LoserIds가 재정규화되지 않은 채로 finishRoundLocal()의
+  // 판정 입력이 되었다 — 그 결과 2인 게임(target=1) gameOver 라운드에서 host의 "한번더" 버튼이
+  // activeCandidateCount=2/confirmedTaggerCount=0으로 오분류되어 visible=false로 영구 숨겨짐
+  // (resultValue:null, shadowMismatch:true 동반). 판정 정확성을 GAVE_UP 감소보다 우선해 fast-path를
+  // 완전히 롤백한다 — host/participant 구분 없이 항상 재시도 루프(및 매 시도의
+  // syncConfirmedIdsFromParticipants 호출)를 거친다.
+
+  it('요구사항 #1/#3 — fast-path가 완전히 제거되었다: host/participant 무관하게 항상 DB를 재조회하고, TAGGER_SNAPSHOT_ALREADY_FRESH는 더는 존재하지 않는다', async () => {
+    expect(html).not.toContain('TAGGER_SNAPSHOT_ALREADY_FRESH');
+    expect(html).not.toContain("state.role === \"host\" && unresolvedOf(state.participants).length === 0");
+    for (const role of ['host', 'participant']) {
+      const participants = [
+        { id: 'p1', choice: 'rock|lose' },
+        { id: 'p2', choice: 'paper|win' },
+      ];
+      const state = { role, status: 'result', roomCode: 'ROOM1', confirmedSafeIds: [], confirmedLoserIds: [], participants };
+      let dbCalled = false;
+      const db = { from: () => { dbCalled = true; return { select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: participants }) }) }) }; } };
+      const { fetchFreshParticipantsForResult, emitted } = loadFetchFreshParticipantsForResult({ state, db });
+      await fetchFreshParticipantsForResult('ROOM1');
+      expect(dbCalled).toBe(true); // role에 관계없이 항상 재조회(fast-path 완전 제거)
+      expect(emitted.some((e) => e.eventType === 'TAGGER_SNAPSHOT_ALREADY_FRESH')).toBe(false);
+    }
   });
 
-  it('participant(non-host)는 로컬 데이터가 신선해 보여도 기존처럼 DB를 재조회한다(보수적 범위 — host 케이스만 최적화)', async () => {
+  it('요구사항 #2 — fetchFreshParticipantsForResult()는 host가 이미 신선해 보이는 데이터를 갖고 있어도 매 시도마다 실제 syncConfirmedIdsFromParticipants()를 호출해 confirmedSafeIds/LoserIds를 재정규화한다(실제 함수, mock 아님)', async () => {
+    // syncConfirmedIdsFromParticipants를 스파이로 감싸 실제 호출 여부/횟수를 확인한다(회귀의 정확한 원인).
+    // 실제 함수 소스를 별명(__realSyncConfirmedIdsFromParticipants)으로 추출해, 원래 이름으로는
+    // 호출 횟수를 세는 얇은 래퍼를 두어 이름 충돌(무한재귀) 없이 실제 로직을 그대로 실행한다.
+    const realSyncSrcRaw = extractBlock(
+      'function syncConfirmedIdsFromParticipants(participants = state.participants) {',
+      'function isWaitingForNextGame('
+    );
+    const realSyncSrcRenamed = realSyncSrcRaw.replace(
+      'function syncConfirmedIdsFromParticipants(participants = state.participants) {',
+      'function __realSyncConfirmedIdsFromParticipants(participants = state.participants) {'
+    );
     const participants = [
-      { id: 'p1', choice: 'rock|win' },
-      { id: 'p2', choice: 'paper|lose' },
-      { id: 'p3', choice: '__safe__' },
+      { id: 'p1', choice: 'rock|lose' },
+      { id: 'p2', choice: 'paper|win' },
     ];
-    const state = { role: 'participant', roomCode: 'ROOM1', confirmedSafeIds: ['p3'], confirmedLoserIds: [], participants };
+    const state = { role: 'host', status: 'result', roomCode: 'ROOM1', confirmedSafeIds: [], confirmedLoserIds: [], participants };
+    const emitted = [];
+    const QA = { emit: (channel, data) => emitted.push(data) };
+    const db = { from: () => ({ select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: participants }) }) }) }) };
+    const sleep = () => Promise.resolve();
+    const factory = new Function(
+      'state', 'QA', 'db', 'sleep', 'syncCounter',
+      CHOICE_HELPERS_BLOCK + '\n' + realSyncSrcRenamed +
+        '\nfunction syncConfirmedIdsFromParticipants(p) { syncCounter.count++; return __realSyncConfirmedIdsFromParticipants(p); }\n' +
+        FETCH_FRESH_SRC + '\n; return fetchFreshParticipantsForResult;'
+    );
+    const syncCounter = { count: 0 };
+    const fetchFreshParticipantsForResult = factory(state, QA, db, sleep, syncCounter);
+    await fetchFreshParticipantsForResult('ROOM1');
+    expect(syncCounter.count).toBeGreaterThanOrEqual(1); // 회귀 이전(fast-path 존재 시)에는 0이었을 것
+    // 실제 syncConfirmedIdsFromParticipants가 정말 실행되어 confirmedLoserIds가 재정규화됐는지도 확인
+    // (마커 기반이라 이 라운드는 아직 __loser__ 마커가 없으므로 빈 배열 유지가 정상 — 호출 자체가 핵심).
+    expect(state.confirmedSafeIds).toEqual([]);
+    expect(state.confirmedLoserIds).toEqual([]);
+  });
+
+  it('요구사항 #5 — host, gameOver, targetTaggerCount 충족(활성 풀 0)이면 실제 canShowPlayAgainButton()은 true다(Build23 playAgain guard 자체는 무변경 — tests/build23-play-again-guard.test.mjs와 동일 소스, 여기서도 재확인)', () => {
+    // canShowPlayAgainButton()/isTaggerSelectionComplete()는 Build24에서 전혀 손대지 않았다 — 이번
+    // 회귀는 그 앞단(입력 데이터 정규화)에서 발생했다. 이 테스트는 그 경계를 명확히 하기 위한
+    // 소스 계약 확인이다(로직 자체는 tests/build23-play-again-guard.test.mjs가 이미 실제 실행으로 검증).
+    expect(html).toMatch(/function isTaggerSelectionComplete\(\) \{\s*\n\s*return \(state\.participants \|\| \[\]\)\.length > 0 && getActivePlayers\(\)\.length === 0;\s*\n\s*\}/);
+  });
+
+  it('요구사항 #6 — host, gameOver 상태에서도 재조회 경로가 항상 실행된다(resultValue null의 전제조건이었던 fast-path skip 제거 확인)', async () => {
+    // resultValue null 자체는 finishRoundLocal()의 별도 로직이라 이 파일에서 end-to-end로 재현하지
+    // 않지만(finishRoundLocal 전체 추출은 범위 밖), 그 전제 조건(재조회 자체가 항상 실행되어 신선한
+    // confirmedSafeIds/LoserIds를 확보하는 것)은 여기서 직접 검증한다 — fast-path가 있었다면
+    // 아래 dbCalled assert가 실패했다(재조회 자체가 스킵됐을 것).
+    const participants = [
+      { id: 'p1', choice: 'rock|lose' },
+      { id: 'p2', choice: 'paper|win' },
+    ];
+    const state = { role: 'host', status: 'game_over', roomCode: 'ROOM1', confirmedSafeIds: [], confirmedLoserIds: [], participants };
     let dbCalled = false;
-    const db = { from: () => { dbCalled = true; return { select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: participants }) }) }) }; } };
+    const db = { from: (...args) => { dbCalled = true; return { select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: participants }) }) }) }; } };
     const { fetchFreshParticipantsForResult } = loadFetchFreshParticipantsForResult({ state, db });
     await fetchFreshParticipantsForResult('ROOM1');
-    expect(dbCalled).toBe(true);
+    expect(dbCalled).toBe(true); // fast-path였다면 false(재조회 자체가 없었을 것)
   });
 
-  it('host라도 로컬 state.participants가 아직 미해결이면 기존 재시도 루프를 정상 수행한다(회귀 없음)', async () => {
-    const state = { role: 'host', roomCode: 'ROOM1', confirmedSafeIds: [], confirmedLoserIds: [],
-      participants: [{ id: 'p1', choice: 'rock' }] }; // 결과 인코딩 전
-    let dbCallCount = 0;
-    const freshData = [{ id: 'p1', choice: 'rock|win' }];
-    const db = { from: () => { dbCallCount++; return { select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: freshData }) }) }) }; } };
-    const { fetchFreshParticipantsForResult, emitted } = loadFetchFreshParticipantsForResult({ state, db });
-    const result = await fetchFreshParticipantsForResult('ROOM1');
-    expect(dbCallCount).toBeGreaterThanOrEqual(1);
-    expect(result).toEqual(freshData);
-    expect(emitted.some((e) => e.eventType === 'TAGGER_SNAPSHOT_ALREADY_FRESH')).toBe(false);
+  it('요구사항 #7 — shadowMismatch 여부와 무관하게 fast-path 자체가 없으므로 "통과"할 방법이 없다(구조적 보장)', () => {
+    // fast-path가 완전히 삭제되었으므로, shadowMismatch가 있든 없든 이 함수는 항상 동일하게
+    // DB 재조회 + syncConfirmedIdsFromParticipants를 거친다 — "조건부로 통과시키는" 로직 자체가 없다.
+    expect(html).not.toMatch(/if \(state\.role === "host" && unresolvedOf/);
   });
 
-  it('host이고 참가자가 아직 하나도 없으면(빈 배열) 신선함으로 오판하지 않는다(빈 배열 방어)', async () => {
-    const state = { role: 'host', roomCode: 'ROOM1', confirmedSafeIds: [], confirmedLoserIds: [], participants: [] };
-    let dbCalled = false;
-    const freshData = [{ id: 'p1', choice: 'rock|win' }];
-    const db = { from: () => { dbCalled = true; return { select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: freshData }) }) }) }; } };
-    const { fetchFreshParticipantsForResult } = loadFetchFreshParticipantsForResult({ state, db });
-    await fetchFreshParticipantsForResult('ROOM1');
-    expect(dbCalled).toBe(true); // 빈 배열은 "신선함"이 아니라 "아직 로드 안 됨" — 반드시 재조회
-  });
-
-  it('TAGGER_FALLBACK_SOURCE는 여전히 stored를 우선하고 localJudge는 최후 수단으로만 기록된다(Build22-C 회귀 없음, 소스 계약)', () => {
+  it('회귀 없음: TAGGER_FALLBACK_SOURCE는 여전히 stored를 우선하고 localJudge는 최후 수단으로만 기록된다(Build22-C 무변경, 소스 계약)', () => {
     expect(html).toMatch(/const hasStoredResults = activeForStoredResult\.length > 0 &&[\s\S]{0,60}activeForStoredResult\.every\(p => hasConfirmedRoundResult\(p\.choice\)\);/);
     expect(html).toMatch(/eventType: 'TAGGER_FALLBACK_SOURCE', source: hasStoredResults \? 'stored' : 'localJudge'/);
     // judgeRound(로컬 재계산)는 hasStoredResults가 false인 else 분기에서만 호출된다 — 판정 알고리즘 자체는 무변경.
