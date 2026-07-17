@@ -7697,7 +7697,7 @@ function summarizeGameStats(rows) {
         // ── Build17: QA 자동저장/파일 export (게임 로직 무변경, 관찰·기록만) ──────
         // 실기기 필드테스트 시 앱 종료/새로고침에도 QA JSON을 자동 확보하기 위한 계층.
         const QA_STORAGE_KEY = 'rpsQAReport.v1';
-        const QA_BUILD_LABEL = 'build26';
+        const QA_BUILD_LABEL = 'build27';
         function deviceInfo() {
           let platform = 'web', model = 'Web', osVersion = '';
           try {
@@ -7715,7 +7715,7 @@ function summarizeGameStats(rows) {
           return {
             schemaVersion: 'qa-report.v1',
             app: 'WoorimaruRPS',
-            build: '26',
+            build: '27',
             buildLabel: QA_BUILD_LABEL,
             createdAt: new Date().toISOString(),
             device: deviceInfo(),
