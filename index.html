@@ -5001,6 +5001,28 @@
 	        state.finishingRound = false;
 	        state.resultVoiceKey = null; state.resultMetricKey = null; state.lastRoundResolution = null; state.gameOverVoiceKey = null; // WRPS-046/072/072-B19/Build21: 새 게임 회차에서 결과 음성/메트릭/판정캐시/게임종료음성 가드 초기화
 	        state.resultSfxKey = null;   // 결과 효과음 가드 초기화
+	        // Build28 Round3(codex-critic NEW-HIGH-1/NEW-MEDIUM-1): 새 게임회차 진입 시 이전
+	        // 라운드의 defer-retry 타이머를 반드시 취소하고(예약된 재시도가 새 회차에서 깨어나
+	        // 팬텀 판정을 만들지 않도록) 카운터 맵도 비운다(메모리 누수 방지 — 키에 이미
+	        // roomCode:eventId가 합성돼 정확성 문제는 없지만 무한정 쌓이지 않게 함께 정리).
+	        if (state.roundJudgeDeferTimer) { clearTimeout(state.roundJudgeDeferTimer); state.roundJudgeDeferTimer = null; }
+	        state.roundJudgeDeferAttempts = {};
+	        // Build28 Round4(잔여 LOW-1): discardInProgressRoomSession/resetRoomLocalState와 동일하게
+	        // 여기(같은 방에서 다음 게임회차로 넘어가는 가장 흔한 경로)에서도 stale-room-row 연속
+	        // 카운터를 리셋한다 — 위에서 state.gameRound가 baseGameRound+1로 즉시 올라가므로, 리셋이
+	        // 없으면 직전 게임회차에서 누적된 카운트가 새 게임회차로 그대로 이월된다.
+	        // Build28 Round5(codex-critic Round4 재지적, 서술 정정): 이 리셋은 흔한 경로에서는 사실
+	        // no-op이다 — handleRoomUpdate는 stale이 아닌 row를 단 하나라도 처리하면 이미 무조건
+	        // state.staleRoomUpdateSkipStreak를 0으로 리셋하므로(아래 5383), 다음 정상 room row가
+	        // 도착하는 즉시 어차피 0이 된다. 트레이드오프가 남는 지점은 이중 실패 시나리오다: 직전
+	        // 게임회차에서 이미 non-zero streak(예: 3)가 쌓인 채 이 함수가 호출되고 이 호출 자신의
+	        // rooms.update마저 실패하면, 이 리셋 때문에 self-heal 도달까지 (threshold-1)=최대 4회의
+	        // stale row가 추가로 더 필요해진다(리셋이 없었다면 이월분과 합산돼 더 일찍 도달했을
+	        // 것) — 즉 "새 게임회차는 완전히 새로운 비교 기준선이라 항상 안전하다"는 결론은 이
+	        // 조합에서는 성립하지 않는다. 그럼에도 이 지연은 유계(최대 4폴링)이고 fetchParticipants
+	        // 등 다른 재동기화 경로가 있어 영구 정지로 이어지지 않으므로 이 트레이드오프를
+	        // 수용한다(아래 5371행대 self-heal 설계 참고).
+	        state.staleRoomUpdateSkipStreak = 0;
 	        resetLocalParticipantsForNewGameRound();
 
 	        if (getOnlineMode() && db && state.roomCode) {
@@ -5092,8 +5114,32 @@
 	        state.participants = data;
 	        syncConfirmedIdsFromParticipants(data);
 	        const unresolved = unresolvedOf(data);
-	        if (unresolved.length === 0) return data;
-	        try { QA.emit('metric', { wrps: 'WRPS-072-B19', eventType: 'TAGGER_SNAPSHOT_STALE', attempt, unresolvedIds: unresolved.map(p => p.id) }); } catch (e) {}
+	        if (unresolved.length === 0) {
+	          // Build28(WRPS-075) [수정3]: 빈 choice 스냅샷을 "신선"으로 오판하지 않기 — 실측 결함B
+	          // (participant p_1784522957264 05:02:57 eventId="11:1"을 tooFew/act=3/3/winnersOnly로
+	          // 렌더한 반면 host·타 participant는 동일 11:1을 tooMany/act=2/3/losersOnly로 렌더).
+	          // unresolvedOf는 getChoiceBase(p.choice)가 "있는" row만 미해결로 세므로, 전원
+	          // choice=null인 스냅샷(아직 이번 라운드 데이터가 이 단말에 반영되지 않은 상태)이
+	          // unresolved=0으로 첫 시도에 통과해버린다. 실제로 판정 가능한 row(choice 있는 active
+	          // 후보)가 하나도 없다면 이 스냅샷으로는 애초에 판정을 시도해서는 안 된다.
+	          const activeCandidates = (data || []).filter(p =>
+	            !(state.confirmedSafeIds || []).includes(p.id) &&
+	            !(state.confirmedLoserIds || []).includes(p.id) &&
+	            !isNonPlayingChoice(p.choice) &&
+	            getChoiceBase(p.choice)
+	          );
+	          const confirmedTotal = (state.confirmedSafeIds || []).length + (state.confirmedLoserIds || []).length;
+	          // ⚠️ 확정자가 이미 있는 정상 종료 스냅샷(결함C 상황: conf=2/2, choice 있는 row 0건)은
+	          // 재시도 대상이 아니다 — confirmedTotal===0을 반드시 AND로 넣어야 그 정상 gameOver
+	          // 재확인 케이스까지 재시도로 묶어 무한 대기를 만들지 않는다.
+	          if (activeCandidates.length === 0 && confirmedTotal === 0) {
+	            try { QA.emit('metric', { wrps: 'WRPS-075', eventType: 'SNAPSHOT_UNJUDGEABLE_RETRY', attempt, participantCount: (data || []).length }); } catch (e) {}
+	          } else {
+	            return data;
+	          }
+	        } else {
+	          try { QA.emit('metric', { wrps: 'WRPS-072-B19', eventType: 'TAGGER_SNAPSHOT_STALE', attempt, unresolvedIds: unresolved.map(p => p.id) }); } catch (e) {}
+	        }
 	        if (attempt < maxRetries) await sleep(delayMs);
 	      }
 	      // Build22-C: 일반 재시도(maxRetries)를 다 써도 미해결이면 바로 포기하지 않고, 기존 루프와
@@ -5286,6 +5332,56 @@
 
     async function handleRoomUpdate(room) {
       if (!room) return;
+
+      // Build28(WRPS-075) [수정2]: stale room row 전이 차단 — 실측 host 04:54:09
+      // eventId="6:2"(새 gameNo 6이 이미 로컬에 확정된 뒤, 이전 게임(gameRound 5 소속)의
+      // 늦게 도착한 room row가 round:2를 들고 와 state.round에 그대로 덮어써 "게임=6,
+      // 라운드=2"라는 존재하지 않는 조합을 만들어냄 — finishRoundLocal이 이 잘못된 eventId로
+      // activeCount=0 상태에서 localJudge tooFew를 확정, 결함A). 아래 getGameRound()의
+      // Math.max(1, penaltyGameRound, state.gameRound)는 절대 감소하지 않으므로, "이 room row
+      // 자체"의 penalty에 인코딩된 gameRound가 지금까지의 로컬 gameRound보다 더 작다면 이 row는
+      // 우리가 이미 넘어선 과거 게임에 속한 stale 데이터다 — round 이월과 status 전이 처리(및
+      // 그에 따른 finishRoundLocal 호출)를 모두 건너뛴다.
+      // ⚠️ getPenaltyGameRound는 파싱 실패/필드 없음일 때 0을 반환한다(null이 아니라 "알 수
+      // 없음" 의미의 sentinel). 0을 stale로 오판하면 gameRound 필드가 없는 레거시/최초 penalty
+      // 데이터까지 막아버릴 위험이 있으므로, incomingGameRound가 0(알 수 없음)이면 무조건 기존
+      // 경로를 그대로 유지하고 이 가드를 적용하지 않는다.
+      // Build28 Round2(codex-critic LOW-2): 이 가드는 원래 state.penalty/targetLoserCount/
+      // gameRound/countdownStartAt 대입 이후에 있었다 — stale row라고 판단해 return하기 전에
+      // 이미 그 stale 값들이 최대 1폴링 주기(수 초) 동안 state에 반영되는 부수효과가 있었다(회귀는
+      // 아니었음: 수정 전 코드에도 이 대입은 항상 무조건 일어났으므로 이번에 처음 생긴 문제는
+      // 아니다). 정확성 검토 결과 아래로 옮겨도 판정이 달라지지 않는다: getPenaltyGameRound(room.
+      // penalty)는 room.penalty만 인자로 받아 state.gameRound와 무관하게 항상 동일한 값을
+      // 반환하고, getGameRound()가 계산하는 새 state.gameRound = Math.max(1, incomingGameRound,
+      // 이전 state.gameRound)는 incomingGameRound가 이전 값보다 작을 때는 이전 값 그대로 유지되고
+      // (그래서 대입 후 비교값과 대입 전 비교값이 같음), incomingGameRound가 이전 값 이상일 때는
+      // 어느 쪽으로 비교해도 조건이 false가 되어 stale로 오판되지 않는다 — 즉 대입 전/후 어느
+      // 시점에서 비교하든 이 if의 참/거짓 결과는 항상 동일하다. 그래서 부수효과가 나기 전인 지금
+      // 위치로 가드를 옮겼다.
+      // Build28 Round2(codex-critic LOW-1): beginNewGameRound()의 낙관적 state.gameRound=N+1
+      // 대입(위 4980) 이후 rooms.update(위 5032-5034)가 실패하면 롤백이 없어 local=N+1 / DB=N으로
+      // 고착된다 — 그러면 그 이후 도착하는(진짜 최신인) room row도 매번 incomingGameRound(=N) <
+      // state.gameRound(=N+1)로 오판되어 이 가드에 영구히 걸린다(host의 다음 penalty 쓰기로
+      // 자가 회복되는 경로가 있지만, 그 경로 자체가 없는 경우 영구 정지). 동일 stale-skip이
+      // STALE_ROOM_UPDATE_SELF_HEAL_THRESHOLD(5)회 연속 발생하면 그 행을 한 번 통과시켜(self-heal)
+      // 이 락업을 스스로 풀고, 정상 row를 한 번이라도 처리하면(guard가 걸리지 않으면) 카운터를
+      // 즉시 0으로 리셋한다 — 진짜 stale 데이터가 계속 반복되는 정상 상황(예: 네트워크 재전송)과
+      // 구분할 필요가 없다: self-heal이 잘못 발동해도 최악의 경우 오래된 1개 row를 한 번 더
+      // 반영하는 정도이고, 그마저도 fetchParticipants가 이후 재동기화한다.
+      const STALE_ROOM_UPDATE_SELF_HEAL_THRESHOLD = 5;
+      const incomingGameRound = getPenaltyGameRound(room.penalty);
+      const isStaleRoomRow = incomingGameRound > 0 && incomingGameRound < state.gameRound;
+      if (isStaleRoomRow) {
+        state.staleRoomUpdateSkipStreak = (state.staleRoomUpdateSkipStreak || 0) + 1;
+        if (state.staleRoomUpdateSkipStreak < STALE_ROOM_UPDATE_SELF_HEAL_THRESHOLD) {
+          try { QA.emit('metric', { wrps: 'WRPS-075', eventType: 'STALE_ROOM_UPDATE_SKIPPED', roomRound: room.round, roomStatus: room.status, roomGameRound: incomingGameRound, localGameRound: state.gameRound }); } catch (e) {}
+          return;
+        }
+        try { QA.emit('metric', { wrps: 'WRPS-075', eventType: 'STALE_ROOM_UPDATE_SELF_HEAL', consecutiveSkips: state.staleRoomUpdateSkipStreak, roomGameRound: incomingGameRound, localGameRound: state.gameRound }); } catch (e) {}
+        // 카운터를 리셋하고 이번 row는 막지 않고 통과시킨다(fall-through, return 없음).
+      }
+      state.staleRoomUpdateSkipStreak = 0;
+
       state.penalty = room.penalty;
       state.targetLoserCount = getTargetLoserCount();
       state.gameRound = getGameRound();
@@ -5778,6 +5874,12 @@
       state.advancingRound = false;
       state.resultVoiceKey = null; state.resultMetricKey = null; state.lastRoundResolution = null; state.gameOverVoiceKey = null; // WRPS-046/072/072-B19/Build21: 새 세션에서 결과 음성/메트릭/판정캐시/게임종료음성 가드 초기화
       state.resultSfxKey = null;   // 결과 효과음 가드 초기화
+      // Build28 Round3(codex-critic NEW-HIGH-1/NEW-MEDIUM-1/NEW-LOW-1): 진행 중이던 세션을
+      // 버릴 때 defer-retry 타이머를 취소하고(다른 세션/방으로 넘어간 뒤 뒤늦게 깨어나 팬텀
+      // 판정을 만들지 않도록) 카운터 맵과 stale-skip 연속 카운터도 함께 비운다.
+      if (state.roundJudgeDeferTimer) { clearTimeout(state.roundJudgeDeferTimer); state.roundJudgeDeferTimer = null; }
+      state.roundJudgeDeferAttempts = {};
+      state.staleRoomUpdateSkipStreak = 0;
     }
 
     function resetRoomLocalState({ keepRoomCode = "" } = {}) {
@@ -5803,6 +5905,14 @@
       state.resultVoiceKey = null; state.resultMetricKey = null; state.lastRoundResolution = null; state.gameOverVoiceKey = null; // WRPS-046/072/072-B19/Build21: 새 방에서 결과 음성/메트릭/판정캐시/게임종료음성 가드 초기화
       state.resultSfxKey = null;   // 결과 효과음 가드 초기화
       if (state.rematchAdvanceTimer) { clearTimeout(state.rematchAdvanceTimer); state.rematchAdvanceTimer = null; }
+      // Build28 Round3(codex-critic NEW-HIGH-1/NEW-MEDIUM-1/NEW-LOW-1): 새 방 진입 시 defer-retry
+      // 타이머를 취소하고 카운터 맵·stale-skip 연속 카운터를 초기화한다 — 초기화가 없으면 방
+      // A에서 이월된 값이 방 B(gameRound가 우연히 같은 값으로 재시작되는 경우)의 재시도 상한을
+      // 조기에 소진시키거나(MEDIUM-1), stale-skip 카운터가 방 B의 첫 stale row 1건만으로
+      // self-heal을 조기 발동시킬 수 있다(LOW-1).
+      if (state.roundJudgeDeferTimer) { clearTimeout(state.roundJudgeDeferTimer); state.roundJudgeDeferTimer = null; }
+      state.roundJudgeDeferAttempts = {};
+      state.staleRoomUpdateSkipStreak = 0;
       state.remainingSeconds = 5;
       state.onlineParticipantIds = [];
       state.presenceReady = false;
@@ -7258,8 +7368,212 @@
       const allDraw = activePlayers.length > 0 && activePlayers.every(p => p.lastResult === "draw");
       const iPlayedThisRound = activePlayers.some(p => p.id === state.currentUserId);
 
+      // Build28(WRPS-075) [수정1-a]: 빈 스냅샷 판정 보류 — 실측 host 04:54:09 eventId="6:2"(새
+      // gameNo 6 + 직전 게임의 stale round 2가 섞인 eventId), resultValue=null, tooFew,
+      // act=3/3, conf=0/1, TAGGER_FALLBACK_SOURCE src=localJudge activeCount=0. 05:02:35
+      // eventId="11:3"도 동일 패턴. activePlayers/prevSafeIds/prevLoserIds가 전부 비어 있다는
+      // 것은 이 스냅샷에 아직 아무도 확정되지 않았는데 활성 참가자도 하나도 없다는 뜻 — 즉 이
+      // 라운드를 판정할 데이터 자체가 아직 도착하지 않았다(또는 상류 stale row로 인해 비었다).
+      // 이 경우 판정/렌더/showScreen/음성/DB쓰기/lastRoundResolution 기록을 전부 하지 않고
+      // finishingRound만 풀어준 뒤 재판정을 예약한다(아래 Round2 수정 참고).
+      // ⚠️ activePlayers.length===0만으로 막으면 정상 경로가 깨진다 — result→game_over 2차
+      // 전이에서 전원이 confirmed로 이동해 activePlayers=0 & remainingSlots=0인 상태는 정당한
+      // gameOver 재진입이다. 그래서 prevSafeIds.length===0 && prevLoserIds.length===0(확정자가
+      // 하나도 없음 = 진짜 빈 스냅샷)을 반드시 AND로 포함해야 그 정상 재진입을 막지 않는다.
+      if (activePlayers.length === 0 && prevSafeIds.length === 0 && prevLoserIds.length === 0) {
+        try { QA.emit('metric', { wrps: 'WRPS-075', eventType: 'ROUND_JUDGE_DEFERRED', reason: 'emptySnapshot', eventId: roundEventId, activeCount: 0, participantCount: (state.participants || []).length }); } catch (e) {}
+        state.finishingRound = false;
+        // Build28 Round2(codex-critic MEDIUM-1): 최초 구현의 주석은 "다음 폴링(재판정 시도)을
+        // 기다린다"였지만 그런 재호출 경로가 실제로 없었다 — online에서 finishRoundLocal 호출부는
+        // handleRoomUpdate의 `if (oldStatus !== state.status)`(상태 "전이" 시점) 단 한 곳뿐이라,
+        // defer 이후 room.status가 그대로 유지되는 다음 폴링들은 이 게이트를 아예 통과하지 못해
+        // 이 라운드를 그 단말에서 영구히 재판정하지 않는다. participant는 다음 status 전이로
+        // 회복되지만(허용 가능), host가 정품 result 전이에서 defer하면
+        // scheduleRematchAutoAdvance/game_over 쓰기가 전부 생략되어 방 전체가 'result'에서
+        // 영구 정지한다 — 오판(tooFew)이라도 auto-advance로 게임이 굴러가던 수정 전보다 나쁜
+        // 트레이드오프라 그대로 둘 수 없다.
+        // (A) waitForPhaseRender의 renderKey를 해제하는 방식은 채택하지 않았다: 재호출을 실제로
+        // 막는 것은 renderKey가 아니라 handleRoomUpdate의 `oldStatus !== state.status` 게이트
+        // 자체이고(status가 안 바뀌면 그 블록에 아예 진입하지 않음), renderKey를 지워도 이 게이트를
+        // 우회하지 못해 구조적으로 효과가 없다.
+        // (B) 대신 여기서 직접 bounded 재시도를 예약한다: eventId별 카운터로
+        // MAX_ROUND_JUDGE_DEFER_RETRIES(2)회까지만 재시도하고, 재시도 시 먼저
+        // fetchFreshParticipantsForResult()로 최신 스냅샷을 받아 state.participants를 갱신한
+        // 뒤에만 finishRoundLocal()을 재귀 호출한다(무조건 재귀 호출이 아니라 새 데이터 확보를
+        // 먼저 시도 — 상류 room row가 여전히 stale이면 이 분기가 다시 defer해 카운터를
+        // 소모한다). 카운터가 상한에 도달하면 더 이상 타이머를 예약하지 않고
+        // ROUND_JUDGE_DEFER_EXHAUSTED를 1회 emit한 뒤 조용히 멈춘다 — 무한 루프/무한 타이머
+        // 금지 원칙을 코드 구조로 보장한다(재시도 스케줄링 경로가 이 if 안에만 있고, 카운터
+        // 검사를 통과하지 못하면 그 경로 자체가 실행되지 않음).
+        // Build28 Round3(codex-critic NEW-MEDIUM-1): 카운터 키에 roomCode를 합성한다 — Build27
+        // confirmedIdsResetKey(5421)와 동일한 구조적 해법. 방 A에서 "1:1" defer를 2회 소진한 뒤
+        // 방 B로 이동해도(gameRound가 우연히 다시 1로 리셋되는 흔한 케이스) 방 B의 첫 라운드는
+        // 다른 키("B코드:1:1")로 취급되어 재시도가 다시 정상적으로 2회 가능하다.
+        // resetRoomLocalState/discardInProgressRoomSession에서 roundJudgeDeferAttempts 자체도
+        // 함께 비우므로(메모리 누수 방지) 이 키 합성은 그 초기화가 유실됐을 때의 이중 방어다.
+        // Build28 Round4(잔여 LOW-4, 설계상 허용 — 1차 서술 정정): deferKey는
+        // roomCode:roundEventId(=gameRound:round) 조합이다. (a) 이 2회 defer 예산이 실제로
+        // 공유되는 조건은 "같은 round 번호 안에서 finishRoundLocal()이 반복 호출되는 경우"다 —
+        // 예를 들어 이 defer 재시도 자체(위 setTimeout 콜백이 fetchFreshParticipantsForResult 후
+        // finishRoundLocal()을 재귀 호출)가 여기 해당한다. handleRoomUpdate의 primary 호출 게이트는
+        // `oldStatus !== state.status`이고 oldStatus는 호출마다 그 시점 state.status를 캡처하므로,
+        // 완전히 동일한 status의 단순 echo/재수신은 이 게이트를 통과하지 못해 finishRoundLocal을
+        // 재호출하지 않는다 — 이전 서술("echo/재수신으로 재호출됨")은 부정확했다. 실제로 같은 round
+        // 번호 안에서 예산을 공유할 수 있는 또 다른 경로는 result→game_over처럼 연속된 서로 다른
+        // real status 전이가 발생하는 경우다(round 번호는 그대로라 deferKey가 같음) — WRPS-046
+        // 주석(위 7254 부근)이 finishRoundLocal()이 result→game_over 전이로 한 라운드에 2회 호출될
+        // 수 있음을 이미 문서화하고 있다. 그리고 이건
+        // 무승부(allDraw)와는 무관하다 — nextRound()(8556행)는 allDraw든 아니든 항상
+        // `round: state.round + 1`(DB)과 `state.round += 1`(로컬)을 실행해 round 번호를 반드시
+        // 올리므로, 무승부 재대결도 다음 라운드에서는 eventId가 바뀐다(1차 서술 "무승부 재대결은
+        // eventId를 공유한다"는 코드로 재확인한 결과 사실이 아니었다 — orchestrator 지적으로 정정,
+        // Round 4). 그리고 같은 round 번호 안에서 반복 호출 시 예산을 공유하는 것은 결함이 아니라
+        // 의도된 동작이다 — 애초에 이 defer가 bounded retry로 설계된 이유 자체가 "같은 판정
+        // 시도"에 대해 무한정 재시도하지 않고 상한(2회)을 두는 것이므로, 그 반복 호출들이 동일
+        // 예산을 나눠 쓰는 것은 설계 목적과 정확히 일치한다. (b) 예산이 소진돼도 멈추는 것은 이
+        // defer-retry(재시도) 뿐이고(else 분기, ROUND_JUDGE_DEFER_EXHAUSTED emit 후 조용히 멈춤),
+        // status 전이를 감지해 finishRoundLocal을 호출하는 primary 경로(5505 등)는 이 카운터와
+        // 무관하게 계속 살아있어 게임이 멈추지 않는다 — 최악의 경우 그 라운드에서 스냅샷이 계속
+        // 비어 판정을 못 내리고 넘어가는 정도이지 무한 루프나 영구 정지가 아니다. (c) 만약 실기기
+        // QA에서 특정 eventId에서 ROUND_JUDGE_DEFER_EXHAUSTED가 반복 관찰되면(같은 round 번호에서
+        // finishRoundLocal 재호출이 잦아 예산이 비정상적으로 빨리 소진되는 패턴 — 무승부 여부와는
+        // 무관하게 판단할 것), 그때 deferKey에 재시도 시퀀스 번호를 추가해 호출별 예산으로
+        // 분리하는 것을 별도 이슈로 검토한다.
+        if (!state.roundJudgeDeferAttempts) state.roundJudgeDeferAttempts = {};
+        const deferKey = `${state.roomCode || ''}:${roundEventId}`;
+        const deferAttempts = state.roundJudgeDeferAttempts[deferKey] || 0;
+        const MAX_ROUND_JUDGE_DEFER_RETRIES = 2;
+        if (deferAttempts < MAX_ROUND_JUDGE_DEFER_RETRIES) {
+          state.roundJudgeDeferAttempts[deferKey] = deferAttempts + 1;
+          // Build28 Round3(codex-critic NEW-HIGH-1): 이 setTimeout 콜백은 예약 시점의 컨텍스트
+          // (roomCode/eventId)를 캡처하지 않고, 발화 시 state.status/roomCode/eventId 일치를
+          // 전혀 확인하지 않았으며, 핸들 자체를 저장하지 않아 clearTimeout 경로도 없었다 —
+          // 그 결과 host의 scheduleRematchAutoAdvance(2.6s)가 이 타이머보다 먼저(또는 그 fetch
+          // 도중) 다음 라운드 'ready' 전이를 써버리면, 뒤늦게 깨어난 이 재시도가 "새 라운드"에
+          // finishRoundLocal()을 실행해 팬텀 tooFew/gameOver 결과화면으로 ready 화면을 덮어써
+          // 버리는 결함A 클래스를 새 경로로 재도입했다(Round2에서 실제로 발생). 예약 시점 값을
+          // 지역 변수로 캡처하고, 발화 시 3중 가드(roomCode/eventId/status)를 통과하지 못하면
+          // 즉시 포기(재시도 없음)한다.
+          const capturedRoomCode = state.roomCode;
+          const capturedEventId = roundEventId;
+          // status 화이트리스트 근거: online에서 finishRoundLocal이 정당하게 호출되는 지점은
+          // handleRoomUpdate의 `if (state.status === "result" || state.status === "game_over")`
+          // (5469 부근, 위 5455의 oldStatus !== state.status 게이트 안) 단 한 곳뿐이다 — 코드로 직접 확인.
+          // 그래서 'result'/'game_over' 두 값만 유효하다.
+          const checkRetryContext = () => {
+            if (state.roomCode !== capturedRoomCode) return 'roomChanged';
+            const currentEventId = getGameRound() + ':' + (state.round || 1);
+            if (currentEventId !== capturedEventId) return 'contextChanged';
+            if (state.status !== 'result' && state.status !== 'game_over') return 'statusChanged';
+            return null;
+          };
+          const abandonRetryIfContextChanged = () => {
+            const reason = checkRetryContext();
+            if (!reason) return false;
+            try {
+              const currentEventId = getGameRound() + ':' + (state.round || 1);
+              QA.emit('metric', {
+                wrps: 'WRPS-075', eventType: 'ROUND_JUDGE_RETRY_ABANDONED', reason,
+                capturedEventId, currentEventId, status: state.status
+              });
+            } catch (e) {}
+            return true;
+          };
+          if (state.roundJudgeDeferTimer) { clearTimeout(state.roundJudgeDeferTimer); state.roundJudgeDeferTimer = null; }
+          state.roundJudgeDeferTimer = setTimeout(() => {
+            state.roundJudgeDeferTimer = null;
+            if (abandonRetryIfContextChanged()) return;
+            (async () => {
+              try {
+                if (getOnlineMode() && db && state.roomCode) {
+                  await fetchFreshParticipantsForResult(state.roomCode);
+                }
+              } catch (e) {}
+              // fetchFreshParticipantsForResult는 자체 재시도로 최대 ~1.2~2.5초 걸릴 수 있다 —
+              // 그 사이 room 상태가 전이(ready 등)될 수 있으므로, fetch 완료 직후 다시 한 번
+              // 동일 3중 가드를 확인한다. 예약/발화 시점 검사만으로는 fetch 도중 발생하는
+              // 레이스를 잡지 못한다(바로 이 경로가 결함A의 재발 지점이었다).
+              if (abandonRetryIfContextChanged()) return;
+              // Build28 Round4(잔여 LOW-3, 의도적 보류): 이 시점 이후 finishRoundLocal() 내부에는
+              // 자체 await(예: db.from('rooms').update(...) — game_over 전이 3곳, 7565/7583/7619
+              // 부근)가 더 있다. abandonRetryIfContextChanged()로 여기까지는 3중 가드를 재확인했지만,
+              // finishRoundLocal 내부의 그 await들 도중에 다른 전이(예: 다음 라운드 ready)가 room에
+              // 반영되면, 그 내부 await가 끝난 뒤 실행되는 renderRoundResult/showScreen이 이미 화면에
+              // 그려진 더 최신 화면을 늦게 덮어쓸 수 있다. (a) 노출: finishRoundLocal 내부 await 이후
+              // 렌더 분기에는 재확인 가드가 없다. (b) 그러나 이 노출은 이번 retry 경로가 새로 만든
+              // 것이 아니라 primary 호출 경로(5505 finishRoundLocal(), 그 앞 5493의
+              // fetchFreshParticipantsForResult await 참고)에도 원래부터 동일하게 존재하던 것이라,
+              // 이번 Round4 범위(잔여 LOW 정리) 밖으로 판단해 코드를 바꾸지 않는다 — 여기를 고치려면
+              // finishRoundLocal 자체의 렌더 분기 구조를 다시 흔들어야 하고, 그건 이미 승인된 판정
+              // 경로를 재차 건드리는 것이라 이번 라운드의 위험회피 원칙(LOW를 고치려다 HIGH를 만들지
+              // 말 것)에 어긋난다. (c) 실기기 QA에서 이 노출이 실제로 체감되는지는
+              // ROUND_JUDGE_RETRY_ABANDONED(맥락 변경으로 재시도 자체가 포기된 경우)와 SYNC_RENDER
+              // (렌더 시점/지연) 메트릭을 함께 관찰해 판단한다 — 두 메트릭이 조합되어 "재시도가
+              // 포기되지 않았는데도 늦은 렌더가 관찰"되면 그때 별도 이슈로 재현/수정을 검토한다.
+              await finishRoundLocal();
+            })();
+          }, 350);
+        } else {
+          try { QA.emit('metric', { wrps: 'WRPS-075', eventType: 'ROUND_JUDGE_DEFER_EXHAUSTED', eventId: roundEventId, attempts: deferAttempts }); } catch (e) {}
+        }
+        return;
+      }
+
+      // Build28(WRPS-075) [수정4]: 판정 불가(localJudge & activePlayers=0) 결과를
+      // lastRoundResolution에 고착시키지 않기 위한 공용 헬퍼 — 실측 결함B(participant
+      // p_1784522957264 05:02:57 eventId="11:1"을 tooFew/act=3/3/winnersOnly로 잘못 캐시해
+      // TAGGER_REPLAY_IDEMPOTENT가 이후에도 이 오판을 계속 재생, 끝내 정정되지 않음). 정상
+      // 판정(서버 stored 또는 activePlayers>0인 localJudge)은 기존과 동일하게 그대로 기록해야
+      // Build19가 막은 재분류 회귀(TAGGER_REPLAY_IDEMPOTENT 무력화)가 재발하지 않는다 — 조건을
+      // 넓히지 말 것.
+      const recordRoundResolution = (payload) => {
+        const judgeQuality = hasStoredResults ? 'stored' : 'localJudge';
+        if (judgeQuality === 'localJudge' && activePlayers.length === 0) {
+          try { QA.emit('metric', { wrps: 'WRPS-075', eventType: 'ROUND_RESOLUTION_CACHE_SKIPPED', eventId: payload.eventId, outcome: payload.outcome }); } catch (e) {}
+          return;
+        }
+        state.lastRoundResolution = payload;
+      };
+
       // WRPS-049 섀도우: 분기 전에 엔진 결과를 병렬 계산(flag OFF면 no-op). 비교는 각 종료지점에서.
       __engineV2ShadowComputeRound(activePlayers, prevLoserIds, prevSafeIds, targetCount);
+
+      // Build28(WRPS-075) [수정1-b]: 술래 정원 충족 시 즉시 gameOver — 실측 host 04:57:47
+      // eventId="7:1" gameOver act=0/3 conf=2/2를, participant 2대가 04:57:51~54에 동일
+      // "7:1"을 allDraw act=1/3 conf=2/2로 재렌더(직전 TAGGER_SNAPSHOT_GAVE_UP → localJudge
+      // activeCount=1, 남은 1명의 draw가 allDraw 분기로 새어나감). remainingSlots<=0인데
+      // confirmedLoserIds가 이미 targetCount 이상이면 술래 정원이 이미 다 찼다는 뜻이므로,
+      // 남은 활성 인원의 개별 결과(draw 포함)와 무관하게 즉시 게임을 종료해야 한다.
+      // ⚠️ remainingSlots<=0 단독으로는 논리상 다른 경로와 우연히 겹칠 여지가 있으므로
+      // prevLoserIds.length>=targetCount를 반드시 AND로 유지한다(사실상 동치이나 방어적 이중
+      // 체크).
+      // Build28 Round2(codex-critic HIGH-1): 최초 구현은 "확정자 추가 없음"으로 남은 활성자를
+      // 미분류 상태로 방치했다 — 이는 index.html:4592-4595에 명시된 불변식("finishRoundLocal의
+      // 모든 종료 분기는 이번 라운드 활성자 전원을 confirmedSafeIds 또는 confirmedLoserIds로
+      // 반드시 분류")을 깨는 회귀였다. 술래 정원이 이미 찬 상태이므로 남은 활성자는 술래가 될 수
+      // 없고 규칙상 정의상 생존자(safe)다. 이들을 미분류로 남기면 getActivePlayers()가 이들을
+      // 계속 ACTIVE로 세어 isTaggerSelectionComplete()=false → canShowPlayAgainButton()=false
+      // (host 한번더 버튼 영구 숨김) + resetGameKeepRoom 하드블록(blockPlayAgainIfPartialReplay)이
+      // 정당하게 끝난 게임에서도 발동한다. 이는 index.html:5099-5105에 기록된 Build24-B 롤백
+      // 사유("host의 '한번더' 버튼이 visible=false로 영구 숨겨지는 회귀")와 동일한 회귀 클래스이며,
+      // 재분류 코드 경로가 없어(마커는 nextRound 전용) 방을 나가기 전까지 회복되지 않는다.
+      // 그래서 남은 활성자 전원을 confirmedSafeIds에 추가한다. confirmedLoserIds는 이미 정원이
+      // 찼으므로 prevLoserIds 그대로 유지(추가 없음)한다.
+      if (remainingSlots <= 0 && prevLoserIds.length >= targetCount) {
+        state.confirmedSafeIds = [...prevSafeIds, ...activePlayers.map(p => p.id)];
+        if (getOnlineMode() && state.role === "host") {
+          await db.from('rooms').update({ status: 'game_over' }).eq('id', state.roomCode);
+        }
+        renderRoundResult("gameOver", 0, remainingSlots);
+        showScreen("screenRoundResult");
+        playResultSfxOnce(isConfirmedLoser() ? "lose" : "win");
+        playResultVoiceOnce("taggerSelected", null, 1, 1, 2200);
+        __engineV2ShadowCompare("gameOver");
+        try { QA.emit('metric', { wrps: 'WRPS-075', eventType: 'ROUND_GAMEOVER_SLOTS_FILLED', eventId: roundEventId, activeCount: activePlayers.length, confirmedLoserCount: prevLoserIds.length, targetCount }); } catch (e) {}
+        recordRoundResolution({ eventId: roundEventId, confirmedSafeIds: [...state.confirmedSafeIds], confirmedLoserIds: [...state.confirmedLoserIds], outcome: "gameOver", roundLoserCount: 0, remainingSlots });
+        state.finishingRound = false;
+        return;
+      }
 
       // 중도 퇴장 등으로 남은 활성자가 남은 술래 슬롯 이하 → 더 가릴 수 없으므로 전원 술래 확정·종료.
       // (예: 1명만 남아 무한 무승부에 빠지는 deadlock 방지 — 항목 7/10)
@@ -7275,7 +7589,7 @@
         // Build21: 술래 확정 그룹 공지(전원 동일, 승패 무관)
         playResultVoiceOnce("taggerSelected", null, 1, 1, 2200);
         __engineV2ShadowCompare("gameOver");
-        state.lastRoundResolution = { eventId: roundEventId, confirmedSafeIds: [...state.confirmedSafeIds], confirmedLoserIds: [...state.confirmedLoserIds], outcome: "gameOver", roundLoserCount: activePlayers.length, remainingSlots };
+        recordRoundResolution({ eventId: roundEventId, confirmedSafeIds: [...state.confirmedSafeIds], confirmedLoserIds: [...state.confirmedLoserIds], outcome: "gameOver", roundLoserCount: activePlayers.length, remainingSlots });
         state.finishingRound = false;
         return;
       }
@@ -7288,7 +7602,7 @@
         // Build21: 무승부 재대결 그룹 공지
         playResultVoiceOnce("drawRetry", null, 1, 1, 300);
         __engineV2ShadowCompare("allDraw");
-        state.lastRoundResolution = { eventId: roundEventId, confirmedSafeIds: [...state.confirmedSafeIds], confirmedLoserIds: [...state.confirmedLoserIds], outcome: "draw", roundLoserCount: 0, remainingSlots };
+        recordRoundResolution({ eventId: roundEventId, confirmedSafeIds: [...state.confirmedSafeIds], confirmedLoserIds: [...state.confirmedLoserIds], outcome: "draw", roundLoserCount: 0, remainingSlots });
         state.finishingRound = false;
         return;
       }
@@ -7333,7 +7647,7 @@
       const fallThroughOutcome = roundLosers.length === remainingSlots ? "gameOver"
         : (roundLosers.length > remainingSlots ? "tooMany" : "tooFew");
       __engineV2ShadowCompare(fallThroughOutcome);
-      state.lastRoundResolution = { eventId: roundEventId, confirmedSafeIds: [...state.confirmedSafeIds], confirmedLoserIds: [...state.confirmedLoserIds], outcome: fallThroughOutcome, roundLoserCount: roundLosers.length, remainingSlots };
+      recordRoundResolution({ eventId: roundEventId, confirmedSafeIds: [...state.confirmedSafeIds], confirmedLoserIds: [...state.confirmedLoserIds], outcome: fallThroughOutcome, roundLoserCount: roundLosers.length, remainingSlots });
       state.finishingRound = false;
     }
 

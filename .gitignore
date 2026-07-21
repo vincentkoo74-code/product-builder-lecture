@@ -23,3 +23,6 @@ asc-upload.env
 /build/
 # Build21: 음성 재생성 스크립트가 실행 전마다 만드는 백업(재생성 가능, git 미추적으로 저장소 비대화 방지)
 ASSETS/voice-backups/
+
+# 실기기 QA export 원본(JSON) — 저장소 밖에서 관리, 요약은 docs/history/에 기록
+QA-index/

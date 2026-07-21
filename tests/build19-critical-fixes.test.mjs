@@ -15,9 +15,16 @@ describe('WRPS-072-B19 — 라운드 재분류 방지(idempotency) + host 데이
     expect(html).toMatch(/if \(state\.lastRoundResolution && state\.lastRoundResolution\.eventId === roundEventId\)/);
   });
 
-  it('5개 종료 지점 모두 lastRoundResolution을 기록한다(gameOver-조기/allDraw/gameOver·tooMany·tooFew fall-through)', () => {
-    const matches = html.match(/state\.lastRoundResolution = \{ eventId: roundEventId,/g) || [];
-    expect(matches.length).toBeGreaterThanOrEqual(3); // 조기gameOver, allDraw, fall-through(3분기 공유 1곳)
+  it('종료 지점들 모두 lastRoundResolution 기록 경로(recordRoundResolution)를 거친다(gameOver-조기/gameOver-정원충족/allDraw/gameOver·tooMany·tooFew fall-through)', () => {
+    // Build28(WRPS-075) [수정4]: 직접 대입(state.lastRoundResolution = {...})은 공용 헬퍼
+    // recordRoundResolution(payload)로 리팩터되어, localJudge & activePlayers=0인 판정 불가
+    // 결과는 캐시하지 않는다(idempotency 캐시 오염 방지). 정상 판정 결과는 이 헬퍼를 거쳐
+    // 기존과 동일하게 state.lastRoundResolution에 기록되므로(tests/build28-round-judge-integrity.test.mjs가
+    // 실제 실행으로 검증), 여기서는 호출부 자체가 여전히 모든 종료 지점에 존재하는지만 확인한다.
+    const matches = html.match(/recordRoundResolution\(\{ eventId: roundEventId,/g) || [];
+    expect(matches.length).toBeGreaterThanOrEqual(4); // 조기gameOver, 정원충족gameOver(1-b), allDraw, fall-through(3분기 공유 1곳)
+    expect(html).toContain('const recordRoundResolution = (payload) => {');
+    expect(html).not.toMatch(/state\.lastRoundResolution = \{ eventId: roundEventId,/); // 직접 대입 방식으로 되돌아가지 않았다
   });
 
   it('lastRoundResolution은 resultVoiceKey/resultMetricKey와 동일한 3개 지점(새 게임회차/세션/방)에서 초기화된다', () => {
