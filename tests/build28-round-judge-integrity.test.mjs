@@ -329,10 +329,16 @@ describe('Build28 [수정1-a 비침습] finishRoundLocal — 정당한 gameOver 
       role: 'host', status: 'result', round: 1, gameRound: 1, roomCode: 'R1', currentUserId: 'p1',
       confirmedSafeIds: ['p2', 'p3'], confirmedLoserIds: ['p1'], targetLoserCount: 1, finishingRound: false,
       lastRoundResolution: null,
+      // Build29(WRPS-076) [P3] 실사실성 수정: 이번 라운드의 결정적 판정으로 방금 confirmed된
+      // 참가자는 publishHostRoundResult()가 이미 "base|result"로 인코딩해 DB에 커밋한 뒤이므로
+      // (7586 부근 주석 참고), 실제로는 순수 '__loser__'/'__safe__' 마커가 아니라 이렇게 인코딩된
+      // choice를 갖는다 — 마커는 nextRound()/startGame()이 "다음" 라운드를 준비할 때만 쓰인다.
+      // 이 구분이 바로 P3 가드(stale 마커만으로 구성된 정원충족 vs 실제 인코딩된 정원충족)의
+      // 판별 기준이므로, 이 회귀 테스트도 실제 프로덕션 데이터 형태로 맞춘다(동작/기대값은 동일).
       participants: [
-        { id: 'p1', is_host: true, choice: '__loser__' },
-        { id: 'p2', is_host: false, choice: '__safe__' },
-        { id: 'p3', is_host: false, choice: '__safe__' },
+        { id: 'p1', is_host: true, choice: 'rock|lose' },
+        { id: 'p2', is_host: false, choice: 'paper|win' },
+        { id: 'p3', is_host: false, choice: 'paper|win' },
       ],
     };
     const { db, calls: dbCalls } = makeDb();
@@ -560,13 +566,15 @@ describe('Build28 [수정4] recordRoundResolution — localJudge & activePlayers
   it('localJudge(hasStoredResults=false) & activePlayers=0 결과(1-b 경유) → lastRoundResolution 미기록', async () => {
     // hasStoredResults=false가 되도록 활성 후보(choiceBase 있는 미확정 row) 자체가 없는 스냅샷 구성 —
     // 참가자 전원이 이미 confirmed(마커) 상태라 activeForStoredResult가 비어 hasStoredResults=false.
+    // Build29(WRPS-076) [P3] 실사실성 수정: choice는 마커가 아니라 실제 인코딩된 결과("base|result")
+    // — 위 회귀 테스트 #2와 동일한 이유(publishHostRoundResult가 이미 커밋한 뒤 상태를 반영).
     const state = {
       role: 'host', status: 'result', round: 1, gameRound: 9, roomCode: 'R1', currentUserId: 'p1',
       confirmedSafeIds: [], confirmedLoserIds: ['p1', 'p2'], targetLoserCount: 2, finishingRound: false,
       lastRoundResolution: null,
       participants: [
-        { id: 'p1', is_host: true, choice: '__loser__' },
-        { id: 'p2', is_host: false, choice: '__loser__' },
+        { id: 'p1', is_host: true, choice: 'rock|lose' },
+        { id: 'p2', is_host: false, choice: 'scissors|lose' },
       ],
     };
     const { db } = makeDb();

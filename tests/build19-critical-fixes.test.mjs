@@ -43,7 +43,9 @@ describe('WRPS-072-B19 — 라운드 재분류 방지(idempotency) + host 데이
     // Build24-A: waitForPhaseRender가 이제 fetchFreshParticipantsForResult보다 먼저 호출되지만
     // (렌더-타이밍 측정과 스냅샷 재시도 대기를 분리), fetchFreshParticipantsForResult →
     // finishRoundLocal의 상대 순서 자체(fetch가 반드시 먼저)는 그대로 유지된다.
-    expect(html).toMatch(/await fetchFreshParticipantsForResult\(state\.roomCode\);[\s\S]{0,900}finishRoundLocal\(\);/);
+    // Build29(WRPS-076) [P1, R1]: 이 사이에 화면 선-전환 코드가 추가돼 길이가 늘었다 — 상한만
+    // 확장(순서 보장 자체는 무변경).
+    expect(html).toMatch(/await fetchFreshParticipantsForResult\(state\.roomCode\);[\s\S]{0,1600}finishRoundLocal\(\);/);
   });
 });
 

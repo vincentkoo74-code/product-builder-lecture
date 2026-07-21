@@ -72,13 +72,20 @@ describe('Build22-B — duplicate result render is skipped', () => {
     // Build24-A: waitForPhaseRender 호출 직후 finishRoundLocal()을 바로 부르는 대신, resultIsFirstRender
     // 블록 안에서 스냅샷 재조회(SNAPSHOT_RETRY_DURATION 기록)를 거친 뒤 finishRoundLocal()을 호출하도록
     // 바뀌었다 — "첫 렌더일 때만 호출"이라는 게이팅 자체는 그대로 유지(중첩 위치만 이동).
-    expect(html).toMatch(/const resultIsFirstRender = await waitForPhaseRender\("result", resultScheduledAt, resultClientReceivedTs\);\s*\n\s*if \(resultIsFirstRender\) \{[\s\S]{0,1600}finishRoundLocal\(\);\s*\n\s*\}/);
+    // Build29(WRPS-076) [P1, R1]: resultIsFirstRender 블록 안에 화면 선-전환 코드가 추가돼 블록
+    // 길이가 늘었다 — 길이 상한만 여유 있게 확장(게이팅 구조 자체는 무변경).
+    expect(html).toMatch(/const resultIsFirstRender = await waitForPhaseRender\("result", resultScheduledAt, resultClientReceivedTs\);\s*\n\s*if \(resultIsFirstRender\) \{[\s\S]{0,3200}finishRoundLocal\(\);\s*\n\s*\}/);
   });
 });
 
 describe('Build22-B — same phase late update does not re-render screen', () => {
   it('ready(nextRound) 리스너는 waitForPhaseRender가 첫 렌더일 때만 화면 전환 분기(loserWait/winnerWait/participantWait/hostRoom/readyScreen)를 실행한다', () => {
-    expect(html).toMatch(/const readyIsFirstRender = await waitForPhaseRender\("nextRound", readyScheduledAt, readyClientReceivedTs\);\s*\n[\s\S]{0,20}if \(readyIsFirstRender\) \{[\s\S]{0,600}showReadyScreen\(\);/);
+    // Build29(WRPS-076) [P1, R5]: participants 새로고침을 waitForPhaseRender와 Promise.all로
+    // 병렬화하면서 `const readyIsFirstRender = await waitForPhaseRender(...)` 단독 선언이
+    // `const [readyFetchResult, readyIsFirstRender] = await Promise.all([...])` 구조로 바뀌었다 —
+    // "첫 렌더일 때만 화면 전환"이라는 게이팅 자체(if (readyIsFirstRender) { ... showReadyScreen(); })는
+    // 그대로 유지된다.
+    expect(html).toMatch(/const \[readyFetchResult, readyIsFirstRender\] = await Promise\.all\(\[[\s\S]{0,400}\]\);[\s\S]{0,700}if \(readyIsFirstRender\) \{[\s\S]{0,700}showReadyScreen\(\);/);
   });
 
   it('새 게임(gameNo 변경) 진입 엣지에서만 renderedPhaseKeys가 초기화되고, 같은 게임의 round=1 2차 전이(result→game_over)에서는 지워지지 않는다', () => {

@@ -101,16 +101,27 @@ function loadFetchFreshParticipantsForResult({ state, db, sleepImpl }) {
   return { fetchFreshParticipantsForResult, emitted };
 }
 
-async function runResultBranch({ room, state, waitForPhaseRender, fetchFreshParticipantsForResult, finishRoundLocal, db }) {
+async function runResultBranch({
+  room, state, waitForPhaseRender, fetchFreshParticipantsForResult, finishRoundLocal, db,
+  iAmSafe, iAmConfirmedLoser, showScreen, $,
+}) {
   const scheduling = loadSchedulingHelpers(state);
   const emitted = [];
   const QA = { emit: (channel, data) => emitted.push(data) };
   const getGameRound = () => state.gameRound || 1;
+  // Build29(WRPS-076) [P1, R1]: RESULT_BRANCH_SRC가 이제 이번 라운드 미참여 우선안전/확정 술래를
+  // 결과 화면으로 보내지 않기 위해 (핸들러 상단에서 이미 계산된) iAmSafe/iAmConfirmedLoser와
+  // showScreen/$을 참조한다 — 이 파일의 관심사(렌더 타이밍 순서/SNAPSHOT_RETRY_DURATION)와
+  // 무관하므로 기본값은 항상 false/no-op(우선안전이 아닌 일반 참가자 시나리오와 동일하게 동작).
   const factory = new Function(
     'room', 'state', 'parsePenalty', 'waitForPhaseRender', 'fetchFreshParticipantsForResult', 'finishRoundLocal', 'db', 'getGameRound', 'QA',
+    'iAmSafe', 'iAmConfirmedLoser', 'showScreen', '$',
     'return (async () => {\n' + RESULT_BRANCH_SRC + '\n})();'
   );
-  await factory(room, state, scheduling.parsePenalty, waitForPhaseRender, fetchFreshParticipantsForResult, finishRoundLocal, db, getGameRound, QA);
+  await factory(
+    room, state, scheduling.parsePenalty, waitForPhaseRender, fetchFreshParticipantsForResult, finishRoundLocal, db, getGameRound, QA,
+    Boolean(iAmSafe), Boolean(iAmConfirmedLoser), showScreen || (() => {}), $ || (() => null)
+  );
   return emitted;
 }
 

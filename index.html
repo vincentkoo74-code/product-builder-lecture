@@ -5007,6 +5007,12 @@
 	        // roomCode:eventId가 합성돼 정확성 문제는 없지만 무한정 쌓이지 않게 함께 정리).
 	        if (state.roundJudgeDeferTimer) { clearTimeout(state.roundJudgeDeferTimer); state.roundJudgeDeferTimer = null; }
 	        state.roundJudgeDeferAttempts = {};
+	        // Build29 Round2(codex-critic VERDICT-3 HIGH-1): rematchAdvance 재시도 타이머/카운터도
+	        // roundJudgeDeferAttempts와 동일한 이유로 새 게임회차 진입 시 취소·초기화한다 — 없으면
+	        // 이전 회차에서 소진된 예산이 새 회차로 이월되거나, 예약된 재시도가 새 회차에서 깨어나
+	        // 엉뚱한 라운드에 nextRound()를 실행할 수 있다.
+	        if (state.rematchAdvanceTimer) { clearTimeout(state.rematchAdvanceTimer); state.rematchAdvanceTimer = null; }
+	        state.rematchAdvanceRetryAttempts = {};
 	        // Build28 Round4(잔여 LOW-1): discardInProgressRoomSession/resetRoomLocalState와 동일하게
 	        // 여기(같은 방에서 다음 게임회차로 넘어가는 가장 흔한 경로)에서도 stale-room-row 연속
 	        // 카운터를 리셋한다 — 위에서 state.gameRound가 baseGameRound+1로 즉시 올라가므로, 리셋이
@@ -5071,7 +5077,9 @@
 	      state.renderedPhaseKeys[renderKey] = true;
 
 	      const waitMs = scheduledAt ? Math.max(0, scheduledAt - serverNow()) : 0;
-	      if (waitMs > 0) await sleep(Math.min(waitMs, 4000));
+	      // Build29(WRPS-076) [P1, R6]: 캡을 4000→4800으로 올려 6987 부근과 동일한 불변식
+	      // (캡 > lead(3600) + PHASE_RENDER_BUFFER_MS(900) = 4500)을 유지한다.
+	      if (waitMs > 0) await sleep(Math.min(waitMs, 4800));
 	      const clientRenderedTs = Date.now();
 	      const lateRenderMs = scheduledAt ? Math.max(0, serverNow() - scheduledAt) : 0;
 	      try {
@@ -5316,13 +5324,19 @@
           }
         });
 
-      // 폴링 백업: Realtime이 동작 안 할 경우 3초마다 직접 체크
-      // participants를 먼저 await해야 handleRoomUpdate→renderAll() 시 최신 is_ready 값 사용 가능
+      // 폴링 백업: Realtime이 동작 안 할 경우 2.6초마다 직접 체크(Build29/WRPS-076, CEO 승인:
+      // 5000 → 2600ms — 이 주석이 종전에 "3초"라고 적혀 있었으나 실제 코드 값은 5000ms였다.
+      // 실제 값에 맞게 정정).
+      // room 조회를 fetchParticipants보다 먼저 실행하도록 순서를 바꿨다 — participants가
+      // handleRoomUpdate 호출 전에만 최신이면 되므로(순서 무관, 두 await 모두 handleRoomUpdate
+      // 이전에 끝남) 안전하다.
+      // ⚠️ 폴링 빈도 증가로 staleRoomUpdateSkipStreak(자가회복 임계값 5회)에 더 빨리 도달할 수
+      // 있다 — 인지된 트레이드오프(수정 불필요, CEO 승인 범위).
       state.pollInterval = setInterval(async () => {
-        await fetchParticipants(roomCode);
         const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
+        await fetchParticipants(roomCode);
         if (room) await handleRoomUpdate(room);
-      }, 5000);
+      }, 2600);
 
       // 초기 데이터 로드
       const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
@@ -5453,16 +5467,13 @@
       if (state.status !== "playing") state.playingEntryKey = null;
 
       if (oldStatus !== state.status) {
-        // "ready" + round > 1: 참가자 DB를 먼저 새로고침해야 __safe__/__loser__ 마커가 있는지 정확히 판단 가능
-        if (state.status === "ready" && state.round > 1 && db && state.roomCode) {
-          const { data: freshParticipants } = await db.from('participants').select('*')
-            .eq('room_id', state.roomCode).order('created_at', { ascending: true });
-	          if (freshParticipants) {
-	            state.participants = freshParticipants;
-	            // 마커에서 로컬 배열도 동기화
-	            syncConfirmedIdsFromParticipants(freshParticipants);
-	          }
-	        }
+        // Build29(WRPS-076) [P1, R5]: "ready"+round>1 참가자 새로고침(마커 확인용)을
+        // waitForPhaseRender와 병렬화 — 종전에는 이 fetch를 waitForPhaseRender(5539 부근) 이전에
+        // await해서 대기실 화면 전환 자체를 막았다. 여기서는 promise만 시작해두고(아직 await 안 함),
+        // 아래 "ready" 분기에서 waitForPhaseRender와 Promise.all로 함께 기다린다.
+        const readyParticipantsRefreshPromise = (state.status === "ready" && state.round > 1 && db && state.roomCode)
+          ? db.from('participants').select('*').eq('room_id', state.roomCode).order('created_at', { ascending: true })
+          : null;
         const iAmSafe = isSafeParticipant(state.currentUserId);
         const iAmConfirmedLoser = isConfirmedLoser(state.currentUserId);
 
@@ -5483,6 +5494,26 @@
           const resultIsFirstRender = await waitForPhaseRender("result", resultScheduledAt, resultClientReceivedTs);
           if (resultIsFirstRender) {
             const resultRenderFirstClientTs = Date.now();
+            // Build29(WRPS-076) [P1, R1, CRITICAL]: 시각적 렌더를 스냅샷 재시도(아래
+            // fetchFreshParticipantsForResult, 단말별 독립 재시도 — 실측 host 중앙값 179ms vs
+            // participant 최악 6432ms)보다 먼저 전환한다. 종전에는 화면 전환이 이 재시도 완료
+            // "뒤"에 있어, 동기화되지 않는 재시도 편차가 그대로 체감 편차가 됐다. ⚠️
+            // resultIsFirstRender===true 분기 안에서만 전환한다 — 밖에서 하면 duplicate echo마다
+            // 재전환돼 Build22-B dedup/Build27 stale-skip이 막은 시나리오가 UI 변종으로 재발한다.
+            // Phase2 Fix-1과 동일한 라우팅 규칙: 우선안전/확정 술래(iAmSafe/iAmConfirmedLoser)는
+            // 여기서 결과화면으로 보내지 않는다 — 잠시 후 finishRoundLocal()이 자체적으로 이들을
+            // 대기화면으로 라우팅한다(무변경, 중복 없음). 남아있을 수 있는 이전 라운드의 결과
+            // 텍스트가 그대로 잠깐 보이지 않도록 제목/메시지만 비워둔다("집계 중" 자리표시 —
+            // Build28 defer EXHAUSTED로 끝내 판정되지 않는 극단적 경우에도 최소한 오래된 다른
+            // 라운드의 결과가 아니라 빈 상태로 남는다).
+            if (!iAmSafe && !iAmConfirmedLoser) {
+              try {
+                const pendingTitle = $("resultTitle"), pendingMsg = $("resultMessage");
+                if (pendingTitle) pendingTitle.textContent = "";
+                if (pendingMsg) pendingMsg.textContent = "";
+              } catch (e) {}
+              showScreen("screenRoundResult");
+            }
             // Fix 1 & 3: result 전환 전 최신 참가자 데이터를 반드시 재조회 후 판정
             // Build19(WRPS-072-B19): 재조회가 "아직 이번 라운드 결과를 못 쓴 활성 참가자"를 포함해
             // 도착하면(특히 host 자신의 row가 커밋 전 스냅샷일 때) 잘못된 분류(tooMany/tooFew 오판)로
@@ -5493,6 +5524,10 @@
               await fetchFreshParticipantsForResult(state.roomCode);
               const resultRenderAfterSnapshotTs = Date.now();
               try {
+                // Build29(WRPS-076) [P1, R1]: 위 화면 전환을 먼저 하도록 바꿨으므로
+                // firstVisualRenderGapMs의 의미가 바뀌었다 — 종전 "빈 화면 지연(화면 자체가 아직
+                // 안 바뀐 시간)"에서 이제는 "화면은 이미 바뀐 뒤 실제 내용(판정 결과)이 채워지기까지
+                // 걸린 시간"으로 해석해야 한다.
                 QA.emit('metric', { wrps: 'WRPS-SYNC-B24', eventType: 'SNAPSHOT_RETRY_DURATION', phase: 'result',
                   roomId: state.roomCode || null, gameNo: getGameRound(), round: state.round || 1,
                   snapshotRetryDurationMs: resultRenderAfterSnapshotTs - snapshotStartTs,
@@ -5511,12 +5546,27 @@
           const readyClientReceivedTs = Date.now();
           const readyPenaltyParsed = parsePenalty(room.penalty);
           const readyScheduledAt = (readyPenaltyParsed.phaseKind === "ready") ? readyPenaltyParsed.phaseScheduledAt : 0;
-          // Build22-B: 동일하게 duplicate/skip이면 이미 표시된 대기화면을 다시 전환하지 않는다.
-          const readyIsFirstRender = await waitForPhaseRender("nextRound", readyScheduledAt, readyClientReceivedTs);
+          // Build29(WRPS-076) [P1, R5]: 참가자 새로고침(위에서 시작해둔 promise)과
+          // waitForPhaseRender를 Promise.all로 병렬 대기 — 순차 await로 대기실 전환이 지연되던
+          // 문제 해소. Build22-B: 동일하게 duplicate/skip이면 이미 표시된 대기화면을 다시
+          // 전환하지 않는다.
+          const [readyFetchResult, readyIsFirstRender] = await Promise.all([
+            readyParticipantsRefreshPromise,
+            waitForPhaseRender("nextRound", readyScheduledAt, readyClientReceivedTs)
+          ]);
+          // 새로고침된 데이터가 있으면 마커 기준으로 iAmSafe/iAmConfirmedLoser를 다시 계산한다
+          // (병렬화 전 순차 코드와 동일한 최종 판단 기준 — 순서만 바뀌었을 뿐 정확성은 그대로).
+          let readyIAmSafe = iAmSafe, readyIAmConfirmedLoser = iAmConfirmedLoser;
+          if (readyFetchResult && readyFetchResult.data) {
+            state.participants = readyFetchResult.data;
+            syncConfirmedIdsFromParticipants(readyFetchResult.data);
+            readyIAmSafe = isSafeParticipant(state.currentUserId);
+            readyIAmConfirmedLoser = isConfirmedLoser(state.currentUserId);
+          }
           if (readyIsFirstRender) {
-            if (iAmConfirmedLoser) {
+            if (readyIAmConfirmedLoser) {
               showLoserWaitScreen();
-            } else if (iAmSafe) {
+            } else if (readyIAmSafe) {
               showScreen("screenWinnerWait");
             } else if (isWaitingForNextGame(state.currentUserId)) {
               showScreen("screenParticipantWait");
@@ -5880,6 +5930,10 @@
       if (state.roundJudgeDeferTimer) { clearTimeout(state.roundJudgeDeferTimer); state.roundJudgeDeferTimer = null; }
       state.roundJudgeDeferAttempts = {};
       state.staleRoomUpdateSkipStreak = 0;
+      // Build29 Round2(codex-critic VERDICT-3 HIGH-1): rematchAdvance 재시도 타이머/카운터도
+      // 같은 이유(다른 세션/방으로 넘어간 뒤 뒤늦게 깨어나 팬텀 nextRound() 실행 방지)로 함께 정리.
+      if (state.rematchAdvanceTimer) { clearTimeout(state.rematchAdvanceTimer); state.rematchAdvanceTimer = null; }
+      state.rematchAdvanceRetryAttempts = {};
     }
 
     function resetRoomLocalState({ keepRoomCode = "" } = {}) {
@@ -5913,6 +5967,11 @@
       if (state.roundJudgeDeferTimer) { clearTimeout(state.roundJudgeDeferTimer); state.roundJudgeDeferTimer = null; }
       state.roundJudgeDeferAttempts = {};
       state.staleRoomUpdateSkipStreak = 0;
+      // Build29 Round2(codex-critic VERDICT-3 HIGH-1): rematchAdvance 재시도 카운터도 새 방
+      // 진입 시 초기화한다 — rematchAdvanceTimer 자체는 위(5961)에서 이미 취소됨. 초기화가
+      // 없으면 방 A에서 소진된 예산이 방 B(gameRound/round가 우연히 같은 값으로 재시작되는
+      // 경우)의 재시도 상한을 조기에 소진시킨다(roundJudgeDeferAttempts와 동일한 트레이드오프).
+      state.rematchAdvanceRetryAttempts = {};
       state.remainingSeconds = 5;
       state.onlineParticipantIds = [];
       state.presenceReady = false;
@@ -6950,7 +7009,10 @@
         labelEl.textContent = "";
         // WRPS-047: 캡은 lead(3600ms)보다 커야 호스트/빠른 단말이 startAt까지 끝까지 대기해
         // 늦은 단말과 같은 startAt에 애니메이션을 시작한다(캡<lead면 빠른 단말이 조기 시작=desync).
-        await sleep(Math.min(waitMs, 4000));
+        // Build29(WRPS-076) [P1, R6]: lead(3600) + PHASE_RENDER_BUFFER_MS(900) = 4500 > 종전 캡
+        // 4000 — 캡<lead+buffer이면 조기 시작 desync가 난다(실측 1건: p#1 waitMs 4,877 →
+        // 877ms 조기 시작). 캡을 4800으로 올려 위 불변식(캡>lead+buffer)을 회복한다.
+        await sleep(Math.min(waitMs, 4800));
       }
       // Build19: 다른 3개 전환(result/nextRound/gameOver)과 동일 스키마의 SYNC_RENDER를 남겨
       // qa-sync 분석기가 4개 phase를 동일하게 기기간 gap 비교할 수 있게 한다.
@@ -7172,6 +7234,10 @@
 
       const userId = state.currentUserId || "host";
       const participant = state.participants.find(p => p.id === userId) || state.participants[0];
+      // Build29(WRPS-076) [P4, F5]: 같은 손 재클릭이면 write를 스킵한다(연타 방어) — choice에는
+      // 결과/auto 플래그가 인코딩("base|result|auto")되어 있으므로 반드시 getChoiceBase()로
+      // "선택 종류"만 비교한다(원문 그대로 비교하면 자동선택 여부/결과 유무 차이로 오탐).
+      if (participant && getChoiceBase(participant.choice) === choice) return;
       if (participant) participant.choice = choice;
       updateSelectedCount();
       updateGuides();
@@ -7289,13 +7355,48 @@
       // 확정 결과로만 재렌더링한다. 실측 QA에서 동일 eventId가 두 번 다른 outcome(tooFew→tooMany)으로
       // 재분류된 사례가 확인됨(호스트 데이터 신선도 레이스). 판정 알고리즘 자체는 무변경.
       const roundEventId = getGameRound() + ':' + (state.round || 1);
+      // Build29(WRPS-076) [P2, Fix-1]: 비종결(draw/tooMany/tooFew) 결과 화면 라우팅 — 이번
+      // 라운드에 참여하지 않은(played=false) 우선안전/확정 술래 참가자는 결과 화면으로 튕기지
+      // 않고 기존 대기화면(winnerWait/loserWait)을 유지한다. ready/playing 분기에는 이미 이런
+      // 라우팅이 있었지만(예: 6268-6269) result/game_over 비종결 분기에는 전혀 없어, 우선안전
+      // 참가자가 재경기 result 전이마다 winnerWait에서 결과화면으로 튕기는 문제가 있었다.
+      // ⚠️ gameOver(종결) 분기는 이 라우터를 쓰지 않는다(무변경) — 최종 결과는 전원이 봐야 한다.
+      // Build29 Round2(codex-critic VERDICT-3 MEDIUM-1): 대기화면 우회는 온라인 전용이어야 한다.
+      // 오프라인(단일 공유 기기)에는 auto-advance(scheduleRematchAutoAdvance는 !getOnlineMode()면
+      // 즉시 return, 8660 부근)도 forceStartReplay(status==="ready" 요구, 9381 부근)도 없어 이
+      // 우회로 winnerWait/loserWait에 갇히면 nextRoundBtn(screenRoundResult 소속, 2726)에도 접근할
+      // 길이 없다 — 조작자가 이번 라운드 확정자가 되는 순간 방 전체가 진행 불가에 빠진다. Fix-1
+      // 이전에는 오프라인이 항상 결과화면+수동 "다시해!" 버튼으로 진행됐으므로 그 동작을 그대로
+      // 보존한다(온라인일 때만 대기화면 우회, 오프라인은 항상 결과화면).
+      const showRoundResultOrWait = (played) => {
+        if (getOnlineMode() && !played && isSafeParticipant()) { showScreen("screenWinnerWait"); return; }
+        if (getOnlineMode() && !played && isConfirmedLoser()) { showLoserWaitScreen(); return; }
+        showScreen("screenRoundResult");
+      };
       if (state.lastRoundResolution && state.lastRoundResolution.eventId === roundEventId) {
         const prev = state.lastRoundResolution;
         state.confirmedSafeIds = [...prev.confirmedSafeIds];
         state.confirmedLoserIds = [...prev.confirmedLoserIds];
         try { QA.emit('metric', { wrps: 'WRPS-072-B19', eventType: 'TAGGER_REPLAY_IDEMPOTENT', eventId: roundEventId, outcome: prev.outcome }); } catch (e) {}
         renderRoundResult(prev.outcome, prev.roundLoserCount, prev.remainingSlots);
-        showScreen("screenRoundResult");
+        if (prev.outcome === "gameOver") {
+          showScreen("screenRoundResult");
+        } else {
+          // 이 경로엔 이번 라운드 activePlayers 계산이 없으므로(위 idempotent 조기 반환), 내 row의
+          // choice 마커 유무로 "이번 라운드 참여 여부"를 대신 판별한다(마커 = 이전 라운드부터 이미
+          // 확정된 상태 = 이번 라운드 미참여).
+          const myRow = (state.participants || []).find(p => p.id === state.currentUserId);
+          const iPlayedIdempotent = !myRow || !isNonPlayingChoice(myRow.choice);
+          showRoundResultOrWait(iPlayedIdempotent);
+          // Build29 Round2(codex-critic VERDICT-3 HIGH-1, 안전망 B): duplicate 'result' echo가
+          // 도착했는데 예약된 auto-advance 타이머가 전혀 없고(advancingRound도 아님) — 즉 (A)의
+          // nextRound() 실패 catch가 재예약을 못 했거나 최초 스케줄 자체가 유실된 경우 — 여기서
+          // 재예약해 방이 'result'에서 영구 정지하지 않도록 한다. showRoundResultOrWait 호출
+          // *이후*에 둬서 화면 라우팅과 순서가 겹치지 않는다. (A)와 동일한 카운터/상한을 그대로
+          // "확인"만 하고 증가시키지 않는다(아래 maybeRecoverStalledRematchAdvance 주석 참고) —
+          // 상한 소진 후에는 이 경로도 재예약하지 않아 무한 루프가 될 수 없다.
+          maybeRecoverStalledRematchAdvance();
+        }
         return;
       }
       state.finishingRound = true;
@@ -7380,9 +7481,10 @@
       // 전이에서 전원이 confirmed로 이동해 activePlayers=0 & remainingSlots=0인 상태는 정당한
       // gameOver 재진입이다. 그래서 prevSafeIds.length===0 && prevLoserIds.length===0(확정자가
       // 하나도 없음 = 진짜 빈 스냅샷)을 반드시 AND로 포함해야 그 정상 재진입을 막지 않는다.
-      if (activePlayers.length === 0 && prevSafeIds.length === 0 && prevLoserIds.length === 0) {
-        try { QA.emit('metric', { wrps: 'WRPS-075', eventType: 'ROUND_JUDGE_DEFERRED', reason: 'emptySnapshot', eventId: roundEventId, activeCount: 0, participantCount: (state.participants || []).length }); } catch (e) {}
-        state.finishingRound = false;
+      // Build29(WRPS-076): [수정1-a]와 아래 [P3](1-b 내부) 두 defer 지점이 공유하는 bounded
+      // 재시도 스케줄러 — Build28이 이미 만든 재시도 로직(eventId별 카운터, 3중 가드 setTimeout)을
+      // 그대로 함수로 추출한 것뿐이며 동작은 100% 동일하다(새 타이머 메커니즘 아님, 로직 재작성 아님).
+      const scheduleRoundJudgeDeferRetry = () => {
         // Build28 Round2(codex-critic MEDIUM-1): 최초 구현의 주석은 "다음 폴링(재판정 시도)을
         // 기다린다"였지만 그런 재호출 경로가 실제로 없었다 — online에서 finishRoundLocal 호출부는
         // handleRoomUpdate의 `if (oldStatus !== state.status)`(상태 "전이" 시점) 단 한 곳뿐이라,
@@ -7516,6 +7618,12 @@
         } else {
           try { QA.emit('metric', { wrps: 'WRPS-075', eventType: 'ROUND_JUDGE_DEFER_EXHAUSTED', eventId: roundEventId, attempts: deferAttempts }); } catch (e) {}
         }
+      };
+
+      if (activePlayers.length === 0 && prevSafeIds.length === 0 && prevLoserIds.length === 0) {
+        try { QA.emit('metric', { wrps: 'WRPS-075', eventType: 'ROUND_JUDGE_DEFERRED', reason: 'emptySnapshot', eventId: roundEventId, activeCount: 0, participantCount: (state.participants || []).length }); } catch (e) {}
+        state.finishingRound = false;
+        scheduleRoundJudgeDeferRetry();
         return;
       }
 
@@ -7560,6 +7668,31 @@
       // 그래서 남은 활성자 전원을 confirmedSafeIds에 추가한다. confirmedLoserIds는 이미 정원이
       // 찼으므로 prevLoserIds 그대로 유지(추가 없음)한다.
       if (remainingSlots <= 0 && prevLoserIds.length >= targetCount) {
+        // Build29(WRPS-076) [P3, CRITICAL]: stale 마커 오염으로 인한 오탐 정원충족 판정 보류 —
+        // 실측 게임7 라운드1(host 12:57:47 visible:true reason:complete act:0/3 conf:2/2)이 실은
+        // 게임6의 __safe__/__loser__ 마커가 fetchFreshParticipantsForResult()의 무조건적
+        // syncConfirmedIdsFromParticipants() 호출(5114-5115/5156-5157)로 되살아난 것이다 —
+        // beginNewGameRound()가 로컬을 먼저 비우고 DB patch(choice:null)는 나중에 쓰므로, 그 창에서
+        // 이전 게임 마커 스냅샷이 fetch되면 이전 정원이 그대로 복원된다(마커에는 gameRound가 없어
+        // 세대 구분이 불가능한 구조적 약점). 판정 가능한 활성자가 없고(activePlayers=0) 이 단말이
+        // 이번 게임에서 실제로 확정한 판정도 없으며(lastRoundResolution 없음), 어떤 참가자 row에도
+        // 실제 라운드 결과 인코딩("base|result", 예: "rock|lose")이 없다면 — 정원이 순수 마커로만
+        // 구성된 것이므로 stale 이월로 간주해 [수정1-a]와 동일하게 판정을 보류한다.
+        // ⚠️ activePlayers.length===0일 때만 발동 — index.html:4592-4595 불변식("모든 종료 분기는
+        // 활성자 전원을 분류")은 분류할 활성자가 애초에 없으므로 위반될 수 없다. activePlayers>0인
+        // 정당한 1-b 케이스(결함C, 예: 방금 draw한 잔여 1명)는 이 가드를 통과하지 못해(activePlayers
+        // 조건이 거짓) 기존대로 전원 safe 분류 + gameOver + '한번더' 노출로 처리된다.
+        // ⚠️ 정당한 gameOver 재진입(예: result→game_over 2차 호출)은 이 라운드의 결정적 순간에
+        // 실제로 판정된 참가자가 최소 1명은 "base|result"로 인코딩된 choice를 갖고 있어야 한다
+        // (publishHostRoundResult가 hasStoredResults 판정 전에 이미 DB에 기록) — 순수 마커만으로
+        // 구성된 스냅샷은 이전 게임의 잔재로 봐야 한다는 것이 이 가드의 전제다.
+        if (activePlayers.length === 0 && !state.lastRoundResolution &&
+          !(state.participants || []).some(p => hasConfirmedRoundResult(p.choice))) {
+          try { QA.emit('metric', { wrps: 'WRPS-076', eventType: 'STALE_QUOTA_JUDGE_DEFERRED', eventId: roundEventId, confirmedLoserCount: prevLoserIds.length, targetCount }); } catch (e) {}
+          state.finishingRound = false;
+          scheduleRoundJudgeDeferRetry();
+          return;
+        }
         state.confirmedSafeIds = [...prevSafeIds, ...activePlayers.map(p => p.id)];
         if (getOnlineMode() && state.role === "host") {
           await db.from('rooms').update({ status: 'game_over' }).eq('id', state.roomCode);
@@ -7597,13 +7730,19 @@
       if (allDraw) {
         if (iPlayedThisRound) recordMyAccountGameResult("draw");
         renderRoundResult("draw", 0, remainingSlots);
-        showScreen("screenRoundResult");
+        // Build29(WRPS-076) [P2, Fix-1]: 비종결 분기 — 우선안전/확정 술래는 대기화면 유지.
+        showRoundResultOrWait(iPlayedThisRound);
         playResultSfxOnce("draw", 300); // 무승부 전용 사운드
         // Build21: 무승부 재대결 그룹 공지
         playResultVoiceOnce("drawRetry", null, 1, 1, 300);
         __engineV2ShadowCompare("allDraw");
         recordRoundResolution({ eventId: roundEventId, confirmedSafeIds: [...state.confirmedSafeIds], confirmedLoserIds: [...state.confirmedLoserIds], outcome: "draw", roundLoserCount: 0, remainingSlots });
         state.finishingRound = false;
+        // Build29(WRPS-076) [P2, Fix-2]: allDraw만 유일하게 auto-advance가 없어 호스트가 "다시해!"를
+        // 수동으로 눌러야 했다 — Fix-1 적용 시 우선안전 호스트는 결과화면에 가지 않으므로 그 버튼에
+        // 접근할 수 없어(Fix-2 없으면 데드락) 여기에도 tooMany/tooFew와 동일하게 예약한다. 수동
+        // "다시해!"는 폴백으로 유지(advancingRound 가드가 이중 전환 방지).
+        scheduleRematchAutoAdvance();
         return;
       }
 
@@ -7627,14 +7766,16 @@
       } else if (roundLosers.length > remainingSlots) {
         state.confirmedSafeIds = [...prevSafeIds, ...roundWinners.map(p => p.id)];
         renderRoundResult("tooMany", roundLosers.length, remainingSlots);
-        showScreen("screenRoundResult");
+        // Build29(WRPS-076) [P2, Fix-1]: 비종결 분기 — 우선안전/확정 술래는 대기화면 유지.
+        showRoundResultOrWait(iPlayedThisRound);
         // Build21: 패자끼리 재대결 그룹 공지
         playResultVoiceOnce("replayLosersOnly", null, 1, 1, 600);
         scheduleRematchAutoAdvance();
       } else {
         state.confirmedLoserIds = [...prevLoserIds, ...roundLosers.map(p => p.id)];
         renderRoundResult("tooFew", roundLosers.length, remainingSlots);
-        showScreen("screenRoundResult");
+        // Build29(WRPS-076) [P2, Fix-1]: 비종결 분기 — 우선안전/확정 술래는 대기화면 유지.
+        showRoundResultOrWait(iPlayedThisRound);
         // 개인 패배 신호는 SFX로 유지(그룹 음성과 분리)
         if (roundLosers.length > 0 && myResult === "lose") {
           playResultSfxOnce("lose", 600); // 라운드 술래 확정: 패배음
@@ -8544,13 +8685,109 @@ function summarizeGameStats(rows) {
 
     // 결과 화면을 잠시 보여준 뒤 호스트가 남은 활성자만으로 다음 라운드(ready)로 자동 전환한다.
     // (수동 "다시해" 버튼은 폴백으로 유지 — advancingRound 가드로 자동/수동 이중 전환 방지)
-    function scheduleRematchAutoAdvance(delayMs = 2600) {
+    // Build29(WRPS-076) [P2, Fix-3, CEO 승인]: 기본 지연 2600 → 1500ms.
+    function scheduleRematchAutoAdvance(delayMs = 1500) {
       if (state.role !== "host" || !getOnlineMode()) return;
       if (state.rematchAdvanceTimer) clearTimeout(state.rematchAdvanceTimer);
       state.rematchAdvanceTimer = setTimeout(() => {
         state.rematchAdvanceTimer = null;
         if (state.status === "result" && !state.advancingRound) nextRound();
       }, delayMs);
+    }
+
+    // Build29 Round2(codex-critic VERDICT-3 HIGH-1, CEO 사양 확정): nextRound()의 순차 Supabase
+    // write가 일시 오류(모바일 네트워크 전환/백그라운드 복귀 등)로 throw하면, 기존엔
+    // advancingRound만 풀고 타이머를 재예약하지 않아 방 전체가 'result'에서 영구 정지했다(재예약
+    // 경로가 이 실패 시점 단 하나뿐이었음 — nextRoundBtn은 screenRoundResult 소속이라 우선안전
+    // 호스트가 winnerWait에 있으면 접근 불가, forceStartReplay는 status==="ready"를 요구해
+    // 'result'에서 불가). 실패 시 백오프 지연으로 재예약하되 무한 재시도를 막기 위해 라운드별
+    // 상한(3회)을 둔다.
+    // ⚠️ 카운터 키는 roomCode:eventId(=gameNo:round) 합성이다(CEO 확정 형태) — 이 코드베이스는
+    // room 스코프 없는 키 함정에 3번 빠졌다(renderedPhaseKeys/confirmedIdsResetGameNo/
+    // roundJudgeDeferAttempts와 동일한 구조적 해법, getPlayingEntryKey의 키 포맷과도 동일). 방
+    // 이동/새 게임 진입 시 resetRoomLocalState/discardInProgressRoomSession/beginNewGameRound
+    // 3곳에서 반드시 초기화한다(메모리 누수 방지 겸 예산 오염 방지 — 정확성 자체는 합성 키로 이미
+    // 보장됨). resetRoomLocalState는 createRoom()/joinRoom()이 새 방 생성·방 이동 시 이미
+    // 호출하는 함수이므로(5998/6613 부근) 그 경로들은 이 3곳을 통해 간접적으로 커버된다.
+    const MAX_REMATCH_ADVANCE_RETRIES = 3;
+    function getRematchAdvanceRetryKey() {
+      return `${state.roomCode || ''}:${getGameRound()}:${state.round || 1}`;
+    }
+    function getRematchAdvanceRetryAttempts() {
+      if (!state.rematchAdvanceRetryAttempts) state.rematchAdvanceRetryAttempts = {};
+      return state.rematchAdvanceRetryAttempts[getRematchAdvanceRetryKey()] || 0;
+    }
+    // Build29 Round2(CEO 확정 사양): auto-advance 재시도 QA metric 공통 필드 빌더. caseType은
+    // finishRoundLocal()의 recordRoundResolution()이 이미 state.lastRoundResolution에 저장해둔
+    // 이번 라운드의 outcome(draw/tooMany/tooFew/gameOver)을 eventId가 정확히 일치할 때만
+    // 재사용한다 — nextRound()/scheduleRematchAutoAdvance()는 판정 자체를 하지 않으므로(판정은
+    // finishRoundLocal 전용, 이 파일의 무변경 경계) 새로 계산하지 않고 이미 확정된 값만 읽는다.
+    // eventId가 어긋나면(예: 아직 결과가 한 번도 확정되지 않은 예외적 호출 순서) null로 둔다.
+    function buildAutoAdvanceMetricPayload(extra) {
+      const eventId = `${getGameRound()}:${state.round || 1}`;
+      const caseType = (state.lastRoundResolution && state.lastRoundResolution.eventId === eventId)
+        ? state.lastRoundResolution.outcome
+        : null;
+      return Object.assign({
+        wrps: 'WRPS-077',
+        roomCode: state.roomCode || null,
+        gameNo: getGameRound(),
+        eventId,
+        caseType,
+        activeCandidateCount: getActivePlayers().length,
+        participantCount: (state.participants || []).length,
+        confirmedTaggerCount: (state.confirmedLoserIds || []).length,
+        targetTaggerCount: getTargetLoserCount(),
+      }, extra);
+    }
+    // nextRound() 실패 직후 catch에서만 호출한다(이 함수만 카운터를 증가시킨다 — 안전망 B는
+    // 같은 카운터를 "확인"만 하고 증가시키지 않는다, 아래 maybeRecoverStalledRematchAdvance 참고).
+    // 상한 이내면 시도 횟수에 비례한 백오프(2000/4000/6000ms)로 재예약하고(AUTO_ADVANCE_RETRY_
+    // SCHEDULED emit), 상한을 소진하면 AUTO_ADVANCE_RETRY_EXHAUSTED를 1회 emit한 뒤 조용히
+    // 멈춘다(더 이상 타이머를 예약하지 않음 — 무한 재시도 금지 원칙을 코드 구조로 보장).
+    function scheduleRematchAdvanceRetryAfterFailure() {
+      if (state.status !== "result") return; // 실패 사이 다른 real 전이가 났으면 재시도 대상 아님
+      if (!state.rematchAdvanceRetryAttempts) state.rematchAdvanceRetryAttempts = {};
+      const key = getRematchAdvanceRetryKey();
+      const attempts = state.rematchAdvanceRetryAttempts[key] || 0;
+      if (attempts >= MAX_REMATCH_ADVANCE_RETRIES) {
+        try {
+          QA.emit('metric', buildAutoAdvanceMetricPayload({ eventType: 'AUTO_ADVANCE_RETRY_EXHAUSTED', retryCount: attempts }));
+        } catch (e) {}
+        return;
+      }
+      state.rematchAdvanceRetryAttempts[key] = attempts + 1;
+      const backoffDelayMs = 2000 * (attempts + 1); // 1차 2000ms, 2차 4000ms, 3차 6000ms
+      try {
+        QA.emit('metric', buildAutoAdvanceMetricPayload({ eventType: 'AUTO_ADVANCE_RETRY_SCHEDULED', retryCount: attempts + 1, backoffDelayMs }));
+      } catch (e) {}
+      scheduleRematchAutoAdvance(backoffDelayMs);
+    }
+
+    // Build29 Round2(codex-critic VERDICT-3 HIGH-1, 안전망 B, CEO 사양 확정): idempotent
+    // duplicate 'result' echo가 도착했는데 예약된 auto-advance 타이머가 전혀 없고 advancingRound도
+    // 아니면(=(A)의 재예약이 유실됐거나 최초 스케줄 자체가 안 걸린 경우) 재예약해 복구를 한 번 더
+    // 시도한다.
+    // ⚠️ (A)와 동일한 카운터/상한을 그대로 "확인"만 하고 증가시키지 않는다 — 이 경로는 실제
+    // nextRound() 실패가 아니라 "타이머 유실 감지"이므로 여기서 카운트를 늘리면 실제 실패
+    // 횟수와 무관하게 예산이 조기 소진된다. 반대로 상한을 아예 무시하고 항상 재예약하면
+    // scheduleRematchAdvanceRetryAfterFailure()가 이미 EXHAUSTED를 emit하고 멈춘 뒤에도 이
+    // 경로가 계속 타이머를 되살려 상한을 사실상 무의미하게 만든다(무한 재시도 금지 원칙 위반,
+    // CEO 확정: "B가 A의 상한을 우회하면 안 된다") — 이미 상한에 도달했으면 재예약하지 않고
+    // AUTO_ADVANCE_RETRY_EXHAUSTED metric만 남긴다(무한 루프 없이 관측 가능하게).
+    function maybeRecoverStalledRematchAdvance() {
+      if (state.role !== "host" || !getOnlineMode()) return;
+      if (state.status !== "result") return;
+      if (state.rematchAdvanceTimer || state.advancingRound) return;
+      if (getRematchAdvanceRetryAttempts() >= MAX_REMATCH_ADVANCE_RETRIES) {
+        try {
+          QA.emit('metric', buildAutoAdvanceMetricPayload({
+            eventType: 'AUTO_ADVANCE_RETRY_EXHAUSTED', retryCount: getRematchAdvanceRetryAttempts(), source: 'duplicateEchoRecovery'
+          }));
+        } catch (e) {}
+        return;
+      }
+      scheduleRematchAutoAdvance();
     }
 
     async function nextRound() {
@@ -8566,19 +8803,56 @@ function summarizeGameStats(rows) {
       state.advancingRound = true;
       if (state.rematchAdvanceTimer) { clearTimeout(state.rematchAdvanceTimer); state.rematchAdvanceTimer = null; }
       if (getOnlineMode()) {
-        // 먼저 모든 참가자 초기화
-        await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
-        // 확정 안전자/술래는 DB 마커로 기록 + 자동 준비 완료 (재연결 후에도 상태 유지됨)
-        if (safeIds.length > 0) {
-          await db.from('participants').update({ choice: '__safe__', is_ready: true }).in('id', safeIds);
+        // Build29(WRPS-076) [P4, F4]: 실패 시에만 advancingRound를 해제한다 — 성공 경로에서는
+        // 해제하지 않는다(해제는 finishRoundLocal(recordRoundResolution 이후)/
+        // enterPlayingStateFromRoomUpdate가 담당 — 여기서 finally로 풀면 이중 전환 방지 뮤텍스가
+        // 무력화된다).
+        try {
+          // 먼저 모든 참가자 초기화
+          // Build29 Round3(codex-critic VERDICT FAIL HIGH-1): vendored supabase-js v2는 HTTP/네트워크
+          // 실패에서도 절대 reject하지 않고 { success:false, error, ... }로 resolve한다(createRoom의
+          // 기존 { error } 승격 패턴, 약 6026-6030 참고). 이 try/catch가 실전에서 발화하려면 각 write의
+          // error를 직접 검사해 throw로 승격해야 한다 — 그렇지 않으면 아래 catch(8829 부근)와 그
+          // catch가 트리거하는 안전망 A(재시도 재예약)/metric/카운터 정리가 전부 dead code가 된다.
+          const { error: eResetParticipants } = await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
+          if (eResetParticipants) throw new Error('nextRound participants.reset failed: ' + (eResetParticipants.message || eResetParticipants));
+          // 확정 안전자/술래는 DB 마커로 기록 + 자동 준비 완료 (재연결 후에도 상태 유지됨)
+          if (safeIds.length > 0) {
+            const { error: eMarkSafe } = await db.from('participants').update({ choice: '__safe__', is_ready: true }).in('id', safeIds);
+            if (eMarkSafe) throw new Error('nextRound participants.markSafe failed: ' + (eMarkSafe.message || eMarkSafe));
+          }
+          if (loserIds.length > 0) {
+            const { error: eMarkLoser } = await db.from('participants').update({ choice: '__loser__', is_ready: true }).in('id', loserIds);
+            if (eMarkLoser) throw new Error('nextRound participants.markLoser failed: ' + (eMarkLoser.message || eMarkLoser));
+          }
+          // Build19: 다음 라운드 준비화면도 모든 기기가 같은 서버 시각에 표시하도록 예정 시각 동봉.
+          const readyPenalty = buildPenaltyValue({ gameRound: getGameRound(), phaseScheduledAt: getNextPhaseScheduledAt(), phaseKind: "ready" });
+          state.penalty = readyPenalty;
+          const { error: eAdvanceRoom } = await db.from('rooms').update({ round: state.round + 1, status: 'ready', penalty: readyPenalty }).eq('id', state.roomCode);
+          if (eAdvanceRoom) throw new Error('nextRound rooms.advance failed: ' + (eAdvanceRoom.message || eAdvanceRoom));
+          // Build29 Round2(CEO 확정 사양): 성공 시 이 라운드의 재시도 카운터를 지운다 — "성공 시
+          // counter clear" 요구사항. try 블록 맨 끝(모든 write가 실제로 성공한 뒤)에 있어, 위
+          // 어느 await라도 throw하면 catch로 빠져 이 줄에 도달하지 않는다(부분 실패는 절대
+          // clear로 오인되지 않음).
+          if (state.rematchAdvanceRetryAttempts) delete state.rematchAdvanceRetryAttempts[getRematchAdvanceRetryKey()];
+        } catch (e) {
+          state.advancingRound = false;
+          console.warn("nextRound (online) failed:", e?.message || e);
+          showToast(t("common.syncError"));
+          // Build29 Round2(CEO 확정 사양): 실패 자체를 관측 가능한 metric으로 남긴다(재시도 여부와
+          // 무관하게 항상 emit — retryCount는 "이 실패 이전까지 이미 소진된 재시도 횟수").
+          try {
+            QA.emit('metric', buildAutoAdvanceMetricPayload({
+              eventType: 'AUTO_ADVANCE_NEXTROUND_FAILED',
+              retryCount: getRematchAdvanceRetryAttempts(),
+              errorMessage: e?.message || String(e)
+            }));
+          } catch (metricErr) {}
+          // Build29 Round2(codex-critic VERDICT-3 HIGH-1, 안전망 A): 실패로 소모된 자동진행
+          // 타이머를 백오프 지연 + 라운드별 상한(3회)으로 재예약한다 — 재예약이 없으면 이 실패
+          // 시점이 유일한 탈출 경로였던 방이 'result'에서 영구 정지한다(위 함수 주석 참고).
+          scheduleRematchAdvanceRetryAfterFailure();
         }
-        if (loserIds.length > 0) {
-          await db.from('participants').update({ choice: '__loser__', is_ready: true }).in('id', loserIds);
-        }
-        // Build19: 다음 라운드 준비화면도 모든 기기가 같은 서버 시각에 표시하도록 예정 시각 동봉.
-        const readyPenalty = buildPenaltyValue({ gameRound: getGameRound(), phaseScheduledAt: getNextPhaseScheduledAt(), phaseKind: "ready" });
-        state.penalty = readyPenalty;
-        await db.from('rooms').update({ round: state.round + 1, status: 'ready', penalty: readyPenalty }).eq('id', state.roomCode);
       } else {
         state.round += 1;
         state.participants.forEach(p => {
@@ -8593,21 +8867,29 @@ function summarizeGameStats(rows) {
     }
 
     async function endGame() {
-      if (getOnlineMode() && state.role === "host" && state.roomCode) {
-        try {
-          await updateRoomStatus("stats");
-        } catch (e) {
-          console.warn("endGame status update failed:", e?.message || e);
+      // Build29(WRPS-076) [P4, F2]: in-flight 가드 — 연타 시 rooms.update('stats') 중복 write +
+      // persistCompletedGameWithRetry() 중복 실행(통계 이중 저장 시도) 방지.
+      if (state.endingGame) return;
+      state.endingGame = true;
+      try {
+        if (getOnlineMode() && state.role === "host" && state.roomCode) {
+          try {
+            await updateRoomStatus("stats");
+          } catch (e) {
+            console.warn("endGame status update failed:", e?.message || e);
+          }
         }
+        // 직전 게임 결과를 권위 DB 데이터로 영구 저장(전원 동일). 실패 시 토스트로 재시도 안내.
+        await persistCompletedGameWithRetry();
+        renderStats();
+        saveState();
+        const replayBtn = $("statsReplayBtn");
+        if (replayBtn) replayBtn.style.display = state.role === "host" ? "" : "none";
+        showScreen("screenStats");
+        playGameOverVoiceOnce(); // Build21: "게임 끝!"(호스트 직접 진입 경로)
+      } finally {
+        state.endingGame = false;
       }
-      // 직전 게임 결과를 권위 DB 데이터로 영구 저장(전원 동일). 실패 시 토스트로 재시도 안내.
-      await persistCompletedGameWithRetry();
-      renderStats();
-      saveState();
-      const replayBtn = $("statsReplayBtn");
-      if (replayBtn) replayBtn.style.display = state.role === "host" ? "" : "none";
-      showScreen("screenStats");
-      playGameOverVoiceOnce(); // Build21: "게임 끝!"(호스트 직접 진입 경로)
     }
 
     // 완료된 게임 결과 저장을 시도하고, 실패하면 토스트로 재시도를 안내한다.
@@ -8644,6 +8926,9 @@ function summarizeGameStats(rows) {
         await resetGameKeepRoom();
         return;
       }
+      // Build29(WRPS-076) [P4, F3]: 연타 방어 — 이미 'reinviting'으로 전환된 상태에서 다시 누르면
+      // rooms.update를 또 내보내지 않고 팝업만 재노출한다(연타로 인한 중복 write 방지).
+      if (state.status === 'reinviting') { _showInviteHostPopup(); return; }
       await db.from('rooms').update({ status: 'reinviting' }).eq('id', state.roomCode);
       _showInviteHostPopup();
     }
@@ -9288,39 +9573,62 @@ function summarizeGameStats(rows) {
     }
 
     async function goToReadyScreen() {
-      if (!getPenaltyText() && getOnlineMode() && state.roomCode) {
-        try {
-          const { data: room } = await db.from('rooms').select('penalty,status').eq('id', state.roomCode).single();
-          if (room?.penalty) {
-            state.penalty = room.penalty;
-            state.status = room.status || state.status;
+      // Build29(WRPS-076) [P4, F1, 최우선]: 전용 in-flight 플래그 — gameStarting을 재사용하면
+      // 안 된다(Build27 주석 6061-6063: realtime이 'playing'을 감지할 때 gameStarting=false여야
+      // 카운트다운이 정상 진행된다). autoStartInFlight도 재사용 금지 — 그 뮤텍스는 "시작" 경로
+      // 전용(startGameFromHostRoom/triggerReplayIfLastReady 등)이라 여기 넣으면 마지막 준비 클릭
+      // 자동시작을 부당하게 막는다. 호스트가 "게임 준비"를 N연타하면 클릭마다 방 전체
+      // is_ready:false write가 나가 참가자가 방금 누른 준비완료를 지운다(체감 "시작 렉"의 직접
+      // 원인) — N클릭 = 최대 3N DB쓰기 + 2N×M selects + N×M renderAll + N회 QR 캔버스 재생성.
+      if (state.goingToReady) return;
+      state.goingToReady = true;
+      const startBtn = $("startGameBtn");
+      if (startBtn) startBtn.disabled = true;
+      try {
+        if (!getPenaltyText() && getOnlineMode() && state.roomCode) {
+          try {
+            const { data: room } = await db.from('rooms').select('penalty,status').eq('id', state.roomCode).single();
+            if (room?.penalty) {
+              state.penalty = room.penalty;
+              state.status = room.status || state.status;
+            }
+          } catch (e) {
+            console.warn("Penalty refresh before ready failed:", e?.message || e);
           }
-        } catch (e) {
-          console.warn("Penalty refresh before ready failed:", e?.message || e);
         }
+        const penaltyValue = ensurePenaltyValue();
+        if (!penaltyValue) {
+          showToast(t("toast.penaltyNotSet"));
+          if (startBtn) startBtn.disabled = false;
+          return;
+        }
+        if (getOnlineMode()) {
+          try {
+            await Promise.race([
+              db.from('rooms').update({ penalty: penaltyValue }).eq('id', state.roomCode),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+            ]);
+            await Promise.race([
+              db.from('participants').update({ is_ready: false }).eq('room_id', state.roomCode),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+            ]);
+            await Promise.race([
+              updateRoomStatus('ready'),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+            ]);
+          } catch (e) {
+            showToast("오류: " + e.message);
+            if (startBtn) startBtn.disabled = false;
+            return;
+          }
+        } else {
+          state.participants.forEach(p => p.is_ready = false);
+        }
+        state.status = "ready";
+        showHostRoom(); // 호스트는 QR 화면 유지(startBtn.disabled는 showHostRoom이 allReady 기준으로 재설정)
+      } finally {
+        state.goingToReady = false;
       }
-      const penaltyValue = ensurePenaltyValue();
-      if (!penaltyValue) { showToast(t("toast.penaltyNotSet")); return; }
-      if (getOnlineMode()) {
-        try {
-          await Promise.race([
-            db.from('rooms').update({ penalty: penaltyValue }).eq('id', state.roomCode),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-          ]);
-          await Promise.race([
-            db.from('participants').update({ is_ready: false }).eq('room_id', state.roomCode),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-          ]);
-          await Promise.race([
-            updateRoomStatus('ready'),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-          ]);
-        } catch (e) { showToast("오류: " + e.message); return; }
-      } else {
-        state.participants.forEach(p => p.is_ready = false);
-      }
-      state.status = "ready";
-      showHostRoom(); // 호스트는 QR 화면 유지
     }
 
     async function triggerReplayIfLastReady() {
@@ -9555,27 +9863,35 @@ function summarizeGameStats(rows) {
 
     async function becomeNextHost() {
       if (!getOnlineMode()) return;
-      // 로컬 카운트다운/자동 복귀 타이머 취소
-      stopGameOverCountdown();
-      if (state.gameOverTimeout) { clearTimeout(state.gameOverTimeout); state.gameOverTimeout = null; }
-      // 기존 호스트의 is_host 해제
-      const oldHost = state.participants.find(p => p.is_host);
-      if (oldHost) {
-        await db.from('participants').update({ is_host: false }).eq('id', oldHost.id);
+      // Build29(WRPS-076) [P4, F6]: in-flight 가드 — 연타 시 is_host 승계 write가 중복 실행되는 것
+      // 방지(중복 beginNewGameRound 호출 포함).
+      if (state.becomingNextHost) return;
+      state.becomingNextHost = true;
+      try {
+        // 로컬 카운트다운/자동 복귀 타이머 취소
+        stopGameOverCountdown();
+        if (state.gameOverTimeout) { clearTimeout(state.gameOverTimeout); state.gameOverTimeout = null; }
+        // 기존 호스트의 is_host 해제
+        const oldHost = state.participants.find(p => p.is_host);
+        if (oldHost) {
+          await db.from('participants').update({ is_host: false }).eq('id', oldHost.id);
+        }
+        // 나(술래)를 호스트로 승격
+        await db.from('participants').update({ is_host: true }).eq('id', state.currentUserId);
+        const beforePromote = [...state.participants]; // WRPS-056: 직전 세션 구성 캡처(호스트 교체 전)
+        state.participants = state.participants.map(p => ({
+          ...p,
+          is_host: p.id === state.currentUserId
+        }));
+        await beginNewGameRound({ status: "waiting", increment: true, reason: "loser_became_next_host", priorParticipants: beforePromote });
+        state.role = "host";
+        state.confirmedSafeIds = [];
+        state.confirmedLoserIds = [];
+        state.gameStarting = false;
+        showHostRoom();
+      } finally {
+        state.becomingNextHost = false;
       }
-      // 나(술래)를 호스트로 승격
-      await db.from('participants').update({ is_host: true }).eq('id', state.currentUserId);
-      const beforePromote = [...state.participants]; // WRPS-056: 직전 세션 구성 캡처(호스트 교체 전)
-      state.participants = state.participants.map(p => ({
-        ...p,
-        is_host: p.id === state.currentUserId
-      }));
-      await beginNewGameRound({ status: "waiting", increment: true, reason: "loser_became_next_host", priorParticipants: beforePromote });
-      state.role = "host";
-      state.confirmedSafeIds = [];
-      state.confirmedLoserIds = [];
-      state.gameStarting = false;
-      showHostRoom();
     }
 
     function startGameOverCountdown(seconds) {
