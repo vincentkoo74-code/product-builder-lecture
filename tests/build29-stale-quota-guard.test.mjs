@@ -38,12 +38,19 @@ function loadFinishRoundLocal({ state, db, judgeRound, getOnlineMode, isConfirme
     renderRoundResult: [], showScreen: [], playResultSfxOnce: [], playResultVoiceOnce: [],
     shadowCompute: [], shadowCompare: [], recordMyAccountGameResult: [], scheduleRematchAutoAdvance: 0,
     stopRoundTimers: 0, syncConfirmedIdsFromParticipants: 0, fetchFreshParticipantsForResult: 0,
+    showTaggerPopup: 0, autoSaveGameOverResultOnce: 0,
   };
   const emitted = [];
   const QA = { emit: (channel, data) => emitted.push(data) };
   const renderRoundResult = (caseType, roundLoserCount, remainingSlots) =>
     calls.renderRoundResult.push({ caseType, roundLoserCount, remainingSlots });
   const showScreen = (id) => calls.showScreen.push(id);
+  // Build30 Phase1: 확정 gameOver 렌더 직후 호출되는 술래 팝업 — 이 파일의 관심사(stale 마커
+  // 오염 방지)와 무관하므로 호출 여부만 카운트하는 no-op 스텁을 주입한다.
+  const showTaggerPopup = () => { calls.showTaggerPopup++; };
+  // Build30 Phase2: 확정 gameOver 시 이번 게임 결과 자동 저장 — 이 파일의 관심사와 무관하므로
+  // 호출 여부만 카운트하는 no-op 스텁을 주입한다.
+  const autoSaveGameOverResultOnce = () => { calls.autoSaveGameOverResultOnce++; };
   const playResultSfxOnce = (kind, delayMs) => calls.playResultSfxOnce.push({ kind, delayMs });
   const playResultVoiceOnce = (...args) => calls.playResultVoiceOnce.push(args);
   const __engineV2ShadowComputeRound = (...args) => calls.shadowCompute.push(args);
@@ -63,6 +70,7 @@ function loadFinishRoundLocal({ state, db, judgeRound, getOnlineMode, isConfirme
     'isConfirmedLoser', 'syncConfirmedIdsFromParticipants', 'renderRoundResult', 'showScreen',
     'playResultSfxOnce', 'playResultVoiceOnce', '__engineV2ShadowComputeRound', '__engineV2ShadowCompare',
     'recordMyAccountGameResult', 'scheduleRematchAutoAdvance', 'stopRoundTimers', 'fetchFreshParticipantsForResult',
+    'showTaggerPopup', 'autoSaveGameOverResultOnce',
     CHOICE_HELPERS_BLOCK + '\n' + FINISH_ROUND_LOCAL_SRC + '\n; return finishRoundLocal;'
   );
   const finishRoundLocal = factory(
@@ -70,7 +78,7 @@ function loadFinishRoundLocal({ state, db, judgeRound, getOnlineMode, isConfirme
     judgeRound || (() => ({})), isConfirmedLoser || (() => false), syncConfirmedIdsFromParticipants,
     renderRoundResult, showScreen, playResultSfxOnce, playResultVoiceOnce,
     __engineV2ShadowComputeRound, __engineV2ShadowCompare, recordMyAccountGameResult,
-    scheduleRematchAutoAdvance, stopRoundTimers, fetchFreshWrapped
+    scheduleRematchAutoAdvance, stopRoundTimers, fetchFreshWrapped, showTaggerPopup, autoSaveGameOverResultOnce
   );
   return { finishRoundLocal, calls, emitted };
 }

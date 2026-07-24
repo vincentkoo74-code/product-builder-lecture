@@ -2826,7 +2826,8 @@
           <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
         </div>
         <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px" data-i18n="popup.statsTitle">🏆 게임 승률</h3>
-        <p style="font-size:13px;color:var(--muted);margin:0 0 16px" data-i18n="popup.statsSubtitle">현재 게임방 누적 기록</p>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 8px" data-i18n="popup.statsSubtitle">현재 게임방 누적 기록</p>
+        <p id="statsPopupTaggerLine" class="hidden" style="font-size:13px;font-weight:800;color:var(--orange-deep);margin:0 0 12px"></p>
         <table style="width:100%;font-size:13px;border-collapse:collapse">
           <thead>
             <tr style="border-bottom:1px solid #eee">
@@ -2955,6 +2956,27 @@
         <button id="confirmPopupCancel" class="btn-outline btn-full">취소</button>
       </div>
     </div>
+
+    <!-- 술래 확정 팝업(Build30 Phase1, CEO 확정: 게임 종료(gameOver=최종 술래 확정) 시에만 즉시 표시).
+         호스트·참가자 모두에게 노출되며, '한번더' 클릭 또는 화면 전환 시 hideTaggerPopup()으로 제거된다. -->
+    <div id="taggerPopup" class="popup-overlay hidden">
+      <div class="popup-card maru-popup">
+        <button type="button" class="popup-close-btn" onclick="window.hideTaggerPopup()" aria-label="Close">×</button>
+        <div class="saekdong-v">
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="maru-hero sm" style="margin-bottom:4px">
+          <div class="maru-hero-bg"></div>
+          <img src="ASSETS/rps/scenes/cat-lost-tired.png" alt="마루" />
+        </div>
+        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px;text-align:center" data-i18n="popup.taggerTitle">🎯 술래 확정!</h3>
+        <p id="taggerPopupNames" style="font-size:16px;font-weight:700;color:var(--orange-deep);margin:0 0 16px;text-align:center"></p>
+        <button onclick="window.hideTaggerPopup()" class="btn-kparty" style="margin-top:4px">
+          <span data-i18n="popup.taggerClose">확인</span>
+          <span class="go-pill">OK</span>
+        </button>
+      </div>
+    </div>
   </main>
 
   <!-- Supabase JS: 네이티브 앱에서 원격 CDN 로드 실패 시 window.supabase가 없어 db가 null이 되고
@@ -2998,6 +3020,7 @@
         "common.timeUp": "⏱ 시간 초과",
         "common.secondsShort": "{n}초",
         "common.signOut": "🚪 로그아웃",
+        "common.anonymous": "이름 없음",
         "popup.confirmSignOutTitle": "로그아웃 하시겠어요?",
         "popup.confirmSignOutMsg": "다시 로그인하려면 SNS 인증을 한번 더 거쳐야 해요 🐾",
         "popup.confirmSignOutOk": "로그아웃",
@@ -3198,6 +3221,9 @@
         "result.hostSettingsBtn": "🎮 한번더!",
         "result.viewStatsBtn": "🏆 게임 승률 보기",
         "result.becomeNextHostBtn": "🎮 다음 게임 호스트 시작 ({n}초)",
+        // 술래 확정 팝업(Build30 Phase1)
+        "popup.taggerTitle": "🎯 술래 확정!",
+        "popup.taggerClose": "확인",
         // winnerWait / loserWait
         "winnerWait.cap": "세이프!",
         "winnerWait.title": "우선안전!",
@@ -3222,9 +3248,11 @@
         "stats.empty": "아직 게임 결과가 없습니다.",
         "stats.emptyRecent": "최근 게임 기록이 없습니다.",
         "stats.saveFailed": "게임 결과 저장에 실패했습니다. 다시 시도해주세요.",
+        "stats.taggerTag": "🎯 술래",
         // popups
         "popup.statsTitle": "🏆 게임 승률",
         "popup.statsSubtitle": "현재 게임방 누적 기록",
+        "popup.statsCurrentTagger": "이번 게임 술래: {names}",
         "popup.statsClose": "닫기",
         "account.title": "🏆 내 누적 기록",
         "account.subtitle": "로그인 계정에 저장된 전체 게임 기록입니다.",
@@ -3361,6 +3389,7 @@
         "common.timeUp": "⏱ Time's up",
         "common.secondsShort": "{n}s",
         "common.signOut": "🚪 Sign out",
+        "common.anonymous": "No name",
         "popup.confirmSignOutTitle": "Sign out?",
         "popup.confirmSignOutMsg": "You'll need to sign in again via SNS to come back 🐾",
         "popup.confirmSignOutOk": "Sign out",
@@ -3547,6 +3576,8 @@
         "result.hostSettingsBtn": "🎮 One more!",
         "result.viewStatsBtn": "🏆 View stats",
         "result.becomeNextHostBtn": "🎮 Become next host ({n}s)",
+        "popup.taggerTitle": "🎯 Tagger confirmed!",
+        "popup.taggerClose": "OK",
         "winnerWait.cap": "Safe!",
         "winnerWait.title": "You're safe!",
         "winnerWait.message": "Sit this rematch out and wait for the final loser.",
@@ -3569,8 +3600,10 @@
         "stats.empty": "No game results yet.",
         "stats.emptyRecent": "No recent game records.",
         "stats.saveFailed": "Failed to save the game result. Please try again.",
+        "stats.taggerTag": "🎯 Tagger",
         "popup.statsTitle": "🏆 Game stats",
         "popup.statsSubtitle": "This room's running record",
+        "popup.statsCurrentTagger": "This game's tagger: {names}",
         "popup.statsClose": "Close",
         "account.title": "🏆 My record",
         "account.subtitle": "All game records saved to your signed-in account.",
@@ -3702,6 +3735,7 @@
         "common.timeUp": "⏱ 時間切れ",
         "common.secondsShort": "{n}秒",
         "common.signOut": "🚪 ログアウト",
+        "common.anonymous": "名前なし",
         "popup.confirmSignOutTitle": "ログアウトしますか？",
         "popup.confirmSignOutMsg": "再ログインにはSNS認証をもう一度行う必要があります 🐾",
         "popup.confirmSignOutOk": "ログアウト",
@@ -3888,6 +3922,8 @@
         "result.hostSettingsBtn": "🎮 もう一回！",
         "result.viewStatsBtn": "🏆 勝率を見る",
         "result.becomeNextHostBtn": "🎮 次のホストになる ({n}秒)",
+        "popup.taggerTitle": "🎯 鬼確定!",
+        "popup.taggerClose": "確認",
         "winnerWait.cap": "セーフ！",
         "winnerWait.title": "ひと足先にセーフ！",
         "winnerWait.message": "今回の再戦は外れて最終の鬼が決まるまで待ってください。",
@@ -3910,8 +3946,10 @@
         "stats.empty": "まだゲーム結果がありません。",
         "stats.emptyRecent": "最近のゲーム記録がありません。",
         "stats.saveFailed": "ゲーム結果の保存に失敗しました。もう一度お試しください。",
+        "stats.taggerTag": "🎯 鬼",
         "popup.statsTitle": "🏆 ゲーム勝率",
         "popup.statsSubtitle": "現部屋の累計記録",
+        "popup.statsCurrentTagger": "今回の鬼: {names}",
         "popup.statsClose": "閉じる",
         "account.title": "🏆 自分の記録",
         "account.subtitle": "ログイン中のアカウントに保存された全ゲーム記録です。",
@@ -4238,6 +4276,7 @@
       gameRound: 1,
       lastStartedGameRound: 0,
       countdownStartAt: 0,
+      choiceEndAt: 0, // Build30-R2 Phase A(WRPS-078): choice window(선택 시간) 종료 예정 시각(절대 서버시각)
       gameStarting: false,
       finishingRound: false,
       resultVoiceKey: null, // WRPS-046: 라운드당 결과 음성 1회 재생 가드
@@ -4245,6 +4284,7 @@
       resultMetricKey: null, // WRPS-072(Build18): 라운드당 ROUND_RESULT metric 1회 기록 가드
       lastRoundResolution: null, // WRPS-072-B19(Build19): 라운드 재분류 방지(idempotency) 캐시
       gameOverVoiceKey: null, // Build21: 게임(회차)당 "게임 끝!" 음성 1회 재생 가드(endGame/showStats 공용)
+      autoSavedGameResultKey: null, // Build30 Phase2(CEO 확정): 게임(회차)당 gameOver 자동 저장 1회 가드(gameOverVoiceKey와 동일 패턴)
       publishingRoundResult: false,
       newRoundResetting: false,
       joinScreenMode: "manual",
@@ -4281,6 +4321,11 @@
           loserCount: raw.loserCount || 1,
           gameRound: toPositiveInt(raw.gameRound, null),
           countdownStartAt: toPositiveInt(raw.countdownStartAt, 0),
+          // Build30-R2 Phase A(WRPS-078): choice window(선택 시간) 종료 예정 시각 — countdownStartAt과
+          // 동일한 penalty-blob 인코딩 패턴(DB 스키마 변경 없음). host가 실제 선택화면을 띄우는
+          // 시점(애니메이션 종료 직후)에 기록해 공유하는 절대 서버시각(자세한 근거는 아래
+          // publishChoiceWindowEnd/captureAndPublishChoiceWindowNow 주석 참고).
+          choiceEndAt: toPositiveInt(raw.choiceEndAt, 0),
           phaseScheduledAt: toPositiveInt(raw.phaseScheduledAt, 0),
           phaseKind: raw.phaseKind || "",
         };
@@ -4293,12 +4338,13 @@
             loserCount: p.loserCount || 1,
             gameRound: toPositiveInt(p.gameRound, null),
             countdownStartAt: toPositiveInt(p.countdownStartAt, 0),
+            choiceEndAt: toPositiveInt(p.choiceEndAt, 0),
             phaseScheduledAt: toPositiveInt(p.phaseScheduledAt, 0),
             phaseKind: p.phaseKind || "",
           };
         }
       } catch {}
-      return { text: raw || "", loserCount: 1, gameRound: null, countdownStartAt: 0, phaseScheduledAt: 0, phaseKind: "" };
+      return { text: raw || "", loserCount: 1, gameRound: null, countdownStartAt: 0, choiceEndAt: 0, phaseScheduledAt: 0, phaseKind: "" };
     }
     function getPenaltyText() { return String(parsePenalty(state.penalty).text || "").trim(); }
     // Penalties are host-authored user content. Display non-empty text exactly as entered;
@@ -4378,7 +4424,7 @@
     function getNextCountdownStartAt(delayMs = 3600) {
       return serverNow() + delayMs;
     }
-    function buildPenaltyValue({ text = getPenaltyText(), loserCount = state.targetLoserCount, gameRound = state.gameRound, countdownStartAt = 0, phaseScheduledAt = 0, phaseKind = "" } = {}) {
+    function buildPenaltyValue({ text = getPenaltyText(), loserCount = state.targetLoserCount, gameRound = state.gameRound, countdownStartAt = 0, choiceEndAt = 0, phaseScheduledAt = 0, phaseKind = "" } = {}) {
       const value = {
         text: text || "",
         loserCount: clampLoserCount(loserCount || 1),
@@ -4386,6 +4432,11 @@
       };
       const startAt = toPositiveInt(countdownStartAt, 0);
       if (startAt > 0) value.countdownStartAt = startAt;
+      // Build30-R2 Phase A(WRPS-078): choice window 종료 예정 시각 — 별도 write(publishChoiceWindowEnd)
+      // 에서만 채워지고, 초기 'playing' 전이 write(startGame 등)에서는 아직 알 수 없으므로 기본값 0
+      // 이면 필드 자체를 넣지 않는다(countdownStartAt과 동일한 "0이면 생략" 인코딩 규칙).
+      const choiceAt = toPositiveInt(choiceEndAt, 0);
+      if (choiceAt > 0) value.choiceEndAt = choiceAt;
       const phaseAt = toPositiveInt(phaseScheduledAt, 0);
       if (phaseAt > 0) { value.phaseScheduledAt = phaseAt; value.phaseKind = phaseKind || ""; }
       return JSON.stringify(value);
@@ -4393,6 +4444,38 @@
     // Build19: RESULT/GAME_OVER/NEXT_ROUND(ready) 전환 예정 시각 계산(countdown과 동일한 lead 패턴).
     const PHASE_RENDER_BUFFER_MS = 900; // 서버 커밋~클라 표시까지 흡수할 고정 버퍼(800~1200ms 권장 범위 중앙)
     function getNextPhaseScheduledAt(bufferMs = PHASE_RENDER_BUFFER_MS) { return serverNow() + bufferMs; }
+    // Build30-R2 Phase A(WRPS-078, CRITICAL 재수정): choice window(선택 시간) 종료 예정 시각.
+    //
+    // Round1 결함(codex-critic CRITICAL): choiceEndAt = countdownStartAt + 5000으로 파생했는데,
+    // countdownStartAt은 "카운트다운 애니메이션 시작" 시각이다. 실제 선택화면(screenGame)은 그
+    // 애니메이션(준비+"안내면술래가위바위보" 음성, ko 4050ms/ja 3400ms/en 2850ms)이 끝난 뒤에야
+    // beginRoundTimer()에서 뜬다. 그래서 이 파생값을 기준으로 하면 실제 선택시간이 ko 950ms/
+    // ja 1600ms/en 2150ms로 파괴됐다(로케일별로 다르고 5초가 아님).
+    //
+    // 수정: 앵커를 "카운트다운 시작"이 아니라 "실제 선택화면 시작"(host의 애니메이션이 끝나고
+    // beginRoundTimer로 이어지는 바로 그 시점)으로 바꾼다. host가 그 순간 serverNow()를 캡처해
+    // choiceEndAt = 그 시각 + CHOICE_WINDOW_MS(5000)를 room.penalty에 별도로 발행한다
+    // (publishChoiceWindowEnd/captureAndPublishChoiceWindowNow, runCountdownThenShowGame 참고).
+    // participant는 이 절대 종료시각을 그대로 받아 remaining = ceil((choiceEndAt - serverNow())/1000)
+    // 을 계산한다 — 자기 애니메이션이 언제 끝났는지와 무관하게 host가 정한 절대 시각 기준이므로,
+    // 애니메이션이 늦은 기기는 선택시간이 짧아지지만 3대 종료시각은 항상 동일하다(CEO 요구).
+    //
+    // countdownStartAt과 달리 choiceEndAt은 라운드 시작 write(startGame 등) 시점에는 아직 알 수
+    // 없으므로(그 write가 일어난 뒤 카운트다운 애니메이션이 진행되는 동안 정해짐) countdownStartAt
+    // 처럼 파생할 수 없고, 실제 서버시각을 담는 새 필드가 필요하다(parsePenalty/buildPenaltyValue에
+    // countdownStartAt과 동일한 "0이면 생략" 패턴으로 추가 — DB 스키마 변경 없음, penalty JSON
+    // blob에만 필드 추가).
+    const CHOICE_WINDOW_MS = 5000;
+    // getCountdownStartAt()과 동일한 패턴: raw가 없으면(자기 자신의 상태 조회) 이번 room row에
+    // 인코딩된 값과 로컬에 이미 낙관적으로 세팅해둔 값(host가 방금 캡처했지만 아직 room 에코가
+    // 도착하지 않은 경우) 중 더 큰 쪽을 쓴다 — host 자신이 쓰자마자 스스로 읽어도 항상 정확하다.
+    function getChoiceEndAt(raw) {
+      const source = raw === undefined ? state.penalty : raw;
+      const parsed = toPositiveInt(parsePenalty(source).choiceEndAt, 0);
+      return raw === undefined
+        ? Math.max(parsed, toPositiveInt(state.choiceEndAt, 0))
+        : parsed;
+    }
     function getVisiblePenaltyText() {
       return $("hostPenaltyText")?.textContent?.trim()
         || $("readyPenaltyBox")?.textContent?.replace(/^벌칙:\s*/, "").trim()
@@ -4896,6 +4979,16 @@
 	    //  - 중간 이탈자 행은 게임 중 삭제되지 않으므로(이탈 정리는 게임 사이에만) 스냅샷에 보존된다.
 	    async function saveLastCompletedGameResult(roomCode = state.roomCode) {
 	      if (!roomCode) return false;
+	      // Build30 Phase1(CEO 확정): 게임 완료 시점의 확정 술래(state.confirmedLoserIds — 이 클라이언트가
+	      // finishRoundLocal에서 이미 판정 완료한 결과)를 통계 스냅샷에 함께 기록한다. DB participants
+	      // 행에는 술래 여부를 나타내는 별도 컬럼이 없으므로(choice는 라운드별 마커라 게임 종료 후에는
+	      // 신뢰할 수 없다), 클라이언트 메모리의 confirmedLoserIds를 유일한 소스로 사용한다(판정
+	      // 알고리즘 자체는 무변경 — 술래 필드만 추가로 부착).
+	      // Build30 HIGH 레이스 수정: autoSave가 fire-and-forget(void)로 호출되므로, 아래 DB fetch가
+	      // 진행되는 동안(await) 사용자가 Home/한번더로 이동하면 state.confirmedLoserIds가 비워질 수
+	      // 있다(discardInProgressRoomSession/resetRoomLocalState/beginNewGameRound). 이 함수 호출
+	      // 시점의 confirmedLoserIds를 fetch 이전에 동기적으로 캡처해 그 레이스를 차단한다.
+	      const confirmedLoserIdSet = new Set(state.confirmedLoserIds || []);
 	      let rows = state.participants || [];
 	      if (getOnlineMode() && db) {
 	        try {
@@ -4914,7 +5007,8 @@
 	          wins: Number(p.wins || 0),
 	          losses: Number(p.losses || 0),
 	          draws: Number(p.draws || 0),
-	          penalties: Number(p.penalties || 0)
+	          penalties: Number(p.penalties || 0),
+	          isTagger: confirmedLoserIdSet.has(p.id)
 	        }));
 	      if (!totals.length) return false;
 	      try {
@@ -4999,7 +5093,7 @@
 	        state.playingEntryKey = null;
 	        state.gameStarting = false;
 	        state.finishingRound = false;
-	        state.resultVoiceKey = null; state.resultMetricKey = null; state.lastRoundResolution = null; state.gameOverVoiceKey = null; // WRPS-046/072/072-B19/Build21: 새 게임 회차에서 결과 음성/메트릭/판정캐시/게임종료음성 가드 초기화
+	        state.resultVoiceKey = null; state.resultMetricKey = null; state.lastRoundResolution = null; state.gameOverVoiceKey = null; state.autoSavedGameResultKey = null; // WRPS-046/072/072-B19/Build21/Build30-P2: 새 게임 회차에서 결과 음성/메트릭/판정캐시/게임종료음성/자동저장 가드 초기화
 	        state.resultSfxKey = null;   // 결과 효과음 가드 초기화
 	        // Build28 Round3(codex-critic NEW-HIGH-1/NEW-MEDIUM-1): 새 게임회차 진입 시 이전
 	        // 라운드의 defer-retry 타이머를 반드시 취소하고(예약된 재시도가 새 회차에서 깨어나
@@ -5095,15 +5189,30 @@
 	      } catch (e) {}
 	      return true;
 	    }
-	    async function fetchFreshParticipantsForResult(roomCode, maxRetries = 2, delayMs = 300) {
-	      let data = null;
-	      const unresolvedOf = (rows) => (rows || []).filter(p =>
+	    // Build30-R2 Phase B(WRPS-078): fetchFreshParticipantsForResult 내부 지역 함수였던 것을 모듈
+	    // 스코프로 끌어올린 것뿐(로직 변경 없음) — handleRoomUpdate의 result/game_over Promise.race
+	    // timeout 오판 가드(아래 참고)가 동일한 "미해결 활성 참가자" 정의를 재사용하기 위함.
+	    function getUnresolvedActiveParticipants(rows) {
+	      return (rows || []).filter(p =>
 	        !(state.confirmedSafeIds || []).includes(p.id) &&
 	        !(state.confirmedLoserIds || []).includes(p.id) &&
 	        !isNonPlayingChoice(p.choice) &&
 	        getChoiceBase(p.choice) &&
 	        !hasConfirmedRoundResult(p.choice)
 	      );
+	    }
+	    // Build30-R2 Phase B(WRPS-078) [팬텀 가드]: isContextStillValid가 주어지면(handleRoomUpdate의
+	    // Promise.race timeout 경로에서만 전달 — 기존 defer-retry 호출부(scheduleRoundJudgeDeferRetry)는
+	    // 인자를 생략해 이전과 100% 동일하게 동작한다), 이 함수의 각 재시도(bounded retry 루프/최종
+	    // 대기 자체는 무변경)가 실제로 state.participants를 mutate하기 직전에 "이 결과가 여전히 유효한
+	    // 컨텍스트(같은 방/같은 라운드/같은 phase)에 속하는가"를 확인한다. 호출자의 Promise.race가
+	    // timeout으로 먼저 반환된 뒤에도 이 함수는 백그라운드에서 계속 실행되는데(기존 의도된 동작,
+	    // Round1 주석 참고), 그 사이 다음 라운드가 시작되거나 방을 나가는 등 컨텍스트가 바뀌면 뒤늦게
+	    // 도착한 이 데이터로 state.participants를 orphan mutate해 팬텀 재판정(Build28 결함A류)을
+	    // 유발할 수 있다 — 컨텍스트가 바뀌었으면 그 시점 데이터를 반환만 하고 mutate하지 않는다.
+	    async function fetchFreshParticipantsForResult(roomCode, maxRetries = 2, delayMs = 300, isContextStillValid = null) {
+	      let data = null;
+	      const unresolvedOf = getUnresolvedActiveParticipants;
 	      // Build24-B ROLLBACK(실기기 재현 회귀로 제거, room PP2C): host가 방금 publishHostRoundResult()로
 	      // 직접 쓴 데이터라도 "완전히 신선하다"고 판단해 DB 재조회를 스킵하면, 이 함수가 매 시도마다
 	      // 호출하는 syncConfirmedIdsFromParticipants(data)도 함께 건너뛰게 되어 state.confirmedSafeIds/
@@ -5115,6 +5224,13 @@
 	      // 호출)를 거친다. 판정 알고리즘(judgeRound/judgePure/resolveElimination)과 Build23 partial
 	      // replay guard는 애초에 이 함수와 무관 — 무변경.
 	      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+	        // Build30-R2 Phase B(WRPS-078) [팬텀 가드]: 재시도 루프 자체(횟수/간격)는 무변경 — 이번
+	        // attempt를 실행하기 직전에 컨텍스트가 이미 바뀌었으면(다음 라운드 시작/방 이동 등)
+	        // 조회조차 하지 않고 조용히 포기한다(orphan mutate 예방).
+	        if (isContextStillValid && !isContextStillValid()) {
+	          try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'RESULT_FETCH_CONTEXT_STALE_ABANDONED', attempt, phase: 'retryLoop' }); } catch (e) {}
+	          return data;
+	        }
 	        const res = await db.from('participants').select('*')
 	          .eq('room_id', roomCode).order('created_at', { ascending: true });
 	        data = res.data;
@@ -5154,7 +5270,11 @@
       // 별개로 "마지막 1회 더 긴 대기" 후 1회만 더 재조회한다(host의 publishHostRoundResult 커밋이
       // 막판에 반영되는 케이스 방어). 이 마지막 시도도 딱 1회로 제한해 무한 대기가 되지 않는다.
       let stillUnresolved = unresolvedOf(data);
-      if (stillUnresolved.length) {
+      // Build30-R2 Phase B(WRPS-078) [팬텀 가드]: "마지막 1회 더 긴 대기"(간격/재시도 자체는
+      // 무변경) 실행 전에도 동일하게 컨텍스트를 재확인한다.
+      if (stillUnresolved.length && isContextStillValid && !isContextStillValid()) {
+        try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'RESULT_FETCH_CONTEXT_STALE_ABANDONED', phase: 'finalWait' }); } catch (e) {}
+      } else if (stillUnresolved.length) {
         try { QA.emit('metric', { wrps: 'WRPS-072-B22', eventType: 'TAGGER_SNAPSHOT_FINAL_WAIT', unresolvedIds: stillUnresolved.map(p => p.id), delayMs: delayMs * 2 }); } catch (e) {}
         await sleep(delayMs * 2);
         const res = await db.from('participants').select('*')
@@ -5400,6 +5520,11 @@
       state.targetLoserCount = getTargetLoserCount();
       state.gameRound = getGameRound();
       state.countdownStartAt = getCountdownStartAt(room.penalty);
+      // Build30-R2 Phase A(WRPS-078): choiceEndAt도 countdownStartAt과 동일하게 이번 room row
+      // 그대로(맥스 아님) 반영한다 — 이 필드가 없는 phase(result/ready 등)로 넘어가면 자연히
+      // 0으로 정리되어(buildPenaltyValue가 0이면 필드를 생략) 다음 라운드 재사용 시 이전 값이
+      // 새지 않는다.
+      state.choiceEndAt = getChoiceEndAt(room.penalty);
 
       // round가 1로 리셋될 때만(이전 라운드에서 새 게임) 로컬 마커 초기화
       // p.is_ready는 건드리지 않음: fetchParticipants()가 DB 값으로 동기화하며,
@@ -5502,17 +5627,22 @@
             // 재전환돼 Build22-B dedup/Build27 stale-skip이 막은 시나리오가 UI 변종으로 재발한다.
             // Phase2 Fix-1과 동일한 라우팅 규칙: 우선안전/확정 술래(iAmSafe/iAmConfirmedLoser)는
             // 여기서 결과화면으로 보내지 않는다 — 잠시 후 finishRoundLocal()이 자체적으로 이들을
-            // 대기화면으로 라우팅한다(무변경, 중복 없음). 남아있을 수 있는 이전 라운드의 결과
-            // 텍스트가 그대로 잠깐 보이지 않도록 제목/메시지만 비워둔다("집계 중" 자리표시 —
-            // Build28 defer EXHAUSTED로 끝내 판정되지 않는 극단적 경우에도 최소한 오래된 다른
-            // 라운드의 결과가 아니라 빈 상태로 남는다).
+            // 대기화면으로 라우팅한다(무변경, 중복 없음).
+            // Build30-R2 Phase B(WRPS-078): 제목/메시지를 빈 문자열로 지우던 것(CEO 금지: 빈 화면
+            // 선노출)을 renderTentativeRoundResult()로 교체한다 — 보유 로컬 state로 즉시 1회 잠정
+            // 판정을 렌더해 실제 콘텐츠를 보여준다(idempotency 캐시에는 기록하지 않음). 판정할
+            // 데이터 자체가 없는 극단적인 빈 스냅샷(Build28 defer 케이스)만 false를 반환하며, 그
+            // 경우에 한해 기존(Build29 이전)과 동일하게 제목/메시지를 비워 오래된 다른 라운드의
+            // 결과가 잘못 남아있지 않게 한다.
             if (!iAmSafe && !iAmConfirmedLoser) {
-              try {
-                const pendingTitle = $("resultTitle"), pendingMsg = $("resultMessage");
-                if (pendingTitle) pendingTitle.textContent = "";
-                if (pendingMsg) pendingMsg.textContent = "";
-              } catch (e) {}
               showScreen("screenRoundResult");
+              if (!renderTentativeRoundResult()) {
+                try {
+                  const pendingTitle = $("resultTitle"), pendingMsg = $("resultMessage");
+                  if (pendingTitle) pendingTitle.textContent = "";
+                  if (pendingMsg) pendingMsg.textContent = "";
+                } catch (e) {}
+              }
             }
             // Fix 1 & 3: result 전환 전 최신 참가자 데이터를 반드시 재조회 후 판정
             // Build19(WRPS-072-B19): 재조회가 "아직 이번 라운드 결과를 못 쓴 활성 참가자"를 포함해
@@ -5521,9 +5651,64 @@
             // 재분류되는 사례가 확인됨. 짧은 재시도로 스냅샷 완결성을 보장한다(게임 로직/서버 구조 무변경).
             if (db && state.roomCode) {
               const snapshotStartTs = Date.now();
-              await fetchFreshParticipantsForResult(state.roomCode);
+              // Build30(WRPS-078) [Phase1]: fetchFreshParticipantsForResult 자체의 내부 재시도는
+              // bounded(최대 maxRetries+1회 + 마지막 1회 긴 대기)지만, 그 안의 db.from(...).select(...)
+              // 네트워크 await 자체에는 상한이 없다 — 실기기 QA에서 최대 101,778ms 대기가 실측됐다
+              // (아마 백그라운드/네트워크 정체로 fetch 자체가 반환되지 않은 경우). goToReadyScreen
+              // (9605-9618 부근)이 이미 쓰는 Promise.race(쿼리, timeout(5000)) 패턴을 그대로 재사용해
+              // 이 호출 전체에 5초 hard cap을 씌운다. 판정 알고리즘/Build24-A 측정 순서/Build19
+              // idempotency/Build28-29 retry 로직은 전혀 건드리지 않는다 — 이 대기 자체에만 상한을
+              // 추가할 뿐, timeout이 나도 fetchFreshParticipantsForResult는 백그라운드에서 계속 실행돼
+              // state.participants/confirmedSafeIds/LoserIds를 나중에 정정한다(그 정정은 이미
+              // 함수 내부에서 state에 직접 반영하므로 별도 처리 불필요). timeout 시에는 그 시점까지
+              // 보유한 state(직전 fetchParticipants/realtime으로 이미 채워진 실제 참가자 데이터,
+              // 빈 화면이 아님)로 즉시 finishRoundLocal()을 진행한다.
+              const RESULT_FETCH_HARD_TIMEOUT_MS = 5000;
+              let resultFetchTimedOut = false;
+              // Build30-R2 Phase B(WRPS-078) [팬텀 가드]: 이 호출 시점의 컨텍스트(방/게임회차/
+              // 라운드/phase)를 캡처한다 — Build28 defer-retry의 checkRetryContext(roomCode/
+              // eventId/status 3중 확인)와 동일한 신호를 fetchFreshParticipantsForResult에
+              // 전달해, timeout 이후 백그라운드에서 계속 실행되는 이 fetch가 뒤늦게 도착했을 때
+              // 여전히 같은 컨텍스트인 경우에만 state.participants를 mutate하게 한다.
+              const guardRoomCode = state.roomCode;
+              const guardEventId = getGameRound() + ':' + (state.round || 1);
+              const isResultFetchContextStillValid = () =>
+                state.roomCode === guardRoomCode &&
+                (getGameRound() + ':' + (state.round || 1)) === guardEventId &&
+                (state.status === 'result' || state.status === 'game_over');
+              const resultFetchPromise = fetchFreshParticipantsForResult(state.roomCode, undefined, undefined, isResultFetchContextStillValid);
+              await Promise.race([
+                resultFetchPromise,
+                new Promise((resolve) => setTimeout(() => { resultFetchTimedOut = true; resolve(); }, RESULT_FETCH_HARD_TIMEOUT_MS))
+              ]);
+              // Build30-R2 Phase B(WRPS-078) [오판 가드]: timeout으로 신선도 보장이 끊긴 경우에도,
+              // WRPS-075의 "빈 스냅샷" defer만으로는 activePlayers>0인 "부분 stale"(일부 활성
+              // 참가자만 아직 이번 라운드 결과 미반영)을 잡지 못한다. 지금 보유한 로컬 데이터에
+              // 그런 미해결 row가 있으면, 확정 판정(finishRoundLocal)만 잠깐 보류하고 orphan이
+              // 된 원래 fetch 자체가 끝나기를 추가로(단, 여전히 bounded) 기다린다 — Build19
+              // 신선도 보장의 취지를 유지하되, 실측된 101초급 진짜 네트워크 행 상황에서 무한
+              // 대기로 되돌아가지 않도록 이 추가 대기도 상한을 둔다.
+              if (resultFetchTimedOut && isResultFetchContextStillValid()) {
+                const staleRows = getUnresolvedActiveParticipants(state.participants);
+                if (staleRows.length > 0) {
+                  const RESULT_FETCH_STALE_EXTRA_WAIT_MS = 3000;
+                  try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'RESULT_FETCH_TIMEOUT_PARTIAL_STALE_EXTRA_WAIT',
+                    unresolvedIds: staleRows.map(p => p.id), extraWaitMs: RESULT_FETCH_STALE_EXTRA_WAIT_MS,
+                    roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round || 1 }); } catch (e) {}
+                  await Promise.race([
+                    resultFetchPromise,
+                    new Promise((resolve) => setTimeout(resolve, RESULT_FETCH_STALE_EXTRA_WAIT_MS))
+                  ]);
+                }
+              }
               const resultRenderAfterSnapshotTs = Date.now();
               try {
+                if (resultFetchTimedOut) {
+                  QA.emit('metric', { wrps: 'WRPS-078', eventType: 'RESULT_FETCH_TIMEOUT',
+                    elapsedMs: resultRenderAfterSnapshotTs - snapshotStartTs,
+                    roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round || 1,
+                    visibilityState: (typeof document !== 'undefined' && document.visibilityState) || null });
+                }
                 // Build29(WRPS-076) [P1, R1]: 위 화면 전환을 먼저 하도록 바꿨으므로
                 // firstVisualRenderGapMs의 의미가 바뀌었다 — 종전 "빈 화면 지연(화면 자체가 아직
                 // 안 바뀐 시간)"에서 이제는 "화면은 이미 바뀐 뒤 실제 내용(판정 결과)이 채워지기까지
@@ -5882,6 +6067,11 @@
 
     function showScreen(id) {
       hideAllScreens();
+      // Build30 Phase1(CEO 확정): 어떤 화면 전환이든(다음 게임/라운드 화면 포함) 이전에 떠 있던
+      // 술래 확정 팝업을 즉시 제거한다 — 다음 화면을 가리지 않도록. 이 화면 전환이 confirmed
+      // gameOver 렌더의 일부였다면(finishRoundLocal 등), 호출부가 이 showScreen 호출 *이후*
+      // showTaggerPopup()을 다시 호출해 새 팝업을 띄운다.
+      hideTaggerPopup();
       const screen = $(id);
       if (!screen) {
         console.warn("Missing screen:", id);
@@ -5920,9 +6110,10 @@
       state.gameRound = 1;
       state.lastStartedGameRound = 0;
       state.countdownStartAt = 0;
+      state.choiceEndAt = 0; // Build30-R2 Phase A(WRPS-078): 새 세션에서 이전 방의 choice window 앵커가 새지 않도록 초기화
       state.playingEntryKey = null;
       state.advancingRound = false;
-      state.resultVoiceKey = null; state.resultMetricKey = null; state.lastRoundResolution = null; state.gameOverVoiceKey = null; // WRPS-046/072/072-B19/Build21: 새 세션에서 결과 음성/메트릭/판정캐시/게임종료음성 가드 초기화
+      state.resultVoiceKey = null; state.resultMetricKey = null; state.lastRoundResolution = null; state.gameOverVoiceKey = null; state.autoSavedGameResultKey = null; // WRPS-046/072/072-B19/Build21/Build30-P2: 새 세션에서 결과 음성/메트릭/판정캐시/게임종료음성/자동저장 가드 초기화
       state.resultSfxKey = null;   // 결과 효과음 가드 초기화
       // Build28 Round3(codex-critic NEW-HIGH-1/NEW-MEDIUM-1/NEW-LOW-1): 진행 중이던 세션을
       // 버릴 때 defer-retry 타이머를 취소하고(다른 세션/방으로 넘어간 뒤 뒤늦게 깨어나 팬텀
@@ -5954,9 +6145,10 @@
       state.gameRound = 1;
       state.lastStartedGameRound = 0;
       state.countdownStartAt = 0;
+      state.choiceEndAt = 0; // Build30-R2 Phase A(WRPS-078): 새 방 진입 시 이전 게임의 choice window 앵커 초기화
       state.advancingRound = false;
       state.autoStartInFlight = false;
-      state.resultVoiceKey = null; state.resultMetricKey = null; state.lastRoundResolution = null; state.gameOverVoiceKey = null; // WRPS-046/072/072-B19/Build21: 새 방에서 결과 음성/메트릭/판정캐시/게임종료음성 가드 초기화
+      state.resultVoiceKey = null; state.resultMetricKey = null; state.lastRoundResolution = null; state.gameOverVoiceKey = null; state.autoSavedGameResultKey = null; // WRPS-046/072/072-B19/Build21/Build30-P2: 새 방에서 결과 음성/메트릭/판정캐시/게임종료음성/자동저장 가드 초기화
       state.resultSfxKey = null;   // 결과 효과음 가드 초기화
       if (state.rematchAdvanceTimer) { clearTimeout(state.rematchAdvanceTimer); state.rematchAdvanceTimer = null; }
       // Build28 Round3(codex-critic NEW-HIGH-1/NEW-MEDIUM-1/NEW-LOW-1): 새 방 진입 시 defer-retry
@@ -7100,11 +7292,69 @@
       }, 1000);
     }
 
+    // Build30-R2 Phase A(WRPS-078): host가 choiceEndAt(선택 시간 종료 예정 시각)을 room.penalty에
+    // 발행한다. 실패해도(오프라인/네트워크 오류) 이 기기 자신은 이미 state.choiceEndAt을 로컬로
+    // 세팅해뒀으므로 진행에 지장이 없다 — 실패는 QA metric으로만 남기고 흐름을 막지 않는다(다른
+    // 참가자들이 이번 라운드는 로컬 5초 폴백으로 진행하게 될 뿐, Build19 신선도 보장/판정 로직과는
+    // 무관). vendored supabase-js는 네트워크 실패에서도 reject하지 않고 {error}로 resolve하므로
+    // (nextRound()의 기존 승격 패턴, 약 8994 참고) error를 명시적으로 검사해 throw로 승격한다.
+    async function publishChoiceWindowEnd(choiceEndAt) {
+      if (state.role !== "host" || !getOnlineMode() || !db || !state.roomCode) return;
+      try {
+        const penalty = buildPenaltyValue({ gameRound: getGameRound(), choiceEndAt });
+        const { error } = await db.from('rooms').update({ penalty }).eq('id', state.roomCode);
+        if (error) throw new Error('choiceEndAt publish failed: ' + (error.message || error));
+        state.penalty = penalty;
+      } catch (e) {
+        console.warn("publishChoiceWindowEnd failed:", e?.message || e);
+        try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'CHOICE_END_PUBLISH_FAILED', message: String(e?.message || e), roomId: state.roomCode || null }); } catch (_) {}
+      }
+    }
+    // Build30 Phase2(검증 MEDIUM A-2 실수정): 이 기기의 카운트다운 애니메이션이 방금(정확히 지금)
+    // 끝났다 — "지금"을 choice window 시작 시각으로 캡처해 공유한다(host만; participant는 no-op).
+    // ⚠️ host가 자신보다 느린 로케일(예: ko 4050ms) 참가자보다 빠른 로케일(예: en 2850ms)이면,
+    // serverNow()는 그 참가자의 실제 애니메이션 종료 시각보다 이르다 — 이 이른 시각을 그대로 앵커로
+    // 쓰면 그 참가자의 실제 체감 선택 시간이 5초 미만(최악 ~3.8초)으로 줄어든다(cross-locale 실측
+    // 결함). publishChoiceWindowEstimateIfHost()와 동일하게 "모든 로케일 중 가장 느린 애니메이션
+    // 소요"(COUNTDOWN_ANIM_MAX_MS)를 하한으로 둬 로케일 무관 모든 참가자에게 최소 5초를 보장한다.
+    // host 자신이 가장 느린 로케일이면 serverNow()가 이미 이 하한 이상이므로 무영향(기존과 동일).
+    // 종료시각 자체는 여전히 절대 시각으로 전원에게 동일하게 공유된다(동기화 유지).
+    function captureAndPublishChoiceWindowNow() {
+      if (state.role !== "host") return;
+      const countdownStartAt = getCountdownStartAt();
+      const choiceStartAt = countdownStartAt
+        ? Math.max(serverNow(), countdownStartAt + COUNTDOWN_ANIM_MAX_MS)
+        : serverNow(); // 카운트다운이 동기화되지 않았으면(오프라인 등) 하한 계산 불가 — 기존 동작 유지
+      state.choiceEndAt = choiceStartAt + CHOICE_WINDOW_MS;
+      void publishChoiceWindowEnd(state.choiceEndAt);
+    }
+    // Build30-R2 Phase A(WRPS-078): host가 이번 라운드 비참가자(이미 확정 안전/술래)라 자신의
+    // 카운트다운 애니메이션을 아예 실행하지 않는 경우(runCountdownThenShowGame의 첫 early-return,
+    // 애니메이션이 로케일별로 다른 시간이 걸리므로 host에게 실제 "지금"이 없음)에도, 아직 플레이
+    // 중인 다른 참가자들을 위해 choiceEndAt을 발행해야 한다 — 그렇지 않으면 이 방은 매 라운드
+    // choiceEndAt이 전혀 발행되지 않아 모든 참가자가 로컬 5초 폴백으로만 진행된다(3대 종료시각
+    // 통일 요구를 충족 못함). host 자신은 애니메이션을 실행하지 않으므로, 모든 로케일 중 가장 긴
+    // 애니메이션 소요(COUNTDOWN_ANIM_MAX_MS, runCountdown()의 COUNTDOWN_TIMING ko 항목과 동일한
+    // 값)를 안전 상한으로 더해 추정한다 — 실제로 더 일찍 애니메이션이 끝난 참가자는 그만큼 선택
+    // 시간이 길어질 뿐(최소 5초는 항상 보장), 짧아지는 방향의 오차는 나지 않는다.
+    const COUNTDOWN_ANIM_MAX_MS = 4050; // ko: readySleepMs(1250) + rpsSleepMs(2800), runCountdown() 약 7182
+    function publishChoiceWindowEstimateIfHost() {
+      if (state.role !== "host" || !getOnlineMode()) return;
+      const countdownStartAt = getCountdownStartAt();
+      if (!countdownStartAt) return; // 카운트다운 자체가 동기화되지 않았으면(오프라인 등) 공유할 게 없음
+      const choiceEndAt = countdownStartAt + COUNTDOWN_ANIM_MAX_MS + CHOICE_WINDOW_MS;
+      state.choiceEndAt = choiceEndAt;
+      void publishChoiceWindowEnd(choiceEndAt);
+    }
+
     async function runCountdownThenShowGame() {
       // 호스트도 가위바위보에 참여하는 일반 플레이어이므로 동일한 게임 화면 사용
       if (!isCurrentRoundParticipant()) {
         if (isSafeParticipant()) showScreen("screenWinnerWait");
         else if (isConfirmedLoser()) showLoserWaitScreen();
+        // Build30-R2 Phase A(WRPS-078): 이 기기(host일 수 있음)는 카운트다운을 아예 실행하지
+        // 않으므로, 아직 플레이 중인 다른 참가자를 위한 choiceEndAt을 안전 추정치로 발행한다.
+        publishChoiceWindowEstimateIfHost();
         startHostJudgeBackstop();
         state.gameStarting = false;
         return;
@@ -7120,11 +7370,19 @@
       if (!isCurrentRoundParticipant()) {
         if (isSafeParticipant()) showScreen("screenWinnerWait");
         else if (isConfirmedLoser()) showLoserWaitScreen();
+        // Build30-R2 Phase A(WRPS-078): 이 지점은 이미 실제 카운트다운을 다 마친 뒤이므로(위의
+        // 첫 early-return과 달리) "지금"이 정확한 실제 애니메이션 종료 시각이다 — 추정치가 아니라
+        // captureAndPublishChoiceWindowNow()의 정확한 캡처를 그대로 재사용한다.
+        captureAndPublishChoiceWindowNow();
         startHostJudgeBackstop();
         state.gameStarting = false;
         return;
       }
       showScreen("screenGame");
+      // Build30-R2 Phase A(WRPS-078): 애니메이션이 끝나고 실제로 선택화면을 보여주는 바로 이
+      // 순간이 choice window의 진짜 시작 시각이다 — beginRoundTimer()가 그 값을 읽기 전에 반드시
+      // 먼저 캡처/발행한다.
+      captureAndPublishChoiceWindowNow();
       beginRoundTimer();
       state.gameStarting = false;
     }
@@ -7181,14 +7439,36 @@
     // 윈도우에 등록
     window.renderHostPlayingScreen = renderHostPlayingScreen;
 
+    // Build30(WRPS-078) [Phase3]: 라운드 타이머 텍스트 갱신 — 기존 beginRoundTimer 내부 지역 함수를
+    // 그대로 모듈 스코프로 끌어올린 것뿐(로직 변경 없음). resyncChoiceTimerOnResume()도 재사용한다.
+    function setRoundTimerText(v) {
+      const t1 = $("timerText"); if (t1) t1.textContent = v;
+      const t2 = $("hostTimerText"); if (t2) t2.textContent = v;
+    }
+
+    // Build30-R2 Phase A(WRPS-078): choiceEndAt(예정 종료 시각)이 있으면 매 계산마다
+    // Math.ceil((choiceEndAt - serverNow())/1000)으로 다시 구한다(로컬 감산 누적 금지 — 이래야
+    // background 복귀 시 로컬 5초를 처음부터 다시 세지 않고 실제 남은 시간으로 즉시 보정된다).
+    // ⚠️ Round1과 달리 인자를 받지 않고 매번 getChoiceEndAt()을 새로 호출한다 — host의 캡처
+    // 시점과 participant의 room.penalty 에코 수신 시점 사이에는 항상 네트워크 지연이 있으므로,
+    // beginRoundTimer 시작 시점에 값을 한 번 캡처해 closure에 고정해두면(Round1의 방식) 그 뒤에
+    // 에코가 도착해도 반영되지 않는다. 매 tick 살아있는 getChoiceEndAt()을 호출해야 handleRoomUpdate가
+    // 갱신한 state.choiceEndAt이 다음 tick에 바로 반영된다. choiceEndAt이 없으면(오프라인/아직
+    // 미수신) 기존과 동일하게 null을 반환해 호출부가 로컬 감산 폴백을 쓰게 한다.
+    function computeChoiceRemainingSeconds() {
+      const endAt = getChoiceEndAt();
+      if (!endAt) return null;
+      return Math.max(0, Math.ceil((endAt - serverNow()) / 1000));
+    }
+
     function beginRoundTimer() {
       stopRoundTimers();
-      state.remainingSeconds = 5;
-      const setTimerText = (v) => {
-        const t1 = $("timerText"); if (t1) t1.textContent = v;
-        const t2 = $("hostTimerText"); if (t2) t2.textContent = v;
-      };
-      setTimerText(state.remainingSeconds);
+      // Build30-R2 Phase A(WRPS-078): choiceEndAt은 이 시점(host가 방금 캡처/발행했거나, participant가
+      // room.penalty 에코를 이미 받았거나) 기준으로 읽는다 — 자세한 근거는 getChoiceEndAt/
+      // captureAndPublishChoiceWindowNow 주석 참고.
+      const scheduledRemaining = computeChoiceRemainingSeconds();
+      state.remainingSeconds = scheduledRemaining != null ? scheduledRemaining : 5;
+      setRoundTimerText(state.remainingSeconds);
       const displayRound = getGameRound();
       const rn = $("roundNumber"); if (rn) rn.textContent = displayRound;
       const hrn = $("hostRoundNumber"); if (hrn) hrn.textContent = displayRound;
@@ -7206,13 +7486,38 @@
       const ca = $("choiceAnim"); if (ca) ca.textContent = "";
 
       state.timer = setInterval(() => {
-        state.remainingSeconds -= 1;
-        setTimerText(state.remainingSeconds);
+        // Build30-R2 Phase A(WRPS-078): choiceEndAt이 있으면(온라인/정상 시작) 매 tick마다 예정
+        // 시각 기준으로 다시 계산한다(살아있는 getChoiceEndAt() 재조회 — 위 주석 참고) — 기존
+        // "state.remainingSeconds -= 1" 로컬 누적 감산은 choiceEndAt이 없는(오프라인) 경우에만
+        // 폴백으로 그대로 남겨둔다(회귀 없음).
+        const recomputed = computeChoiceRemainingSeconds();
+        state.remainingSeconds = recomputed != null ? recomputed : (state.remainingSeconds - 1);
+        setRoundTimerText(state.remainingSeconds);
         if (state.remainingSeconds <= 0) {
           stopRoundTimers();
           if (state.role === "host") autoFillChoices();
         }
       }, 1000);
+    }
+
+    // Build30(WRPS-078) [Phase3]: app이 background에서 foreground로 복귀했을 때, 다음 1초 tick을
+    // 기다리지 않고 즉시 choiceEndAt 기준으로 remainingSeconds를 재계산해 화면에 반영한다 — CEO
+    // 필수 요구사항("background 복귀 시 로컬 5초 재시작 금지")의 핵심 보정 지점. choiceEndAt이 이미
+    // 지났으면(백그라운드 동안 라운드가 끝났어야 하는 경우) host가 즉시 autoFillChoices()를 호출해
+    // 정체 없이 진행한다. status!=="playing"이거나 choice 화면이 아니면(다른 화면으로 이미 전환)
+    // 아무 것도 하지 않는다.
+    function resyncChoiceTimerOnResume() {
+      if (state.status !== "playing") return;
+      if (!isScreenActive("screenGame") && !isScreenActive("screenHostPlaying")) return;
+      const remaining = computeChoiceRemainingSeconds();
+      if (remaining == null) return;
+      state.remainingSeconds = remaining;
+      setRoundTimerText(remaining);
+      if (state.role === "host") updateHostSelectedCount();
+      if (remaining <= 0 && state.timer) {
+        stopRoundTimers();
+        if (state.role === "host") autoFillChoices();
+      }
     }
 
     function stopRoundTimers() {
@@ -7348,6 +7653,92 @@
       void playVoiceClip("gameOver");
     }
 
+    // Build30 Phase2(CEO 확정): gameOver 확정(finishRoundLocal의 3개 직접 확정 gameOver 분기)
+    // 시점에 이번 게임 결과(술래 포함)를 자동으로 로컬 스냅샷 저장한다. confirmedLoserIds가 아직
+    // 살아있는 이 시점(discardInProgressRoomSession/goHome보다 훨씬 이전)에 저장해야 Home
+    // "바로전 게임결과"에서도 술래가 표시된다(renderStats 배지, Build30 Phase1에서 이미 구현).
+    // saveLastCompletedGameResult는 승패 통계 DB 집계(publishHostRoundResult, host 1회 누적)와는
+    // 완전히 별개의 로컬 localStorage 스냅샷 저장이라 이중집계 위험이 없다 — 반복 호출돼도 최신
+    // 값으로 덮어쓸 뿐 누적되지 않는다(overwrite, not increment). 다만 불필요한 반복 supabase
+    // fetch를 막기 위해 게임(회차)당 1회만 시도한다(playGameOverVoiceOnce와 동일한 가드 패턴).
+    // ⚠️ idempotent 재렌더(TAGGER_REPLAY_IDEMPOTENT)/nextRound()의 이미-확정 gameOver 재진입은
+    // 새 확정이 아니라 이미 저장된 같은 게임의 재표시이므로 호출하지 않는다(호출해도 같은 key라
+    // no-op이지만, 새로운 확정 지점에서만 부르는 것이 의도를 더 명확히 한다).
+    function autoSaveGameOverResultOnce() {
+      const key = `${state.roomCode || ""}:${String(getGameRound())}`;
+      if (state.autoSavedGameResultKey === key) return;
+      state.autoSavedGameResultKey = key;
+      void saveLastCompletedGameResult(state.roomCode);
+    }
+
+    // Build30-R2 Phase B(WRPS-078, HIGH×3 재수정): result 전이 시 화면을 빈 문자열로 지우지 않고,
+    // 이미 보유한 로컬 state로 "잠정" 판정을 1회 렌더한다(빈 화면 제거). 곧이어(호출부에서)
+    // fetchFreshParticipantsForResult()로 최신 스냅샷을 받은 뒤 finishRoundLocal()이 "확정" 판정을
+    // 렌더하고 idempotency 캐시(lastRoundResolution)에 기록한다 — 이 함수는 그 캐시에 절대 쓰지
+    // 않는다(잠정이므로). 판정 규칙은 finishRoundLocal의 동일 분기를 미러링하되(judgeRound() 호출만
+    // — 알고리즘 자체는 무변경) 순수 조회만 한다: state.confirmedSafeIds/LoserIds를 포함해 어떤
+    // 상태도 변경하지 않고, DB 쓰기/음성/SFX/자동진행 예약(scheduleRematchAutoAdvance)도 하지
+    // 않는다(전부 finishRoundLocal 전용 — 여기서 중복 실행하면 통계 이중 집계·팬텀 게임종료 등
+    // 실제 판정 부작용이 생긴다). 잠정과 확정이 다르면 finishRoundLocal의 renderRoundResult가 이
+    // 직후 화면을 그대로 덮어써 "정확판정"을 보장한다(CEO: 즉시렌더+정확판정 둘 다).
+    // 판정할 데이터 자체가 없으면(빈 스냅샷 — finishRoundLocal [수정1-a]와 동일 조건) false를
+    // 반환한다 — 호출부가 이 경우 기존(Build29 이전) 방식대로 처리한다.
+    function renderTentativeRoundResult() {
+      try {
+        const confirmedSafeIds = state.confirmedSafeIds || [];
+        const confirmedLoserIds = state.confirmedLoserIds || [];
+        const activeForStoredResult = (state.participants || []).filter(p =>
+          !confirmedSafeIds.includes(p.id) &&
+          !confirmedLoserIds.includes(p.id) &&
+          !isNonPlayingChoice(p.choice) &&
+          getChoiceBase(p.choice)
+        );
+        const hasStoredResults = activeForStoredResult.length > 0 &&
+          activeForStoredResult.every(p => hasConfirmedRoundResult(p.choice));
+        const result = {};
+        if (hasStoredResults) {
+          confirmedSafeIds.forEach(id => { result[id] = "win"; });
+          confirmedLoserIds.forEach(id => { result[id] = "lose"; });
+          activeForStoredResult.forEach(p => { result[p.id] = getChoiceResult(p.choice); });
+        } else {
+          Object.assign(result, judgeRound(state.participants || []));
+        }
+        const lastResultOf = (p) => result[p.id] || getChoiceResult(p.choice) || p.lastResult;
+
+        const activePlayers = (state.participants || []).filter(p =>
+          !confirmedSafeIds.includes(p.id) && !confirmedLoserIds.includes(p.id) &&
+          !isNonPlayingChoice(p.choice) && getChoiceBase(p.choice)
+        );
+        const targetCount = getTargetLoserCount();
+        const remainingSlots = targetCount - confirmedLoserIds.length;
+        const allDraw = activePlayers.length > 0 && activePlayers.every(p => lastResultOf(p) === "draw");
+
+        if (activePlayers.length === 0 && confirmedSafeIds.length === 0 && confirmedLoserIds.length === 0) {
+          return false; // 빈 스냅샷 — 잠정 판정도 낼 데이터가 없음(finishRoundLocal도 이 경우 defer)
+        }
+
+        let caseType, roundLoserCount;
+        if (remainingSlots <= 0 && confirmedLoserIds.length >= targetCount) {
+          caseType = "gameOver"; roundLoserCount = 0;
+        } else if (activePlayers.length > 0 && activePlayers.length <= remainingSlots) {
+          caseType = "gameOver"; roundLoserCount = activePlayers.length;
+        } else if (allDraw) {
+          caseType = "draw"; roundLoserCount = 0;
+        } else {
+          const roundLosers = activePlayers.filter(p => lastResultOf(p) === "lose");
+          if (roundLosers.length === remainingSlots) { caseType = "gameOver"; roundLoserCount = roundLosers.length; }
+          else if (roundLosers.length > remainingSlots) { caseType = "tooMany"; roundLoserCount = roundLosers.length; }
+          else { caseType = "tooFew"; roundLoserCount = roundLosers.length; }
+        }
+        renderRoundResult(caseType, roundLoserCount, remainingSlots);
+        return true;
+      } catch (e) {
+        // 잠정 렌더 실패는 치명적이지 않다 — 곧 finishRoundLocal()이 확정 판정을 렌더한다.
+        console.warn("renderTentativeRoundResult failed (non-fatal):", e?.message || e);
+        return false;
+      }
+    }
+
     async function finishRoundLocal() {
       if (state.finishingRound) return; // 중복 실행 방지
       // Build19(WRPS-072-B19): 라운드 재분류 방지(idempotency) — 이미 이 round(eventId)를 확정했다면
@@ -7381,6 +7772,8 @@
         renderRoundResult(prev.outcome, prev.roundLoserCount, prev.remainingSlots);
         if (prev.outcome === "gameOver") {
           showScreen("screenRoundResult");
+          // Build30 Phase1(CEO 확정): idempotent 재렌더도 확정 gameOver이므로 동일하게 표시한다.
+          showTaggerPopup();
         } else {
           // 이 경로엔 이번 라운드 activePlayers 계산이 없으므로(위 idempotent 조기 반환), 내 row의
           // choice 마커 유무로 "이번 라운드 참여 여부"를 대신 판별한다(마커 = 이전 라운드부터 이미
@@ -7699,6 +8092,11 @@
         }
         renderRoundResult("gameOver", 0, remainingSlots);
         showScreen("screenRoundResult");
+        // Build30 Phase1(CEO 확정): 확정 gameOver 렌더 직후(showScreen 이후, 그래야 showScreen
+        // 진입부의 hideTaggerPopup()에 곧바로 지워지지 않는다) 확정 술래 이름 팝업을 표시한다.
+        showTaggerPopup();
+        // Build30 Phase2(CEO 확정): confirmedLoserIds가 살아있는 이 시점에 이번 게임 결과를 자동 저장.
+        autoSaveGameOverResultOnce();
         playResultSfxOnce(isConfirmedLoser() ? "lose" : "win");
         playResultVoiceOnce("taggerSelected", null, 1, 1, 2200);
         __engineV2ShadowCompare("gameOver");
@@ -7717,6 +8115,10 @@
         }
         renderRoundResult("gameOver", activePlayers.length, remainingSlots);
         showScreen("screenRoundResult");
+        // Build30 Phase1(CEO 확정): 확정 gameOver 렌더 직후 확정 술래 이름 팝업 표시.
+        showTaggerPopup();
+        // Build30 Phase2(CEO 확정): confirmedLoserIds가 살아있는 이 시점에 이번 게임 결과를 자동 저장.
+        autoSaveGameOverResultOnce();
         // 전원 술래 확정·종료: 본인이 술래면 패배음, 살아남았으면(이전 안전) 승리 팡파레(개인 신호=SFX 유지)
         playResultSfxOnce(isConfirmedLoser() ? "lose" : "win");
         // Build21: 술래 확정 그룹 공지(전원 동일, 승패 무관)
@@ -7759,6 +8161,10 @@
 	        }
         renderRoundResult("gameOver", roundLosers.length, remainingSlots);
         showScreen("screenRoundResult");
+        // Build30 Phase1(CEO 확정): 확정 gameOver 렌더 직후 확정 술래 이름 팝업 표시.
+        showTaggerPopup();
+        // Build30 Phase2(CEO 확정): confirmedLoserIds가 살아있는 이 시점에 이번 게임 결과를 자동 저장.
+        autoSaveGameOverResultOnce();
         // 게임 종료: 승자=arcade 팡파레, 패자(술래)=low-tone decay(개인 신호=SFX 유지)
         playResultSfxOnce(myResult === "win" ? "win" : "lose");
         // Build21: 술래 확정 그룹 공지(전원 동일, 승패 무관) — 구 becameLoser/gameOver 승자관점 분기 통합
@@ -8798,6 +9204,8 @@ function summarizeGameStats(rows) {
         showToast(t("voice.gameOver"));
         renderRoundResult("gameOver", 0, 0);
         showScreen("screenRoundResult");
+        // Build30 Phase1(CEO 확정): 이미 확정된 gameOver 재진입도 동일하게 표시한다.
+        showTaggerPopup();
         return;
       }
       state.advancingRound = true;
@@ -9074,8 +9482,12 @@ function summarizeGameStats(rows) {
 
       sorted.forEach(p => {
         const tr = document.createElement("tr");
+        // Build30 Phase1(CEO 확정): 저장된 게임 완료 스냅샷(saveLastCompletedGameResult)에 실린
+        // isTagger 필드가 있을 때만 술래 배지를 표시한다(누적 집계 buildRoomStatsSummary에는 이
+        // 필드가 없으므로 그 뷰에서는 자연스럽게 표시되지 않는다 — 무변경).
+        const taggerTag = p.isTagger ? ` <span class="tag lose">${t("stats.taggerTag")}</span>` : '';
         tr.innerHTML = `
-          <td>${escapeHtml(p.name)}${p.is_host ? ' 👑' : ''}</td>
+          <td>${escapeHtml(p.name)}${p.is_host ? ' 👑' : ''}${taggerTag}</td>
           <td>${p.wins || 0}</td>
           <td>${p.losses || 0}</td>
           <td>${p.draws || 0}</td>
@@ -9463,7 +9875,13 @@ function summarizeGameStats(rows) {
       // 마지막 ready가 시작 트리거. 호스트 전용 "게임 시작" 버튼은 폐지(항상 숨김).
       // 벌칙 수정 버튼은 호스트 고유 권한이므로 호스트에게만 노출.
       $("hostStartBtn").classList.add("hidden");
-      $("myReadyBtn").classList.remove("hidden");
+      // Build30(WRPS-078) [Phase2]: 강제 시작(force-start)이 노출되는 조건(호스트/round>1/부분
+      // 재경기 미완료)에서는 myReadyBtn을 숨긴다 — 강제 시작 버튼과 준비 버튼이 동시에 떠 있으면
+      // 어느 쪽을 눌러야 하는지 헷갈린다는 실기기 QA 지적(문제3). round1 첫 준비화면은
+      // canShowForceStartReplayButton()이 round>1을 요구하므로 이 분기의 영향을 받지 않고
+      // myReadyBtn이 그대로 노출된다. 반드시 canShowForceStartReplayButton() 단일 진실 소스로만
+      // 분기한다(별개 조건 2개를 만들면 양쪽 다 숨는 deadlock이 생길 수 있다 — CEO 회귀조건).
+      $("myReadyBtn").classList.toggle("hidden", canShowForceStartReplayButton());
       $("editPenaltyBtn").classList.toggle("hidden", state.role !== "host");
       updateActionGridLayouts();
       updateGuides();
@@ -9496,6 +9914,8 @@ function summarizeGameStats(rows) {
         btn.textContent = isSafeParticipant() ? t("ready.safeFirst") : t("ready.waitingNextGame");
         btn.disabled = true;
         btn.className = "btn-light btn-full";
+        // Build30-R2 Phase D(WRPS-078): 아래 참고 — className 재대입 뒤에도 반드시 hidden을 재적용.
+        btn.classList.toggle("hidden", canShowForceStartReplayButton());
         return;
       }
       if (me && me.is_ready) {
@@ -9507,6 +9927,14 @@ function summarizeGameStats(rows) {
         btn.disabled = false;
         btn.className = "btn-primary btn-full";
       }
+      // Build30-R2 Phase D(WRPS-078): showReadyScreen()이 myReadyBtn에 추가한 "hidden"(force-start
+      // 노출 중 준비 버튼과 강제시작 버튼이 동시에 뜨는 문제3 방지)이, renderReadyList()가 realtime
+      // 갱신마다 호출하는 이 함수의 className 재대입(위 두 분기)으로 통째로 지워지는 회귀가 있었다
+      // (className="..."에는 "hidden" 토큰이 없어 매 렌더마다 재노출됨). 단일 진실 소스
+      // canShowForceStartReplayButton()(호출만, 수정 금지)을 "매 렌더"마다 재적용해 className
+      // 재대입 이후에도 hidden 상태가 유지되게 한다. round1(canShowForceStartReplayButton이
+      // round<=1이면 항상 false)에서는 이 토글이 아무 영향을 주지 않아 정상 노출을 그대로 유지한다.
+      btn.classList.toggle("hidden", canShowForceStartReplayButton());
     }
 
     function updateHostStartButton() {
@@ -9922,12 +10350,61 @@ function summarizeGameStats(rows) {
       }
     }
 
+    // Build30 Phase1(CEO 확정): 게임 종료(gameOver=최종 술래 확정) 시에만 확정 술래 이름을 팝업으로
+    // 즉시 표시한다(호스트·참가자 모두). 잠정 렌더(renderTentativeRoundResult)에서는 절대 호출하지
+    // 않는다 — finishRoundLocal/nextRound의 실제 확정 gameOver 렌더 분기에서만 명시적으로 호출한다.
+    function getConfirmedTaggerNames() {
+      const ids = state.confirmedLoserIds || [];
+      const byId = new Map((state.participants || []).map(p => [p.id, p]));
+      return ids.map(id => {
+        const p = byId.get(id);
+        if (p && p.name) return p.name;
+        if (id === state.currentUserId && state.nickname) return state.nickname;
+        return t("common.anonymous");
+      });
+    }
+
+    function showTaggerPopup() {
+      const popup = $("taggerPopup");
+      if (!popup) return;
+      const names = getConfirmedTaggerNames();
+      if (!names.length) return; // 확정 술래가 없으면(방어적) 표시하지 않는다.
+      const namesEl = $("taggerPopupNames");
+      if (namesEl) namesEl.textContent = names.join(", ");
+      popup.classList.remove("hidden");
+    }
+    window.showTaggerPopup = showTaggerPopup;
+
+    // Build30 Phase1: 호스트의 '한번더'(returnToLobbyAfterGame) 클릭 또는 다음 화면으로의 전환
+    // (showScreen 호출)이 발생하면 즉시 제거되어야 한다 — 다음 게임/라운드 화면을 가리지 않도록.
+    function hideTaggerPopup() {
+      const popup = $("taggerPopup");
+      if (popup) popup.classList.add("hidden");
+    }
+    window.hideTaggerPopup = hideTaggerPopup;
+
     function showStatsPopup() {
       const tbody = $("statsPopupBody");
       tbody.innerHTML = "";
       // 현재 라운드만이 아니라 같은 방(roomCode)에서 누적된 모든 라운드 전적을 합산한다.
       const summary = buildRoomStatsSummary(state.roomCode, state.participants);
       const rows = summary.totals;
+      // Build30 Phase2(CEO 확정): buildRoomStatsSummary는 방 누적 통계라 "이번 게임" 술래와 다를 수
+      // 있으므로(누적 집계에는 술래 필드가 없음), 이번 게임 술래는 별도로 state.confirmedLoserIds로
+      // 판정해 표시한다 — 이 팝업이 열리는 시점(gameOver finalBtns의 "게임 승률 보기")은 아직
+      // showScreen 전환 없이 팝업만 덧씌우는 것이라 confirmedLoserIds가 살아있다(gameOver 확정 값).
+      // buildRoomStatsSummary 자체 수정은 하지 않는다(렌더 단계에서만 술래 표시 부착).
+      const currentTaggerIds = new Set(state.confirmedLoserIds || []);
+      const taggerLineEl = $("statsPopupTaggerLine");
+      if (taggerLineEl) {
+        if (currentTaggerIds.size) {
+          taggerLineEl.textContent = t("popup.statsCurrentTagger", { names: getConfirmedTaggerNames().join(", ") });
+          taggerLineEl.classList.remove("hidden");
+        } else {
+          taggerLineEl.textContent = "";
+          taggerLineEl.classList.add("hidden");
+        }
+      }
       if (!rows.length) {
         tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:12px;color:#888">${t("stats.empty")}</td></tr>`;
       } else {
@@ -9937,8 +10414,9 @@ function summarizeGameStats(rows) {
           const rate = total === 0 ? 0 : Math.round(((p.wins || 0) / total) * 100);
           const tr = document.createElement("tr");
           tr.style.borderBottom = "1px solid #f0f0f0";
+          const taggerTag = currentTaggerIds.has(p.id) ? ` <span class="tag lose">${t("stats.taggerTag")}</span>` : '';
           tr.innerHTML = `
-            <td style="padding:7px 4px">${escapeHtml(p.name)}${p.is_host ? ' 👑' : ''}</td>
+            <td style="padding:7px 4px">${escapeHtml(p.name)}${p.is_host ? ' 👑' : ''}${taggerTag}</td>
             <td style="padding:7px 4px;text-align:center">${p.wins || 0}</td>
             <td style="padding:7px 4px;text-align:center">${p.losses || 0}</td>
             <td style="padding:7px 4px;text-align:center">${p.draws || 0}</td>
@@ -10606,6 +11084,7 @@ function summarizeGameStats(rows) {
       state.gameRound = 1;
       state.lastStartedGameRound = 0;
       state.countdownStartAt = 0;
+      state.choiceEndAt = 0; // Build30-R2 Phase A(WRPS-078): 인증 경계 리셋 시 choice window 앵커도 함께 초기화
       state.gameStarting = false;
       state.finishingRound = false;
       state.publishingRoundResult = false;
@@ -10990,7 +11469,25 @@ function summarizeGameStats(rows) {
     if (!window.__maruVisibilityResyncReady) {
       window.__maruVisibilityResyncReady = true;
       document.addEventListener("visibilitychange", () => {
-        if (!document.hidden) resyncRoomOnResume();
+        if (!document.hidden) {
+          // Build30(WRPS-078) [Phase3]: choice window 타이머를 예정시각 기준으로 즉시 보정한다
+          // (다음 1초 tick을 기다리지 않음 — "로컬 5초 재시작 금지" 요구사항). resyncRoomOnResume의
+          // 비동기 DB 재조회보다 먼저, 동기적으로 실행된다.
+          try { resyncChoiceTimerOnResume(); } catch (e) {}
+          resyncRoomOnResume();
+        }
+      });
+    }
+    // Build30(WRPS-078) [Phase1]: app background/foreground 전환을 QA metric으로 남긴다 —
+    // WRPS-078 RESULT_FETCH_TIMEOUT의 101,778ms 지연이 실제 네트워크 정체인지 앱 sleep(백그라운드
+    // 전환)인지 구분하기 위함. 앱 초기화 시 1회만 등록(중복 등록 금지, 위 리스너와 동일한 가드 패턴).
+    if (!window.__maruAppVisibilityMetricReady) {
+      window.__maruAppVisibilityMetricReady = true;
+      document.addEventListener("visibilitychange", () => {
+        try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'APP_VISIBILITY', state: document.visibilityState, roomId: state.roomCode || null }); } catch (e) {}
+      });
+      window.addEventListener("pagehide", () => {
+        try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'APP_VISIBILITY', state: 'pagehide', roomId: state.roomCode || null }); } catch (e) {}
       });
     }
 
@@ -11658,6 +12155,9 @@ function summarizeGameStats(rows) {
     // 게임 완료 후 호스트 화면으로 복귀 (호스트가 호출 → DB 업데이트 → 모든 기기 subscribeToRoom으로 수신)
     // status='waiting' → 호스트는 screenHostRoom(벌칙 수정/게임 시작 가능), 참가자는 screenParticipantWait
     async function returnToLobbyAfterGame() {
+      // Build30 Phase1(CEO 확정): '한번더' 클릭 즉시 술래 확정 팝업을 제거한다(가드로 조기 반환되는
+      // 경우에도 클릭이 실제로 일어났으므로 먼저 제거 — 팝업이 다음 상호작용을 가리지 않게 한다).
+      hideTaggerPopup();
       if (state.role !== "host") return;
       // Build23: '한번더' 버튼 handler 하드블록 — 부분 재경기(tooMany/tooFew) 미완료 상태면 전체
       // 참여자 리셋으로 진행하지 않는다. 기존 아래 room.status 체크('result'|'game_over')만으로는

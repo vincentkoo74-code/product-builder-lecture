@@ -599,9 +599,14 @@ describe('Build27 회귀 — 기존 자동 시작/라운드1 흐름 무변경', 
     const state = { role: 'host', round: 1, participants: [] };
     const factory = new Function(
       'state', '$', 'showScreen', 'renderInlinePenaltyBox', 'renderReadyList', 'updateActionGridLayouts', 'updateGuides',
+      'canShowForceStartReplayButton',
       SHOW_READY_SRC + '\n; return showReadyScreen;'
     );
-    const showReadyScreen = factory(state, (id) => els[id], () => {}, () => {}, () => {}, () => {}, () => {});
+    // Build30(WRPS-078) [Phase2]: round===1이면 canShowForceStartReplayButton()이 항상 false를
+    // 반환하므로(9536 부근, round>1 요구) 이 테스트의 round:1 상황에서는 myReadyBtn이 그대로
+    // 노출돼야 한다(회귀 없음) — 아래 별도 describe에서 canShowForceStartReplayButton===true일 때
+    // myReadyBtn이 숨는지도 검증한다.
+    const showReadyScreen = factory(state, (id) => els[id], () => {}, () => {}, () => {}, () => {}, () => {}, () => false);
     showReadyScreen();
     expect(els.hostStartBtn.classList.contains('hidden')).toBe(true); // 무조건 숨김 유지
     expect(els.myReadyBtn.classList.contains('hidden')).toBe(false);

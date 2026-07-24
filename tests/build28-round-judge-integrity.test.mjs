@@ -50,8 +50,14 @@ const ROOM_UPDATE_HEAD_SRC = extractBlock(
   'if (!room) return;',
   'if (oldStatus !== state.status) {'
 );
+// Build30-R2 Phase B(WRPS-078): getUnresolvedActiveParticipants가 fetchFreshParticipantsForResult
+// 내부 지역 함수(unresolvedOf)에서 모듈 스코프로 끌어올려졌다 — 실제 소스를 함께 추출한다.
+const GET_UNRESOLVED_ACTIVE_PARTICIPANTS_SRC = extractBlock(
+  'function getUnresolvedActiveParticipants(rows) {',
+  'async function fetchFreshParticipantsForResult(roomCode, maxRetries = 2, delayMs = 300, isContextStillValid = null) {'
+);
 const FETCH_FRESH_SRC = extractBlock(
-  'async function fetchFreshParticipantsForResult(roomCode, maxRetries = 2, delayMs = 300) {',
+  'async function fetchFreshParticipantsForResult(roomCode, maxRetries = 2, delayMs = 300, isContextStillValid = null) {',
   'function syncConfirmedIdsFromParticipants(participants = state.participants) {'
 );
 // HIGH-1 검증용: canShowPlayAgainButton()/isTaggerSelectionComplete()/getActivePlayers() 실제 소스
@@ -85,7 +91,7 @@ function loadSchedulingHelpers(state) {
   const factory = new Function(
     'state', 'maxLoserCountFor',
     SCHEDULING_BLOCK +
-      '\n; return { toPositiveInt, parsePenalty, getPenaltyText, getTargetLoserCount, getPenaltyGameRound, getGameRound, getCountdownStartAt, serverNow, getNextCountdownStartAt, buildPenaltyValue, getNextPhaseScheduledAt, getMaxLoserCount, clampLoserCount };'
+      '\n; return { toPositiveInt, parsePenalty, getPenaltyText, getTargetLoserCount, getPenaltyGameRound, getGameRound, getCountdownStartAt, getChoiceEndAt, serverNow, getNextCountdownStartAt, buildPenaltyValue, getNextPhaseScheduledAt, getMaxLoserCount, clampLoserCount };'
   );
   // maxLoserCountFor는 이 테스트 범위에서 사용되지 않으므로 단순 스텁(참가자 수 그대로 반환)으로 충분.
   return factory(state, (n) => n);
@@ -96,11 +102,11 @@ function runRoomUpdateHead(room, state) {
   const QA = { emit: (channel, data) => emitted.push(data) };
   const scheduling = loadSchedulingHelpers(state);
   const factory = new Function(
-    'room', 'state', 'QA', 'getTargetLoserCount', 'getGameRound', 'getCountdownStartAt', 'getPenaltyGameRound',
+    'room', 'state', 'QA', 'getTargetLoserCount', 'getGameRound', 'getCountdownStartAt', 'getPenaltyGameRound', 'getChoiceEndAt',
     CHOICE_HELPERS_BLOCK + '\n(() => {\n' + ROOM_UPDATE_HEAD_SRC + '\nstate.status = room.status;\n})();'
   );
   factory(room, state, QA, scheduling.getTargetLoserCount, scheduling.getGameRound,
-    scheduling.getCountdownStartAt, scheduling.getPenaltyGameRound);
+    scheduling.getCountdownStartAt, scheduling.getPenaltyGameRound, scheduling.getChoiceEndAt);
   return emitted;
 }
 
@@ -109,12 +115,19 @@ function loadFinishRoundLocal({ state, db, judgeRound, getOnlineMode, isConfirme
     renderRoundResult: [], showScreen: [], playResultSfxOnce: [], playResultVoiceOnce: [],
     shadowCompute: [], shadowCompare: [], recordMyAccountGameResult: [], scheduleRematchAutoAdvance: 0,
     stopRoundTimers: 0, syncConfirmedIdsFromParticipants: 0, fetchFreshParticipantsForResult: 0,
+    showTaggerPopup: 0, autoSaveGameOverResultOnce: 0,
   };
   const emitted = [];
   const QA = { emit: (channel, data) => emitted.push(data) };
   const renderRoundResult = (caseType, roundLoserCount, remainingSlots) =>
     calls.renderRoundResult.push({ caseType, roundLoserCount, remainingSlots });
   const showScreen = (id) => calls.showScreen.push(id);
+  // Build30 Phase1: 확정 gameOver 렌더 직후 호출되는 술래 팝업 — 이 파일의 관심사(판정 정확성)와
+  // 무관하므로 호출 여부만 카운트하는 no-op 스텁을 주입한다(실제 index.html 소스는 무변경 검증).
+  const showTaggerPopup = () => { calls.showTaggerPopup++; };
+  // Build30 Phase2: 확정 gameOver 시 이번 게임 결과 자동 저장 — 이 파일의 관심사(판정 정확성)와
+  // 무관하므로 호출 여부만 카운트하는 no-op 스텁을 주입한다(실제 index.html 소스는 무변경 검증).
+  const autoSaveGameOverResultOnce = () => { calls.autoSaveGameOverResultOnce++; };
   const playResultSfxOnce = (kind, delayMs) => calls.playResultSfxOnce.push({ kind, delayMs });
   const playResultVoiceOnce = (...args) => calls.playResultVoiceOnce.push(args);
   const __engineV2ShadowComputeRound = (...args) => calls.shadowCompute.push(args);
@@ -136,6 +149,7 @@ function loadFinishRoundLocal({ state, db, judgeRound, getOnlineMode, isConfirme
     'isConfirmedLoser', 'syncConfirmedIdsFromParticipants', 'renderRoundResult', 'showScreen',
     'playResultSfxOnce', 'playResultVoiceOnce', '__engineV2ShadowComputeRound', '__engineV2ShadowCompare',
     'recordMyAccountGameResult', 'scheduleRematchAutoAdvance', 'stopRoundTimers', 'fetchFreshParticipantsForResult',
+    'showTaggerPopup', 'autoSaveGameOverResultOnce',
     CHOICE_HELPERS_BLOCK + '\n' + FINISH_ROUND_LOCAL_SRC + '\n; return finishRoundLocal;'
   );
   const finishRoundLocal = factory(
@@ -143,7 +157,7 @@ function loadFinishRoundLocal({ state, db, judgeRound, getOnlineMode, isConfirme
     judgeRound || (() => ({})), isConfirmedLoser || (() => false), syncConfirmedIdsFromParticipants,
     renderRoundResult, showScreen, playResultSfxOnce, playResultVoiceOnce,
     __engineV2ShadowComputeRound, __engineV2ShadowCompare, recordMyAccountGameResult,
-    scheduleRematchAutoAdvance, stopRoundTimers, fetchFreshWrapped
+    scheduleRematchAutoAdvance, stopRoundTimers, fetchFreshWrapped, showTaggerPopup, autoSaveGameOverResultOnce
   );
   return { finishRoundLocal, calls, emitted };
 }
@@ -167,7 +181,7 @@ function loadFetchFreshParticipantsForResult({ state, db, sleepImpl }) {
   const sleep = sleepImpl || (() => Promise.resolve());
   const factory = new Function(
     'state', 'QA', 'db', 'sleep', 'syncConfirmedIdsFromParticipants',
-    CHOICE_HELPERS_BLOCK + '\n' + FETCH_FRESH_SRC + '\n; return fetchFreshParticipantsForResult;'
+    CHOICE_HELPERS_BLOCK + '\n' + GET_UNRESOLVED_ACTIVE_PARTICIPANTS_SRC + '\n' + FETCH_FRESH_SRC + '\n; return fetchFreshParticipantsForResult;'
   );
   const fetchFreshParticipantsForResult = factory(state, QA, db, sleep, syncConfirmedIdsFromParticipants);
   return { fetchFreshParticipantsForResult, emitted };

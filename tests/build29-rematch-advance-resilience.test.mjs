@@ -107,11 +107,11 @@ function makeResolveDb({ failIndexes = [], errorMessage = 'FetchError: failed to
 // nextRound 전부를 한 factory에 넣어 실제 재예약 체인(catch → 재시도 헬퍼 → scheduleRematchAutoAdvance
 // → setTimeout → nextRound 재호출)이 정말로 동작하는지 검증한다.
 function loadRematchAdvanceCluster({ state, db, QA, buildPenaltyValue, getNextPhaseScheduledAt, showToast, showReadyScreen, getActivePlayers }) {
-  const calls = { showToast: [], showScreen: [], renderRoundResult: [], saveState: 0, showReadyScreen: 0 };
+  const calls = { showToast: [], showScreen: [], renderRoundResult: [], saveState: 0, showReadyScreen: 0, showTaggerPopup: 0 };
   const factory = new Function(
     'state', 'getOnlineMode', 'getGameRound', 'getTargetLoserCount', 'QA', 'showToast', 't',
     'renderRoundResult', 'showScreen', 'buildPenaltyValue', 'getNextPhaseScheduledAt', 'db', 'saveState', 'showReadyScreen',
-    'getActivePlayers',
+    'getActivePlayers', 'showTaggerPopup',
     REMATCH_HELPERS_SRC + '\n' + NEXT_ROUND_SRC +
       '\n; return { scheduleRematchAutoAdvance, scheduleRematchAdvanceRetryAfterFailure, maybeRecoverStalledRematchAdvance, nextRound, getRematchAdvanceRetryKey, getRematchAdvanceRetryAttempts, buildAutoAdvanceMetricPayload };'
   );
@@ -123,7 +123,10 @@ function loadRematchAdvanceCluster({ state, db, QA, buildPenaltyValue, getNextPh
     () => { calls.saveState++; }, showReadyScreen || (() => { calls.showReadyScreen++; }),
     getActivePlayers || (() => (state.participants || []).filter(p =>
       !(state.confirmedSafeIds || []).includes(p.id) && !(state.confirmedLoserIds || []).includes(p.id)
-    ))
+    )),
+    // Build30 Phase1: nextRound()의 이미-확정된 gameOver 재진입 분기가 호출하는 술래 팝업 —
+    // 이 파일의 관심사(재예약/복구)와 무관하므로 호출 여부만 카운트하는 no-op 스텁을 주입한다.
+    () => { calls.showTaggerPopup++; }
   );
   return { ...bundle, calls };
 }
@@ -133,13 +136,16 @@ function loadFinishRoundLocal({ state, db, judgeRound, getOnlineMode, maybeRecov
     renderRoundResult: [], showScreen: [], showLoserWaitScreen: 0, playResultSfxOnce: [], playResultVoiceOnce: [],
     shadowCompute: [], shadowCompare: [], recordMyAccountGameResult: [], scheduleRematchAutoAdvance: 0,
     stopRoundTimers: 0, syncConfirmedIdsFromParticipants: 0, fetchFreshParticipantsForResult: 0,
-    maybeRecoverStalledRematchAdvance: 0,
+    maybeRecoverStalledRematchAdvance: 0, showTaggerPopup: 0,
   };
   const emitted = [];
   const QA = { emit: (channel, data) => emitted.push(data) };
   const renderRoundResult = (caseType, roundLoserCount, remainingSlots) =>
     calls.renderRoundResult.push({ caseType, roundLoserCount, remainingSlots });
   const showScreen = (id) => calls.showScreen.push(id);
+  // Build30 Phase1: 확정 gameOver 렌더 직후 호출되는 술래 팝업 — 이 파일의 관심사(재예약/복구)와
+  // 무관하므로 호출 여부만 카운트하는 no-op 스텁을 주입한다.
+  const showTaggerPopup = () => { calls.showTaggerPopup++; };
   const showLoserWaitScreen = () => { calls.showLoserWaitScreen++; };
   const playResultSfxOnce = (kind, delayMs) => calls.playResultSfxOnce.push({ kind, delayMs });
   const playResultVoiceOnce = (...args) => calls.playResultVoiceOnce.push(args);
@@ -162,7 +168,7 @@ function loadFinishRoundLocal({ state, db, judgeRound, getOnlineMode, maybeRecov
     'syncConfirmedIdsFromParticipants', 'renderRoundResult', 'showScreen', 'showLoserWaitScreen',
     'playResultSfxOnce', 'playResultVoiceOnce', '__engineV2ShadowComputeRound', '__engineV2ShadowCompare',
     'recordMyAccountGameResult', 'scheduleRematchAutoAdvance', 'stopRoundTimers', 'fetchFreshParticipantsForResult',
-    'maybeRecoverStalledRematchAdvance',
+    'maybeRecoverStalledRematchAdvance', 'showTaggerPopup',
     CHOICE_HELPERS_BLOCK + '\n' + FINISH_ROUND_LOCAL_SRC + '\n; return finishRoundLocal;'
   );
   const finishRoundLocal = factory(
@@ -170,7 +176,7 @@ function loadFinishRoundLocal({ state, db, judgeRound, getOnlineMode, maybeRecov
     judgeRound || (() => ({})), syncConfirmedIdsFromParticipants,
     renderRoundResult, showScreen, showLoserWaitScreen, playResultSfxOnce, playResultVoiceOnce,
     __engineV2ShadowComputeRound, __engineV2ShadowCompare, recordMyAccountGameResult,
-    scheduleRematchAutoAdvance, stopRoundTimers, fetchFreshWrapped, maybeRecoverWrapped
+    scheduleRematchAutoAdvance, stopRoundTimers, fetchFreshWrapped, maybeRecoverWrapped, showTaggerPopup
   );
   return { finishRoundLocal, calls, emitted };
 }

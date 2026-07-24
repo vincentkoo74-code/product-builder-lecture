@@ -74,7 +74,12 @@ describe('Build22-B — duplicate result render is skipped', () => {
     // 바뀌었다 — "첫 렌더일 때만 호출"이라는 게이팅 자체는 그대로 유지(중첩 위치만 이동).
     // Build29(WRPS-076) [P1, R1]: resultIsFirstRender 블록 안에 화면 선-전환 코드가 추가돼 블록
     // 길이가 늘었다 — 길이 상한만 여유 있게 확장(게이팅 구조 자체는 무변경).
-    expect(html).toMatch(/const resultIsFirstRender = await waitForPhaseRender\("result", resultScheduledAt, resultClientReceivedTs\);\s*\n\s*if \(resultIsFirstRender\) \{[\s\S]{0,3200}finishRoundLocal\(\);\s*\n\s*\}/);
+    // Build30(WRPS-078) [Phase1]: fetchFreshParticipantsForResult 호출에 5초 hard timeout
+    // (Promise.race)이 추가돼 블록 길이가 더 늘었다 — 길이 상한만 재확장(게이팅 구조 무변경).
+    // Build30-R2(WRPS-078) [Phase B]: 즉시렌더(renderTentativeRoundResult)/팬텀 가드(컨텍스트
+    // 재확인)/오판 가드(부분 stale 추가 대기)가 더해져 블록이 더 길어졌다 — 길이 상한만 재확장
+    // (게이팅 구조 자체는 무변경).
+    expect(html).toMatch(/const resultIsFirstRender = await waitForPhaseRender\("result", resultScheduledAt, resultClientReceivedTs\);\s*\n\s*if \(resultIsFirstRender\) \{[\s\S]{0,7000}finishRoundLocal\(\);\s*\n\s*\}/);
   });
 });
 
@@ -142,7 +147,10 @@ describe('Build22-B — same phase late update does not re-render screen', () =>
 describe('Build22-C — TAGGER_SNAPSHOT_GAVE_UP fallback safety', () => {
   it('일반 재시도 소진 후에도 미해결이면 GAVE_UP 선언 전 1회 더 긴 대기+재조회를 시도한다(무한대기 아님, 딱 1회)', () => {
     expect(html).toContain("eventType: 'TAGGER_SNAPSHOT_FINAL_WAIT'");
-    expect(html).toMatch(/let stillUnresolved = unresolvedOf\(data\);\s*\n\s*if \(stillUnresolved\.length\) \{[\s\S]{0,500}await sleep\(delayMs \* 2\);/);
+    // Build30-R2 Phase B(WRPS-078): 이 사이에 팬텀 가드(컨텍스트 재확인) 분기가 추가됐다 — 재시도
+    // 자체(간격/1회 제한)는 무변경이므로 "미해결이면 결국 await sleep(delayMs*2)로 이어진다"는
+    // 상대 순서만 확인한다(정확한 인접 여부는 요구하지 않음).
+    expect(html).toMatch(/let stillUnresolved = unresolvedOf\(data\);\s*\n[\s\S]{0,700}await sleep\(delayMs \* 2\);/);
   });
 
   it('GAVE_UP 이후 finishRoundLocal은 어느 데이터 소스(stored/localJudge)로 판정했는지 TAGGER_FALLBACK_SOURCE로 명시한다', () => {

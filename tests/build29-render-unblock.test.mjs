@@ -36,17 +36,21 @@ async function runTransitionBlock({
   room, state, waitForPhaseRender, fetchFreshParticipantsForResult, finishRoundLocal, db,
   isSafeParticipant, isConfirmedLoser, showScreen, $, syncConfirmedIdsFromParticipants,
   isWaitingForNextGame, showHostRoom, showReadyScreen, showLoserWaitScreen, enterPlayingStateFromRoomUpdate,
-  parsePenalty,
+  parsePenalty, renderTentativeRoundResult, getUnresolvedActiveParticipants,
 }) {
   const emitted = [];
   const QA = { emit: (channel, data) => emitted.push(data) };
   const getGameRound = () => state.gameRound || 1;
   const calls = { showScreen: [], showHostRoom: 0, showReadyScreen: 0, showLoserWaitScreen: 0, $: [] };
+  // Build30-R2 Phase B(WRPS-078): TRANSITION_BLOCK_SRC가 이제 즉시렌더(renderTentativeRoundResult)와
+  // 오판 가드(getUnresolvedActiveParticipants)도 참조한다 — 이 파일의 관심사(화면 선-전환 타이밍)와는
+  // 무관하므로 기본값은 no-op 스텁으로 둔다(실제 동작은 tests/build30-choice-window-sync.test.mjs류의
+  // 전용 테스트가 검증).
   const factory = new Function(
     'room', 'state', 'oldStatus', 'parsePenalty', 'waitForPhaseRender', 'fetchFreshParticipantsForResult',
     'finishRoundLocal', 'db', 'getGameRound', 'QA', 'isSafeParticipant', 'isConfirmedLoser', 'showScreen', '$',
     'syncConfirmedIdsFromParticipants', 'isWaitingForNextGame', 'showHostRoom', 'showReadyScreen',
-    'showLoserWaitScreen', 'enterPlayingStateFromRoomUpdate',
+    'showLoserWaitScreen', 'enterPlayingStateFromRoomUpdate', 'renderTentativeRoundResult', 'getUnresolvedActiveParticipants',
     'return (async () => {\n' + TRANSITION_BLOCK_SRC + '\n})();'
   );
   await factory(
@@ -62,7 +66,9 @@ async function runTransitionBlock({
     showHostRoom || (() => { calls.showHostRoom++; }),
     showReadyScreen || (() => { calls.showReadyScreen++; }),
     showLoserWaitScreen || (() => { calls.showLoserWaitScreen++; }),
-    enterPlayingStateFromRoomUpdate || (() => {})
+    enterPlayingStateFromRoomUpdate || (() => {}),
+    renderTentativeRoundResult || (() => true),
+    getUnresolvedActiveParticipants || (() => [])
   );
   return { emitted, calls };
 }

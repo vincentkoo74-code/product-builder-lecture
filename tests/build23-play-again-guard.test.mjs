@@ -150,7 +150,9 @@ describe('Build23-#3 — partial replay 상태에서 resetGameKeepRoom 직접 �
   });
 
   it('returnToLobbyAfterGame()도 beginNewGameRound() 호출 전 동일하게 하드블록한다(소스 계약)', () => {
-    expect(html).toMatch(/async function returnToLobbyAfterGame\(\) \{[\s\S]{0,100}if \(state\.role !== "host"\) return;[\s\S]{0,300}if \(blockPlayAgainIfPartialReplay\(\)\) return;/);
+    // Build30 Phase1: role 체크 앞에 hideTaggerPopup() 호출(팝업 즉시 제거)이 추가되어 거리가
+    // 늘었다 — 순서(hideTaggerPopup → role 체크 → 하드블록)는 그대로이므로 허용 범위만 넓힌다.
+    expect(html).toMatch(/async function returnToLobbyAfterGame\(\) \{[\s\S]{0,300}if \(state\.role !== "host"\) return;[\s\S]{0,300}if \(blockPlayAgainIfPartialReplay\(\)\) return;/);
   });
 
   it('실제 blockPlayAgainIfPartialReplay()는 차단 시 PLAY_AGAIN_BLOCKED_PARTIAL_REPLAY 메트릭을 정확한 진단 필드와 함께 방출한다', () => {

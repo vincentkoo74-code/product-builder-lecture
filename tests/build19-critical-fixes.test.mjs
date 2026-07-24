@@ -32,7 +32,9 @@ describe('WRPS-072-B19 — 라운드 재분류 방지(idempotency) + host 데이
   });
 
   it('fetchFreshParticipantsForResult는 미해결 활성참가자가 있으면 재시도하고 QA에 남긴다', () => {
-    expect(html).toContain('async function fetchFreshParticipantsForResult(roomCode, maxRetries = 2, delayMs = 300)');
+    // Build30-R2 Phase B(WRPS-078): 팬텀 가드용 isContextStillValid 파라미터가 추가됐다(기본값
+    // null — 기존 호출부는 인자를 생략해 이전과 100% 동일하게 동작).
+    expect(html).toContain('async function fetchFreshParticipantsForResult(roomCode, maxRetries = 2, delayMs = 300, isContextStillValid = null)');
     expect(html).toContain("eventType: 'TAGGER_SNAPSHOT_STALE'");
     expect(html).toContain("eventType: 'TAGGER_SNAPSHOT_GAVE_UP'");
   });
@@ -45,7 +47,14 @@ describe('WRPS-072-B19 — 라운드 재분류 방지(idempotency) + host 데이
     // finishRoundLocal의 상대 순서 자체(fetch가 반드시 먼저)는 그대로 유지된다.
     // Build29(WRPS-076) [P1, R1]: 이 사이에 화면 선-전환 코드가 추가돼 길이가 늘었다 — 상한만
     // 확장(순서 보장 자체는 무변경).
-    expect(html).toMatch(/await fetchFreshParticipantsForResult\(state\.roomCode\);[\s\S]{0,1600}finishRoundLocal\(\);/);
+    // Build30(WRPS-078) [Phase1]: fetchFreshParticipantsForResult 호출이 무제한 await 방지를 위해
+    // Promise.race(호출, timeout(5000))로 감싸졌다 — "await fetchFreshParticipantsForResult(...)"
+    // 리터럴은 더 이상 없지만, 호출 자체가 여전히 finishRoundLocal보다 먼저 실행되는 순서는 그대로다.
+    // Build30-R2(WRPS-078) [Phase B]: 팬텀 가드를 위해 호출 결과를 resultFetchPromise 변수에 먼저
+    // 담고(컨텍스트 가드 함수를 4번째 인자로 전달) Promise.race에 그 변수를 참조하는 형태로
+    // 바뀌었다 — "fetchFreshParticipantsForResult(...)" 호출 자체가 finishRoundLocal보다 먼저
+    // 실행되는 상대 순서는 여전히 유지된다(길이 상한만 재확장).
+    expect(html).toMatch(/fetchFreshParticipantsForResult\(state\.roomCode, undefined, undefined, isResultFetchContextStillValid\);[\s\S]{0,3000}finishRoundLocal\(\);/);
   });
 });
 

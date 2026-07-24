@@ -37,8 +37,14 @@ const BEGIN_NEW_GAME_ROUND_SRC = extractBlock(
   'async function beginNewGameRound({ status = "lobby"',
   '// Build19(WRPS-072-B19): result/game_over 전환 시 참가자 스냅샷 완결성 보장'
 );
+// Build30-R2 Phase B(WRPS-078): getUnresolvedActiveParticipants가 fetchFreshParticipantsForResult
+// 내부 지역 함수(unresolvedOf)에서 모듈 스코프로 끌어올려졌다 — 실제 소스를 함께 추출한다.
+const GET_UNRESOLVED_ACTIVE_PARTICIPANTS_SRC = extractBlock(
+  'function getUnresolvedActiveParticipants(rows) {',
+  'async function fetchFreshParticipantsForResult(roomCode, maxRetries = 2, delayMs = 300, isContextStillValid = null) {'
+);
 const FETCH_FRESH_SRC = extractBlock(
-  'async function fetchFreshParticipantsForResult(roomCode, maxRetries = 2, delayMs = 300) {',
+  'async function fetchFreshParticipantsForResult(roomCode, maxRetries = 2, delayMs = 300, isContextStillValid = null) {',
   'function syncConfirmedIdsFromParticipants(participants = state.participants) {'
 );
 // handleRoomUpdate()의 result/game_over 분기 — 종료 중괄호(end marker의 첫 글자)까지 포함.
@@ -95,7 +101,7 @@ function loadFetchFreshParticipantsForResult({ state, db, sleepImpl }) {
   const sleep = sleepImpl || (() => Promise.resolve());
   const factory = new Function(
     'state', 'QA', 'db', 'sleep', 'syncConfirmedIdsFromParticipants',
-    CHOICE_HELPERS_BLOCK + '\n' + FETCH_FRESH_SRC + '\n; return fetchFreshParticipantsForResult;'
+    CHOICE_HELPERS_BLOCK + '\n' + GET_UNRESOLVED_ACTIVE_PARTICIPANTS_SRC + '\n' + FETCH_FRESH_SRC + '\n; return fetchFreshParticipantsForResult;'
   );
   const fetchFreshParticipantsForResult = factory(state, QA, db, sleep, syncConfirmedIdsFromParticipants);
   return { fetchFreshParticipantsForResult, emitted };
@@ -104,6 +110,7 @@ function loadFetchFreshParticipantsForResult({ state, db, sleepImpl }) {
 async function runResultBranch({
   room, state, waitForPhaseRender, fetchFreshParticipantsForResult, finishRoundLocal, db,
   iAmSafe, iAmConfirmedLoser, showScreen, $,
+  renderTentativeRoundResult, getUnresolvedActiveParticipants,
 }) {
   const scheduling = loadSchedulingHelpers(state);
   const emitted = [];
@@ -113,14 +120,19 @@ async function runResultBranch({
   // 결과 화면으로 보내지 않기 위해 (핸들러 상단에서 이미 계산된) iAmSafe/iAmConfirmedLoser와
   // showScreen/$을 참조한다 — 이 파일의 관심사(렌더 타이밍 순서/SNAPSHOT_RETRY_DURATION)와
   // 무관하므로 기본값은 항상 false/no-op(우선안전이 아닌 일반 참가자 시나리오와 동일하게 동작).
+  // Build30-R2 Phase B(WRPS-078): RESULT_BRANCH_SRC가 이제 즉시렌더(renderTentativeRoundResult)와
+  // 오판 가드(getUnresolvedActiveParticipants)도 참조한다 — 이 파일의 관심사(렌더 타이밍 순서)와는
+  // 무관하므로 기본값은 no-op 스텁(항상 "잠정 렌더 성공"/"미해결 없음")으로 둔다. 실제 동작은
+  // tests/build30-choice-window-sync.test.mjs류의 전용 테스트가 검증한다.
   const factory = new Function(
     'room', 'state', 'parsePenalty', 'waitForPhaseRender', 'fetchFreshParticipantsForResult', 'finishRoundLocal', 'db', 'getGameRound', 'QA',
-    'iAmSafe', 'iAmConfirmedLoser', 'showScreen', '$',
+    'iAmSafe', 'iAmConfirmedLoser', 'showScreen', '$', 'renderTentativeRoundResult', 'getUnresolvedActiveParticipants',
     'return (async () => {\n' + RESULT_BRANCH_SRC + '\n})();'
   );
   await factory(
     room, state, scheduling.parsePenalty, waitForPhaseRender, fetchFreshParticipantsForResult, finishRoundLocal, db, getGameRound, QA,
-    Boolean(iAmSafe), Boolean(iAmConfirmedLoser), showScreen || (() => {}), $ || (() => null)
+    Boolean(iAmSafe), Boolean(iAmConfirmedLoser), showScreen || (() => {}), $ || (() => null),
+    renderTentativeRoundResult || (() => true), getUnresolvedActiveParticipants || (() => [])
   );
   return emitted;
 }
@@ -302,6 +314,7 @@ describe('Build24-B ROLLBACK — 실기기 회귀(room PP2C) 재현 및 수정 �
       'state', 'QA', 'db', 'sleep', 'syncCounter',
       CHOICE_HELPERS_BLOCK + '\n' + realSyncSrcRenamed +
         '\nfunction syncConfirmedIdsFromParticipants(p) { syncCounter.count++; return __realSyncConfirmedIdsFromParticipants(p); }\n' +
+        GET_UNRESOLVED_ACTIVE_PARTICIPANTS_SRC + '\n' +
         FETCH_FRESH_SRC + '\n; return fetchFreshParticipantsForResult;'
     );
     const syncCounter = { count: 0 };
