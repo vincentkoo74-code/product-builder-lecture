@@ -56,8 +56,8 @@ describe('Build17 QA persistence (Layer 1) — 실코드', () => {
     const r = ctx.QA.buildReport('manual');
     expect(r.schemaVersion).toBe('qa-report.v1');
     expect(r.app).toBe('WoorimaruRPS');
-    expect(r.build).toBe('29');
-    expect(r.buildLabel).toBe('build29');
+    expect(r.build).toBe('30');
+    expect(r.buildLabel).toBe('build30');
     expect(r.exportReason).toBe('manual');
     expect(typeof r.createdAt).toBe('string');
     expect(r.session && typeof r.session.sessionId).toBe('string');
@@ -195,8 +195,8 @@ describe('Build17 QA file export (Layer 2) — 실코드', () => {
     expect(out.saved).toBe(false);
     expect(out.clipboard).toBe(true);
     expect(ctx.clipboard.last).toContain('"schemaVersion": "qa-report.v1"');
-    // 파일명: 금지문자(: 등) 없음, build29 스탬프.
-    expect(out.filename).toMatch(/^qa-report-build29-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.json$/);
+    // 파일명: 금지문자(: 등) 없음, build30 스탬프.
+    expect(out.filename).toMatch(/^qa-report-build30-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.json$/);
     expect(out.filename).not.toContain(':');
   });
 
@@ -216,12 +216,12 @@ describe('Build17 QA file export (Layer 2) — 실코드', () => {
     expect(out.clipboard).toBe(false);
     expect(calls.write.directory).toBe('DOCUMENTS');
     expect(calls.write.encoding).toBe('utf8');
-    expect(calls.write.path).toMatch(/^qa-report-build29-.*\.json$/);
+    expect(calls.write.path).toMatch(/^qa-report-build30-.*\.json$/);
     expect(out.uri).toContain('file:///Documents/');
     expect(calls.share.url).toBe(out.uri);
     // Build23: Share 다이얼로그 title도 하드코딩('build21') 대신 QA_BUILD_LABEL을 쓰도록 고쳤다 —
     // 파일명과 동일한 클래스의 불일치 재발 방지 회귀 테스트.
-    expect(calls.share.title).toBe('QA Report build29');
+    expect(calls.share.title).toBe('QA Report build30');
   });
 });
 
