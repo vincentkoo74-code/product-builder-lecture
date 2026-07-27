@@ -3193,6 +3193,11 @@
         "hostPlaying.devAuto": "테스트용: 미선택자 자동 선택",
         // round result
         "result.capDefault": "결과 발표!",
+        // Build30-RC2 Phase2(WRPS-078) [HIGH-fix]: myResult가 아직 확정되지 않았을 때(null) 쓰는
+        // 중립 표현 — capDraw("어라?")/무승부 톤과 절대 혼동되지 않도록 별도 신규 키로 분리한다.
+        "result.titleResolving": "결과 확인 중",
+        "result.capResolving": "잠깐만요!",
+        "result.msgResolving": "결과를 다시 확인하고 있어요. 잠시만 기다려주세요.",
         "result.capDraw": "어라?",
         "result.capLost": "아이고~",
         "result.capWin": "야호~!",
@@ -3548,6 +3553,11 @@
         "hostPlaying.judgeBtn": "🎯 Judge round",
         "hostPlaying.devAuto": "Dev: auto-pick unfinished",
         "result.capDefault": "Results!",
+        // Build30-RC2 Phase2(WRPS-078) [HIGH-fix]: neutral copy for unresolved myResult(null) — kept
+        // distinct from capDraw/draw tone so it can never be mistaken for "it's a draw".
+        "result.titleResolving": "Checking result",
+        "result.capResolving": "One sec!",
+        "result.msgResolving": "Double-checking your result. Please wait a moment.",
         "result.capDraw": "Huh?",
         "result.capLost": "Oh no...",
         "result.capWin": "Yay~!",
@@ -3894,6 +3904,11 @@
         "hostPlaying.judgeBtn": "🎯 判定する",
         "hostPlaying.devAuto": "テスト用：未選択者自動選択",
         "result.capDefault": "結果発表！",
+        // Build30-RC2 Phase2(WRPS-078) [HIGH-fix]: myResultが未確定(null)の間だけ使う中立表現 —
+        // capDraw（あいこ）のトーンと混同しないよう別キーにする。
+        "result.titleResolving": "結果確認中",
+        "result.capResolving": "少々お待ちを！",
+        "result.msgResolving": "結果を再確認しています。少々お待ちください。",
         "result.capDraw": "あれ？",
         "result.capLost": "あらら...",
         "result.capWin": "やったー！",
@@ -4277,6 +4292,17 @@
       lastStartedGameRound: 0,
       countdownStartAt: 0,
       choiceEndAt: 0, // Build30-R2 Phase A(WRPS-078): choice window(선택 시간) 종료 예정 시각(절대 서버시각)
+      // Build30-R2 Phase2(WRPS-078): 단조증가 세대 토큰 — runCountdownThenShowGame()의 각 실행이
+      // 발급받는 자기 세대 번호와 "지금 최신인 세대"를 구분해, 오래된(stale) 실행이 화면 전환/
+      // DB write/카운트다운 완료 처리/오디오 재생 같은 side effect를 커밋하지 못하게 막는 데 쓴다
+      // (계약은 "물리적으로 항상 1개"가 아니라 "최신 세대만 커밋 가능" — 아래 runCountdownThenShowGame
+      // 주석 참고). 세션 리셋 불요(계속 증가만 하면 됨).
+      countdownGeneration: 0,
+      // Build30-R2 Phase2(WRPS-078): 현재 세대를 소유한 coroutine의 round 컨텍스트 키
+      // (`roomCode:gameNo:round`). runCountdownThenShowGame()이 실행 시작 시 세팅하고 자신의
+      // 모든 종료 경로에서 해제한다 — 완전히 동일한 라운드에 대한 재진입(진짜 중복 호출)만
+      // 여기서 막고, 다른(더 최신) 라운드/재시도는 막지 않는다(그 경우는 세대 비교로 처리).
+      countdownCoroutineActiveKey: null,
       gameStarting: false,
       finishingRound: false,
       resultVoiceKey: null, // WRPS-046: 라운드당 결과 음성 1회 재생 가드
@@ -4366,56 +4392,130 @@
     }
     // ── 서버 시각 동기화 ──────────────────────────────────────────────
     // 카운트다운 시작 시각(countdownStartAt)은 모든 단말이 공유하지만, 각 단말이 자기 로컬
-    // Date.now()로 평가하면 기기 간 시계 차이만큼 카운트다운이 어긋난다. Supabase 응답의 Date
-    // 헤더로 서버-로컬 오프셋을 추정해 serverNow()로 보정한다(실패 시 오프셋 0 → Date.now 폴백).
+    // Date.now()로 평가하면 기기 간 시계 차이만큼 카운트다운이 어긋난다. RC-1(Phase4): 이전에는
+    // Supabase 응답의 Date HTTP 헤더로 오프셋을 추정했으나, CORS(Access-Control-Expose-Headers)
+    // 제약으로 브라우저가 그 헤더를 읽지 못해(빈 값) offsets가 항상 0개로 고착되는 결함이
+    // 실측(라이브 검증)으로 확인됐다. 이제는 HTTP 헤더 대신 RPC 응답 바디(db.rpc('server_now'))로
+    // 서버 wall-clock 시각을 받는다 — 바디는 CORS expose-headers 제약과 무관하게 항상 읽을 수 있다.
+    // (실패 시 오프셋 0 → Date.now 폴백, serverClockSynced=false로 실패를 구분 가능하게 유지.)
     let serverClockOffsetMs = 0;
     let serverClockSynced = false; // Build19: 최초 성공 동기화 여부(재시도/진단용)
     function serverNow() { return Date.now() + serverClockOffsetMs; }
     // Build19: 최초 호출이 0 샘플(전부 실패)로 끝나면 offset이 0으로 고착되어 카운트다운/화면 전환이
     // 기기별 wall-clock 오차만큼 어긋난다(실측 QA에서 samples:0 확인). 1회 짧은 재시도로 보강한다
     // (무한 재시도 금지 — retry=false로 재귀 1단계만 허용).
+    // RC-1(clock sync 완화, CEO 지시): 5샘플 median offset은 skew는 완전히 상쇄하지만
+    // RTT 비대칭(uplink≠downlink) 잔차 (uplink-downlink)/2 에는 그대로 노출된다(median은 이
+    // 잔차를 걸러내지 못함 — 매 왕복 동일한 경로 비대칭이 반복되기 때문). 이 잔차의 크기는
+    // 그 샘플의 실제 RTT에 비례하므로(잔차 = rtt*(upFrac-0.5)), 유효 샘플 중 RTT가 가장 작은
+    // 샘플을 고르면 median 대비 잔차를 구조적으로 줄일 수 있다(NTP류 min-delay 샘플링과 동일
+    // 원리). 20세트 skew simulator 비교 실측(median vs min-RTT vs 하위40%median)에서 min-RTT가
+    // 전 세트에서 residual error가 가장 작거나 같았다(평균 약 19%, 최악 세트 약 25% 감소) —
+    // 자세한 비교 근거는 STOP-SHIP RC-1 clock sync 보고 참조. median/하위%median은 여전히
+    // 참고용으로 함께 기록한다(관측성 — 선택 로직 자체를 median으로 되돌리지 않음).
+    function selectClockSyncOffset(rawSamples) {
+      // codex-critic MEDIUM-1(재검토): 선택 단계에서 다시 한 번 방어적으로 필터링한다(비유한/음수
+      // RTT, 비유한 offset 샘플은 이상치 판단 이전에 후보에서 제외 — push 시점에도 걸러지지만
+      // 이 함수가 다른 호출부/미래 변경에서도 안전하도록 재확인).
+      const samples = rawSamples.filter((s) => Number.isFinite(s.rttMs) && s.rttMs >= 0 && Number.isFinite(s.offsetMs));
+      if (!samples.length) return null;
+      let selected = samples[0];
+      for (const s of samples) if (s.rttMs < selected.rttMs) selected = s;
+      const sortedByOffset = samples.slice().sort((a, b) => a.offsetMs - b.offsetMs);
+      const medianSample = sortedByOffset[Math.floor(sortedByOffset.length / 2)];
+      const medianOffsetMs = medianSample.offsetMs;
+      // codex-critic MEDIUM-1: min-RTT 샘플 1개만 무조건 채택하면, 순간 스톨/이상치로 인위적으로
+      // 낮은 RTT를 보고한 1개 샘플이 세션 전체 offset을 오염시킬 수 있다(재동기화 전까지 고착).
+      // corroboration 가드: rtt/2 보정은 "최악 비대칭"을 가정한 이론적 오차 상한이므로, min-RTT
+      // 샘플의 offset 추정치는 참값에서 최대 selected.rttMs/2 만큼, median 샘플의 offset
+      // 추정치도 참값에서 최대 medianSample.rttMs/2 만큼 벗어날 수 있다. 두 추정치가 이
+      // 불확실성의 합(두 추정 오차 상한을 더한 값)보다 더 크게 벌어지면 min-RTT 샘플이 정상
+      // 분포로는 설명되지 않는 이상치일 가능성이 높다고 보고 median으로 폴백한다.
+      const corroborationThresholdMs = selected.rttMs / 2 + medianSample.rttMs / 2;
+      const outlierFallback = Math.abs(selected.offsetMs - medianOffsetMs) > corroborationThresholdMs;
+      const finalOffsetMs = outlierFallback ? medianOffsetMs : selected.offsetMs;
+      return { selected, medianOffsetMs, outlierFallback, finalOffsetMs };
+    }
     async function syncServerClock(retry = true) {
-      const offsets = [];
-      const rtts = [];
-      // WRPS-047: 샘플 수를 늘려(3→5) 중앙값 안정성을 높인다(개별 RTT 이상치 방어).
+      const samples = [];
+      // WRPS-047: 샘플 수를 늘려(3→5) 이상치 방어 표본을 확보한다(선택 로직: min-RTT — 위 주석).
       for (let i = 0; i < 5; i++) {
         try {
           const t0 = Date.now();
-          const res = await withTimeout(
-            fetch(SUPABASE_URL + "/auth/v1/health", { method: "GET", cache: "no-store" }),
-            4000,
-            "서버 시각"
-          );
+          // RC-1(Phase4): server_now RPC 응답 바디로 서버 시각을 받는다. 실측 확인된 shape는
+          // 따옴표 없는 raw JSON number(예: 1785078319341, bigint→JS number)이지만, 방어적으로
+          // string/{server_now:...} 형태도 정규화한다(추측 방지 — 실측 우선, 나머지는 방어).
+          const { data, error } = await withTimeout(db.rpc("server_now"), 4000, "서버 시각");
           const t1 = Date.now();
-          const dateHeader = res?.headers?.get?.("date");
-          if (dateHeader) {
-            const serverMs = new Date(dateHeader).getTime();
-            if (!Number.isNaN(serverMs)) {
-              const rtt = t1 - t0;
-              rtts.push(rtt);
-              // WRPS-047: HTTP Date 헤더는 '초' 단위(소수점 없음)라 항상 내림(floor)되어
-              // 0~1초의 체계적 편향이 생긴다 → 기기마다 최대 ~1초 어긋남(카운트다운 desync 주원인).
-              // 구간 중앙(+500ms)으로 보정하면 모든 기기가 동일 편향을 갖게 되어 서로 정렬된다.
-              // 응답 수신 시점(t1)의 서버 시각 ≈ serverMs + 500 + rtt/2
-              offsets.push(Math.round(serverMs + 500 + rtt / 2 - t1));
-            }
-          }
-        } catch (e) { /* 개별 샘플 실패는 무시 */ }
+          if (error) continue; // RPC 실패 — 이 샘플만 폐기(전체 루프는 계속)
+          const serverMs = typeof data === "number" ? data
+            : typeof data === "string" ? Number(data)
+            : (data && typeof data.server_now !== "undefined") ? Number(data.server_now)
+            : NaN;
+          if (!Number.isFinite(serverMs) || serverMs <= 0) continue; // malformed 응답 — 폐기
+          const rtt = t1 - t0;
+          // RPC는 ms 단위 정수를 직접 반환하므로(HTTP Date 헤더의 초단위 내림과 달리) 별도의
+          // +500ms 편향 보정이 필요 없다. 표준 NTP식 왕복지연 절반 보정만 적용한다:
+          // t1 시점의 서버 시각 추정치 ≈ serverMs + rtt/2 → offset = 그 추정치 - t1.
+          const offsetMs = Math.round(serverMs - t0 - rtt / 2);
+          samples.push({ rttMs: rtt, offsetMs, serverTs: serverMs, clientSendTs: t0, clientReceiveTs: t1 });
+          // QA(RC-1 clock sync 완화): 개별 샘플 원시값(실기기 진단용 — 서버-로컬 오프셋의
+          // 잔차 원인을 재구성할 수 있도록 샘플별 rtt/offset/timestamp를 모두 남긴다).
+          try { QA.emit('clocksync', { wrps: 'RC-1-CLOCKSYNC-MINRTT', eventType: 'CLOCK_SYNC_SAMPLE',
+            sampleIndex: i, rttMs: rtt, offsetMs, serverTs: serverMs, clientSendTs: t0, clientReceiveTs: t1,
+            roomId: state.roomCode || null }); } catch (e) {}
+        } catch (e) { /* 개별 샘플 실패(RPC 예외/timeout)는 무시 */ }
       }
-      if (offsets.length) {
-        offsets.sort((a, b) => a - b);
-        serverClockOffsetMs = offsets[Math.floor(offsets.length / 2)]; // 중앙값(이상치 방어)
-        serverClockSynced = true;
+      let selectedRttMs = null, selectedOffsetMs = null, medianOffsetMs = null, outlierFallback = false;
+      if (samples.length) {
+        const picked = selectClockSyncOffset(samples);
+        // codex-critic MEDIUM-1: 방어적 재필터 후 유효 샘플이 하나도 남지 않으면(이론상 현재
+        // push 시점 검증으로는 발생하지 않지만, 향후 호출부 변경에 대비한 방어) 미동기화로 취급한다
+        // — samples.length>0 이어도 picked===null이면 offset을 갱신/성공 처리하지 않는다.
+        if (picked) {
+          selectedRttMs = picked.selected.rttMs;
+          selectedOffsetMs = picked.selected.offsetMs;
+          medianOffsetMs = picked.medianOffsetMs;
+          outlierFallback = picked.outlierFallback;
+          // 선택 방식: 정상 시엔 min-RTT 샘플의 offset, corroboration 실패(이상치 판정) 시엔
+          // median으로 폴백(비교 실측 근거 위 selectClockSyncOffset 주석).
+          serverClockOffsetMs = picked.finalOffsetMs;
+          serverClockSynced = true;
+          // QA(RC-1 clock sync 완화): 최종 선택된 샘플(실기기에서 어떤 샘플이 채택됐는지 추적).
+          try { QA.emit('clocksync', { wrps: 'RC-1-CLOCKSYNC-MINRTT', eventType: 'CLOCK_SYNC_SELECTED_SAMPLE',
+            rttMs: selectedRttMs, offsetMs: selectedOffsetMs, serverTs: picked.selected.serverTs,
+            clientSendTs: picked.selected.clientSendTs, clientReceiveTs: picked.selected.clientReceiveTs,
+            outlierFallback, roomId: state.roomCode || null }); } catch (e) {}
+        }
       }
-      const spreadMs = offsets.length ? (offsets[offsets.length - 1] - offsets[0]) : null;
-      const rttMs = rtts.length ? Math.round(rtts.reduce((a, b) => a + b, 0) / rtts.length) : null;
-      // QA(WRPS-036): 추정된 서버-로컬 오프셋 + 샘플 분포/RTT(드리프트 원인 추적).
+      const offsetValues = samples.map((s) => s.offsetMs);
+      const spreadMs = offsetValues.length ? (Math.max(...offsetValues) - Math.min(...offsetValues)) : null;
+      const rttMs = samples.length ? Math.round(samples.reduce((a, s) => a + s.rttMs, 0) / samples.length) : null;
+      // residualUpperBoundMs(구 residualEstimateMs, codex-critic MEDIUM-2 rename): RTT 비대칭이
+      // 최악(uplink 또는 downlink 한쪽에 완전히 쏠림)일 때 남을 수 있는 잔차의 이론적 상한
+      // (|uplink-downlink|/2 <= rtt/2)을 선택된 샘플의 rtt로부터 추정한 값이다 — "실측 잔차"가
+      // 아니라 "이 정도까지는 남아있을 수 있다"는 관측용 상한 추정치일 뿐이며, min-RTT 선택 자체의
+      // 선택편향(5개 중 최소)까지 포함돼 있어 실제 평균 잔차보다 보수적으로 클 수 있다(확신도는
+      // report의 "확신 낮은 부분" 참조).
+      const residualUpperBoundMs = selectedRttMs !== null ? Math.round(selectedRttMs / 2) : null;
+      // QA(WRPS-036): 추정된 서버-로컬 오프셋 + 샘플 분포/RTT(드리프트 원인 추적) + RC-1 확장 필드.
       try { QA.emit('clocksync', { wrps: 'WRPS-036', eventType: 'CLOCK_SYNC', offsetMs: serverClockOffsetMs,
-        samples: offsets.length, spreadMs, rttMs, synced: serverClockSynced }); } catch (e) {}
-      if (!offsets.length && retry) {
+        samples: samples.length, spreadMs, rttMs, synced: serverClockSynced,
+        sampleCount: samples.length, selectedRttMs, selectedOffsetMs, medianOffsetMs, residualUpperBoundMs,
+        outlierFallback, syncAlgorithm: outlierFallback ? 'min-rtt-fallback-median' : 'min-rtt' }); } catch (e) {}
+      if (!samples.length && retry) {
         try { QA.emit('metric', { wrps: 'WRPS-036-B19', eventType: 'CLOCK_SYNC_RETRY' }); } catch (e) {}
         await sleep(1500);
         await syncServerClock(false);
+        return;
+      }
+      // RC-1(Phase4): 5샘플 + 1회 재시도(총 최대 10회 RPC 시도)가 전부 실패하면 offsetMs=0을
+      // 성공값처럼 취급하지 않는다 — serverClockSynced가 이미 true(과거 동기화 성공 이력)라면
+      // 그 값을 유지하고 이번 실패는 무시한다. 처음부터 한 번도 성공한 적이 없을 때만
+      // 최종실패 전용 metric을 남긴다(기존에는 이 케이스를 구분하는 이벤트가 없었다).
+      if (!samples.length && !retry && !serverClockSynced) {
+        try { QA.emit('metric', { wrps: 'RC-1-PHASE4', eventType: 'CLOCK_SYNC_FAILED',
+          roomId: state.roomCode || null, attempts: 10 }); } catch (e) {}
       }
     }
     // 게임 시작 예정 시각: 서버 시각 기준 + 네트워크/전파 지연 흡수용 lead.
@@ -5326,8 +5426,17 @@
       return Boolean(overlay && !overlay.classList.contains("hidden"));
     }
 
+    // Build30-R2 Phase2(WRPS-078, CONFIRMED ROOT CAUSE 수정): countdownStartAt을 키에 넣지 않는다.
+    // countdownStartAt은 penalty에 대한 targeted merge write(publishChoiceWindowEnd/
+    // republishCountdownStartAsHost)나 Build22 자가복구 republish로 같은 라운드 안에서도 값이
+    // 바뀔 수 있는 절대 서버시각이다 — 이 값이 키에 섞여 있으면, 같은 라운드에 대한 penalty
+    // republish/에코 하나하나가 "새로운 진입"으로 오판되어 enterPlayingStateFromRoomUpdate()가
+    // 이미 진행 중인 라운드에 대해 runCountdownThenShowGame()을 다시 호출한다(중복 coroutine의
+    // 실제 발생 경로 중 하나 — 위 countdownGeneration 세대 토큰이 그 결과를 막아주지만, 애초에
+    // 불필요한 재진입 자체를 여기서 줄인다). 안정적인 라운드 식별에는 roomCode:gameNo:round만으로
+    // 충분하다(동일 라운드는 항상 동일 키, 새 라운드/새 게임/room 이동은 항상 다른 키).
     function getPlayingEntryKey() {
-      return `${state.roomCode || "offline"}:${getGameRound()}:${state.round || 1}:${getCountdownStartAt() || 0}:playing`;
+      return `${state.roomCode || "offline"}:${getGameRound()}:${state.round || 1}:playing`;
     }
 
     async function enterPlayingStateFromRoomUpdate() {
@@ -7114,13 +7223,22 @@
     // enterPlayingStateFromRoomUpdate 등에서 쓰는 것과 동일한 republish 패턴, status는 바꾸지 않음).
     async function republishCountdownStartAsHost() {
       state.countdownStartAt = getNextCountdownStartAt();
-      state.penalty = buildPenaltyValue({ gameRound: getGameRound(), countdownStartAt: state.countdownStartAt });
+      // Build30-R2 Phase2(WRPS-078, CONFIRMED ROOT CAUSE 수정): 이 republish는 countdownStartAt만
+      // 새로 쓰기 위한 것이지만, buildPenaltyValue는 명시적으로 넘기지 않은 필드를 0(생략)으로
+      // 취급한다 — choiceEndAt을 넘기지 않으면 이미 발행돼있던 choiceEndAt이 이 write로 유실된다
+      // (participant가 선택 종료시각을 잃고 로컬 5초 폴백으로 튐). getChoiceEndAt()으로 현재
+      // 알려진 값을 읽어 그대로 보존한다(merge write — clear-write와 구분되는 별도 케이스).
+      const preservedChoiceEndAt = getChoiceEndAt();
+      state.penalty = buildPenaltyValue({ gameRound: getGameRound(), countdownStartAt: state.countdownStartAt, choiceEndAt: preservedChoiceEndAt });
       try {
         if (getOnlineMode() && db && state.roomCode) {
           await db.from('rooms').update({ penalty: state.penalty }).eq('id', state.roomCode);
         }
       } catch (e) {}
       try { QA.emit('metric', { wrps: 'WRPS-036-B22', eventType: 'COUNTDOWN_SERVER_TS_REPUBLISHED', round: state.round, countdownStartAt: state.countdownStartAt }); } catch (e) {}
+      if (preservedChoiceEndAt > 0) {
+        try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'PENALTY_MERGE_PRESERVED', roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round, callSite: 'republishCountdownStartAsHost', preservedField: 'choiceEndAt', preservedValue: preservedChoiceEndAt }); } catch (e) {}
+      }
       return state.countdownStartAt;
     }
     // Build22(A): 참가자(비host)가 바운드 재시도 후에도 유효한 시각을 못 받으면, 잘못된 로컬시각으로
@@ -7153,7 +7271,35 @@
       };
     }
 
-    async function runCountdown() {
+    // Build30-R2 Phase2(WRPS-078): 세대 체크포인트 헬퍼 — await 재개 직후 "이 세대가 여전히
+    // 최신이고 여전히 playing 상태인가"를 검사한다. CEO 확정 계약 표현: "물리적으로 coroutine이
+    // 항상 1개"라고 주장하지 않는다 — 실제로는 여러 실행이 겹칠 수 있다. 계약은 "최신 세대만
+    // side effect(①화면 전환 showScreen ②DB write ③카운트다운 완료 처리 ④오디오 재생 요청)를
+    // 커밋할 수 있다"이다. myGen이 undefined면(세대 체계에 참여하지 않는 레거시 단독 호출 — 예:
+    // 오프라인 pass-play용 directStartGame()이 runCountdown()을 직접 부르는 경우) 검사를 건너뛰고
+    // 항상 통과시켜 기존 동작을 그대로 유지한다.
+    function isCountdownGenerationCurrent(myGen, checkpoint) {
+      if (myGen === undefined) return true;
+      const currentGeneration = state.countdownGeneration;
+      const stale = currentGeneration !== myGen || state.status !== "playing";
+      if (stale) {
+        try {
+          QA.emit('metric', {
+            wrps: 'WRPS-078', eventType: 'COUNTDOWN_STALE_GENERATION_ABORTED',
+            generation: myGen, currentGeneration,
+            roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round,
+            eventId: `${state.roomCode || ''}:${getGameRound()}:${state.round}:${myGen}:${checkpoint}`,
+            checkpoint,
+          });
+        } catch (e) {}
+      }
+      return !stale;
+    }
+
+    // myGen: runCountdownThenShowGame()이 발급한 세대 토큰(owner만 발급). offline pass-play의
+    // directStartGame()처럼 세대 체계 밖에서 직접 호출하는 기존 호출부는 인자를 넘기지 않아도
+    // 되며(undefined), 이 경우 아래 체크포인트들은 전부 통과된다(기존 동작 그대로).
+    async function runCountdown(myGen) {
       // M-2: 카운트다운 직전 오디오 컨텍스트 resume(OS 인터럽트로 재-suspend된 경우 복구).
       try { SoundManager.unlock(); } catch (e) {}
       const overlay = $("countdownOverlay");
@@ -7172,6 +7318,10 @@
       // 대기(waitForValidCountdownStart의 재시도 지연)만 유발한다.
       if (!scheduledStartAt && getOnlineMode()) {
         scheduledStartAt = await waitForValidCountdownStart();
+        // Build30-R2 Phase2(WRPS-078) checkpoint 1/5: waitForValidCountdownStart 반환 직후.
+        // 이 세대가 이미 stale이면 곧바로 이어지는 DB write(republishCountdownStartAsHost)나
+        // 화면 전환(showCountdownSyncError)을 커밋하지 않고 조용히 중단한다.
+        if (!isCountdownGenerationCurrent(myGen, "waitForValidCountdownStart")) return false;
         if (!scheduledStartAt) {
           const isHost = state.role === "host";
           if (isHost) {
@@ -7205,6 +7355,9 @@
         // 4000 — 캡<lead+buffer이면 조기 시작 desync가 난다(실측 1건: p#1 waitMs 4,877 →
         // 877ms 조기 시작). 캡을 4800으로 올려 위 불변식(캡>lead+buffer)을 회복한다.
         await sleep(Math.min(waitMs, 4800));
+        // Build30-R2 Phase2(WRPS-078) checkpoint 2/5: lead sleep 반환 직후. 이어지는 오디오 재생
+        // 요청("ready" voice) 직전에 세대를 재확인한다.
+        if (!isCountdownGenerationCurrent(myGen, "leadSleep")) return false;
       }
       // Build19: 다른 3개 전환(result/nextRound/gameOver)과 동일 스키마의 SYNC_RENDER를 남겨
       // qa-sync 분석기가 4개 phase를 동일하게 기기간 gap 비교할 수 있게 한다.
@@ -7246,6 +7399,9 @@
       numEl.className = "count-anim countdown-intro";
       void playVoiceClip("ready");
       await sleep(timing.readySleepMs);
+      // Build30-R2 Phase2(WRPS-078) checkpoint 3/5: readyVoice sleep 반환 직후. 이어지는 오디오
+      // 재생 요청("countdownRps" voice) 직전에 세대를 재확인한다.
+      if (!isCountdownGenerationCurrent(myGen, "readyVoiceSleep")) return false;
 
       // 2단계: "안 내면 술래! 가위바위보!" / "最初はグー！じゃんけんぽん！" / "Rock, paper, scissors, shoot!"
       numEl.className = "countdown-go";
@@ -7263,6 +7419,9 @@
       numEl.className = "count-anim countdown-go";
       void playVoiceClip("countdownRps");
       await sleep(timing.rpsSleepMs);
+      // Build30-R2 Phase2(WRPS-078) checkpoint 4/5: rpsVoice sleep 반환 직후. 이어지는 "카운트다운
+      // 완료 처리"(오버레이 닫기 + 성공 반환) 직전에 세대를 재확인한다.
+      if (!isCountdownGenerationCurrent(myGen, "rpsVoiceSleep")) return false;
 
       overlay.classList.add("hidden");
       numEl.style.fontSize = "";
@@ -7301,10 +7460,18 @@
     async function publishChoiceWindowEnd(choiceEndAt) {
       if (state.role !== "host" || !getOnlineMode() || !db || !state.roomCode) return;
       try {
-        const penalty = buildPenaltyValue({ gameRound: getGameRound(), choiceEndAt });
+        // Build30-R2 Phase2(WRPS-078, CONFIRMED ROOT CAUSE 수정): countdownStartAt을 명시하지
+        // 않으면 buildPenaltyValue가 이 필드를 0(생략)으로 취급해, 이미 발행된 countdownStartAt이
+        // 이 write로 유실된다(다른 기기가 뒤늦게 republish/재조회 시 카운트다운 시각을 잃음).
+        // getCountdownStartAt()으로 현재 알려진 값을 읽어 그대로 보존한다.
+        const preservedCountdownStartAt = getCountdownStartAt();
+        const penalty = buildPenaltyValue({ gameRound: getGameRound(), choiceEndAt, countdownStartAt: preservedCountdownStartAt });
         const { error } = await db.from('rooms').update({ penalty }).eq('id', state.roomCode);
         if (error) throw new Error('choiceEndAt publish failed: ' + (error.message || error));
         state.penalty = penalty;
+        if (preservedCountdownStartAt > 0) {
+          try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'PENALTY_MERGE_PRESERVED', roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round, callSite: 'publishChoiceWindowEnd', preservedField: 'countdownStartAt', preservedValue: preservedCountdownStartAt }); } catch (_) {}
+        }
       } catch (e) {
         console.warn("publishChoiceWindowEnd failed:", e?.message || e);
         try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'CHOICE_END_PUBLISH_FAILED', message: String(e?.message || e), roomId: state.roomCode || null }); } catch (_) {}
@@ -7348,6 +7515,51 @@
     }
 
     async function runCountdownThenShowGame() {
+      // Build30-R2 Phase2(WRPS-078): 이 함수만 세대 토큰의 owner다 — 실행 시작 시 자신만의 세대
+      // 번호를 발급한다(단조증가). CEO 확정 계약 표현: "물리적으로 coroutine이 항상 1개"가 아니라
+      // "최신 세대만 side effect(①화면 전환 ②DB write ③카운트다운 완료 처리 ④오디오 재생 요청)를
+      // 커밋할 수 있다" — 여러 실행이 겹칠 수 있음을 전제로, 오래된 실행은 runCountdown() 내부
+      // 4개 checkpoint + 아래 5번째 checkpoint(runCountdown 반환 직후)에서 스스로 감지해 중단된다.
+      //
+      // 다만 완전히 동일한 라운드(roomCode:gameNo:round)에 대해 이미 실행 중(아직 종료하지 않음)인
+      // coroutine이 있다면 — 이건 "더 최신인 새 시도"가 아니라 진짜 중복 호출(재시도 버튼 연타,
+      // realtime 'playing' 상태의 중복 에코 등)이므로 세대를 새로 발급하지 않고 즉시 막는다.
+      // 서로 다른 라운드에 대한 호출(예: host 강제 시작이 정체된 이전 실행을 대체)은 막지 않고
+      // 그대로 진행시켜, 새 세대가 이전 실행을 checkpoint에서 stale로 판정하게 한다.
+      const entryKey = `${state.roomCode || "offline"}:${getGameRound()}:${state.round || 1}`;
+      if (state.countdownCoroutineActiveKey === entryKey) {
+        try {
+          QA.emit('metric', {
+            wrps: 'WRPS-078', eventType: 'COUNTDOWN_COROUTINE_DUPLICATE_BLOCKED',
+            generation: state.countdownGeneration, currentGeneration: state.countdownGeneration,
+            roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round,
+            eventId: `${entryKey}:${state.countdownGeneration}:duplicate`, checkpoint: 'entry',
+          });
+        } catch (e) {}
+        state.gameStarting = false;
+        return;
+      }
+      // (state.countdownGeneration || 0) + 1: 순수 ++state.countdownGeneration은 state가 이 필드를
+      // 아예 초기화하지 않은 채로 생성된 경우(undefined) ++undefined === NaN이 되어 이후 모든
+      // 체크포인트 비교(NaN !== NaN은 항상 true)가 매번 stale로 오판되는 결함을 만든다 — 명시적으로
+      // 0을 기본값으로 둬 이 경우에도 안전하게 1부터 단조증가한다.
+      const myGen = (state.countdownGeneration = (state.countdownGeneration || 0) + 1);
+      state.countdownCoroutineActiveKey = entryKey;
+      try {
+        QA.emit('metric', {
+          wrps: 'WRPS-078', eventType: 'COUNTDOWN_GENERATION_STARTED',
+          generation: myGen, currentGeneration: myGen,
+          roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round,
+          eventId: `${entryKey}:${myGen}`, checkpoint: 'entry',
+        });
+      } catch (e) {}
+      // 이 실행이 어떤 경로로 종료하든 자신이 세운 active key를 반드시 해제한다(다음 정당한 재시도가
+      // "중복"으로 오판되지 않도록). 이미 더 최신 세대가 같은 키를 새로 세웠다면(이론상 발생하지
+      // 않지만 방어적으로) 그 소유권은 건드리지 않는다.
+      const releaseActiveKey = () => {
+        if (state.countdownCoroutineActiveKey === entryKey) state.countdownCoroutineActiveKey = null;
+      };
+
       // 호스트도 가위바위보에 참여하는 일반 플레이어이므로 동일한 게임 화면 사용
       if (!isCurrentRoundParticipant()) {
         if (isSafeParticipant()) showScreen("screenWinnerWait");
@@ -7357,14 +7569,27 @@
         publishChoiceWindowEstimateIfHost();
         startHostJudgeBackstop();
         state.gameStarting = false;
+        releaseActiveKey();
         return;
       }
-      const countdownOk = await runCountdown();
+      const countdownOk = await runCountdown(myGen);
       // Build22-A: countdownOk===false는 countdownStartServerTs invalid로 하드블록된 상태
       // (participant 대기 화면에 재시도 버튼 노출 중) — 동기화 없이 로컬 게임 화면으로 진행하면
-      // 원래 버그(waitMs:0 진행)와 동일해지므로, 게임 화면 전환을 보류한다.
+      // 원래 버그(waitMs:0 진행)와 동일해지므로, 게임 화면 전환을 보류한다. runCountdown()이
+      // 내부 checkpoint에서 이 세대가 stale이라 판단해 false를 반환한 경우도 동일하게 여기서
+      // 걸러진다(둘 다 "더 진행하면 안 됨"이라는 결론은 같음).
       if (countdownOk === false) {
         state.gameStarting = false;
+        releaseActiveKey();
+        return;
+      }
+      // Build30-R2 Phase2(WRPS-078) checkpoint 5/5: runCountdown 반환 직후. 이어지는 화면 전환
+      // (showScreen/showLoserWaitScreen)과 DB write(captureAndPublishChoiceWindowNow) 직전에
+      // 세대를 재확인한다 — runCountdown()의 Promise가 resolve되는 시점과 이 코드가 재개되는
+      // 시점 사이에도(마이크로태스크 큐) 더 최신 세대가 끼어들 수 있다.
+      if (!isCountdownGenerationCurrent(myGen, "runCountdownReturned")) {
+        state.gameStarting = false;
+        releaseActiveKey();
         return;
       }
       if (!isCurrentRoundParticipant()) {
@@ -7376,6 +7601,7 @@
         captureAndPublishChoiceWindowNow();
         startHostJudgeBackstop();
         state.gameStarting = false;
+        releaseActiveKey();
         return;
       }
       showScreen("screenGame");
@@ -7385,6 +7611,7 @@
       captureAndPublishChoiceWindowNow();
       beginRoundTimer();
       state.gameStarting = false;
+      releaseActiveKey();
     }
 
     // Phase 1: 호스트용 playing 화면 렌더
@@ -8873,8 +9100,55 @@ function summarizeGameStats(rows) {
 
 	    function renderRoundResult(caseType, roundLoserCount, remainingSlots) {
 	      const current = state.participants.find(p => p.id === state.currentUserId) || state.participants[0];
-	      const myResult = current ? current.lastResult || getChoiceResult(current.choice) || "draw" : "draw";
+	      // Build30-R2 Phase2(WRPS-078, CEO 강화): 이전에는 두 소스(lastResult/getChoiceResult)가
+	      // 모두 실패하면 "draw"를 임의로 만들어 렌더했다 — 실제로는 win/lose/draw 중 무엇인지 전혀
+	      // 모르는 상태인데 "무승부"라고 확정 렌더하는 건 없는 결과를 있는 것처럼 꾸미는 것과 같다.
+	      // getChoiceResult(current.choice)가 신선한 이유: publishHostRoundResult는 result 전이를
+	      // 커밋하기 **전에** choice 인코딩(judge 결과)을 먼저 커밋한다(설계 §5) — 그래서 lastResult가
+	      // 아직 이 기기에 반영되지 않은 순간에도 choice 인코딩만으로 결과를 복원할 수 있는 순서
+	      // 의존이 성립한다. 두 소스 모두 실패(이 참가자의 row가 스냅샷에서 아예 빠지는 등 극단
+	      // 케이스)하면 임의로 값을 만들지 않고 null로 남긴다 — 아래 게이트가 이 null을 "정상 결과인
+	      // 것처럼" 렌더/기록하지 않도록 막는다. 판정 알고리즘(judgeRound/judgePure/resolveElimination)
+	      // 본체는 무변경 — 여기는 이미 계산된 값을 읽기만 하는 렌더 레이어의 게이트일 뿐이다.
+	      const lastResultValue = current ? current.lastResult : null;
+	      const choiceEncodedValue = current ? getChoiceResult(current.choice) : null;
+	      const myResult = lastResultValue || choiceEncodedValue || null;
+	      const resultValueEventId = `${getGameRound()}:${state.round || 1}`;
+	      // RESULT_VALUE_FALLBACK_USED: lastResult가 아직 없어 두 번째 소스(choiceEncoded)로 값을
+	      // 복원한 경우에만 남긴다("fallback"이 실제로 쓰였을 때만 — lastResult가 정상 존재하는
+	      // 매 라운드 매 참가자마다 찍으면 신호 대비 잡음이 너무 커진다).
+	      if (!lastResultValue && choiceEncodedValue) {
+	        try {
+	          QA.emit('metric', { wrps: 'WRPS-078', eventType: 'RESULT_VALUE_FALLBACK_USED', source: 'choiceEncoded',
+	            roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round, eventId: resultValueEventId });
+	        } catch (e) {}
+	      }
+	      // Build30-R2 Phase2(WRPS-078, CEO 강화) 렌더 게이트: 최종 null(두 소스 모두 실패)이면 이
+	      // 사실 자체를 RESULT_VALUE_UNRESOLVED로 남긴다. 아래 모든 분기는 myResult를 "win"/"lose"와만
+	      // 비교하므로(=== 비교, 다른 값과의 구분 로직 없음) null은 이미 항상 "확정 승리/확정 패배가
+	      // 아님"이라는 가장 보수적인 분기로만 떨어진다(임의로 "이겼다/졌다"를 렌더하는 경로는 없다) —
+	      // 즉 이 게이트는 "정상 결과처럼 렌더"되는 것을 원천적으로 막는 안전망이다. 완전한 비동기
+	      // 재조회+재렌더(Build28 WRPS-075 defer 루프 재사용)는 Build28-29 재시도 bounded 로직/
+	      // finishRoundLocal 호출 순서와 얽혀 있어 이번 targeted 수정 범위에서는 배선하지 않았다
+	      // (검증 낮은 확신 — 아래 보고 참고). 대신 다음 정기 재동기화(폴링/realtime 갱신)가 도착하면
+	      // 그다음 renderRoundResult() 호출에서 lastResult/choice가 채워져 자연 복구된다.
+	      if (myResult === null) {
+	        try {
+	          QA.emit('metric', { wrps: 'WRPS-078', eventType: 'RESULT_VALUE_UNRESOLVED',
+	            roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round, eventId: resultValueEventId });
+	        } catch (e) {}
+	      }
 	      const iAmConfirmedLoser = state.confirmedLoserIds.includes(state.currentUserId);
+      // Build30-RC2 Phase2(WRPS-078) [HIGH-fix, codex-critic 재검증 반영]: CEO "확정 렌더 금지" —
+      // myResult가 최종 null(위 게이트)인 채로 caseType이 개인 승패를 렌더하는 3종
+      // (gameOver/tooMany/tooFew)에 들어오면, 아래 각 분기가 null을 "확정 승리(false-safe)" 또는
+      // "무승부 톤(draw 오인)"으로 렌더하지 않도록 이 플래그로 개인 승패 표시부만 중립화한다.
+      // caseType 자체(라운드 outcome)와 참가자 목록(confirmedLoserIds/confirmedSafeIds 태그, 아래
+      // "참가자 결과 목록" 블록)은 myResult와 독립이라 이 플래그의 영향을 받지 않는다 — 화면 전체를
+      // 보류하는 게 아니라 "나"의 승패 표시부만 보류한다. draw caseType은 애초에 myResult를 쓰지
+      // 않으므로(순수 role 기반 안내) 대상에서 제외.
+      const isResultUnresolved = myResult === null &&
+        (caseType === "gameOver" || caseType === "tooMany" || caseType === "tooFew");
 
       const title = $("resultTitle");
       const maruImg = $("resultMaru");
@@ -8902,6 +9176,18 @@ function summarizeGameStats(rows) {
         }
       };
       const setCap = (text) => { if (resultCap) resultCap.textContent = text; };
+      // Build30-RC2 Phase2(WRPS-078) [HIGH-fix]: isResultUnresolved일 때 개인 승패 표시부(title/
+      // maru/cap/message)만 이 중립 상태로 교체한다. 일부러 win/lose/draw 어떤 톤 클래스도 추가하지
+      // 않는다(title.classList에 "win"/"lose"/"draw"를 add하지 않음) — capDraw/무승부 톤을 재사용하면
+      // 사용자가 "무승부"로 오인할 수 있어(CEO 명시 금지) 시각적으로 구분되는 중립 기본색만 남긴다.
+      // penaltyBox/개인결과 기반 CTA(다음호스트 등)는 이 브랜치에 들어오면 해당 확정 분기 자체를
+      // 타지 않으므로 자동으로 노출되지 않는다(아래 각 caseType 분기 참고).
+      const renderPersonalResolving = () => {
+        title.textContent = t("result.titleResolving");
+        setMaru("cat-waiting.png", "");
+        setCap(t("result.capResolving"));
+        message.textContent = t("result.msgResolving");
+      };
 
       title.className = "result-title";
       penaltyBox.classList.add("hidden");
@@ -8945,7 +9231,12 @@ function summarizeGameStats(rows) {
         showManualNextRound();
 
       } else if (caseType === "gameOver") {
-        if (myResult === "lose" || iAmConfirmedLoser) {
+        // Build30-RC2 Phase2(WRPS-078) [HIGH-fix]: isResultUnresolved(myResult 최종 null)이면 확정
+        // 승리(false-safe "생존!") 또는 확정 패배 어느 쪽도 렌더하지 않고 중립화한다. penaltyBox는
+        // 이 분기로 들어오면 애초에 표시되지 않는다(기본 hidden 유지).
+        if (isResultUnresolved) {
+          renderPersonalResolving();
+        } else if (myResult === "lose" || iAmConfirmedLoser) {
           title.textContent = t("result.titleLoserConfirmedCount", { done: state.confirmedLoserIds.length, target: getTargetLoserCount() });
           title.classList.add("lose");
           setMaru("cat-lost-tired.png", "lose");
@@ -8983,7 +9274,11 @@ function summarizeGameStats(rows) {
         }
 
       } else if (caseType === "tooMany") {
-        if (myResult === "lose") {
+        // Build30-RC2 Phase2(WRPS-078) [HIGH-fix]: isResultUnresolved면 "안전!"(false win 톤)도
+        // 확정 패배 톤도 렌더하지 않는다 — 미확정을 안전으로 오인시키던 회귀 지점.
+        if (isResultUnresolved) {
+          renderPersonalResolving();
+        } else if (myResult === "lose") {
           title.textContent = t("result.titleLose");
           title.classList.add("lose");
           setMaru("cat-lost-tired.png", "lose");
@@ -9000,7 +9295,11 @@ function summarizeGameStats(rows) {
 
       } else if (caseType === "tooFew") {
         const newlyConfirmed = roundLoserCount;
-        if (iAmConfirmedLoser && myResult === "lose") {
+        // Build30-RC2 Phase2(WRPS-078) [HIGH-fix]: isResultUnresolved면 무승부 톤(capDraw/draw
+        // 클래스)을 재사용하지 않는다 — CEO 명시 금지(null을 draw로 오인시키지 말 것).
+        if (isResultUnresolved) {
+          renderPersonalResolving();
+        } else if (iAmConfirmedLoser && myResult === "lose") {
           title.textContent = t("result.titleLoserConfirmed");
           title.classList.add("lose");
           setMaru("cat-lost-tired.png", "lose");
@@ -10809,6 +11108,10 @@ function summarizeGameStats(rows) {
         if (id != null) {
           if (seenEvents.has(id)) {                       // 중복 이벤트 무시(TTS/mp3 공통)
             try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioLocale: locale, audioEventId: id, audioDuplicated: true }); } catch (e) {}
+            // Build30-R2 Phase2(WRPS-078): qa-analyze.mjs가 이미 참조하는 audioDuplicated 필드는
+            // 그대로 두고(무변경), 같은 관측을 'metric' 채널에도 AUDIO_DUPLICATE_BLOCKED로 남긴다
+            // (기존 audioDuplicated 재사용 — 새 필드 발명 없음).
+            try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'AUDIO_DUPLICATE_BLOCKED', audioKey: eventKey, audioEventId: id, audioDuplicated: true, roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round }); } catch (e) {}
             return;
           }
           seenEvents.add(id);
@@ -10863,12 +11166,28 @@ function summarizeGameStats(rows) {
           voiceFallbackEl = el; voicePriority = pri;
           el.onended = () => { if (voiceFallbackEl === el) { voiceFallbackEl = null; voicePriority = -1; } };
           const emitOk = () => { try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioLocale: locale, audioEventId: id || null, audioSource: src, audioPlayed: true, audioMissing: false, audioFallbackUsed: true, audioScheduledTs: qaT0, audioPlayStartTs: Date.now(), audioDelayMs: Date.now() - qaT0, audioMode: audioModeInfo(), loadError: err }); } catch (e) {} };
-          const emitFail = (e) => { try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioLocale: locale, audioEventId: id || null, audioSource: src, audioPlayed: false, audioMissing: true, audioFallbackUsed: true, audioError: (e && e.message) || String(e), audioMode: audioModeInfo(), loadError: err }); } catch (_) {} };
+          // Build30-R2 Phase2(WRPS-078): el.play()가 reject하는 AbortError(다른 우선순위 음성이
+          // stopVoice()로 이 el을 pause/교체해 재생이 "중단"된 경우 — 브라우저/WKWebView가 던지는
+          // 정상적인 인터럽트 신호이지 클립 자산이 없는 게 아니다)를 asset-missing과 구분한다.
+          // ⚠️ qa-analyze.mjs가 audioMissing 필드를 직접 참조하므로 필드 자체는 그대로 두고(제거/개명
+          // 금지), AbortError일 때만 audioMissing:false로 바꾸고 audioAborted:true를 추가한다(기존
+          // 필드 위에 추가만 — summary 집계는 무변경이라 자동으로 이 케이스를 실패 집계에서 제외한다).
+          const emitFail = (e) => {
+            const isAbort = e && e.name === 'AbortError';
+            try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioLocale: locale, audioEventId: id || null, audioSource: src, audioPlayed: false, audioMissing: !isAbort, audioAborted: isAbort, audioFallbackUsed: true, audioError: (e && e.message) || String(e), audioMode: audioModeInfo(), loadError: err }); } catch (_) {}
+            if (isAbort) {
+              try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'AUDIO_ABORTED', audioKey: eventKey, audioEventId: id || null, audioAborted: true, roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round }); } catch (_) {}
+            }
+          };
           const pr = el.play();
           if (pr && pr.then) pr.then(emitOk).catch(emitFail);
           else emitOk();
         } catch (e) {
-          try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioLocale: locale, audioEventId: id || null, audioSource: src, audioPlayed: false, audioMissing: true, audioFallbackUsed: true, audioError: (e && e.message) || String(e), audioMode: audioModeInfo(), loadError: err }); } catch (_) {}
+          const isAbort = e && e.name === 'AbortError';
+          try { QA.emit('audio', { wrps: 'WRPS-052', eventType: 'VOICE', audioKey: eventKey, audioLocale: locale, audioEventId: id || null, audioSource: src, audioPlayed: false, audioMissing: !isAbort, audioAborted: isAbort, audioFallbackUsed: true, audioError: (e && e.message) || String(e), audioMode: audioModeInfo(), loadError: err }); } catch (_) {}
+          if (isAbort) {
+            try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'AUDIO_ABORTED', audioKey: eventKey, audioEventId: id || null, audioAborted: true, roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round }); } catch (_) {}
+          }
         }
       }
       // 음소거: 보이스 정지 + master 게인 즉시 0 → 진행 중인 합성 SFX(최대 0.8s)도 즉시 차단(M-1).
@@ -11031,11 +11350,15 @@ function summarizeGameStats(rows) {
     // === 음성 재생 호환 래퍼 (VOICE CLIP ONLY — TTS 금지, SoundManager 위임) ===
     // 기존 호출부 시그니처 playVoiceClip(eventKey, ttsText, pitch, rate)를 유지하되
     // ttsText/pitch/rate는 무시한다(녹음 클립만 재생, 폴백 없음).
-    // eventId는 playingEntryKey 기반으로 부여해 같은 라운드 중복 재생을 막는다.
+    // Build30-R2 Phase2(WRPS-078, CONFIRMED ROOT CAUSE 수정): eventId를 playingEntryKey 의존에서
+    // roomCode:gameNo:round:audioKey로 바꾼다. playingEntryKey는 (Part C 수정 이후에도) "이번
+    // playing 진입"이라는 coroutine 레벨 개념이라 gameOver/retry처럼 countdown 흐름 밖에서 재생되는
+    // 음성에는 잘 안 맞고, republish/재진입으로 값이 흔들릴 여지가 여전히 있다. roomCode:gameNo:round는
+    // 그 자체로 라운드를 안정적으로 식별하기에 충분하며(state에 항상 존재), 이 값에 audioKey를
+    // 합치면 "이 라운드의 이 오디오"를 정확히 한 번만 재생하도록 막을 수 있다(republish/재렌더로
+    // 인한 중복 재생은 차단하되, 실제 새 라운드/새 게임/room 이동에서는 항상 새 id).
     function playVoiceClip(eventKey) {
-      const eventId = state && state.playingEntryKey
-        ? state.playingEntryKey + ":" + eventKey
-        : undefined;
+      const eventId = `${state.roomCode || "offline"}:${getGameRound()}:${state.round || 1}:${eventKey}`;
       SoundManager.playVoice(eventKey, { eventId });
       return Promise.resolve(); // 호출부의 void/setTimeout/.then 호환
     }

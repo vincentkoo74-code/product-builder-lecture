@@ -46,7 +46,9 @@ describe('Build22-A — invalid countdown does not play voice', () => {
   });
 
   it('runCountdownThenShowGame은 runCountdown()이 false를 반환하면 게임 화면 전환 없이 종료한다(하드블록 상태에서 로컬 진행 방지)', () => {
-    expect(html).toMatch(/const countdownOk = await runCountdown\(\);[\s\S]{0,300}if \(countdownOk === false\) \{[\s\S]{0,80}state\.gameStarting = false;[\s\S]{0,40}return;[\s\S]{0,20}\}/);
+    // Build30-R2 Phase2(WRPS-078): runCountdown()이 세대 토큰(myGen)을 인자로 받는다 — 시그니처만
+    // 바뀌었을 뿐 이 테스트가 검증하는 계약(countdownOk===false면 화면 전환 없이 종료)은 그대로.
+    expect(html).toMatch(/const countdownOk = await runCountdown\(myGen\);[\s\S]{0,600}if \(countdownOk === false\) \{[\s\S]{0,120}state\.gameStarting = false;[\s\S]{0,120}return;[\s\S]{0,20}\}/);
   });
 
   it('재시도 버튼 콜백은 bare runCountdown()이 아니라 runCountdownThenShowGame()을 재호출해, 재시도 성공 시 화면 전환(screenGame)까지 보장한다(codex-critic 검증에서 발견된 회귀 수정)', () => {

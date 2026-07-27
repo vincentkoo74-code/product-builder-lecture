@@ -69,6 +69,11 @@ function runRenderRoundResult({ caseType, roundLoserCount = 0, remainingSlots = 
   const escapeHtml = (s) => s;
   const getTargetLoserCount = () => state.targetLoserCount || 1;
   const getActivePlayers = () => [];
+  // Build30-R2 Phase2(WRPS-078): renderRoundResult()가 resultValue 게이트(RESULT_VALUE_UNRESOLVED/
+  // RESULT_VALUE_FALLBACK_USED)를 위해 getGameRound()를 호출한다 — 이 테스트는 penalty 파싱
+  // 소스를 주입하지 않으므로, 실제 getGameRound()와 동일한 최소 계약(state.gameRound 기반)만
+  // 만족하는 스텁을 준다(다른 게터들과 동일한 패턴).
+  const getGameRound = () => Math.max(1, state.gameRound || 1);
   const QA = { emit: () => {} };
   const canShowPlayAgainButton = canShowPlayAgainButtonImpl;
   const startGameOverCountdown = () => {};
@@ -83,12 +88,14 @@ function runRenderRoundResult({ caseType, roundLoserCount = 0, remainingSlots = 
     'state', '$', 't', 'getChoiceResult', 'getChoiceBase', 'isAutoChoice', 'escapeHtml',
     'getTargetLoserCount', 'getActivePlayers', 'QA', 'canShowPlayAgainButton', 'startGameOverCountdown',
     'renderRoundProgressCards', 'updateActionGridLayouts', 'setGuideText', 'getPenaltyText', 'document', 'ROUND_CHOICES', 'currentLocale',
+    'getGameRound',
     RENDER_ROUND_RESULT_SRC + '\n; return renderRoundResult;'
   );
   const renderRoundResult = factory(
     state, $, t, getChoiceResult, getChoiceBase, isAutoChoice, escapeHtml,
     getTargetLoserCount, getActivePlayers, QA, canShowPlayAgainButton, startGameOverCountdown,
-    renderRoundProgressCards, updateActionGridLayouts, setGuideText, getPenaltyText, documentStub, ROUND_CHOICES, currentLocale
+    renderRoundProgressCards, updateActionGridLayouts, setGuideText, getPenaltyText, documentStub, ROUND_CHOICES, currentLocale,
+    getGameRound
   );
   renderRoundResult(caseType, roundLoserCount, remainingSlots);
   return els;

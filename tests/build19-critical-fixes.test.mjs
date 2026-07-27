@@ -74,12 +74,17 @@ describe('WRPS-052-B19 — TTS 코드는 완전히 제거된 상태로 유지된
 
 describe('WRPS-036-B19 — clock sync 재시도 + 카운트다운 예정시각 결손 처리', () => {
   it('syncServerClock은 0 샘플이면 1회 재시도한다(무한루프 아님 — retry=false 재귀)', () => {
+    // RC-1(clock sync 완화): 오프셋 배열명이 offsets→samples(구조체 배열)로 리팩터됐다(재시도
+    // 조건/구조 자체는 무변경).
     expect(html).toMatch(/async function syncServerClock\(retry = true\)/);
-    expect(html).toMatch(/if \(!offsets\.length && retry\) \{[\s\S]{0,200}await syncServerClock\(false\);/);
+    expect(html).toMatch(/if \(!samples\.length && retry\) \{[\s\S]{0,200}await syncServerClock\(false\);/);
   });
 
-  it('CLOCK_SYNC metric에 rttMs/spreadMs/synced가 추가된다', () => {
-    expect(html).toMatch(/eventType: 'CLOCK_SYNC', offsetMs: serverClockOffsetMs,\s*\n?\s*samples: offsets\.length, spreadMs, rttMs, synced: serverClockSynced/);
+  it('CLOCK_SYNC metric에 rttMs/spreadMs/synced가 추가된다(RC-1: sampleCount/selectedRttMs/selectedOffsetMs/medianOffsetMs/residualUpperBoundMs/outlierFallback/syncAlgorithm도 함께)', () => {
+    // codex-critic MEDIUM-1/MEDIUM-2 재수정: residualEstimateMs→residualUpperBoundMs로 개명(값/계산식은
+    // 동일, "실측 잔차"가 아니라 "이론적 상한"임을 명확히 함) + outlierFallback 관측 필드 추가 +
+    // syncAlgorithm이 폴백 발생 여부에 따라 'min-rtt' | 'min-rtt-fallback-median'으로 갈린다.
+    expect(html).toMatch(/eventType: 'CLOCK_SYNC', offsetMs: serverClockOffsetMs,\s*\n?\s*samples: samples\.length, spreadMs, rttMs, synced: serverClockSynced,\s*\n?\s*sampleCount: samples\.length, selectedRttMs, selectedOffsetMs, medianOffsetMs, residualUpperBoundMs,\s*\n?\s*outlierFallback, syncAlgorithm: outlierFallback \? 'min-rtt-fallback-median' : 'min-rtt'/);
   });
 
   it('countdownStartServerTs가 0/null이면 INVALID_COUNTDOWN_SERVER_TS를 남기고 재조회를 시도한다', () => {

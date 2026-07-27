@@ -35,7 +35,11 @@ describe('WRPS-052 — iOS 음성 재생 복구 + 진단 계측', () => {
   });
 
   it('실패 metric은 audioError + loadError(진단)를 포함한다', () => {
-    expect(html).toMatch(/audioPlayed: false, audioMissing: true, audioFallbackUsed: true, audioError:/);
+    // Build30-R2 Phase2(WRPS-078): AbortError(다른 우선순위 음성이 stopVoice()로 인터럽트한 정상적인
+    // 중단 신호)를 asset-missing과 구분하기 위해 audioMissing이 상수 true 대신 !isAbort로 바뀌고
+    // audioAborted 필드가 추가됐다 — audioMissing/audioError/loadError 필드 자체는 그대로 존재한다
+    // (qa-analyze.mjs가 참조하는 필드명 무변경, 값 계산 방식만 AbortError 여부에 따라 분기).
+    expect(html).toMatch(/audioPlayed: false, audioMissing: !isAbort, audioAborted: isAbort, audioFallbackUsed: true, audioError:/);
     expect(html).toContain('loadError: err');
   });
 

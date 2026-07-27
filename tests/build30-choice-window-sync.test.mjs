@@ -46,6 +46,13 @@ const CHOICE_END_AT_BLOCK_SRC = extractBlock(
   'function buildPenaltyValue({',
   'function getVisiblePenaltyText() {'
 );
+// Build30-R2 Phase2(WRPS-078): runCountdownThenShowGame()이 세대 체크포인트에 쓰는
+// isCountdownGenerationCurrent() 헬퍼 — 실제 소스(runCountdown() 자체는 아래에서 여전히
+// mock 주입되므로 제외, 헬퍼 함수만 필요).
+const GENERATION_HELPER_BLOCK_SRC = extractBlock(
+  'function isCountdownGenerationCurrent(myGen, checkpoint) {',
+  'async function runCountdown(myGen) {'
+);
 // startHostJudgeBackstop ~ runCountdownThenShowGame(publishChoiceWindowEnd/captureAndPublishChoiceWindowNow/
 // publishChoiceWindowEstimateIfHost 포함) — 실제 소스.
 const RUNCOUNTDOWN_BLOCK_SRC = extractBlock(
@@ -109,7 +116,7 @@ function buildEnv({
     'getOnlineMode', 'isCurrentRoundParticipant', 'isSafeParticipant', 'isConfirmedLoser',
     'showScreen', 'showLoserWaitScreen', 'runCountdown', 'stopRoundTimers', 'autoFillChoices',
     'updateSelectedCount', 'updateHostSelectedCount', 'isScreenActive',
-    PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + RUNCOUNTDOWN_BLOCK_SRC + '\n' + TIMER_BLOCK_SRC +
+    PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + GENERATION_HELPER_BLOCK_SRC + '\n' + RUNCOUNTDOWN_BLOCK_SRC + '\n' + TIMER_BLOCK_SRC +
     '\nreturn { getChoiceEndAt, buildPenaltyValue, getGameRound, getCountdownStartAt, ' +
     'runCountdownThenShowGame, beginRoundTimer, resyncChoiceTimerOnResume, ' +
     'computeChoiceRemainingSeconds, captureAndPublishChoiceWindowNow, ' +
@@ -172,7 +179,7 @@ describe('Build30-R2 Phase A(WRPS-078) — 실제 호출 경로 재현: runCount
     // host(ko)가 가장 늦게(4050ms) 끝난다 — 실기기에서 실제로 벌어지는 순서.
     const makeParticipant = (localeMs, role) => {
       const state = {
-        role, roomCode: 'ROOM1', gameRound: 1, round: 1, penalty: '',
+        role, roomCode: 'ROOM1', gameRound: 1, round: 1, penalty: '', status: 'playing',
         participants: [], confirmedSafeIds: [], confirmedLoserIds: [],
         __runCountdown: async () => { currentNow = T0 + localeMs; return true; },
       };
@@ -241,7 +248,7 @@ describe('Build30-R2 Phase A(WRPS-078) — 실제 호출 경로 재현: runCount
     let currentNow = T0;
     const serverNowFn = () => currentNow;
     const state = {
-      role: 'host', roomCode: 'R2', gameRound: 1, round: 1, penalty: '',
+      role: 'host', roomCode: 'R2', gameRound: 1, round: 1, penalty: '', status: 'playing',
       participants: [], confirmedSafeIds: [], confirmedLoserIds: [],
       __runCountdown: async () => { currentNow = T0 + 2137; return true; }, // 임의의 실측 지연
     };
@@ -255,7 +262,7 @@ describe('Build30-R2 Phase A(WRPS-078) — 실제 호출 경로 재현: runCount
 
   it('participant는 절대 room.penalty를 쓰지 않는다(captureAndPublishChoiceWindowNow가 host 전용임을 실제 호출로 검증)', async () => {
     const state = {
-      role: 'participant', roomCode: 'R3', gameRound: 1, round: 1, penalty: '',
+      role: 'participant', roomCode: 'R3', gameRound: 1, round: 1, penalty: '', status: 'playing',
       participants: [], confirmedSafeIds: [], confirmedLoserIds: [],
       __runCountdown: async () => true,
     };
@@ -267,7 +274,7 @@ describe('Build30-R2 Phase A(WRPS-078) — 실제 호출 경로 재현: runCount
   it('host가 이번 라운드 비참가자(이미 safe/loser 확정)라 자기 애니메이션을 실행하지 않는 경우에도, 아직 플레이 중인 다른 참가자를 위해 choiceEndAt을 안전 추정치(countdownStartAt + 최대 애니메이션 + 5000)로 발행한다', async () => {
     const T0 = 8_000_000;
     const state = {
-      role: 'host', roomCode: 'R4', gameRound: 1, round: 1, penalty: '',
+      role: 'host', roomCode: 'R4', gameRound: 1, round: 1, penalty: '', status: 'playing',
       countdownStartAt: T0,
       participants: [], confirmedSafeIds: ['host-1'], confirmedLoserIds: [],
       __runCountdown: async () => true,
@@ -286,7 +293,7 @@ describe('Build30-R2 Phase A(WRPS-078) — 실제 호출 경로 재현: runCount
 
   it('host가 비참가자이고 countdownStartAt조차 없으면(오프라인/미시작) 추정 발행도 하지 않는다', async () => {
     const state = {
-      role: 'host', roomCode: 'R5', gameRound: 1, round: 1, penalty: '',
+      role: 'host', roomCode: 'R5', gameRound: 1, round: 1, penalty: '', status: 'playing',
       countdownStartAt: 0,
       participants: [], confirmedSafeIds: [], confirmedLoserIds: ['host-1'],
       __runCountdown: async () => true,
@@ -303,7 +310,7 @@ describe('Build30-R2 Phase A(WRPS-078) — 실제 호출 경로 재현: runCount
 
   it('countdownOk===false(하드블록)면 choiceEndAt을 전혀 캡처/발행하지 않는다(기존 하드블록 동작 무회귀)', async () => {
     const state = {
-      role: 'host', roomCode: 'R6', gameRound: 1, round: 1, penalty: '',
+      role: 'host', roomCode: 'R6', gameRound: 1, round: 1, penalty: '', status: 'playing',
       participants: [], confirmedSafeIds: [], confirmedLoserIds: [],
       __runCountdown: async () => false,
     };
@@ -318,7 +325,7 @@ describe('Build30-R2 Phase A(WRPS-078) — 실제 호출 경로 재현: runCount
     const T0 = 3_000_000;
     let currentNow = T0;
     const state = {
-      role: 'host', roomCode: 'R7', gameRound: 1, round: 1, penalty: '',
+      role: 'host', roomCode: 'R7', gameRound: 1, round: 1, penalty: '', status: 'playing',
       participants: [], confirmedSafeIds: [], confirmedLoserIds: [],
       __runCountdown: async () => { currentNow = T0 + 500; return true; },
     };
@@ -356,7 +363,7 @@ describe('Build30 Phase2(WRPS-078 A-2) captureAndPublishChoiceWindowNow — cros
     // 카운트다운은 모든 기기가 같은 절대 시각(T0)에 시작한다(공유 countdownStartAt) — 실제 앱과 동일.
     const host = (() => {
       const state = {
-        role: 'host', roomCode: 'ROOMX', gameRound: 1, round: 1, penalty: '',
+        role: 'host', roomCode: 'ROOMX', gameRound: 1, round: 1, penalty: '', status: 'playing',
         countdownStartAt: T0,
         participants: [], confirmedSafeIds: [], confirmedLoserIds: [],
         __runCountdown: async () => { currentNow = T0 + ANIM_MS.en; return true; }, // host는 en(가장 빠름)
@@ -365,7 +372,7 @@ describe('Build30 Phase2(WRPS-078 A-2) captureAndPublishChoiceWindowNow — cros
     })();
     const participantKo = (() => {
       const state = {
-        role: 'participant', roomCode: 'ROOMX', gameRound: 1, round: 1, penalty: '',
+        role: 'participant', roomCode: 'ROOMX', gameRound: 1, round: 1, penalty: '', status: 'playing',
         countdownStartAt: T0,
         participants: [], confirmedSafeIds: [], confirmedLoserIds: [],
       };
@@ -404,7 +411,7 @@ describe('Build30 Phase2(WRPS-078 A-2) captureAndPublishChoiceWindowNow — cros
     let currentNow = T0;
     const serverNowFn = () => currentNow;
     const state = {
-      role: 'host', roomCode: 'ROOMY', gameRound: 1, round: 1, penalty: '',
+      role: 'host', roomCode: 'ROOMY', gameRound: 1, round: 1, penalty: '', status: 'playing',
       countdownStartAt: T0,
       participants: [], confirmedSafeIds: [], confirmedLoserIds: [],
       __runCountdown: async () => { currentNow = T0 + ANIM_MS.ko; return true; }, // host 자신이 ko(가장 느림)
@@ -421,7 +428,7 @@ describe('Build30 Phase2(WRPS-078 A-2) captureAndPublishChoiceWindowNow — cros
     const T0 = 6_000_000;
     let currentNow = T0;
     const state = {
-      role: 'host', roomCode: 'ROOMZ', gameRound: 1, round: 1, penalty: '',
+      role: 'host', roomCode: 'ROOMZ', gameRound: 1, round: 1, penalty: '', status: 'playing',
       // countdownStartAt 의도적으로 미설정(0) — 기존(Round1/Round2) 테스트들과 동일 전제.
       participants: [], confirmedSafeIds: [], confirmedLoserIds: [],
       __runCountdown: async () => { currentNow = T0 + 777; return true; },
