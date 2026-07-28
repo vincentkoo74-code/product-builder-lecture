@@ -4303,6 +4303,28 @@
       // 모든 종료 경로에서 해제한다 — 완전히 동일한 라운드에 대한 재진입(진짜 중복 호출)만
       // 여기서 막고, 다른(더 최신) 라운드/재시도는 막지 않는다(그 경우는 세대 비교로 처리).
       countdownCoroutineActiveKey: null,
+      // WRPS-079(STOP-SHIP): handleRoomUpdate 재진입/경합 가드 — countdownGeneration/
+      // countdownCoroutineActiveKey와 정확히 동일한 계약(위 주석 참고)을 handleRoomUpdate에도
+      // 적용한다. realtime 구독 콜백(await 없이 fire-and-forget)과 2.6초 폴링이 겹쳐 같은 기기에서
+      // handleRoomUpdate가 여러 번 동시에 실행될 수 있는데(subscribeToRoom 참고), result/game_over
+      // 분기에는 최대 8초(waitForPhaseRender+fetchFreshParticipantsForResult 5000ms+추가 3000ms)에
+      // 달하는 await 체인이 있어 그 사이 "더 새로운"(게임회차:라운드가 다른) room row를 처리하는
+      // 다른 handleRoomUpdate 호출이 먼저 완주해 state.round/gameRound/participants를 이미 앞선
+      // 라운드로 바꿔놓을 수 있다 — 그 뒤 이 오래된 호출이 뒤늦게 재개되어 finishRoundLocal()을
+      // 부르면 이미 앞서가버린 state를 그 낡은 컨텍스트의 확정으로 커밋해 기기마다 다른 승/패가
+      // 확정되는 CROSS_DEVICE_OUTCOME_MISMATCH가 발생한다(하니스 재현 시드 N=18/14400001,
+      // N=10/8000011로 정밀 추적 — device p1이 round3 'result' 처리 도중 round4 'ready' row가
+      // 끼어들어 state.round/participants를 round4로 덮어쓴 뒤에야 round3 finishRoundLocal이
+      // 재개되는 것을 단일스텝으로 확인). hruActiveKey는 "지금 진행 중인 (게임회차:라운드)가
+      // 무엇인가"의 식별자다 — 완전히 동일한 컨텍스트에 대한 재호출(중복 폴링/echo, 매우 흔함)은
+      // 세대를 새로 발급하지 않고 기존 세대를 물려받아(false positive stall 방지) 그대로
+      // 진행되고, 컨텍스트가 실제로 달라진 호출만 새 세대를 발급해 이전 세대를 stale로 만든다 —
+      // finishRoundLocal() 커밋 직전에만 이 세대를 재확인한다(아래 handleRoomUpdate 참고. 필드명은
+      // 아래 checkpoint가 다른 테스트 파일들의 좁은 마커 추출 문자수 예산 안에 들어야 해서 짧게
+      // 줄였다 — hruGen/hruActiveKey/__hruGen, handleRoomUpdate 접두어 전체 철자는 위 주석들
+      // 에서만 풀어 쓴다).
+      hruGen: 0,
+      hruActiveKey: null,
       gameStarting: false,
       finishingRound: false,
       resultVoiceKey: null, // WRPS-046: 라운드당 결과 음성 1회 재생 가드
@@ -5696,6 +5718,38 @@
       }
       state.round = room.round;
 
+      // WRPS-079(STOP-SHIP, HIGH): handleRoomUpdate 재진입/경합 가드 — 세대 토큰 캡처.
+      // 위 state 초기화 주석(hruGen/hruActiveKey 선언부) 참고 — countdownGeneration/
+      // countdownCoroutineActiveKey와 완전히 동일한 계약을 재사용한다(신규 idiom 발명 아님).
+      // 여기까지(함수 최상단부터)는 이 호출이 어떤 await도 거치지 않고 항상 동기 실행되므로(JS는
+      // await 지점에서만 다른 실행에 양보), 이 지점에 도달한 순서가 곧 "그 시점의 진짜 최신 room
+      // 정보를 반영한 순서"다 — 완전히 동일한 (게임회차:라운드)에 대한 재호출(중복 폴링/echo)은
+      // 새 세대를 발급하지 않고 기존 세대를 그대로 물려받는다(그래야 흔한 무해 중복 호출이 아래
+      // checkpoint에서 다른 진짜(현재) 진행 중인 확정을 stale로 오판하지 않는다 — false positive면
+      // 라운드가 영원히 확정되지 않는 새 결함이 된다). (게임회차:라운드)가 실제로 달라진 호출만
+      // 새 세대를 발급해 이전 세대를 stale로 만든다.
+      //
+      // ⚠️ 캡처값을 지역 변수가 아니라 room.__hruGen(이 호출 전용 room 파라미터 객체의 속성)에
+      // 심어둔다 — 여러 기존 테스트 파일(예: tests/build24-sync-snapshot-stability.test.mjs,
+      // tests/build30-result-fetch-*.test.mjs, tests/build29-render-unblock.test.mjs)이
+      // handleRoomUpdate 전체가 아니라 이 아래쪽의 oldStatus 비교 분기나 result/game_over 상태
+      // 분기부터 시작하는 더 좁은 하위 블록만 별도 마커 문자열로 정확히 찾아 추출해 new Function으로
+      // 독립 실행한다(주의: 그 마커 문자열을 이 주석에 토씨 하나 안 틀리고 그대로 옮기면 그 검색이
+      // 여기 이 주석을 오탐으로 먼저 찾아버려 추출 범위 자체가 깨지므로, 일부러 코드 그대로 인용하지
+      // 않고 말로 풀어 쓴다). 그 좁은 추출본에는 여기서 선언하는 지역 변수/헬퍼 함수가 전혀 보이지
+      // 않아(ReferenceError) 그 테스트들이 전부 깨진다. room/state/QA는 그 좁은 추출본들도 예외
+      // 없이 파라미터로 이미 주입받으므로, 아래 checkpoint는 새 지역 변수나 헬퍼 함수를 전혀
+      // 선언하지 않고 room/state의 "속성"만으로 직접 비교한다(문자수 예산 때문에 짧은 필드명
+      // hruGen/hruActiveKey/__hruGen을 쓴다) — 합성 room 객체를 쓰는 그 테스트들에서는 이 속성이
+      // 애초에 세팅된 적 없어 양쪽 다 undefined이므로 stale로 오판되지 않는다(회귀 없음).
+      const handleRoomUpdateEntryKey = `${state.roomCode || ''}:${state.gameRound}:${state.round}`;
+      if (state.hruActiveKey === handleRoomUpdateEntryKey) {
+        room.__hruGen = state.hruGen;
+      } else {
+        state.hruActiveKey = handleRoomUpdateEntryKey;
+        room.__hruGen = (state.hruGen = (state.hruGen || 0) + 1);
+      }
+
       const oldStatus = state.status;
       state.status = room.status;
       if (state.status !== "playing") state.playingEntryKey = null;
@@ -5831,7 +5885,8 @@
                   firstVisualRenderGapMs: resultRenderAfterSnapshotTs - resultRenderFirstClientTs });
               } catch (e) {}
             }
-            finishRoundLocal();
+            if (state.hruGen===room.__hruGen){ finishRoundLocal();
+            } else { try { QA.emit('metric', { wrps: 'WRPS-079', eventType: 'HANDLE_ROOM_UPDATE_STALE_GENERATION_ABORTED' }); } catch (e) {} }
           }
         } else if (state.status === "playing") {
           await enterPlayingStateFromRoomUpdate();
@@ -5848,27 +5903,53 @@
             readyParticipantsRefreshPromise,
             waitForPhaseRender("nextRound", readyScheduledAt, readyClientReceivedTs)
           ]);
-          // 새로고침된 데이터가 있으면 마커 기준으로 iAmSafe/iAmConfirmedLoser를 다시 계산한다
-          // (병렬화 전 순차 코드와 동일한 최종 판단 기준 — 순서만 바뀌었을 뿐 정확성은 그대로).
-          let readyIAmSafe = iAmSafe, readyIAmConfirmedLoser = iAmConfirmedLoser;
-          if (readyFetchResult && readyFetchResult.data) {
-            state.participants = readyFetchResult.data;
-            syncConfirmedIdsFromParticipants(readyFetchResult.data);
-            readyIAmSafe = isSafeParticipant(state.currentUserId);
-            readyIAmConfirmedLoser = isConfirmedLoser(state.currentUserId);
-          }
-          if (readyIsFirstRender) {
-            if (readyIAmConfirmedLoser) {
-              showLoserWaitScreen();
-            } else if (readyIAmSafe) {
-              showScreen("screenWinnerWait");
-            } else if (isWaitingForNextGame(state.currentUserId)) {
-              showScreen("screenParticipantWait");
-            } else if (state.role === "host" && state.round === 1) {
-              showHostRoom(); // 1라운드 초기 설정은 호스트 방
-            } else {
-              showReadyScreen(); // 재대결(무승부 포함)은 호스트도 준비화면으로
+          // WRPS-079 Round2(STOP-SHIP, HIGH 잔존 수정): ready 분기 commit 게이트 — 위
+          // finishRoundLocal 게이트(5888 부근, state.hruGen===room.__hruGen)와 완전히 동일한
+          // hruGen/room.__hruGen 계약을, 지금까지 무방비였던 이 두 번째 commit 재개 지점에도
+          // 적용한다. 이 Promise.all await 재개 시점도 "이 호출이 진입한 이후 더 최신(다른
+          // 게임회차:라운드) handleRoomUpdate 호출이 먼저 완주해 state.round/participants/
+          // confirmedSafeIds·LoserIds를 이미 앞선 컨텍스트로 옮겨놓았을 수 있는" 재개 지점이다 —
+          // 그 경우 이 낡은 호출이 여기서 state.participants를 자신의(낡은) 새로고침 결과로
+          // 되덮고 그 낡은 컨텍스트 기준으로 화면 라우팅까지 커밋하면, 이후 실행되는
+          // publishHostRoundResult()(호스트 전용 DB write, ~5974)가 이 되돌아간 confirmedSafeIds/
+          // LoserIds를 읽어 다음 판정을 잘못된 활성 인원으로 확정해버릴 수 있다 — finishRoundLocal
+          // 채널보다 더 조용하다(화면 오표시가 아니라 서버 데이터 자체가 틀어지고, host가 유일한
+          // rooms/participants 확정 writer라 다른 기기들도 그 틀린 값을 그대로 받아 기기간 비교로도
+          // 못 잡는다).
+          // ⚠️ staleGeneration은 실제로 아래에서 커밋을 건너뛰는지와 무관하게 항상 계산·기록한다 —
+          // 탐지기(tests/rc3-harness-support.mjs)가 이 REAL 계측만으로 "이 재개 지점이 낡은
+          // 컨텍스트였는가"를 게이트 로직 자체(if/else 분기)에 기대지 않고 독립적으로 확인할 수
+          // 있게 하기 위함이다(게이트가 나중에 실수로 제거·완화돼도 이 신호 자체는 계속 정확하다).
+          const readyBranchStaleGeneration = state.hruGen !== room.__hruGen;
+          try {
+            QA.emit('metric', { wrps: 'WRPS-079', eventType: 'HANDLE_ROOM_UPDATE_READY_BRANCH_RESUMED',
+              staleGeneration: readyBranchStaleGeneration, round: state.round, gameRound: state.gameRound });
+          } catch (e) {}
+          if (!readyBranchStaleGeneration) {
+            // 새로고침된 데이터가 있으면 마커 기준으로 iAmSafe/iAmConfirmedLoser를 다시 계산한다
+            // (병렬화 전 순차 코드와 동일한 최종 판단 기준 — 순서만 바뀌었을 뿐 정확성은 그대로).
+            let readyIAmSafe = iAmSafe, readyIAmConfirmedLoser = iAmConfirmedLoser;
+            if (readyFetchResult && readyFetchResult.data) {
+              state.participants = readyFetchResult.data;
+              syncConfirmedIdsFromParticipants(readyFetchResult.data);
+              readyIAmSafe = isSafeParticipant(state.currentUserId);
+              readyIAmConfirmedLoser = isConfirmedLoser(state.currentUserId);
             }
+            if (readyIsFirstRender) {
+              if (readyIAmConfirmedLoser) {
+                showLoserWaitScreen();
+              } else if (readyIAmSafe) {
+                showScreen("screenWinnerWait");
+              } else if (isWaitingForNextGame(state.currentUserId)) {
+                showScreen("screenParticipantWait");
+              } else if (state.role === "host" && state.round === 1) {
+                showHostRoom(); // 1라운드 초기 설정은 호스트 방
+              } else {
+                showReadyScreen(); // 재대결(무승부 포함)은 호스트도 준비화면으로
+              }
+            }
+          } else {
+            try { QA.emit('metric', { wrps: 'WRPS-079', eventType: 'HANDLE_ROOM_UPDATE_STALE_GENERATION_ABORTED', branch: 'ready' }); } catch (e) {}
           }
         } else if (state.status === "waiting") {
           state.role === "host" ? showHostRoom() : showScreen("screenParticipantWait");

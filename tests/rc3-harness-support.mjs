@@ -400,10 +400,19 @@ function createTelemetry() {
 // 술래-소거 상태 전이(allDraw/tooMany/tooFew/gameOver) 자체는 여전히 src/game-logic.mjs의
 // resolveElimination()(REAL, 프로덕션 코드와 별개 검증된 단일 소스 — engine-parity.test.mjs가
 // engine과 교차검증)에 위임한다.
+// EG(Elimination-extended) 확장 실측으로 발견(하니스 자체 결함, §7 기록): allDraw baseline은
+// gameOver에 절대 도달하지 않으므로, 이 대체 함수가 REAL finishRoundLocal의 gameOver 분기가
+// 수행하는 `db.from('rooms').update({ status: 'game_over' })`(index.html ~8318/8341, host
+// 전용) 부작용을 아예 흉내내지 않아도 그 누락이 드러날 방법이 없었다. 실제 rock/paper/scissors
+// 혼합 선택으로 gameOver까지 도달시켜 보니 이 누락이 곧바로 "room이 영원히 status:'result'에
+// 머물러 game_over로 전이되지 않는" 영구 STALL로 나타났다 — REAL 앱의 결함이 아니라 이 하니스
+// 대체 함수가 처음부터 이 부작용을 재현하지 않았던 것뿐이다(원래 finishRoundLocal은 여전히
+// 추출하지 않으므로, 이 한 줄의 DB 부작용만 REAL과 동일하게 재현한다 — 판정 로직 자체는 여전히
+// 위 resolveElimination REAL 호출에만 위임, 손으로 새 판정을 짜지 않는다).
 function makeFinishRoundLocalSubstitute({
   stateRef, resolveElimination, getChoiceBase, getChoiceResult, isNonPlayingChoice,
   hasConfirmedRoundResult, syncConfirmedIdsFromParticipants, judgeRound,
-  getTargetLoserCount, showScreen, telemetry, onOutcome,
+  getTargetLoserCount, showScreen, telemetry, onOutcome, db, getOnlineMode,
 }) {
   return async function finishRoundLocalSubstitute() {
     const state = stateRef();
@@ -438,8 +447,34 @@ function makeFinishRoundLocalSubstitute({
     });
     state.confirmedSafeIds = res.newConfirmedSafeIds;
     state.confirmedLoserIds = res.newConfirmedLoserIds;
+    // REAL finishRoundLocal의 gameOver 분기(index.html ~8317-8318/8340-8341, host 전용)와 동일한
+    // 부작용 재현: room.status를 'game_over'로 커밋한다 — 위 함수 주석 참고, 이게 없으면 room이
+    // 영원히 'result'에 머물러 어떤 device도 gameOver로 전이하지 못한다(EG 실측 발견).
+    if (res.outcome === 'gameOver' && getOnlineMode && getOnlineMode() && state.role === 'host' && db) {
+      try { await db.from('rooms').update({ status: 'game_over' }).eq('id', state.roomCode); } catch (e) {
+        try { telemetry.emit('metric', { wrps: 'RC3-HARNESS', eventType: 'FINISH_ROUND_SUBSTITUTE_GAMEOVER_WRITE_THREW', message: String(e && e.message || e) }); } catch (_) {}
+      }
+    }
     try { showScreen('screenRoundResult'); } catch (e) {}
-    try { telemetry.emit('metric', { wrps: 'RC3-HARNESS', eventType: 'FINISH_ROUND_SUBSTITUTE', outcome: res.outcome, round: state.round }); } catch (e) {}
+    try {
+      // STOP-SHIP 술래-소거 확장(EG, Elimination-extended): 기존 allDraw baseline은 outcome/round만
+      // 기록해도 충분했다("항상 allDraw"라는 외부 지식만으로 오분류를 잡을 수 있었으므로). 실제
+      // rock/paper/scissors 혼합 선택으로 tooMany/tooFew/gameOver까지 검증하려면 "이 라운드에
+      // 실제로 무엇이 입력됐고 그 결과 무엇이 나왔는가"의 전체 감사 기록이 필요하다 — 그래서
+      // roundResults(입력, id+result)/prevSafeIds·prevLoserIds(직전 확정 집합)/
+      // newConfirmedSafeIds·newConfirmedLoserIds(REAL resolveElimination이 실제로 반환한 새 집합)를
+      // 함께 남긴다. 이 필드들은 판정 로직에 전혀 영향을 주지 않는 관측 전용 확장이며(resolveElimination
+      // 호출/반환값을 그대로 옮겨 적을 뿐), EG-Phase0/EG-§2 오라클(§rc3-harness-support.mjs 하단
+      // runEliminationTrial 참고)이 "REAL 파이프라인이 실제로 계산한 값"과 "독립적으로 재계산한
+      // 기대값"을 나중에(사후) 대조하는 데 쓰인다.
+      telemetry.emit('metric', {
+        wrps: 'RC3-HARNESS', eventType: 'FINISH_ROUND_SUBSTITUTE', outcome: res.outcome, round: state.round,
+        roundResults: roundResults.map((r) => ({ id: r.id, result: r.result })),
+        prevSafeIds: [...prevSafeIds], prevLoserIds: [...prevLoserIds],
+        newConfirmedSafeIds: [...res.newConfirmedSafeIds], newConfirmedLoserIds: [...res.newConfirmedLoserIds],
+        targetLoserCount: getTargetLoserCount(),
+      });
+    } catch (e) {}
     if (onOutcome) onOutcome(res);
     return res;
   };
@@ -511,6 +546,10 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
     readyByRound: {},
     screenGameEnteredByRound: {},
     duplicateCountdownAttempts: 0,
+    // RC-3 Phase4(반공허성 B): STALE_ROW_REGRESSION 검출용 고수위표(high-water mark) — 이 기기가
+    // 지금까지 처리한 row들 중 가장 큰 gameRound(§beginStaleRowRegressionCheck/
+    // finishStaleRowRegressionCheck 참고).
+    maxGameRoundSeen: null,
   };
 
   // computeChoiceRemainingSeconds도 factory 완성 후에야 얻을 수 있다(위 finishRoundLocal과
@@ -646,6 +685,7 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
     getTargetLoserCount: impl.getTargetLoserCount,
     showScreen: impl.showScreen,
     telemetry,
+    db, getOnlineMode: impl.getOnlineMode,
     onOutcome: (res) => {
       rendered.resultByRound[impl.state.round] = { ...(rendered.resultByRound[impl.state.round] || {}), outcome: res.outcome, ts: RealDate.now() };
     },
@@ -654,13 +694,118 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
   return { id, isHost, impl, dom, telemetry, rendered, roomStore, skewMs, clockRtt, env };
 }
 
+// ── RC-3 Phase4(반공허성 B): 객관적-stale-row 기반 regression 검출기 ────────────
+// 처음 시도(§git 이력 참고)는 "state.gameRound가 감소했는가"만 봤는데, 실측(§반공허성 B 실집행)
+// 으로 이게 공허하다는 걸 발견했다: REAL getGameRound()가 이미 `Math.max(1, incomingGameRound,
+// state.gameRound)`로 gameRound 자체의 감소를 방어하고 있어서(§index.html Build28 Round2 주석),
+// isStaleRoomRow 가드를 mutation으로 완전히 무력화해도 state.gameRound는 여전히 안 줄어든다 —
+// 그런데도 그 STALE row의 round/countdownStartAt/penalty는 Math.max 보호 없이 그대로 덮어써진다
+// (이게 바로 실제 프로덕션 결함 "게임=6, 라운드=2라는 존재하지 않는 조합"의 정체다). 그래서 진짜
+// 검출 대상은 "gameRound 감소"가 아니라 "객관적으로 과거(incomingGameRound < 지금까지 본 최댓값)인
+// row가 적용된 후 round/countdownStartAt이 실제로 바뀌었는가"다.
+//
+// beginStaleRowRegressionCheck(row 처리 "전")가 그 row 자신의 gameRound를 REAL
+// getPenaltyGameRound로 추출해(판정에 영향 없는 순수 관측 — REAL 가드가 이 row를 어떻게
+// 처리하든 이 판단 자체는 바뀌지 않는다) "이 row가 객관적으로 stale인가"를 독립적으로 판정하고,
+// finishStaleRowRegressionCheck(처리 "후")가 그 경우에만 round/countdownStartAt/gameRound가
+// 실제로 바뀌었는지 확인해 STALE_ROW_REGRESSION을 기록한다.
+export function beginStaleRowRegressionCheck(device, row) {
+  let incomingGameRound = 0;
+  try { incomingGameRound = device.impl.getPenaltyGameRound(row && row.penalty); } catch (e) {}
+  const priorMaxGameRound = device.rendered.maxGameRoundSeen;
+  const isObjectivelyStale = incomingGameRound > 0 && priorMaxGameRound != null && incomingGameRound < priorMaxGameRound;
+  return {
+    isObjectivelyStale, incomingGameRound, priorMaxGameRound,
+    before: {
+      gameRound: device.impl.state.gameRound, round: device.impl.state.round,
+      countdownStartAt: device.impl.state.countdownStartAt,
+    },
+  };
+}
+
+export function finishStaleRowRegressionCheck(device, checkCtx) {
+  const gameRound = device.impl.state.gameRound;
+  if (gameRound != null && (device.rendered.maxGameRoundSeen == null || gameRound > device.rendered.maxGameRoundSeen)) {
+    device.rendered.maxGameRoundSeen = gameRound;
+  }
+  if (!checkCtx || !checkCtx.isObjectivelyStale) return;
+  const after = {
+    gameRound: device.impl.state.gameRound, round: device.impl.state.round,
+    countdownStartAt: device.impl.state.countdownStartAt,
+  };
+  const changed = after.round !== checkCtx.before.round
+    || after.countdownStartAt !== checkCtx.before.countdownStartAt
+    || after.gameRound < checkCtx.before.gameRound;
+  if (!changed) return;
+  try {
+    device.telemetry.emit('metric', {
+      wrps: 'RC3-HARNESS', eventType: 'STALE_ROW_REGRESSION', device: device.id,
+      detail: `objectively-stale row(incomingGameRound=${checkCtx.incomingGameRound} < priorMax=${checkCtx.priorMaxGameRound}) applied: round ${checkCtx.before.round}->${after.round}, gameRound ${checkCtx.before.gameRound}->${after.gameRound}`,
+      before: checkCtx.before, after,
+    });
+  } catch (e) {}
+}
+
+// ── WRPS-079 Round2(STOP-SHIP, HIGH 잔존 수정) 전용 탐지기: ready 분기 commit 게이트 검증 ──
+// 위 finishRoundLocal 세대 가드(§WRPS-079 describe 참고, index.html ~5888)와 대칭인 두 번째
+// commit 재개 지점(ready 분기, index.html ~5928 `if (!readyBranchStaleGeneration)`)이 실제로
+// 낡은 컨텍스트의 커밋을 막고 있는지, 그 if/else 게이트 로직 자체에 기대지 않고 독립적으로
+// 확인한다(§STOP-SHIP 지시: "탐지기가 게이트 자체의 산출물에 의존하면 안 된다"는 순환논증 회피).
+//
+// beginReadyBranchClobberCheck(handleRoomUpdate 호출 "전")는 이 기기의 confirmedSafeIds/
+// LoserIds 서명과, 지금까지 이 기기의 telemetry에 쌓인 이벤트 개수(이번 호출 동안 새로 emit된
+// 이벤트만 골라내기 위한 커서)를 기록해둔다.
+//
+// finishReadyBranchClobberCheck(호출 "후")는 이번 호출 동안 REAL 코드(index.html handleRoomUpdate
+// ready 분기)가 실제로 emit한 HANDLE_ROOM_UPDATE_READY_BRANCH_RESUMED 계측을 살핀다 — 이
+// staleGeneration 필드는 게이트(if/else)가 있든 없든 항상 REAL하게(state.hruGen!==room.__hruGen)
+// 계산·기록되므로(위 index.html 주석 참고), 게이트를 나중에 실수로 제거·완화해도 이 신호 자체는
+// 계속 정확하다. staleGeneration:true인 이벤트가 하나라도 있었는데 그런데도 confirmedSafeIds/
+// LoserIds 서명이 호출 전후로 실제로 바뀌었다면, 낡은(superseded) 컨텍스트의 ready 분기 커밋이
+// 게이트를 뚫고 실제로 state를 훼손했다는 직접 증거다(READY_BRANCH_STATE_CLOBBER) — 게이트가
+// 정상이면(현재 코드) 이 조합은 구조적으로 불가능하다: staleGeneration:true는 오직 else 분기로만
+// 이어지고, 그 else 분기는 confirmedSafeIds/LoserIds에 전혀 손을 대지 않는다. 이 조합은 오직
+// 게이트가 없거나(수정 전) mutation으로 무력화됐을 때만 관측되어야 한다 — 아래 mutation
+// 부하검증(WRPS-079 describe)이 그것을 확인한다.
+export function beginReadyBranchClobberCheck(device) {
+  return {
+    eventsBeforeLen: device.telemetry.events.length,
+    before: {
+      confirmedSafeIds: [...(device.impl.state.confirmedSafeIds || [])].sort(),
+      confirmedLoserIds: [...(device.impl.state.confirmedLoserIds || [])].sort(),
+    },
+  };
+}
+
+export function finishReadyBranchClobberCheck(device, checkCtx) {
+  if (!checkCtx) return;
+  const newEvents = device.telemetry.events.slice(checkCtx.eventsBeforeLen);
+  const staleResumeEvents = newEvents.filter((e) =>
+    e.kind === 'metric' && e.eventType === 'HANDLE_ROOM_UPDATE_READY_BRANCH_RESUMED' && e.staleGeneration === true);
+  if (staleResumeEvents.length === 0) return;
+  const after = {
+    confirmedSafeIds: [...(device.impl.state.confirmedSafeIds || [])].sort(),
+    confirmedLoserIds: [...(device.impl.state.confirmedLoserIds || [])].sort(),
+  };
+  const changed = JSON.stringify(after.confirmedSafeIds) !== JSON.stringify(checkCtx.before.confirmedSafeIds)
+    || JSON.stringify(after.confirmedLoserIds) !== JSON.stringify(checkCtx.before.confirmedLoserIds);
+  if (!changed) return;
+  try {
+    device.telemetry.emit('metric', {
+      wrps: 'RC3-HARNESS', eventType: 'READY_BRANCH_STATE_CLOBBER', device: device.id,
+      detail: `stale-generation ready-branch resume(staleResumeCount=${staleResumeEvents.length}) actually mutated confirmedSafeIds/LoserIds: safe ${JSON.stringify(checkCtx.before.confirmedSafeIds)}->${JSON.stringify(after.confirmedSafeIds)}, loser ${JSON.stringify(checkCtx.before.confirmedLoserIds)}->${JSON.stringify(after.confirmedLoserIds)}`,
+      before: checkCtx.before, after,
+    });
+  } catch (e) {}
+}
+
 // ── 트라이얼 세계 구성 + 라운드 진행 드라이버 ─────────────────────────────────
 // 이 함수들은 "하니스 조율 접합부"다(README 상단 경계 선언 참고) — index.html에서 추출한 REAL
 // 함수를 어떤 순서로 호출하는지에 대한 글루 코드이며, 판정/스케줄링 수치 자체는 전부 위 REAL 함수
 // 호출 결과를 그대로 쓴다. 3곳만 하니스가 대신한다: ①1라운드 시작 트리거 ②참가자 선택 제출
 // 트리거(실제 UI 클릭 대신) ③"전원 ready 렌더 완료" 감지 후 다음 라운드 시작 트리거(실제 UI의
 // markReady 버튼 클릭 체인 대신, host의 실제 startGame()을 직접 호출).
-export function createTrialWorld({ participantCount, seed, targetLoserCount = 1, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic' }) {
+export function createTrialWorld({ participantCount, seed, targetLoserCount = 1, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', choiceDriverFn = null }) {
   const rng = mulberry32(seed);
   const roomStore = createRoomStore(`ROOM-${seed}-${participantCount}`);
   const devices = [];
@@ -697,23 +842,52 @@ export function createTrialWorld({ participantCount, seed, targetLoserCount = 1,
 
   const submittedChoiceRound = new Map(); // deviceId -> round already submitted
   const readyTriggeredForRound = new Set();
+  // EG 확장: round -> Map<deviceId, base>. 실제로 "제출된" 선택의 그라운드 트루스 원장(테스트
+  // 전용 부기, 판정에 관여하지 않음) — runEliminationTrial의 오라클 재계산이 사용한다.
+  const roundChoicesByRound = new Map();
 
   for (const d of devices) {
     roomStore.subscribers.push({
       deviceId: d.id,
       onRoomRow: async (row) => {
+        // RC-3 Phase4(반공허성 B): 이 row가 "객관적으로 stale"인지(REAL getPenaltyGameRound로
+        // 추출한 row 자신의 gameRound < 지금까지 이 기기가 본 최댓값) 처리 전에 관측해 두고, 처리
+        // 후 round/countdownStartAt/gameRound가 실제로 바뀌었는지 비교한다(아래
+        // beginStaleRowRegressionCheck/finishStaleRowRegressionCheck). isStaleRoomRow 가드가
+        // 정상이라면 이 호출은 절대 STALE_ROW_REGRESSION을 만들지 않는다 — 정상 스윕(§3/§4)에서는
+        // 사실상 0건이어야 하고, 전용 stale-row 역주입 시나리오(runStaleRowGuardScenario)에서
+        // 가드를 mutation으로 무력화했을 때만 실제로 관측되어야 한다.
+        const staleCheckCtx = beginStaleRowRegressionCheck(d, row);
+        // WRPS-079 Round2(STOP-SHIP, HIGH 잔존 수정): ready 분기 commit 게이트 검증용 커서(위
+        // beginReadyBranchClobberCheck/finishReadyBranchClobberCheck 참고) — 이 호출 동안 REAL
+        // ready 분기가 실제로 낡은(superseded) 컨텍스트를 커밋했는지 게이트 로직 자체에 기대지
+        // 않고 독립적으로 확인한다.
+        const readyClobberCheckCtx = beginReadyBranchClobberCheck(d);
         try {
           await d.impl.handleRoomUpdate(row);
         } catch (e) {
           d.telemetry.emit('metric', { wrps: 'RC3-HARNESS', eventType: 'HANDLE_ROOM_UPDATE_THREW', message: String(e && e.message || e) });
           return;
         }
+        finishStaleRowRegressionCheck(d, staleCheckCtx);
+        finishReadyBranchClobberCheck(d, readyClobberCheckCtx);
         // 접합부 ②: 이번 라운드 참가자면 자기 선택을 즉시 제출한다(실제 UI 클릭 생략).
+        // choiceDriverFn이 없으면(§allDraw baseline, 기존 회귀 스윕 전부) 기존 그대로 전원
+        // 'scissors' 고정 — 하위호환, 회귀 없음. choiceDriverFn이 있으면(EG 확장, 아래 참고) 그
+        // 드라이버가 라운드/기기별로 rock/paper/scissors를 고른다 — REAL isCurrentRoundParticipant()
+        // (REAL 추출)가 "이번 라운드에 실제로 참여하는가"를 가리므로, 이미 확정된(safe/loser)
+        // 기기는 이 분기 자체에 들어오지 않는다(선택 제출 없음 — 실제 UI와 동일).
         if (d.impl.state.status === 'playing' && d.impl.isCurrentRoundParticipant()) {
           const round = d.impl.state.round;
           if (submittedChoiceRound.get(d.id) !== round) {
             submittedChoiceRound.set(d.id, round);
-            try { await d.impl.updateParticipantChoice('scissors'); } catch (e) {}
+            const choiceBase = choiceDriverFn ? choiceDriverFn({ device: d, round }) : 'scissors';
+            // EG 오라클 원장(§runEliminationTrial): "이 라운드에 실제로 무엇을 냈는가"의 그라운드
+            // 트루스를 REAL 파이프라인과 완전히 독립적으로 별도 보관한다(테스트 전용 부기 —
+            // 판정에는 전혀 관여하지 않음).
+            if (!roundChoicesByRound.has(round)) roundChoicesByRound.set(round, new Map());
+            roundChoicesByRound.get(round).set(d.id, choiceBase);
+            try { await d.impl.updateParticipantChoice(choiceBase); } catch (e) {}
           }
         }
         // 접합부 ③(스케줄링만): result 상태가 되면 REAL scheduleRematchAutoAdvance를 호출한다
@@ -725,7 +899,42 @@ export function createTrialWorld({ participantCount, seed, targetLoserCount = 1,
     });
   }
 
-  return { devices, roomStore, rng, submittedChoiceRound, readyTriggeredForRound, clockSyncPromises };
+  return { devices, roomStore, rng, submittedChoiceRound, readyTriggeredForRound, clockSyncPromises, roundChoicesByRound };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// EG(Elimination-extended) — STOP-SHIP 술래-소거 경로 확장.
+//
+// 위 allDraw baseline(runMeasuredTrial)은 전원이 항상 'scissors'만 내므로 resolveElimination의
+// allDraw 분기만 exercise한다(§이미 100% 클린 확인). 이 구간은 그 확장이다: 참가자별로 seeded
+// rock/paper/scissors를 섞어(pickMixedChoiceBase) 실제 승/패를 발생시키고, tooMany/tooFew/
+// gameOver까지 다라운드에 걸쳐 실제로 트리거되게 한다. REAL 추출 파이프라인 자체(handleRoomUpdate/
+// finishRoundLocal 대체/resolveElimination/nextRound/scheduleRematchAutoAdvance/startGame)는 위
+// allDraw 경로와 완전히 동일한 코드를 그대로 재사용한다(중복 구현 없음 — choiceDriverFn 주입과
+// 종료 조건("5라운드 완주" 대신 "gameOver 도달")만 다르다).
+// ════════════════════════════════════════════════════════════════════════════
+
+// 결정론적 rock/paper/scissors 균등 선택 — 앱 내부 randomRoundChoice()와 동일한 배열 순서를
+// 재사용해(["scissors","rock","paper"]) 우연히 이 하니스가 발명한 새 인코딩이 아님을 명시한다.
+// 판정 자체(judgePure)는 어떤 순서로 인코딩되든 base 문자열만 보므로 순서 자체는 무관하다.
+export function pickMixedChoiceBase(rng) {
+  const bases = ['scissors', 'rock', 'paper'];
+  return bases[Math.floor(rng() * 3)];
+}
+
+// choiceDriverFn 팩토리 — 트라이얼 시드와 완전히 독립된 자체 rng 스트림을 쓴다(네트워크 지연
+// 샘플링에 쓰이는 world.rng와 절대 공유하지 않는다 — 공유하면 선택 제출 타이밍이 기기 간 배달
+// 순서에 따라 rng 소비 순서를 바꿔 네트워크 지연 샘플링까지 흔들리는 교차오염이 생긴다).
+export function createMixedChoiceDriver(seed) {
+  const choiceRng = mulberry32(seed);
+  return () => pickMixedChoiceBase(choiceRng);
+}
+
+// 이 세계가 "게임오버로 완전히 정착"했는가 — REAL room.status broadcast가 전원에게 도달해
+// 전 기기의 state.status가 'game_over'가 됐는지로만 판단한다(호스트가 유일한 rooms.update
+// writer이므로, 이 값이 전원에게 퍼졌다는 것 자체가 REAL handleRoomUpdate가 정상 처리됐다는 뜻).
+export function isGameOverSettled(world) {
+  return world.devices.every((d) => d.impl.state.status === 'game_over');
 }
 
 export function allDevicesRenderedReadyFor(world, round) {
@@ -779,10 +988,153 @@ export function isPhaseOnTime(device, phase, round) {
   return lateMs <= LATE_RENDER_THRESHOLD_MS;
 }
 
-// ── HARD FAILURE 분류(codex-critic C) ────────────────────────────────────────
-// "성공률에서 감점"되는 실결함만 포함한다. graceful late-render(설계상 허용된 늦은 렌더)는
-// 포함하지 않는다 — TOLERANCE_EXCEEDED(전체 기기 기준, 정보용으로만 보존)와
-// ON_TIME_CONCURRENCY_EXCEEDED(on-time 코호트 기준, 별도 게이트)는 모두 HARD FAILURE가 아니다.
+// ════════════════════════════════════════════════════════════════════════════
+// RC-3 taxonomy 수렴(Review Correction Loop 3/3, 최종): on-time 코호트 재정의 + 3범주 분리.
+//
+// 이 하니스는 지금까지 같은 지표를 두고 두 번 반대 방향으로 실패했다:
+//   v2(과공허): TOLERANCE_EXCEEDED/ON_TIME_CONCURRENCY_EXCEEDED를 처음부터 non-HARD로 두거나,
+//     on-time 코호트를 "렌더 지각도"로 정의해 스프레드 게이트가 mutation에도 반응하지 못했다
+//     (아래 "문제의 뿌리" 참고 — 구조적으로 tolerance를 못 넘는 이중 필터).
+//   v3(과민): 그 구멍을 메운다며 ON_TIME_CONCURRENCY_EXCEEDED/ON_TIME_RECEIPT_COLLAPSED/
+//     LATE_COHORT_EXCESSIVE_DELAY를 전부 HARD_FAILURE_TYPES(=STOP-SHIP topline)에 승격했는데,
+//     codex-critic이 baseline ~4860 trial을 실집행해 모든 hard failure가 이 두 timing 게이트뿐이고
+//     (ON_TIME_RECEIPT_COLLAPSED/LATE_COHORT_EXCESSIVE_DELAY), 실제 결함 채널(STALL/EXCEPTION/
+//     오판정/desync/렌더누락/이중카운트다운/stale-row)은 0건, 전부 completed:true임을 확인했다 —
+//     즉 이 지표들은 "네트워크 지터 아티팩트"에 반응한 것이지 실결함이 아니었다(과민, 늑대외침).
+//
+// 근본 원인: 네트워크 지연만으로는 "스케줄링 코드 버그"와 "네트워크가 그냥 느림"을 렌더 타이밍
+// **하나만**으로 구분할 수 없다(둘 다 "앵커에 못 모임"으로 관측된다). 그래서 이 세 지표(스프레드/
+// 수신율/과지각)를 절대 pass/fail 게이트로 쓰면 baseline에서도 지터가 몰리는 trial마다 늑대를
+// 외친다. 지연 독립적(delay-independent) 신호만 STOP-SHIP 게이트가 될 수 있다.
+//
+// 최종 수렴 taxonomy(3범주, 이 라운드부터 고정):
+//   [범주1] CORRECTNESS HARD FAILURE(지연 독립, 유일한 STOP-SHIP 게이트) — 아래
+//     HARD_FAILURE_TYPES 배열 그대로: STALL/EXCEPTION/CLOCK_SYNC_NOT_SETTLED/
+//     PHANTOM_OR_CORRUPTED_OUTCOME/ROUND_NOT_MONOTONIC/MISSING_*_RENDER/
+//     DOUBLE_COUNTDOWN_RENDER/STALE_ROW_REGRESSION. `pass`(=completed && hardFailureModes.length
+//     ===0)가 곧 이 범주의 trial 단위 합격 여부이고, 이 비율이 "correctnessPassRate"다.
+//   [범주2] NETWORK-STRESS QUALITY(지연 종속, informational, 합격 게이트 아님) —
+//     ON_TIME_RECEIPT_COLLAPSED/LATE_COHORT_EXCESSIVE_DELAY/FULL_COHORT_TIMING_SPREAD/
+//     lateRenderRatio(그리고 구조적으로 트립 불가한 ON_TIME_CONCURRENCY_EXCEEDED, 아래 별도
+//     문서화). 여전히 failureModes 배열에는 기록되지만(관측/리포트 목적) HARD_FAILURE_TYPES에서
+//     빠졌으므로 hardFailureModes/pass에는 전혀 반영되지 않는다 — "결함"이나 "진짜 성공률"이
+//     아니라 레짐(optimistic/moderate/pessimistic)에 따라 정상적으로 달라지는 네트워크 스트레스
+//     하의 렌더 동시성 품질로만 읽는다.
+//   [범주3] 차등 mutation 회귀 테스트(반공허성 보존) — 범주2를 게이트에서 빼면 v2처럼 다시
+//     공허해질 위험이 있으므로, 아래 §5 mutation 테스트는 "고정 optimistic 레짐 하에서 mutation
+//     이 baseline 대비 이 범주2 지표를 상대적으로(절대 임계 아님) 악화시키는가"를 별도로 단언한다
+//     — 이게 "하니스가 스케줄링 회귀를 여전히 검출할 수 있다"는 증거이고, 동시에 같은 trial들의
+//     correctnessPassRate가 baseline과 거의 같게 유지되는지도 같이 확인해 "타이밍 회귀가 correctness
+//     게이트를 오염시키지 않는다"(과민 재발 금지)까지 한 번에 증명한다.
+//
+// 재정의(on-time 코호트, 범주2 계산에 여전히 쓰임): membership을 "렌더가 얼마나 늦었는가"가 아니라
+// "이 기기가 앵커(phaseScheduledAt) 이전에 그 정보를 수신했는가"로만 정한다. 이러면 membership
+// 자체는 렌더 스프레드에 대해 아무 정보도 주지 않는다(수신은 제때 했어도 스케줄링 로직이 고장나면
+// 렌더는 얼마든지 벌어질 수 있다) — 그래서 mutation이 스케줄링 로직 자체를 깨면(예: choiceEndAt
+// 앵커 제거, lead 축소) 이 코호트의 렌더 스프레드가 실제로 커질 수 있다(§범주3 mutation 테스트로
+// 실집행 검증, 이제 optimistic 레짐 고정 + baseline 대비 상대 델타로 재확인한다).
+//
+// 수신 시각 산출:
+//   - countdown: REAL COUNTDOWN_START 메트릭(WRPS-036)의 countdownClientStartTs(=이 코드가
+//     waitMs를 계산하던 바로 그 순간의 serverNow())를 "수신 시각"으로 쓴다. waitMs = max(0,
+//     scheduledStartAt - countdownClientStartTs)이므로 waitMs>0 ⟺ 수신이 앵커 이전이다 — 그래서
+//     그냥 ev.waitMs > 0을 멤버십 조건으로 쓴다(REAL 필드 재해석일 뿐, 새 계산 발명 아님).
+//   - result/nextRound(ready): REAL SYNC_RENDER 메트릭의 clientReceivedTs(핸들러가 이 phase 분기
+//     진입 직후 찍는 Date.now(), index.html 5716/5840)에 같은 이벤트의 clockOffsetMs를 더해
+//     "이 기기 기준 서버시각으로 환산한 수신시각"을 만들고, serverScheduledTs와 비교한다.
+//   - choiceStart/choiceEnd: REAL 계측이 없어(위 getPhaseLateRenderMs와 동일한 사정) countdown의
+//     판정을 상속한다(근사, §7에 한계 명시 — index.html 무수정 원칙상 개선 불가).
+export function getCountdownStartEvent(device, round) {
+  return device.telemetry.events.find((e) => e.kind === 'metric' && e.eventType === 'COUNTDOWN_START' && e.round === round);
+}
+
+export function isPhaseReceivedBeforeAnchor(device, phase, round) {
+  const lookupPhase = (phase === 'choiceStart' || phase === 'choiceEnd') ? 'countdown' : phase;
+  if (lookupPhase === 'countdown') {
+    const ev = getCountdownStartEvent(device, round);
+    if (!ev || ev.countdownStartServerTs == null) return null; // 앵커 자체가 없음(구버전 호환 경로) — 판정 불가
+    return ev.waitMs > 0;
+  }
+  const ev = getPhaseSyncRenderEvent(device, lookupPhase, round); // 'result' | 'nextRound'
+  if (!ev || ev.clientReceivedTs == null || ev.serverScheduledTs == null) return null;
+  const receivedServerTs = ev.clientReceivedTs + (ev.clockOffsetMs || 0);
+  return receivedServerTs <= ev.serverScheduledTs;
+}
+
+// 이 phase의 "앵커"(서버시각 도메인) 값 — 위 isPhaseReceivedBeforeAnchor와 동일한 이벤트에서 뽑는다.
+// 과지각(late-cohort excessive delay) 계산에 재사용(아래 getLateCohortExcessiveDelayThresholdMs).
+export function getPhaseAnchorServerTs(device, phase, round) {
+  const lookupPhase = (phase === 'choiceStart' || phase === 'choiceEnd') ? 'countdown' : phase;
+  if (lookupPhase === 'countdown') {
+    const ev = getCountdownStartEvent(device, round);
+    return ev ? ev.countdownStartServerTs : null;
+  }
+  const ev = getPhaseSyncRenderEvent(device, lookupPhase, round);
+  return ev ? ev.serverScheduledTs : null;
+}
+
+// ── [범주2] network-stress quality 상수/헬퍼 (informational, 합격 게이트 아님) ──
+// 아래 세 값(ON_TIME_CONCURRENCY_CEILING_MS/MIN_ON_TIME_RECEIPT_RATIO/
+// getLateCohortExcessiveDelayThresholdMs)은 더 이상 "STOP-SHIP hard failure 임계값"이 아니다 —
+// v3에서는 이 값을 넘으면 HARD_FAILURE_TYPES에 들어가 pass를 깎았지만, baseline ~4860 trial
+// 실집행 결과 이 세 채널만 트립되고 실제 결함 채널은 0건이었다(과민 확정, §본문 참고). 이번
+// 수렴부터는 이 값들이 오직 "네트워크-스트레스 렌더 동시성 품질을 얼마나 엄격하게 볼 것인가"라는
+// 리포팅 임계값일 뿐이며, HARD_FAILURE_TYPES에는 들어가지 않는다(아래 참고) — 근거 서술 자체는
+// 여전히 유효하므로 그대로 보존한다(레짐별 informational 표에서 이 임계값 기준으로 위반 유무를
+// 표시하는 용도로만 쓰인다).
+//
+// ON_TIME_CONCURRENCY_CEILING_MS 근거: RC-3 §5 충실성 테스트(위 "syncServerClock()으로 얻은
+// offsetMs가...")가 실집행으로 보장하는 값은 "|deviceServerNow - trueNow| < 1500ms"(RC-1
+// clock-sync 잔차 상한, 시도별 실측 상한이 아니라 테스트가 강제하는 보수적 worst-case 경계). 두
+// 기기가 각각 이 잔차의 반대 극단(+1500/-1500)에 있으면, 같은 "진짜" 순간을 각자의 serverNow()로
+// 완벽히 동시에 관측했다고 믿어도 실제 관측(true wall-clock) 시각 차이는 최대 2×1500=3000ms까지
+// 날 수 있다 — 이게 "코드가 완벽해도 clock-sync 잔차만으로 생기는" 구조적 하한이다. 그 외
+// 스케줄링 잡음(sleep(waitMs) 이후 즉시 동기 실행, setTimeout 큐잉 지터)은 이 하니스에서 스텝
+// 단위가 아니라 실제 타이머 콜백이라 수 ms~수십 ms 수준으로, 1500ms 스케일 대비 무시 가능하다고
+// 보고 별도 slack을 더하지 않는다(제안 범위 2000~3000ms 중 상단값 채택 — 보수적 선택, §7 기록).
+export const ON_TIME_CONCURRENCY_CEILING_MS = 3000;
+
+// on-time "수신율" 리포팅 임계값(§범주3 mutation B 실측으로 결정된 값 — 근거는 아래
+// runMeasuredTrial의 ON_TIME_RECEIPT_COLLAPSED 주석 참고: baseline 평균 97%, broken(lead=100ms)
+// 평균 2% — 0.5는 그 사이 넉넉한 여유를 둔 값, 근거 강도: 중간).
+export const MIN_ON_TIME_RECEIPT_RATIO = 0.5;
+
+// late(앵커 이후 수신) 코호트의 "과도한 지각" 리포팅 임계값 — graceful late-render(설계상 정상)와
+// "앵커 보정이 사실상 무력화된 것으로 보이는 스프레드"를 가르는 선(정보용 표시일 뿐, STOP-SHIP
+// 게이트는 아님). 플랫(phase 무관) 상수 하나로는 choiceEnd처럼 이미 촘촘한 설계 tolerance
+// (PHASE_TOLERANCE_MS.choiceEnd=1250ms)를 가진 phase의 진짜 회귀(수 초 단위로만 벌어짐)를
+// 놓친다. 그래서 phase마다 "이미 확립된 설계 tolerance"(PHASE_TOLERANCE_MS, §근거는 그 정의부
+// 주석 참고)를 그대로 재사용한다 — 새 숫자를 발명하지 않는다는 점에서
+// ON_TIME_CONCURRENCY_CEILING_MS(clock-sync 잔차 기반)와는 근거 계통이 다르다(§7에 명시).
+export function getLateCohortExcessiveDelayThresholdMs(phase) {
+  return PHASE_TOLERANCE_MS[phase];
+}
+
+// ── ON_TIME_CONCURRENCY_EXCEEDED — 구조적으로 트립 불가(critic B 지적, 정직하게 문서화) ──
+// 이 지표(수신-기준 on-time 코호트 "내부" 렌더 스프레드가 ON_TIME_CONCURRENCY_CEILING_MS를
+// 초과)는 §범주2 informational 목록에 들어있지만, 현재 하니스 구조로는 사실상 트립할 수 없다 —
+// createDb()의 sampleRealtimeDelayMs(및 clock skew/RTT)가 "같은 트라이얼의 모든 구독자에게
+// 동일한 분포"에서 독립 샘플링될 뿐, 특정 기기 하나만 골라 비대칭적으로 스케줄링 결함을 주입할
+// 방법이 없다(모든 mutation은 combinedSourceOverride로 "전 기기 동일 소스"를 바꾸는 방식이라,
+// on-time으로 분류된 기기들 사이의 상대적 스프레드 자체를 벌리지는 못한다 — mutation A/B가
+// 실제로 반응하는 채널은 이 지표가 아니라 ON_TIME_RECEIPT_COLLAPSED/LATE_COHORT_EXCESSIVE_DELAY다,
+// §범주3 실집행 결과 참고). 죽은 코드가 아니라 "이 하니스 구조에서 검출 불가능한 결함 클래스가
+// 있다"는 한계를 계측 자체는 계속 남겨 관측만 하도록 남겨둔다(정보용, §7에 한계 기록).
+// 확장(선택, stretch): 기기별 비대칭 clock skew/스케줄링 지연을 주입할 수 있게 createDevice/
+// createDb를 확장하면(예: 특정 deviceId만 스케줄링 오프셋을 추가로 왜곡) 이 채널도 트립 가능해질
+// 수 있다 — 이번 라운드 범위 밖이라 구현하지 않고 다음 위임으로 남긴다.
+//
+// ── HARD FAILURE 분류([범주1] correctness, 지연 독립, 유일한 STOP-SHIP 게이트) ─────────────
+// "성공률에서 감점"되는 실결함만 포함한다. 네트워크 지연 강도(레짐)와 무관하게 발생하거나 발생하지
+// 않아야 하는 채널만 여기 있다 — 그래서 이 목록의 채널이 0건인 비율(correctnessPassRate)은
+// allDraw baseline 전 N × 전 레짐에서 ~100%여야 한다(그렇지 않으면 실결함이거나 분류 오류).
+// graceful late-render(설계상 허용된 늦은 렌더)와 네트워크-스트레스 품질 저하는 여기 포함하지
+// 않는다 — FULL_COHORT_TIMING_SPREAD/ON_TIME_CONCURRENCY_EXCEEDED/ON_TIME_RECEIPT_COLLAPSED/
+// LATE_COHORT_EXCESSIVE_DELAY는 전부 [범주2](informational, 위 참고)로, HARD_FAILURE_TYPES에서
+// 빠졌다(v3에서는 뒤 세 개가 HARD였으나, baseline 실집행으로 과민임이 확인돼 이번에 강등한다).
+// STALE_ROW_REGRESSION(gameRound 고수위표 역행 — isStaleRoomRow 가드가 뚫렸다는 직접 증거)만은
+// 지연과 무관하게 "적용되면 안 되는 stale row가 적용됐는가"라는 순수 correctness 질문이므로
+// [범주1]에 남는다.
 // ⚠️ 아래 목록에 없는 critic 요청 카테고리(에러화면/hard-block)는 이 하니스가 애초에 그런 화면/
 // 상태를 모델링하지 않아(가짜 DOM에 에러화면 자체가 없음, canShowPlayAgainButton류 하드블록
 // 로직은 REAL handleRoomUpdate/startGame 안에 있지만 이 시뮬레이션 시나리오(정상 5라운드
@@ -796,6 +1148,18 @@ export const HARD_FAILURE_TYPES = [
   'MISSING_COUNTDOWN_RENDER', // 해당 라운드에 렌더 자체가 전혀 없음(늦은 게 아니라 없음) — stall과 동종.
   'MISSING_RESULT_RENDER',
   'DOUBLE_COUNTDOWN_RENDER', // 이중 카운트다운: 같은 라운드에 REAL(중복-skip 아닌) SYNC_RENDER countdown이 2회 이상.
+  'STALE_ROW_REGRESSION', // gameRound 고수위표 역행 — isStaleRoomRow 가드가 뚫렸다는 직접 증거(지연 무관).
+];
+
+// [범주2] network-stress quality(informational) 채널 목록 — HARD_FAILURE_TYPES에는 없지만
+// failureModes에는 여전히 기록되는 지연-종속 채널. 레짐별로 별도 집계해 리포트한다(§보고 4절).
+// "결함"이나 "진짜 실패율"이 아니라 네트워크 스트레스 강도에 따라 정상적으로 달라지는 렌더 동시성
+// 품질 신호다.
+export const NETWORK_STRESS_QUALITY_TYPES = [
+  'FULL_COHORT_TIMING_SPREAD',
+  'ON_TIME_CONCURRENCY_EXCEEDED', // 위 문서화 참고: 이 하니스 구조로는 사실상 트립 불가.
+  'ON_TIME_RECEIPT_COLLAPSED',
+  'LATE_COHORT_EXCESSIVE_DELAY',
 ];
 
 export function allDevicesRenderedResultFor(world, round) {
@@ -813,6 +1177,275 @@ export function allDevicesRenderedReadyViaTelemetryFor(world, round) {
   return world.devices.every((d) => getPhaseSyncRenderEvent(d, 'nextRound', round));
 }
 
+// ── RC-3 Phase4(반공허성 B) 전용 시나리오: stale-row 역주입 ──────────────────
+// "2.6초 폴링 폴백이 realtime 채널과 순서보장 없이 경쟁하는" 실제 상황을 모사한다: 한 기기가
+// 이미 REAL(정상) 브로드캐스트 경로로 gameRound=2 row를 받아 처리한 뒤(state.gameRound===2),
+// 방금 전 실제로 존재했던 gameRound=1 room row 스냅샷이 방 스토어의 정상(단조 도착 강제) 구독
+// 큐를 우회해 그 기기의 REAL handleRoomUpdate에 직접 재도착한다. 두 단계 모두 손으로 state를
+// 대입하지 않는다 — gameRound=1→2 전이 자체도 REAL buildPenaltyValue + REAL db.from('rooms').
+// update(...)(host 전용, 정상 구독자 전파 경로)로 만들고, "과거" row 역시 그 세계에서 실제로
+// 커밋됐던 진짜 스냅샷이다. 유일한 하니스 개입은 "그 진짜 과거 스냅샷을 정상 큐 대신 직접
+// 재전달한다"는 배달 순서 자체뿐(§본문 반공허성 B 계약과 동일 성격의 접합부).
+//
+// 기대 동작(REAL, 무수정): isStaleRoomRow 가드가 incomingGameRound(1) < state.gameRound(2)를
+// 감지해 이 재주입을 skip한다 → victim.state.gameRound/round 모두 그대로 유지되고
+// finishStaleRowRegressionCheck()이 STALE_ROW_REGRESSION을 만들지 않는다. mutation(가드 무력화)
+// 시: REAL getGameRound()의 Math.max(1, incomingGameRound, state.gameRound) 보호 때문에
+// state.gameRound 자체는 여전히 2로 유지되지만(§아래 beginStaleRowRegressionCheck 주석 참고 —
+// 이게 바로 "gameRound 감소"만 보면 공허한 이유다), state.round/countdownStartAt은 Math.max
+// 보호 없이 그대로 stale row의 값으로 덮어써진다 — 그게 실제 검출 대상이다. victim.state.round가
+// staleRow.round로 되돌아가면 finishStaleRowRegressionCheck()이 STALE_ROW_REGRESSION을 기록한다.
+//
+// §7 한계: gameRound=2로의 전이는 REAL beginNewGameRound()(게임오버+재대결 전체 흐름과 강결합,
+// 이번 범위 밖 — "술래-소거 확장은 이번 아님")를 거치지 않고, REAL buildPenaltyValue로 gameRound
+// 필드만 직접 올린 penalty를 REAL 방 브로드캐스트 채널로 발행해 만든다. isStaleRoomRow 가드
+// 자체(incomingGameRound/state.gameRound 비교, handleRoomUpdate 처리 순서)는 100% REAL·무수정
+// 실행이지만, "gameRound가 실제 게임에서 어떻게 2가 되는가"라는 상위 트리거는 하니스가 대신한다.
+export async function runStaleRowGuardScenario({
+  seed = 424242, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
+  combinedSourceOverride = null, vi, settleBudgetMs = 8000, stepMs = 250,
+}) {
+  const world = createTrialWorld({
+    participantCount: 3, seed, targetLoserCount: 1,
+    resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride,
+  });
+  const host = world.devices[0];
+  const victim = world.devices[1];
+
+  // ⚠️ vitest 가짜 타이머 환경에서는 setTimeout 기반 promise(db ack delay, handleRoomUpdate 내부
+  // sleep 등)를 직접 await하면 안 된다 — 아무도 vi.advanceTimersByTimeAsync를 호출하지 못해 교착
+  // 상태가 된다(§runMeasuredTrial의 tickTrialWorld/clock-sync 대기와 동일한 함정). 그래서 항상
+  // "fire(별도 await 없이 시작) → 시간을 흘려보내며 조건을 폴링" 패턴을 쓴다.
+  async function advanceUntil(predicate, budgetMs) {
+    let elapsed = 0;
+    while (elapsed < budgetMs && !predicate()) {
+      // eslint-disable-next-line no-await-in-loop
+      await vi.advanceTimersByTimeAsync(stepMs);
+      elapsed += stepMs;
+    }
+    return predicate();
+  }
+  // ⚠️ host.env.db.from('rooms').update(...)이 반환하는 promise는 "host 자신의 ack 지연"만
+  // 끝나면 resolve된다 — 다른 기기로의 realtime 브로드캐스트 전파(구독자별 propDelay, 최악
+  // 수 초)는 완전히 별도 스케줄이라 이 promise의 settle 여부로 "다른 기기가 받았는지"를 판단할 수
+  // 없다(실측으로 발견 — 이 promise가 먼저 resolve돼 predicate이 아직 false인데도 루프가 조기
+  // 종료되는 버그가 있었다). 그래서 브로드캐스트 전파를 기다릴 때는 promise settle과 무관하게
+  // predicate/budget만으로 판단한다.
+  async function fireAndAdvanceUntil(promiseFactory, predicate, budgetMs) {
+    const p = promiseFactory();
+    p.catch(() => {}); // unhandled rejection 방지(판정에는 영향 없음)
+    let elapsed = 0;
+    while (elapsed < budgetMs && !predicate()) {
+      // eslint-disable-next-line no-await-in-loop
+      await vi.advanceTimersByTimeAsync(stepMs);
+      elapsed += stepMs;
+    }
+    return predicate();
+  }
+  // stale-row 직접 재주입(브로드캐스트 아님, victim의 handleRoomUpdate를 직접 1회 호출)은 다른
+  // 기기로 전파될 일이 없으므로 이 호출 자체의 settle을 기다리면 충분하다.
+  async function fireDirectCallAndDrain(promiseFactory, budgetMs) {
+    let settled = false;
+    const p = promiseFactory();
+    p.then(() => { settled = true; }, () => { settled = true; });
+    let elapsed = 0;
+    while (elapsed < budgetMs && !settled) {
+      // eslint-disable-next-line no-await-in-loop
+      await vi.advanceTimersByTimeAsync(stepMs);
+      elapsed += stepMs;
+    }
+    return settled;
+  }
+
+  // 0) 전원 clock-sync settle 대기(다른 드라이버와 동일 패턴, §runMeasuredTrial 참고).
+  const clockSyncSettled = await advanceUntil(
+    () => world.devices.every((d) => d.impl.getServerClockSynced()), settleBudgetMs
+  );
+
+  // 1) REAL 채널로 gameRound=1을 "정식으로" 한 번 발행한다(진짜 gameRound=1 row를 만들기 위함 —
+  //    빈 penalty는 getPenaltyGameRound가 0(=알 수 없음, 가드 예외 대상)을 반환해 stale 판정
+  //    자체가 성립하지 않는다).
+  const penaltyG1 = host.impl.buildPenaltyValue({ gameRound: 1, phaseScheduledAt: 0 });
+  const g1Settled = await fireAndAdvanceUntil(
+    () => host.env.db.from('rooms').update({ penalty: penaltyG1, round: 3, status: 'playing' }).eq(),
+    () => victim.impl.state.gameRound === 1, settleBudgetMs
+  );
+
+  // 2) 방금 커밋된(진짜) gameRound=1 row를 스냅샷해 둔다 — 이게 나중에 재주입할 "과거" row다.
+  const staleRow = { ...world.roomStore.row };
+
+  // 3) REAL 채널로 gameRound=2로 정상 전이(host가 새 게임을 시작한 상황 모사).
+  const penaltyG2 = host.impl.buildPenaltyValue({ gameRound: 2, phaseScheduledAt: 0 });
+  const g2Settled = await fireAndAdvanceUntil(
+    () => host.env.db.from('rooms').update({ penalty: penaltyG2, round: 1, status: 'lobby' }).eq(),
+    () => victim.impl.state.gameRound === 2, settleBudgetMs
+  );
+  const victimGameRoundAfterBump = victim.impl.state.gameRound;
+  const victimRoundAfterBump = victim.impl.state.round;
+
+  // 4) stale-row 역주입: 정상 구독 큐를 우회해 victim의 REAL handleRoomUpdate에 직접 전달.
+  // (victim.rendered.maxGameRoundSeen은 위 1)/3) 단계의 정상 배달 경로가 이미 최신값(2)으로
+  // 갱신해 뒀다 — 정상 구독 큐도 동일한 begin/finishStaleRowRegressionCheck를 거치기 때문.)
+  const injectionCheckCtx = beginStaleRowRegressionCheck(victim, staleRow);
+  await fireDirectCallAndDrain(() => victim.impl.handleRoomUpdate(staleRow), settleBudgetMs);
+  finishStaleRowRegressionCheck(victim, injectionCheckCtx);
+
+  const regressionEvent = victim.telemetry.events.find((e) => e.eventType === 'STALE_ROW_REGRESSION');
+
+  return {
+    clockSyncSettled, g1Settled, g2Settled,
+    staleRowGameRound: getPenaltyGameRoundForTest(host, staleRow.penalty),
+    victimGameRoundAfterBump, victimRoundAfterBump,
+    victimGameRoundAfterInjection: victim.impl.state.gameRound,
+    victimRoundAfterInjection: victim.impl.state.round,
+    regressionDetected: Boolean(regressionEvent),
+    regressionEvent,
+    world,
+  };
+}
+
+// getPenaltyGameRound는 REAL 추출 함수(impl.getPenaltyGameRound)를 그대로 재사용한다 — 리포트용
+// 소소한 헬퍼(손으로 판정하지 않음, 그냥 결과 확인용 조회).
+function getPenaltyGameRoundForTest(device, penaltyRaw) {
+  try { return device.impl.getPenaltyGameRound(penaltyRaw); } catch (e) { return null; }
+}
+
+// ── WRPS-079 Round2(STOP-SHIP, HIGH 잔존 수정) 전용 시나리오: ready 분기 재진입 직접 재현 ──
+// §Phase3/EG 넓은 시드 스윕(N=3..20, 각 40 seed, 총 360 trial, pessimistic 레짐 + 위 REPRO_SEEDS
+// 2종 포함)으로는 이 하니스의 타이밍 모델(참가자 select ackDelay 60~280ms, 고정 상한) 안에서
+// ready 분기 재개 지점이 실제로 stale 세대를 관측하는 사례를 한 건도 재현하지 못했다(§보고 정직
+// 기록) — result 분기(finishRoundLocal 채널)는 waitForPhaseRender + fetchFreshParticipantsForResult
+// (최대 5000ms 하드 타임아웃 + 최대 3000ms 추가 대기, 도합 최대 8초급) await 체인이 있어 라운드
+// 전체가 그 사이에 지나갈 여지가 크지만, ready 분기의 Promise.all은 waitForPhaseRender(스케줄
+// 시각 기준, 보통 이미 지난 시각) + 참가자 재조회(하니스에서 ackDelay 상한 280ms) 뿐이라 이
+// 하니스의 타이밍 분포에서는 "그 사이 라운드 전체가 한 바퀴 더 돈다"는 경합이 사실상 발생하지
+// 않는다(§7에 한계로 명시). 그러나 REAL 프로덕션에서는 이 참가자 재조회에 하드 타임아웃이 전혀
+// 없다(§index.html 5905 부근 주석 — result 분기만 Build30에서 5000ms 상한을 받았고 ready 분기는
+// 받지 않음) — 느리거나 불안정한 네트워크(이 저장소 자신의 기록에 실측 최대 101,778ms 대기가
+// 남아있다, Build30/WRPS-078 주석 참고)에서는 이 suspend 구간이 원리적으로 임의로 길어질 수 있어
+// 여러 라운드가 그 사이 지나가는 이 경합이 발생할 수 있다.
+//
+// 그래서 `runStaleRowGuardScenario`(위)와 동일한 성격의 "직접 구성" 재현으로 그 메커니즘 자체를
+// 결정론적으로 증명한다 — REAL handleRoomUpdate를 두 번(오래된 ready(round2) 1회 + 이미 더
+// 새로워진 컨텍스트를 나타내는 waiting(round3) 1회) 그대로 호출한다(로직을 손으로 다시 짜지
+// 않음). JS는 await 지점에서만 다른 실행에 양보하므로(§index.html hruGen 캡처 지점 주석과 동일
+// 원리), 오래된 호출을 먼저 fire(await 없이 시작)하면 그 호출은 반드시 자신의 Promise.all에서
+// suspend된 채로 멈추고, 그 직후(아직 어떤 fake timer도 흘려보내기 전) 새 컨텍스트 호출을
+// 완결시키면(status:'waiting' 분기는 await가 전혀 없어 즉시 완결된다) 세대가 결정론적으로
+// bump된다 — 임의의 ackDelay 타이밍 추첨에 기대지 않는다. 그 다음 "실제로 더 새로운 컨텍스트가
+// 이미 확정해 둔" confirmedSafeIds/LoserIds를 대입해 두고(§4 참고 — REAL finishRoundLocal 전체를
+// 다시 구동하지 않고 그 결과만 나타냄, 이 시나리오의 유일한 하니스 대체), REAL nextRound()의 다단계
+// write 시퀀스(참가자 reset이 safe/loser 마커 재기록보다 먼저 커밋되는 실제 순서, index.html
+// nextRound() 9579 부근) 중간 상태(전원 choice:null)를 참가자 스토어에 반영한 뒤에야 오래된 호출을
+// 재개시킨다. 게이트가 있으면(현재 코드) staleGeneration:true를 감지해 스킵하고
+// confirmedSafeIds/LoserIds는 그대로 유지된다 — 게이트를 mutation으로 제거하면 오래된 호출이 이
+// "전환 중간" 스냅샷으로 syncConfirmedIdsFromParticipants를 실행해 방금 확정된 값을 지워버린다.
+export async function runReadyBranchClobberScenario({
+  seed = 434343, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
+  combinedSourceOverride = null, vi, settleBudgetMs = 8000, stepMs = 250,
+}) {
+  const world = createTrialWorld({
+    participantCount: 2, seed, targetLoserCount: 1,
+    resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride,
+  });
+  const host = world.devices[0];
+  const victim = world.devices[1];
+  const roomId = world.roomStore.id;
+
+  async function advanceUntil(predicate, budgetMs) {
+    let elapsed = 0;
+    while (elapsed < budgetMs && !predicate()) {
+      // eslint-disable-next-line no-await-in-loop
+      await vi.advanceTimersByTimeAsync(stepMs);
+      elapsed += stepMs;
+    }
+    return predicate();
+  }
+
+  // 0) 전원 clock-sync settle(다른 시나리오와 동일 패턴).
+  const clockSyncSettled = await advanceUntil(
+    () => world.devices.every((d) => d.impl.getServerClockSynced()), settleBudgetMs
+  );
+
+  // 준비: victim이 이미 round=1을 마치고(host=진행중, victim=confirmed-safe) round=2 ready
+  // 진입 직전이라고 직접 구성한다(§runStaleRowGuardScenario와 동일 성격의 "직접 구성").
+  victim.impl.state.round = 1;
+  victim.impl.state.gameRound = 1;
+  world.roomStore.participants.get(victim.id).choice = '__safe__';
+
+  const rowReadyRound2 = {
+    id: roomId, round: 2, status: 'ready',
+    penalty: victim.impl.buildPenaltyValue({ gameRound: 1, phaseScheduledAt: 0, phaseKind: 'ready' }),
+  };
+
+  // 1) round=2 ready row 처리를 fire(await 없이 시작) — round>1이라
+  //    readyParticipantsRefreshPromise가 생성되고, 그 select는 실제 setTimeout(ackDelay) 기반이라
+  //    아직 fake timer를 흘려보내지 않은 지금은 반드시 그 Promise.all await에서 suspend된다
+  //    (함수 최상단부터 여기까지는 REAL 코드가 항상 동기 실행됨 — index.html hruGen 캡처 주석 참고).
+  const p1 = victim.impl.handleRoomUpdate(rowReadyRound2);
+  p1.catch(() => {});
+  const genAfterP1Fired = victim.impl.state.hruGen;
+  const activeKeyAfterP1Fired = victim.impl.state.hruActiveKey;
+
+  // 2) p1이 아직 suspend된 그 사이, "이미 완전히 처리된 더 새로운 컨텍스트"를 결정론적으로
+  //    만든다 — status:'waiting' 분기는 어떤 await도 없이 완전히 동기 실행되므로(index.html
+  //    handleRoomUpdate 'waiting' 분기 참고) 이 호출은 시간 흐름 없이 즉시 완결되고, 그 완결이
+  //    "실제로 더 새로운 컨텍스트가 이미 완전히 처리됨"을 임의의 ackDelay 추첨 없이 보장한다.
+  const rowWaitingRound3 = {
+    id: roomId, round: 3, status: 'waiting',
+    penalty: victim.impl.buildPenaltyValue({ gameRound: 1, phaseScheduledAt: 0 }),
+  };
+  await victim.impl.handleRoomUpdate(rowWaitingRound3);
+  const genAfterBump = victim.impl.state.hruGen;
+  const activeKeyAfterBump = victim.impl.state.hruActiveKey;
+
+  // 3) "방금 그 새로운 컨텍스트가 실제로 확정해 둔" confirmedSafeIds/LoserIds를 나타낸다(REAL
+  //    finishRoundLocal 전체를 다시 구동하지 않고 그 결과만 대입 — 이 시나리오의 유일한 하니스
+  //    대체, §runStaleRowGuardScenario의 gameRound=1→2 전이 하니스 대체와 동일 성격/한계).
+  //    동시에 참가자 스토어를 REAL nextRound()의 다단계 write 시퀀스 중간 상태(전원 choice:null,
+  //    safe/loser 마커 재기록 직전)로 만든다.
+  victim.impl.state.confirmedSafeIds = [host.id];
+  victim.impl.state.confirmedLoserIds = [victim.id];
+  world.roomStore.participants.get(host.id).choice = null;
+  world.roomStore.participants.get(victim.id).choice = null;
+
+  const readyClobberCheckCtx = beginReadyBranchClobberCheck(victim);
+
+  // 4) p1의 suspend된 await 체인을 재개시킨다 — readyParticipantsRefreshPromise가 위 "전환 중간"
+  //    (전원 choice:null) 스냅샷을 들고 resolve된다. p1은 여전히 자신이 처음 캡처한 세대
+  //    (roomCode:1:2)로 커밋을 시도한다 — 게이트가 있으면(현재 코드) staleGeneration:true를
+  //    감지해 스킵하고, 게이트를 mutation으로 무력화하면 이 스냅샷으로
+  //    syncConfirmedIdsFromParticipants를 실행해 confirmedSafeIds/LoserIds를 둘 다 []로
+  //    되돌려버린다(방금 3)에서 확정한 host=safe/victim=loser를 지워버림).
+  let p1Settled = false;
+  p1.then(() => { p1Settled = true; }, () => { p1Settled = true; });
+  let elapsed = 0;
+  while (elapsed < settleBudgetMs && !p1Settled) {
+    // eslint-disable-next-line no-await-in-loop
+    await vi.advanceTimersByTimeAsync(stepMs);
+    elapsed += stepMs;
+  }
+  finishReadyBranchClobberCheck(victim, readyClobberCheckCtx);
+
+  const resumeEvents = victim.telemetry.events.filter((e) => e.eventType === 'HANDLE_ROOM_UPDATE_READY_BRANCH_RESUMED');
+  const abortedReadyEvents = victim.telemetry.events.filter((e) =>
+    e.eventType === 'HANDLE_ROOM_UPDATE_STALE_GENERATION_ABORTED' && e.branch === 'ready');
+  const clobberEvent = victim.telemetry.events.find((e) => e.eventType === 'READY_BRANCH_STATE_CLOBBER');
+
+  return {
+    clockSyncSettled, p1Settled,
+    genAfterP1Fired, activeKeyAfterP1Fired, genAfterBump, activeKeyAfterBump,
+    resumeEvents, abortedReadyEvents,
+    clobberDetected: Boolean(clobberEvent), clobberEvent,
+    confirmedSafeIdsBeforeResume: readyClobberCheckCtx.before.confirmedSafeIds,
+    confirmedLoserIdsBeforeResume: readyClobberCheckCtx.before.confirmedLoserIds,
+    finalConfirmedSafeIds: [...(victim.impl.state.confirmedSafeIds || [])],
+    finalConfirmedLoserIds: [...(victim.impl.state.confirmedLoserIds || [])],
+    hostId: host.id, victimId: victim.id,
+    world,
+  };
+}
+
 // 라운드 진행 드라이버: vitest fake timers 환경에서 호출한다(vi.advanceTimersByTimeAsync로
 // 시간을 흘려보내는 것은 호출자 책임 — 이 함수는 그 사이사이 "다음 라운드를 시작해도 되는가"만
 // REAL 함수 호출로 판단한다).
@@ -827,9 +1460,30 @@ export function tickTrialWorld(world, host, targetRounds) {
     host.impl.startGame().catch((e) => host.telemetry.emit('metric', { wrps: 'RC3-HARNESS', eventType: 'START_GAME_ROUND1_THREW', message: String(e && e.message || e) }));
   }
   // "전원 ready 렌더 완료" → 다음 라운드 시작(접합부 ③).
+  //
+  // EG(Elimination-extended) 확장으로 실측 발견(하니스 자체 결함, §7 기록): allDraw baseline에서는
+  // 아무도 confirmedSafe/Loser가 되지 않으므로 REAL handleRoomUpdate의 ready 분기는 항상
+  // showReadyScreen()/showHostRoom() 쪽만 탄다(index.html ~5860-5871) — env가 그 두 함수만
+  // rendered.readyByRound에 훅했으므로 allDraw에서는 우연히 항상 맞았다. 그러나 실제 술래-소거가
+  // 일어나면 이미 confirmedSafe인 기기는 showScreen("screenWinnerWait")를, confirmedLoser인
+  // 기기는 showLoserWaitScreen()을 대신 호출한다(둘 다 rendered.readyByRound 훅이 없는 함수) —
+  // 그 결과 그 라운드의 이 두 신호(allDevicesRenderedReadyFor, showReadyScreen/showHostRoom 훅
+  // 기반)는 그 기기에서 영원히 set되지 않아 "전원 ready 렌더 완료"가 결코 참이 될 수 없고, 다음
+  // 라운드가 시작되지 않는 영구 STALL을 만들었다(EG 실집행으로 실측 발견 — N=8 seed=710000
+  // targetLoserCount=2, round11 tooMany 이후 round12에서 8대 전원이 'ready' 상태로 무한 대기).
+  // 이건 REAL 코드의 결함이 아니라 하니스 관측 훅의 사각지대였다 — REAL waitForPhaseRender 자체는
+  // 이 4가지 분기 전부에 대해 동일하게 SYNC_RENDER(phase:'nextRound') 텔레메트리를 먼저 emit한
+  // 뒤(index.html 5849 waitForPhaseRender 호출, 그 반환값 readyIsFirstRender로 이후 분기) 그
+  // 결과에 따라 4갈래 중 하나로 분기하므로, "이 라운드의 ready phase를 렌더했는가"의 권위 있는
+  // 신호는 분기 결과가 아니라 이 텔레메트리 자체다(위 §RC-3 taxonomy 수렴 섹션의
+  // getPhaseSyncRenderEvent와 동일한 원칙 — REAL 계측이 이미 있으면 그것을 쓰고 새 관측을
+  // 발명하지 않는다). 그래서 allDevicesRenderedReadyViaTelemetryFor(REAL SYNC_RENDER 기반, 기존에
+  // RC-3 taxonomy 섹션에서 이미 export돼 있었으나 이 트리거 루프에는 아직 연결되지 않았던 함수)로
+  // 교체한다 — allDraw baseline에서는 두 신호가 항상 동시에 참이 되므로(위 설명) 이 교체로 기존
+  // 686개 회귀 스윕의 결과가 달라지지 않는다(§6 무회귀 재확인, npm test로 재검증).
   for (let r = 2; r <= targetRounds + 1; r++) {
     if (world.readyTriggeredForRound.has(r)) continue;
-    if (allDevicesRenderedReadyFor(world, r)) {
+    if (allDevicesRenderedReadyViaTelemetryFor(world, r)) {
       world.readyTriggeredForRound.add(r);
       host.impl.startGame({ trigger: 'last-ready' }).catch((e) => host.telemetry.emit('metric', { wrps: 'RC3-HARNESS', eventType: 'START_GAME_NEXT_ROUND_THREW', round: r, message: String(e && e.message || e) }));
     }
@@ -928,30 +1582,38 @@ export async function runMeasuredTrial({
     failureModes.push({ type: 'CLOCK_SYNC_NOT_SETTLED' });
   }
 
-  // 에러 텔레메트리(핸들러 예외/불의의 throw) 수집.
+  // 에러 텔레메트리(핸들러 예외/불의의 throw) 수집 + STALE_ROW_REGRESSION([범주1] correctness)
+  // 자동 반영 — 정상 스윕(§3/§4)에서는 gameRound가 애초에 바뀌지 않아 사실상 0건이어야 하지만,
+  // 이 스캔 자체는 어떤 트라이얼에서도 동작하는 일반 게이트다(전용 시나리오 밖에서도 회귀 없음을
+  // 증명하는 역할).
   for (const d of world.devices) {
     for (const e of d.telemetry.events) {
       if (typeof e.eventType === 'string' && e.eventType.endsWith('_THREW')) {
         failureModes.push({ type: 'EXCEPTION', device: d.id, detail: e.eventType + ': ' + e.message });
+      }
+      if (e.eventType === 'STALE_ROW_REGRESSION') {
+        failureModes.push({ type: 'STALE_ROW_REGRESSION', device: d.id, detail: e.detail });
       }
     }
   }
 
   // phase별 최대 격차(라운드마다) — 완료된 라운드만 계산(완료 못한 라운드는 STALL로 이미 기록됨).
   //
-  // RC-3 Phase2(codex-critic C 지표 정교화): 이 하니스는 설계가 의도적으로 허용하는
-  // "늦게 받은 참가자의 graceful late-render"를 실결함과 섞지 않는다. 그래서 격차를 두 갈래로
-  // 나눠 계산한다.
-  //   (1) FULL_COHORT_TIMING_SPREAD(정보용, HARD FAILURE 아님, 성공률 감점 없음): 참여 전원
-  //       기준 최대격차 — 늦게 도착한 참가자까지 포함하므로 tolerance 초과가 "설계상 허용된
-  //       late-render"때문인지 "진짜 스케줄링 결함"때문인지 이 값만으로는 구분되지 않는다.
-  //       이전 버전(§2 이전)의 TOLERANCE_EXCEEDED와 동일 계산이며, mutation 테스트가 실제
-  //       스케줄링 결함을 여전히 검출할 수 있도록(§4 참고) 보존한다.
-  //   (2) ON_TIME_CONCURRENCY_EXCEEDED(품질 게이트, HARD FAILURE 아니지만 별도 pass/fail):
-  //       REAL waitForPhaseRender가 직접 계산한 lateRenderMs(위 LATE_RENDER_THRESHOLD_MS)로
-  //       "on-time" 판정된 기기끼리만 최대격차를 계산한다 — CEO의 "동시 렌더" 요구는 이
-  //       코호트에 대한 것이다. countdown/result/ready 3개 phase만 REAL lateRenderMs를 갖고
-  //       (choiceStart/choiceEnd는 countdown의 late 여부를 상속, 위 getPhaseLateRenderMs 참고).
+  // [범주2] network-stress quality(informational, HARD FAILURE 아님, correctnessPassRate 감점
+  // 없음): 이 하니스는 설계가 의도적으로 허용하는 "늦게 받은 참가자의 graceful late-render"를
+  // 실결함과 섞지 않는다. 아래 두 갈래 모두 이제 정보용이다(v3에서는 (2)가 HARD였으나 baseline
+  // 실집행으로 과민임이 확인돼 강등됨, §본문 taxonomy 수렴 참고).
+  //   (1) FULL_COHORT_TIMING_SPREAD: 참여 전원 기준 최대격차 — 늦게 도착한 참가자까지 포함하므로
+  //       tolerance 초과가 "설계상 허용된 late-render"때문인지 "진짜 스케줄링 결함"때문인지 이
+  //       값만으로는 구분되지 않는다. mutation 테스트가 실제 스케줄링 결함을 여전히 검출할 수
+  //       있도록(§범주3 참고) 보존한다.
+  //   (2) ON_TIME_CONCURRENCY_EXCEEDED: "수신 기준" 코호트(위 isPhaseReceivedBeforeAnchor — 앵커
+  //       이전에 수신했는가, 렌더 지각도 아님)끼리만 최대 격차를 계산해
+  //       ON_TIME_CONCURRENCY_CEILING_MS(clock-sync 잔차 기반)와 비교한다. 이 코호트 재정의로
+  //       membership 자체는 더 이상 렌더 스프레드를 구조적으로 제한하지 않지만, 이 하니스의 균등
+  //       지연 주입 구조상 사실상 트립되지 않는다(위 HARD_FAILURE_TYPES 앞 문서 참고). late-render
+  //       집계(정보용, LATE_RENDER_THRESHOLD_MS 기반)는 기존 그대로 별도 보존한다(§유지 항목,
+  //       이중 계상 방지 위해 on-time 코호트 판정과 완전히 분리된 카운터로 집계).
   const perRoundMaxDiff = {};
   const onTimeConcurrency = {};
   const lateRenderTally = { total: 0, late: 0 };
@@ -983,26 +1645,81 @@ export async function runMeasuredTrial({
       }
     }
 
-    // on-time 코호트 격차(품질 게이트) + late-render 집계(정보용, REAL lateRenderMs 기반).
-    // countdown/result/ready 3개 phase만 REAL 계측이 있다(§2 위 주석) — choiceStart/choiceEnd는
-    // countdown의 on-time 판정을 상속하되 별도 SYNC_RENDER가 없으므로 late-render 집계 모수에는
-    // 넣지 않는다(이중 계상 방지, §7에 기록).
+    // late-render 집계(정보용, REAL lateRenderMs 기반 — 기존 그대로, §유지 항목). countdown/
+    // result/ready 3개 phase만 REAL 계측이 있다(위 getPhaseLateRenderMs 주석) — choiceStart/
+    // choiceEnd는 countdown의 late 여부를 상속하되 별도 SYNC_RENDER가 없으므로 이 집계 모수에는
+    // 넣지 않는다(이중 계상 방지).
     for (const phase of ['countdown', 'result', 'nextRound']) {
-      if (phase === 'nextRound' && r >= targetRounds) continue; // ready는 마지막 라운드엔 없음(기존 로직과 동일 범위)
-      const onTimeTrue = [];
+      if (phase === 'nextRound' && r >= targetRounds) continue;
       for (const d of world.devices) {
         const lateMs = getPhaseLateRenderMs(d, phase, r);
         if (lateMs == null) continue; // 렌더 자체가 없음 — MISSING_*_RENDER가 이미 별도로 잡음
         lateRenderTally.total += 1;
-        const late = lateMs > LATE_RENDER_THRESHOLD_MS;
-        if (late) lateRenderTally.late += 1;
-        else onTimeTrue.push(getPhaseTrueTs(d, phase, r));
+        if (lateMs > LATE_RENDER_THRESHOLD_MS) lateRenderTally.late += 1;
       }
-      const onTimeDiff = diff(onTimeTrue.filter((v) => v != null));
-      const reportPhase = phase === 'nextRound' ? 'ready' : (phase === 'countdown' ? 'countdownStart' : phase);
-      onTimeConcurrency[`${reportPhase}:${r}`] = { onTimeCount: onTimeTrue.length, diffMs: onTimeDiff };
-      if (onTimeTrue.length >= 2 && onTimeDiff != null && onTimeDiff > PHASE_TOLERANCE_MS[reportPhase]) {
-        failureModes.push({ type: 'ON_TIME_CONCURRENCY_EXCEEDED', phase: reportPhase, round: r, diffMs: Math.round(onTimeDiff), onTimeCount: onTimeTrue.length });
+    }
+
+    // on-time(수신 기준) 코호트 격차 + late(앵커 이후 수신) 코호트 과지각 집계 — 둘 다 [범주2]
+    // network-stress quality(informational, HARD FAILURE 아님, §본문 taxonomy 수렴 참고). 5개
+    // phase 모두 다룬다 — choiceStart/choiceEnd는 countdown의 수신-기준 판정을 상속(근사, §7
+    // 한계 명시)한다.
+    for (const phase of ['countdownStart', 'result', 'ready', 'choiceStart', 'choiceEnd']) {
+      if (phase === 'ready' && r >= targetRounds) continue; // ready는 마지막 라운드엔 없음(기존 범위 유지)
+      const measurePhase = phase === 'countdownStart' ? 'countdown' : (phase === 'ready' ? 'nextRound' : phase);
+      const onTimeTrue = [];
+      const lateReceived = [];
+      for (const d of world.devices) {
+        const receivedOnTime = isPhaseReceivedBeforeAnchor(d, measurePhase, r);
+        if (receivedOnTime == null) continue; // 수신/렌더 계측 자체가 없음 — MISSING_*_RENDER가 별도 처리
+        const trueTs = (measurePhase === 'choiceStart') ? (d.rendered.choiceStartByRound[r] && d.rendered.choiceStartByRound[r].ts)
+          : (measurePhase === 'choiceEnd') ? (d.rendered.choiceEndByRound[r] && d.rendered.choiceEndByRound[r].ts)
+          : getPhaseTrueTs(d, measurePhase, r);
+        if (trueTs == null) continue;
+        if (receivedOnTime) onTimeTrue.push(trueTs);
+        else lateReceived.push({ device: d, trueTs });
+      }
+      const onTimeDiff = diff(onTimeTrue);
+      const totalMeasured = onTimeTrue.length + lateReceived.length;
+      const onTimeReceiptRatio = totalMeasured > 0 ? onTimeTrue.length / totalMeasured : null;
+      onTimeConcurrency[`${phase}:${r}`] = { onTimeCount: onTimeTrue.length, diffMs: onTimeDiff, totalMeasured, onTimeReceiptRatio };
+      if (onTimeTrue.length >= 2 && onTimeDiff != null && onTimeDiff > ON_TIME_CONCURRENCY_CEILING_MS) {
+        failureModes.push({ type: 'ON_TIME_CONCURRENCY_EXCEEDED', phase, round: r, diffMs: Math.round(onTimeDiff), onTimeCount: onTimeTrue.length });
+      }
+      // on-time "수신율" 붕괴(informational, HARD 아님) — on-time 코호트 스프레드 지표는 코호트
+      // 구성원이 2명 미만이면 애초에 계산 자체가 스킵돼(위 `onTimeTrue.length >= 2` 가드) 조용히
+      // 통과한다. lead를 3600ms→100ms로 줄이면 "거의 아무도" 앵커 이전에 수신하지 못해(실측: N=10
+      // baseline 평균 9.7/10명 on-time → broken 평균 0.2/10명, §범주3 mutation B 참고) on-time
+      // 코호트 자체가 사실상 사라지고, 스프레드 지표는 "구성원 부족"으로 침묵한다 — 그래서 "이
+      // phase를 measure할 수 있었던 기기 중 몇 %가 실제로 앵커 이전에 수신했는가" 자체를 별도
+      // 채널로 집계한다(리포팅 전용 — HARD_FAILURE_TYPES에는 없음). MIN_ON_TIME_RECEIPT_RATIO(0.5)는
+      // 위 실측 격차(0.97 vs 0.02)에서 넉넉한 여유를 두고 잡은 값이다(근거 강도: 중간 — 정상 네트워크
+      // 조건에서 "과반 미만"이 on-time으로 수신되는 것 자체가 이미 설계 의도(대부분 lead 안에
+      // 들어오게 함)와 어긋난다는 정성적 판단).
+      if (totalMeasured >= 2 && onTimeReceiptRatio != null && onTimeReceiptRatio < MIN_ON_TIME_RECEIPT_RATIO) {
+        failureModes.push({ type: 'ON_TIME_RECEIPT_COLLAPSED', phase, round: r, onTimeCount: onTimeTrue.length, totalMeasured, ratio: Number(onTimeReceiptRatio.toFixed(3)) });
+      }
+      // late(앵커 이후 수신) 코호트의 과도지각(informational, HARD 아님) — graceful late-render
+      // (설계상 정상)와 "앵커 보정이 아예 무력화돼 무한정 벌어지는 것으로 보이는 스프레드"를 가르는
+      // 선(리포팅 전용). 기준점은 가능하면 이 라운드의 on-time 코호트 클러스터(min(onTimeTrue) —
+      // "정상적으로 동기화된 기기들이 실제로 렌더한 가장 이른 시각", 즉 이 phase가 "실제로 일어난"
+      // 순간의 하한 근사)로 삼는다 — choiceStart/choiceEnd는 countdown 앵커와 다른 offset(로케일
+      // 고정 애니메이션/5초 카운트다운)을 가지므로 countdown의 원시 anchorServerTs를 그대로 기준으로
+      // 쓰면 상시 수천ms 오프셋이 끼어 오탐/누락이 생긴다(on-time 클러스터 기준으로 교체해 5개
+      // phase 전부 동일한 방식으로 다룰 수 있다). on-time 코호트가 아예 없으면(이 라운드 전원이
+      // late) countdown/result/ready처럼 REAL 앵커가 그 phase 자체의 것인 경우에만 anchorServerTs로
+      // 폴백하고, choiceStart/choiceEnd는 기준점이 없으므로 스킵한다(§7 한계).
+      const referenceTs = onTimeTrue.length ? Math.min(...onTimeTrue) : null;
+      for (const { device: d, trueTs } of lateReceived) {
+        let ref = referenceTs;
+        if (ref == null && (measurePhase === 'countdown' || measurePhase === 'result' || measurePhase === 'nextRound')) {
+          ref = getPhaseAnchorServerTs(d, measurePhase, r);
+        }
+        if (ref == null) continue;
+        const delayMs = trueTs - ref;
+        const excessiveThresholdMs = getLateCohortExcessiveDelayThresholdMs(phase);
+        if (excessiveThresholdMs != null && delayMs > excessiveThresholdMs) {
+          failureModes.push({ type: 'LATE_COHORT_EXCESSIVE_DELAY', phase, round: r, device: d.id, delayMs: Math.round(delayMs), thresholdMs: excessiveThresholdMs });
+        }
       }
     }
   }
@@ -1040,16 +1757,264 @@ export async function runMeasuredTrial({
 
   const hardFailureModes = failureModes.filter((f) => HARD_FAILURE_TYPES.includes(f.type));
   const onTimeConcurrencyViolations = failureModes.filter((f) => f.type === 'ON_TIME_CONCURRENCY_EXCEEDED');
+  const onTimeReceiptCollapsedViolations = failureModes.filter((f) => f.type === 'ON_TIME_RECEIPT_COLLAPSED');
+  const lateCohortExcessiveDelays = failureModes.filter((f) => f.type === 'LATE_COHORT_EXCESSIVE_DELAY');
+  const fullCohortTimingSpreadViolations = failureModes.filter((f) => f.type === 'FULL_COHORT_TIMING_SPREAD');
+  const networkStressQualityFailures = failureModes.filter((f) => NETWORK_STRESS_QUALITY_TYPES.includes(f.type));
   const lateRenderRatio = lateRenderTally.total > 0 ? lateRenderTally.late / lateRenderTally.total : null;
+  const correctnessPass = completed && hardFailureModes.length === 0;
 
   return {
     participantCount, seed, realtimeDelayRegime, completed, elapsed, perRoundMaxDiff, outcomeCounts,
     onTimeConcurrency, lateRenderStats: { ...lateRenderTally, ratio: lateRenderRatio },
     failureModes, hardFailureModes,
     onTimeConcurrencyViolations, onTimeConcurrencyPass: onTimeConcurrencyViolations.length === 0,
-    // RC-3 Phase2 정의: trial 성공 = HARD FAILURE 0 AND 5라운드 정상 완주. graceful late-render/
-    // on-time 동시성은 여기서 감점하지 않는다(별도 onTimeConcurrencyPass/lateRenderStats로 보고).
-    pass: completed && hardFailureModes.length === 0,
+    onTimeReceiptCollapsedViolations, lateCohortExcessiveDelays, fullCohortTimingSpreadViolations,
+    // [범주2] network-stress quality(informational) 채널 전부를 모은 편의 필드 — 리포팅/테스트에서
+    // "이 trial이 네트워크 스트레스 신호를 냈는가"를 correctness와 분리해서 보고 싶을 때 쓴다.
+    // 이 필드가 비어있지 않아도 correctnessPass/pass에는 전혀 영향을 주지 않는다.
+    networkStressQualityFailures,
+    // 최종 수렴(Review Correction Loop 3/3): trial의 STOP-SHIP 합격 여부는 [범주1](지연 독립
+    // correctness) HARD FAILURE가 0건이고 5라운드가 정상 완주됐는가로만 정의한다 —
+    // HARD_FAILURE_TYPES가 이번 라운드부터 [범주1]만 담고 있으므로 hardFailureModes는 곧
+    // correctness 위반 목록이다. `correctnessPass`가 이 정의를 명시적으로 드러내는 이름이고,
+    // `pass`는 하위호환을 위해 동일한 값을 그대로 유지한다(값 동일 — 기존 호출자가 r.pass를 계속
+    // 쓸 수 있게). [범주2] network-stress quality(FULL_COHORT_TIMING_SPREAD/
+    // ON_TIME_CONCURRENCY_EXCEEDED/ON_TIME_RECEIPT_COLLAPSED/LATE_COHORT_EXCESSIVE_DELAY/
+    // lateRenderRatio)는 어느 쪽에도 감점하지 않는다 — 레짐에 따라 달라지는 정보용 지표일 뿐이다.
+    correctnessPass,
+    pass: correctnessPass,
+    world,
+  };
+}
+
+// ── EG §Phase2 오라클: REAL resolveElimination/judgePure를 그대로 재사용해 "실제로 제출된 선택"
+// (roundChoicesByRound, 그라운드 트루스 — 테스트가 직접 기록, 앱과 무관)만으로 라운드별 기대
+// outcome/확정집합을 독립 재계산한다. 이건 resolveElimination의 산수를 다시 검증하는 게
+// 아니다(engine-parity.test.mjs가 이미 별도로 함) — REAL 파이프라인(handleRoomUpdate가 그 순간
+// 읽은 state.participants가 실제로 제출된 값과 일치하는가, hasStoredResults/judgeRound 폴백이
+// 올바른 입력을 골랐는가, 라운드 시퀀싱이 실제로 REAL resolveElimination의 nextActiveIds를
+// 따라가는가)의 무결성을 검증한다. resolveEliminationOracle/judgePureOracle을 디바이스에 주입되는
+// 것과 별도로 받는 이유: EG-Phase0 mutation 민감도 테스트가 디바이스 쪽만 깨고 오라클은 항상
+// 정답을 유지해야 "정답 대비 실제 파이프라인이 이탈했다"를 검출할 수 있다.
+function computeEliminationOracle({ participantIds, roundChoicesByRound, targetLoserCount, resolveEliminationOracle, judgePureOracle, maxRounds }) {
+  let activeIds = [...participantIds];
+  let safeIds = [];
+  let loserIds = [];
+  const perRound = [];
+  for (let round = 1; round <= maxRounds; round++) {
+    const choices = roundChoicesByRound.get(round);
+    if (!choices || activeIds.length === 0) break;
+    const missingIds = activeIds.filter((id) => !choices.get(id));
+    if (missingIds.length > 0) {
+      // 이번 라운드에 activeIds 중 일부가 선택을 제출하지 못함(예: 예산 소진/STALL 도중 종료) —
+      // 오라클이 이 이후를 계속 계산할 근거 데이터가 없다. 판정 불가로 표시하고 재계산을 중단한다
+      // (오라클 자신의 한계이지 correctness 판정이 아니다 — 상위 호출자가 STALL로 별도 처리).
+      perRound.push({ round, oracleIncomplete: true, missingIds });
+      break;
+    }
+    const players = activeIds.map((id) => ({ id, base: choices.get(id) }));
+    const judged = judgePureOracle(players);
+    const roundResults = activeIds.map((id) => ({ id, result: judged[id] }));
+    const res = resolveEliminationOracle({ roundResults, prevLoserIds: loserIds, prevSafeIds: safeIds, targetLoserCount });
+    perRound.push({
+      round, outcome: res.outcome,
+      newConfirmedSafeIds: [...res.newConfirmedSafeIds].sort(),
+      newConfirmedLoserIds: [...res.newConfirmedLoserIds].sort(),
+      activeIds: [...activeIds],
+    });
+    safeIds = res.newConfirmedSafeIds;
+    loserIds = res.newConfirmedLoserIds;
+    activeIds = res.nextActiveIds;
+    if (res.outcome === 'gameOver') break;
+  }
+  return { perRound, finalSafeIds: safeIds, finalLoserIds: loserIds };
+}
+
+// EG(Elimination-extended) HARD FAILURE 목록 — 위 [범주1] HARD_FAILURE_TYPES 중 이 트라이얼
+// 유형에 유효한 것만 재사용하고(FULL_COHORT_TIMING_SPREAD류 [범주2] network-stress quality는
+// 애초에 이 함수가 계산하지 않는다 — §7 한계에 명시), CROSS_DEVICE_OUTCOME_MISMATCH를 새로
+// 추가한다(여러 기기가 같은 라운드에 서로 다른 outcome을 계산 — REAL 파이프라인 데스크 자체의
+// 새로운 결함 클래스, allDraw baseline에서는 "항상 같은 값"이라 절대 드러날 수 없었던 채널).
+// WRPS-079 Round2(STOP-SHIP, HIGH 잔존 수정): READY_BRANCH_STATE_CLOBBER를 추가한다 — 위
+// CROSS_DEVICE_OUTCOME_MISMATCH(FINISH_ROUND_SUBSTITUTE.outcome 기기간 비교)는 host가 유일한
+// rooms/participants 확정 writer라 host 자신의 stale-generation ready 분기 커밋이 만든 오염을
+// 전 기기가 "똑같이 틀리게" 받아버리면 검출하지 못한다(§STOP-SHIP 지적, 근본적으로 다른 결함
+// 클래스) — beginReadyBranchClobberCheck/finishReadyBranchClobberCheck(위 참고)가 게이트 로직
+// 자체에 기대지 않고 독립적으로 검출한다.
+export const EG_HARD_FAILURE_TYPES = [
+  'STALL', 'EXCEPTION', 'CLOCK_SYNC_NOT_SETTLED', 'PHANTOM_OR_CORRUPTED_OUTCOME',
+  'ROUND_NOT_MONOTONIC', 'DOUBLE_COUNTDOWN_RENDER', 'STALE_ROW_REGRESSION',
+  'CROSS_DEVICE_OUTCOME_MISMATCH', 'READY_BRANCH_STATE_CLOBBER',
+];
+
+export const DEFAULT_EG_TARGET_LOSER_COUNT = 1;
+
+// ── EG 트라이얼 1회 실행 + 측정 ───────────────────────────────────────────────
+// runMeasuredTrial과 동일한 REAL 파이프라인/글루를 재사용하되(중복 구현 없음), 종료 조건이
+// "고정 라운드 수 완주"가 아니라 "REAL gameOver 도달"이고, choiceDriverFn으로 실제 승/패를
+// 발생시켜 tooMany/tooFew/gameOver 분기까지 실집행으로 트리거한다.
+export async function runEliminationTrial({
+  participantCount, seed, targetLoserCount = DEFAULT_EG_TARGET_LOSER_COUNT,
+  resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
+  resolveEliminationOracle = null, judgePureOracle = null,
+  stepMs = 250, budgetMsPerRound = 20000, maxRounds = null, vi,
+  combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic',
+  choiceSeed = null,
+}) {
+  // N이 클수록 "전원이 3가지 타입을 모두 낼" 확률이 급격히 올라가 allDraw가 자주 나온다(judgePure의
+  // "selectedTypes.length===3이면 draw" 규칙 — 참가자가 많을수록 3종류가 다 나올 확률이 높아짐).
+  // 그래서 결정적(승/패 발생) 라운드 자체가 드물어져 큰 N일수록 gameOver까지 훨씬 더 많은 라운드가
+  // 필요하다(§EG Phase1/2 실측으로 확인, 아래 runEliminationTrial 문서 참고) — maxRounds를 N에
+  // 비례해 넉넉히(§"STALL 정의는 엄격·관대하게" 원칙) 늘려야 진짜 STALL과 "그냥 아직 안 끝남"을
+  // 혼동하지 않는다.
+  const resolvedMaxRounds = maxRounds ?? Math.max(30, participantCount * 6);
+  const resolvedChoiceSeed = choiceSeed ?? (seed * 2654435761 + 0x9E3779B9);
+  const choiceDriverFn = createMixedChoiceDriver(resolvedChoiceSeed);
+  const world = createTrialWorld({
+    participantCount, seed, targetLoserCount,
+    resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
+    combinedSourceOverride, realtimeDelayRegime, choiceDriverFn,
+  });
+  const host = world.devices[0];
+  const realRandom = Math.random;
+  // allDraw baseline과 동일 정책(§runMeasuredTrial 주석 참고): autoFillChoices()의 안전망까지
+  // 결정론화한다. 이 스트림은 실제 라운드 선택(choiceDriverFn, 독립 rng)과는 무관하다 — 안전망이
+  // 실제로 발동하면(제출이 창 안에 못 끝난 경우) randomRoundChoice()가 항상 "scissors"를 골라
+  // 오라클의 ground-truth(roundChoicesByRound, choiceDriverFn이 명시적으로 제출한 값)와 어긋날 수
+  // 있다 — 이 경우 그 참가자는 missingIds로 잡혀 오라클이 그 라운드부터 계산을 멈춘다(§7 한계로
+  // 명시, 안전망 발동 자체가 드물다는 것은 allDraw baseline 4860 trial에서 이미 확인됨).
+  Math.random = () => 0;
+  let elapsed = 0;
+  const budget = budgetMsPerRound * resolvedMaxRounds;
+  try {
+    const clockSyncBudgetMs = 8000;
+    let clockSyncElapsed = 0;
+    let clockSyncSettled = false;
+    while (clockSyncElapsed < clockSyncBudgetMs && !clockSyncSettled) {
+      // eslint-disable-next-line no-await-in-loop
+      await vi.advanceTimersByTimeAsync(stepMs);
+      clockSyncElapsed += stepMs;
+      elapsed += stepMs;
+      clockSyncSettled = world.devices.every((d) => d.impl.getServerClockSynced());
+    }
+    world.__clockSyncSettled = clockSyncSettled;
+    while (elapsed < budget) {
+      tickTrialWorld(world, host, resolvedMaxRounds);
+      if (isGameOverSettled(world)) break;
+      // eslint-disable-next-line no-await-in-loop
+      await vi.advanceTimersByTimeAsync(stepMs);
+      elapsed += stepMs;
+    }
+  } finally {
+    Math.random = realRandom;
+  }
+
+  const completed = isGameOverSettled(world);
+  const failureModes = [];
+  if (!completed) {
+    failureModes.push({ type: 'STALL', detail: world.devices.map((d) => `${d.id}:${d.impl.state.status}/${d.impl.state.round}`).join(' ') });
+  }
+  if (!world.__clockSyncSettled) {
+    failureModes.push({ type: 'CLOCK_SYNC_NOT_SETTLED' });
+  }
+  for (const d of world.devices) {
+    for (const e of d.telemetry.events) {
+      if (typeof e.eventType === 'string' && e.eventType.endsWith('_THREW')) {
+        failureModes.push({ type: 'EXCEPTION', device: d.id, detail: e.eventType + ': ' + e.message });
+      }
+      if (e.eventType === 'STALE_ROW_REGRESSION') {
+        failureModes.push({ type: 'STALE_ROW_REGRESSION', device: d.id, detail: e.detail });
+      }
+      // WRPS-079 Round2(STOP-SHIP, HIGH 잔존 수정): ready 분기 commit 게이트가 실제로 뚫린 경우만
+      // (위 finishReadyBranchClobberCheck 참고 — staleGeneration:true인데도 confirmedSafeIds/
+      // LoserIds가 실제로 바뀐 경우) 여기서 하드 실패로 집계한다.
+      if (e.eventType === 'READY_BRANCH_STATE_CLOBBER') {
+        failureModes.push({ type: 'READY_BRANCH_STATE_CLOBBER', device: d.id, detail: e.detail });
+      }
+    }
+  }
+  for (const d of world.devices) {
+    const countdownEvents = d.telemetry.events.filter((e) => e.kind === 'metric' && e.eventType === 'SYNC_RENDER' && e.phase === 'countdown');
+    const seq = countdownEvents.map((e) => e.round);
+    for (let i = 1; i < seq.length; i++) {
+      if (seq[i] <= seq[i - 1]) failureModes.push({ type: 'ROUND_NOT_MONOTONIC', device: d.id, seq });
+    }
+    const byRound = {};
+    for (const e of countdownEvents) { byRound[e.round] = (byRound[e.round] || 0) + 1; }
+    for (const [round, count] of Object.entries(byRound)) {
+      if (count > 1) failureModes.push({ type: 'DOUBLE_COUNTDOWN_RENDER', device: d.id, round: Number(round), count });
+    }
+  }
+
+  // 라운드별로 이 트라이얼에 실제 참여한 모든 기기의 FINISH_ROUND_SUBSTITUTE 이벤트를 모은다
+  // (host만이 아니라 참가자 기기도 포함 — 이게 CROSS_DEVICE_OUTCOME_MISMATCH 검출의 핵심: 실제
+  // 앱에서도 각 기기가 로컬로 이 판정을 각자 실행하므로, 같은 라운드에 대해 서로 다른 결론에
+  // 도달하면 그 자체로 화면 불일치/오판정 결함이다).
+  const eventsByRoundByDevice = new Map();
+  for (const d of world.devices) {
+    for (const e of d.telemetry.events) {
+      if (e.eventType !== 'FINISH_ROUND_SUBSTITUTE') continue;
+      if (!eventsByRoundByDevice.has(e.round)) eventsByRoundByDevice.set(e.round, new Map());
+      // 같은 기기가 같은 라운드를 재판정(defer 재시도 등)할 수 있으므로 마지막 값을 채택한다
+      // (REAL 재판정도 idempotent하게 동일 round에 대해 최종적으로 하나의 값에 수렴해야 하므로,
+      // "마지막 값"이 그 기기의 최종 확정이다).
+      eventsByRoundByDevice.get(e.round).set(d.id, e);
+    }
+  }
+  const outcomeCounts = {}; // round당 host(devices[0]) 관점으로 1회만 집계(중복 계상 방지)
+  for (const [round, byDevice] of eventsByRoundByDevice.entries()) {
+    const distinctOutcomes = new Set([...byDevice.values()].map((e) => e.outcome));
+    if (distinctOutcomes.size > 1) {
+      failureModes.push({
+        type: 'CROSS_DEVICE_OUTCOME_MISMATCH', round,
+        detail: [...byDevice.entries()].map(([id, e]) => `${id}:${e.outcome}`).join(' '),
+      });
+    }
+    const hostEvent = byDevice.get(host.id);
+    if (hostEvent) outcomeCounts[hostEvent.outcome] = (outcomeCounts[hostEvent.outcome] || 0) + 1;
+  }
+
+  // EG §Phase2 오라클 대조: host 관점의 라운드별 outcome/확정집합을, choiceDriverFn이 실제로
+  // 제출한 그라운드 트루스로부터 독립 재계산한 기대값과 대조한다.
+  const oracle = computeEliminationOracle({
+    participantIds: world.devices.map((d) => d.id),
+    roundChoicesByRound: world.roundChoicesByRound,
+    targetLoserCount,
+    resolveEliminationOracle: resolveEliminationOracle || resolveElimination,
+    judgePureOracle: judgePureOracle || judgePure,
+    maxRounds: resolvedMaxRounds,
+  });
+  for (const oracleRound of oracle.perRound) {
+    if (oracleRound.oracleIncomplete) continue;
+    const hostEvent = eventsByRoundByDevice.get(oracleRound.round) && eventsByRoundByDevice.get(oracleRound.round).get(host.id);
+    if (!hostEvent) continue; // 이 라운드에 host 판정 자체가 없음 — 별도로 STALL/coverage가 잡음
+    const actualSafe = [...hostEvent.newConfirmedSafeIds].sort();
+    const actualLoser = [...hostEvent.newConfirmedLoserIds].sort();
+    const mismatch = hostEvent.outcome !== oracleRound.outcome
+      || JSON.stringify(actualSafe) !== JSON.stringify(oracleRound.newConfirmedSafeIds)
+      || JSON.stringify(actualLoser) !== JSON.stringify(oracleRound.newConfirmedLoserIds);
+    if (mismatch) {
+      failureModes.push({
+        type: 'PHANTOM_OR_CORRUPTED_OUTCOME', round: oracleRound.round,
+        detail: 'oracle mismatch',
+        expected: { outcome: oracleRound.outcome, safe: oracleRound.newConfirmedSafeIds, loser: oracleRound.newConfirmedLoserIds },
+        actual: { outcome: hostEvent.outcome, safe: actualSafe, loser: actualLoser },
+      });
+    }
+  }
+
+  const hardFailureModes = failureModes.filter((f) => EG_HARD_FAILURE_TYPES.includes(f.type));
+  const correctnessPass = completed && hardFailureModes.length === 0;
+  const finalRound = Math.max(0, ...[...eventsByRoundByDevice.keys()]);
+
+  return {
+    participantCount, seed, choiceSeed: resolvedChoiceSeed, targetLoserCount, realtimeDelayRegime,
+    completed, elapsed, finalRound,
+    outcomeCounts, // 예: { allDraw: 2, tooMany: 1, tooFew: 1, gameOver: 1 }
+    failureModes, hardFailureModes,
+    oraclePerRound: oracle.perRound,
+    correctnessPass, pass: correctnessPass,
     world,
   };
 }

@@ -92,7 +92,11 @@ describe('Build22-B — same phase late update does not re-render screen', () =>
     // `const [readyFetchResult, readyIsFirstRender] = await Promise.all([...])` 구조로 바뀌었다 —
     // "첫 렌더일 때만 화면 전환"이라는 게이팅 자체(if (readyIsFirstRender) { ... showReadyScreen(); })는
     // 그대로 유지된다.
-    expect(html).toMatch(/const \[readyFetchResult, readyIsFirstRender\] = await Promise\.all\(\[[\s\S]{0,400}\]\);[\s\S]{0,700}if \(readyIsFirstRender\) \{[\s\S]{0,700}showReadyScreen\(\);/);
+    // WRPS-079 Round2(STOP-SHIP, HIGH 잔존 수정): Promise.all 이후 커밋 지점에 세대 가드
+    // (state.hruGen/room.__hruGen, index.html ~5906 부근 주석 참고)가 추가돼 이 사이 구간이 크게
+    // 길어졌다 — 길이 상한만 여유 있게 확장(게이팅 구조 자체는 무변경, if (readyIsFirstRender)는
+    // 여전히 그 세대 가드가 통과했을 때만 도달하는 안쪽 블록에 그대로 있다).
+    expect(html).toMatch(/const \[readyFetchResult, readyIsFirstRender\] = await Promise\.all\(\[[\s\S]{0,400}\]\);[\s\S]{0,2400}if \(readyIsFirstRender\) \{[\s\S]{0,700}showReadyScreen\(\);/);
   });
 
   it('새 게임(gameNo 변경) 진입 엣지에서만 renderedPhaseKeys가 초기화되고, 같은 게임의 round=1 2차 전이(result→game_over)에서는 지워지지 않는다', () => {
