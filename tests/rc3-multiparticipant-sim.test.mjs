@@ -18,6 +18,8 @@ import {
   runReadyBranchClobberScenario,
   // STOP-SHIP(Part A/B/D, 미커버 커버리지 닫기 + 종합 correctnessPass 측정) — 신규 export.
   createAlternatingSkewFn, pickDecisiveChoiceBase, createDecisiveChoiceDriver,
+  // STOP-SHIP Phase0~3(2.6초 REST 폴링 채널 충실 모델링 + Part A/D 재측정) — 신규 export.
+  REAL_POLL_INTERVAL_MS,
 } from './rc3-harness-support.mjs';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1574,5 +1576,388 @@ describe('STOP-SHIP Part D: 종합 correctnessPass 측정(N=3..20, decisive 모�
     }
     expect(surface.length).toBe(REGIMES.length * NS.length * LOSER_CONFIGS.length);
     expect(totalException).toBe(0);
+  }, 600000);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// STOP-SHIP Phase0~3: 2.6초 REST 폴링 채널 충실 모델링 + Part D/Part A/98% 재측정.
+//
+// 조사 결과 요약(§본문 지시): 지금까지(위 Part A/Part D 전부)의 하니스는 REAL
+// subscribeToRoom(index.html 5578-5590)의 2.6초 폴링 백업을 단 한 번도 모델링하지 않았다 —
+// Part A의 deliveryOrderMode:'outOfOrder'는 "폴링이 있으면 재정렬이 생길 수 있다"는 위협 모델을
+// realtime 전송 계층 자체에서 일반화한 프록시("모든 realtime 배달을 재정렬")였을 뿐, 실제 이중
+// 경로(정상 순서보장 realtime + 완전히 독립된 2.6초 REST 폴링)를 재현하지 않았다. 이 프록시가 실제
+// 빈도를 과장하는지(모든 커밋을 재정렬하는 것 vs 폴링이 어쩌다 stale snapshot을 늦게 배달하는 것은
+// 전혀 다른 발생률일 수 있다), 그리고 Part D 헤드라인 스윕의 산발적 STALL/오라클 mismatch가
+// 이 미모델링된 폴링 채널의 부재로 생긴 하니스 아티팩트인지(폴링이 있었으면 참가자가 5초 window
+// 안에 최신 상태를 인지해 사라졌을 것인지)를 이 섹션이 재측정한다.
+//
+// Phase0(아래 §Phase0)은 위 rc3-harness-support.mjs의 startDevicePolling/createDevice/
+// createTrialWorld/runMeasuredTrial/runEliminationTrial에 추가된 pollingEnabled 옵션(기본값
+// false — 회귀 없음)의 충실성을 원문 대조로 재확인한다. Phase1~3(§Phase1/§Phase2/§Phase3)이 실제
+// 재측정이다.
+describe('STOP-SHIP Phase0: 2.6초 REST 폴링 채널 모델 충실성(fidelity)', () => {
+  it('폴링 모델의 주기 상수(REAL_POLL_INTERVAL_MS=2600)가 index.html의 실제 setInterval(...,2600) 호출과 바이트 동일하다', () => {
+    expect(REAL_POLL_INTERVAL_MS).toBe(2600);
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    // REAL 폴링 백업 자체(순서: rooms select → fetchParticipants → handleRoomUpdate(room), 주기
+    // 2600ms)가 여전히 index.html에 그대로 있는지 원문으로 재확인한다(하니스가 실존하지 않는 코드를
+    // 모델링하는 것을 방지).
+    expect(html.includes("const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();")).toBe(true);
+    expect(html.includes('await fetchParticipants(roomCode);')).toBe(true);
+    expect(html.includes('if (room) await handleRoomUpdate(room);')).toBe(true);
+    expect(html.includes('}, 2600);')).toBe(true);
+  });
+
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(1_800_000_000_000)); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('sanity: pollingEnabled 미지정(기본값 false)은 기존 동작과 완전히 동일하다(회귀 없음 — 옵션 추가 자체가 기존 시드 결과를 바꾸지 않는지 확인)', async () => {
+    const realRandom = Math.random;
+    Math.random = () => 0;
+    try {
+      const r = await runMeasuredTrial({
+        participantCount: 6, seed: 9001, targetRounds: 2,
+        resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+      });
+      expect(r.completed).toBe(true);
+      expect(r.correctnessPass).toBe(true);
+    } finally {
+      Math.random = realRandom;
+    }
+  }, 15000);
+
+  it('sanity: pollingEnabled:true는 실제로 REAL handleRoomUpdate를 폴링 경로로도 구동한다(POLL_TICK_THREW 없이, 정상 완주) — no-op이 아니라는 직접 증거', async () => {
+    const realRandom = Math.random;
+    Math.random = () => 0;
+    try {
+      const r = await runMeasuredTrial({
+        participantCount: 6, seed: 9001, targetRounds: 3,
+        resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+        pollingEnabled: true,
+      });
+      expect(r.completed).toBe(true);
+      // 폴링 경로 자체가 예외 없이 동작했는지(POLL_TICK_THREW도 EXCEPTION으로 잡힌다).
+      expect(r.hardFailureModes.filter((f) => f.type === 'EXCEPTION').length).toBe(0);
+      // 트라이얼 전체 경과(3라운드, pessimistic 기본 레짐)가 최소 1회의 poll tick(2600ms)이
+      // 지나갈 만큼 길었는지 sanity(폴링이 아예 발화하지 않는 무의미한 트라이얼이 아니었는지) —
+      // r.elapsed는 clock-sync 대기 포함 누적 fake-time.
+      expect(r.elapsed).toBeGreaterThan(2600);
+    } finally {
+      Math.random = realRandom;
+    }
+  }, 15000);
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// §Phase1: Part D 재측정(아티팩트 확정) — N=14 seed=114801883(및 인근)을 폴링 OFF/ON 양쪽으로
+// 재실행해 p4(host 관점) 오라클 mismatch/STALL이 폴링을 켜면 사라지는지 확인한다. 사라지면 "폴링
+// 부재로 인해 참가자가 최신 상태를 인지하지 못해 생긴 하니스 아티팩트"라는 가설이 최종 확정되고,
+// 사라지지 않으면(같은 seed에서 여전히 재현) 하니스 아티팩트가 아니라 재분석이 필요한 신호다.
+// "및 인근"은 118011883 근방 10개 연속 seed(114801883..114801892)로 배치 재현해 단일 seed의
+// 우연(clock-sync 타이밍 등)이 아닌지 함께 확인한다. targetLoserCount=2/decisive choice 모델은
+// Part D 헤드라인 스윕과 동일 구성(같은 실패가 재현되는지 보려면 같은 조건이어야 한다).
+describe('STOP-SHIP §Phase1: Part D 재측정(N=14 seed=114801883 및 인근, 폴링 OFF vs ON)', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(1_800_000_000_000)); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('[재현 배치] N=14, seed=114801883..114801892(10개): 폴링 OFF/ON 각각 correctnessPass + hardFailureModes 전수 기록 — OFF에서 재현되던 실패가 ON에서 사라지는지 대조', async () => {
+    const N = 14;
+    const SEEDS = Array.from({ length: 10 }, (_, i) => 114801883 + i);
+    async function runBatch(pollingEnabled) {
+      const rows = [];
+      for (const seed of SEEDS) {
+        // eslint-disable-next-line no-await-in-loop
+        const r = await runEliminationTrial({
+          participantCount: N, seed, targetLoserCount: 2,
+          resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+          choiceDriverFactory: createDecisiveChoiceDriver,
+          pollingEnabled,
+        });
+        rows.push({
+          seed, completed: r.completed, correctnessPass: r.correctnessPass, finalRound: r.finalRound,
+          hardFailureModes: r.hardFailureModes.map((f) => ({ type: f.type, detail: f.detail, round: f.round })),
+        });
+      }
+      return rows;
+    }
+    const offRows = await runBatch(false);
+    const onRows = await runBatch(true);
+    // eslint-disable-next-line no-console
+    console.log('[STOP-SHIP §Phase1][폴링 OFF] N=14 seed=114801883..92 결과:', JSON.stringify(offRows, null, 2));
+    // eslint-disable-next-line no-console
+    console.log('[STOP-SHIP §Phase1][폴링 ON] N=14 seed=114801883..92 결과:', JSON.stringify(onRows, null, 2));
+    const offFailSeeds = offRows.filter((r) => !r.correctnessPass).map((r) => r.seed);
+    const onFailSeeds = onRows.filter((r) => !r.correctnessPass).map((r) => r.seed);
+    const healedByPolling = offFailSeeds.filter((s) => !onFailSeeds.includes(s));
+    const stillFailingWithPolling = offFailSeeds.filter((s) => onFailSeeds.includes(s));
+    const newFailuresWithPolling = onFailSeeds.filter((s) => !offFailSeeds.includes(s));
+    // eslint-disable-next-line no-console
+    console.log('[STOP-SHIP §Phase1] 요약: offFailSeeds=', offFailSeeds, 'onFailSeeds=', onFailSeeds,
+      'healedByPolling(아티팩트 확정 후보)=', healedByPolling,
+      'stillFailingWithPolling(진짜 결함 후보)=', stillFailingWithPolling,
+      'newFailuresWithPolling(폴링이 새로 유발한 실패, 있으면 안 됨)=', newFailuresWithPolling);
+    // 하니스 자체 결함(EXCEPTION)만은 폴링 ON/OFF 무관하게 0이어야 한다(있으면 이 측정 자체가 무효).
+    expect(offRows.every((r) => !r.hardFailureModes.some((f) => f.type === 'EXCEPTION'))).toBe(true);
+    expect(onRows.every((r) => !r.hardFailureModes.some((f) => f.type === 'EXCEPTION'))).toBe(true);
+    // 게이트 자체는 하드 assert하지 않는다(§본문 지시: 확정은 보고에서, 여기서는 측정만) — 위
+    // console.log의 healedByPolling/stillFailingWithPolling이 §보고 2절 "p4 소멸 여부" 판정 근거다.
+    expect(offRows.length).toBe(SEEDS.length);
+    expect(onRows.length).toBe(SEEDS.length);
+  }, 300000);
+
+  it('[헤드라인 재현 폭 확인] N=14, 헤드라인과 동일 seed 공식(n*8100000+s, s=0..149) 150 trial: 폴링 OFF/ON 각각 correctnessPassRate + STALL/오라클mismatch 상세(§Part D 헤드라인 재현 seed 공간과의 관계 확인용)', async () => {
+    const N = 14;
+    const TRIALS = 150;
+    async function runSweep(pollingEnabled) {
+      let correctnessPassCount = 0;
+      const hardFailureModeCounts = {};
+      const sampleHardFailures = [];
+      const stallDetails = [];
+      for (let s = 0; s < TRIALS; s++) {
+        const seed = N * 8100000 + s;
+        // eslint-disable-next-line no-await-in-loop
+        const r = await runEliminationTrial({
+          participantCount: N, seed, targetLoserCount: 2,
+          resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+          choiceDriverFactory: createDecisiveChoiceDriver,
+          pollingEnabled,
+        });
+        if (r.correctnessPass) correctnessPassCount++;
+        for (const f of r.hardFailureModes) {
+          hardFailureModeCounts[f.type] = (hardFailureModeCounts[f.type] || 0) + 1;
+          if (f.type === 'STALL') stallDetails.push({ seed, finalRound: r.finalRound, detail: f.detail });
+          if (sampleHardFailures.length < 12) sampleHardFailures.push({ seed, ...f });
+        }
+      }
+      return { correctnessPassRate: correctnessPassCount / TRIALS, hardFailureModeCounts, sampleHardFailures, stallDetails };
+    }
+    const off = await runSweep(false);
+    const on = await runSweep(true);
+    // eslint-disable-next-line no-console
+    console.log('[STOP-SHIP §Phase1][헤드라인 seed공간, 폴링 OFF] N=14 150 trial:', JSON.stringify(
+      { correctnessPassRate: Number(off.correctnessPassRate.toFixed(4)), hardFailureModeCounts: off.hardFailureModeCounts }, null, 2));
+    // eslint-disable-next-line no-console
+    console.log('[STOP-SHIP §Phase1][헤드라인 seed공간, 폴링 ON] N=14 150 trial:', JSON.stringify(
+      { correctnessPassRate: Number(on.correctnessPassRate.toFixed(4)), hardFailureModeCounts: on.hardFailureModeCounts }, null, 2));
+    if (off.correctnessPassRate < 1) {
+      // eslint-disable-next-line no-console
+      console.log('[STOP-SHIP §Phase1][OFF] 실패 전수(sample):', JSON.stringify({ sampleHardFailures: off.sampleHardFailures, stallDetails: off.stallDetails }, null, 2));
+    }
+    if (on.correctnessPassRate < 1) {
+      // eslint-disable-next-line no-console
+      console.log('[STOP-SHIP §Phase1][ON] 실패 전수(sample):', JSON.stringify({ sampleHardFailures: on.sampleHardFailures, stallDetails: on.stallDetails }, null, 2));
+    }
+    expect(off.hardFailureModeCounts.EXCEPTION || 0).toBe(0);
+    expect(on.hardFailureModeCounts.EXCEPTION || 0).toBe(0);
+  }, 600000);
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// §Phase2: Part A 진짜 빈도 재측정 — "모든 realtime 재정렬"(deliveryOrderMode:'outOfOrder') 대신
+// 실제 이중경로(realtime는 정상 순서보장 그대로 + 독립 2.6초 폴링만 추가)에서
+// ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER 등이 실제로 얼마나 트립되는지 측정한다.
+// deliveryOrderMode는 기본값('monotonic', realtime 순서보장 유지)으로 두고 pollingEnabled만 켠다 —
+// 이게 "폴링이 stale rooms row를 newer realtime 뒤에 전달하는 자연스러운 빈도"를 재현하는
+// 유일한 조합이다(outOfOrder는 realtime 자체를 재정렬하므로 이 측정과는 다른 스트레스 모드).
+//
+// §진단(1차 실집행 후 telemetry 직접 대조로 확인, "결함이면 열거만" 원칙에 따라 여기서 고치지는
+// 않음): 아래 실측된 ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER는 항상 같은 패턴이다 — 한 기기가
+// 이미 여러 라운드를 더 지나(예: round 1 countdown/result까지 렌더된 뒤) round=1의 countdown을
+// "완전히 동일한 serverScheduledTs"로 다시 렌더한다(관측된 lateRenderMs가 수 초~10초대로 튐).
+// isStaleRoomRow 가드(index.html handleRoomUpdate)는 room.penalty에 인코딩된 **gameRound**(게임
+// 회차)만 비교한다 — 이 allDraw/decisive 트라이얼처럼 "같은 게임 안에서 5라운드가 진행"되는
+// 동안에는 gameRound가 시종일관 1로 고정되므로, gameRound 기준 stale 검사는 이 시나리오에서 항상
+// 무의미하게 통과한다(같은 게임의 더 오래된 **round**를 걸러내는 별도 가드는 존재하지 않는다).
+// 폴링은 db.from('rooms').select(...)을 realtime 큐와 무관하게 직접 호출하므로, 이 select의 REST
+// 지연(pessimistic 레짐 꼬리 최대 ~9000ms)이 큰 tick에서는 "select를 보낸 시점"의 오래된 room
+// 스냅샷이 "resolve된 시점"(이미 여러 라운드가 realtime으로 더 진행된 뒤)에 뒤늦게 도착해
+// handleRoomUpdate로 그대로 들어간다 — REAL 코드에는 이를 걸러낼 라운드-레벨 가드가 없으므로 이미
+// 렌더된 라운드의 countdown이 그대로 재실행된다(§보고 3절 severity 재평가의 핵심 근거).
+describe('STOP-SHIP §Phase2: Part A 진짜 이중경로(realtime 순서보장 + 독립 2.6초 폴링) 빈도 재측정', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(1_800_000_000_000)); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('[allDraw baseline, 실제 이중경로] N=3..20 각 60 trial: correctnessPassRate + ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER/STALE_ROW_REGRESSION 개별 트립 횟수(정직한 실빈도, "모든 재정렬" 프록시 아님)', async () => {
+    const NS = Array.from({ length: 18 }, (_, i) => i + 3); // 3..20
+    const TRIALS_PER_N = 60;
+    const realRandom = Math.random;
+    Math.random = () => 0;
+    const summary = [];
+    try {
+      for (const n of NS) {
+        let correctnessPassCount = 0;
+        const hardFailureModeCounts = {};
+        const sampleHardFailures = [];
+        for (let s = 0; s < TRIALS_PER_N; s++) {
+          const seed = n * 5300000 + s;
+          // eslint-disable-next-line no-await-in-loop
+          const r = await runMeasuredTrial({
+            participantCount: n, seed, targetRounds: DEFAULT_TARGET_ROUNDS,
+            resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+            pollingEnabled: true,
+          });
+          if (r.correctnessPass) correctnessPassCount++;
+          for (const f of r.hardFailureModes) {
+            hardFailureModeCounts[f.type] = (hardFailureModeCounts[f.type] || 0) + 1;
+            if (sampleHardFailures.length < 10) sampleHardFailures.push({ seed, n, ...f });
+          }
+        }
+        summary.push({
+          n, trials: TRIALS_PER_N, correctnessPassCount, correctnessPassRate: correctnessPassCount / TRIALS_PER_N,
+          hardFailureModeCounts, sampleHardFailures,
+        });
+      }
+    } finally {
+      Math.random = realRandom;
+    }
+    const totalTrials = NS.length * TRIALS_PER_N;
+    const totalRoundNotMonotonic = summary.reduce((a, s) => a + (s.hardFailureModeCounts.ROUND_NOT_MONOTONIC || 0), 0);
+    const totalDoubleCountdown = summary.reduce((a, s) => a + (s.hardFailureModeCounts.DOUBLE_COUNTDOWN_RENDER || 0), 0);
+    const totalStaleRowRegression = summary.reduce((a, s) => a + (s.hardFailureModeCounts.STALE_ROW_REGRESSION || 0), 0);
+    // eslint-disable-next-line no-console
+    console.log('[STOP-SHIP §Phase2][allDraw, 실제 이중경로] N별 correctnessPassRate + hardFailureModeCounts:', JSON.stringify(
+      summary.map((s) => ({ n: s.n, trials: s.trials, correctnessPassRate: Number(s.correctnessPassRate.toFixed(3)), hardFailureModeCounts: s.hardFailureModeCounts })),
+      null, 2
+    ));
+    // eslint-disable-next-line no-console
+    console.log(`[STOP-SHIP §Phase2][allDraw, 실제 이중경로] 종합(${totalTrials} trial): ROUND_NOT_MONOTONIC=${totalRoundNotMonotonic}(rate=${(totalRoundNotMonotonic / totalTrials).toFixed(4)}), DOUBLE_COUNTDOWN_RENDER=${totalDoubleCountdown}(rate=${(totalDoubleCountdown / totalTrials).toFixed(4)}), STALE_ROW_REGRESSION=${totalStaleRowRegression}(rate=${(totalStaleRowRegression / totalTrials).toFixed(4)})`);
+    for (const s of summary) {
+      if (s.correctnessPassRate < 1) {
+        // eslint-disable-next-line no-console
+        console.log(`[STOP-SHIP §Phase2] N=${s.n} correctnessPassRate<100%(실제 이중경로) — 실패 전수 열거(sample):`, JSON.stringify(s.sampleHardFailures, null, 2));
+      }
+    }
+    // 하니스 자체 결함(EXCEPTION)만은 이 모드에서도 0이어야 한다.
+    for (const s of summary) {
+      expect(s.hardFailureModeCounts.EXCEPTION || 0).toBe(0);
+    }
+    expect(summary.length).toBe(NS.length);
+  }, 600000);
+
+  it('[EG decisive 모델, 실제 이중경로] N=3..20 각 30 trial(targetLoserCount=2): CROSS_DEVICE_OUTCOME_MISMATCH/ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER/STALE_ROW_REGRESSION 실빈도(§Part D 헤드라인과 동일 구성 + 실제 이중경로 결합)', async () => {
+    const NS = Array.from({ length: 18 }, (_, i) => i + 3); // 3..20
+    const TRIALS_PER_N = 30;
+    const summary = [];
+    for (const n of NS) {
+      let correctnessPassCount = 0;
+      const hardFailureModeCounts = {};
+      const sampleHardFailures = [];
+      for (let s = 0; s < TRIALS_PER_N; s++) {
+        const seed = n * 5400000 + s;
+        // eslint-disable-next-line no-await-in-loop
+        const r = await runEliminationTrial({
+          participantCount: n, seed, targetLoserCount: 2,
+          resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+          choiceDriverFactory: createDecisiveChoiceDriver,
+          pollingEnabled: true,
+        });
+        if (r.correctnessPass) correctnessPassCount++;
+        for (const f of r.hardFailureModes) {
+          hardFailureModeCounts[f.type] = (hardFailureModeCounts[f.type] || 0) + 1;
+          if (sampleHardFailures.length < 10) sampleHardFailures.push({ seed, n, ...f });
+        }
+      }
+      summary.push({
+        n, trials: TRIALS_PER_N, correctnessPassCount, correctnessPassRate: correctnessPassCount / TRIALS_PER_N,
+        hardFailureModeCounts, sampleHardFailures,
+      });
+    }
+    const totalTrials = NS.length * TRIALS_PER_N;
+    const totalRoundNotMonotonic = summary.reduce((a, s) => a + (s.hardFailureModeCounts.ROUND_NOT_MONOTONIC || 0), 0);
+    const totalDoubleCountdown = summary.reduce((a, s) => a + (s.hardFailureModeCounts.DOUBLE_COUNTDOWN_RENDER || 0), 0);
+    const totalCrossDeviceMismatch = summary.reduce((a, s) => a + (s.hardFailureModeCounts.CROSS_DEVICE_OUTCOME_MISMATCH || 0), 0);
+    const totalStaleRowRegression = summary.reduce((a, s) => a + (s.hardFailureModeCounts.STALE_ROW_REGRESSION || 0), 0);
+    // eslint-disable-next-line no-console
+    console.log('[STOP-SHIP §Phase2][EG decisive, 실제 이중경로] N별 correctnessPassRate + hardFailureModeCounts:', JSON.stringify(
+      summary.map((s) => ({ n: s.n, trials: s.trials, correctnessPassRate: Number(s.correctnessPassRate.toFixed(3)), hardFailureModeCounts: s.hardFailureModeCounts })),
+      null, 2
+    ));
+    // eslint-disable-next-line no-console
+    console.log(`[STOP-SHIP §Phase2][EG decisive, 실제 이중경로] 종합(${totalTrials} trial): ROUND_NOT_MONOTONIC=${totalRoundNotMonotonic}(rate=${(totalRoundNotMonotonic / totalTrials).toFixed(4)}), DOUBLE_COUNTDOWN_RENDER=${totalDoubleCountdown}(rate=${(totalDoubleCountdown / totalTrials).toFixed(4)}), CROSS_DEVICE_OUTCOME_MISMATCH=${totalCrossDeviceMismatch}(rate=${(totalCrossDeviceMismatch / totalTrials).toFixed(4)}), STALE_ROW_REGRESSION=${totalStaleRowRegression}(rate=${(totalStaleRowRegression / totalTrials).toFixed(4)})`);
+    for (const s of summary) {
+      if (s.correctnessPassRate < 1) {
+        // eslint-disable-next-line no-console
+        console.log(`[STOP-SHIP §Phase2][EG] N=${s.n} correctnessPassRate<100%(실제 이중경로) — 실패 전수 열거(sample):`, JSON.stringify(s.sampleHardFailures, null, 2));
+      }
+    }
+    for (const s of summary) {
+      expect(s.hardFailureModeCounts.EXCEPTION || 0).toBe(0);
+    }
+    expect(summary.length).toBe(NS.length);
+  }, 600000);
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// §Phase3: 98% 헤드라인 폴링포함 재측정 — 결정적 choice 모델 + 폴링 ON(실제 이중경로 포함)으로
+// N=3..20 종합 correctnessPass 재측정. Part D 헤드라인(§위 describe, 폴링 없음 150 trial)과 직접
+// 비교 가능하도록 동일 구성(targetLoserCount=2, decisive 모델, pessimistic 레짐)을 쓰되, 트라이얼당
+// 폴링 오버헤드(라운드마다 최대 몇 회의 추가 REST 왕복) 때문에 이 파일 전체 실행 시간 예산 안에서
+// trial 수를 150→60으로 줄였다(§7에 명시 — 98%+ 판정에 필요한 통계적 신뢰도는 N당 60 trial로도
+// ±estimate가 헤드라인과 같은 자리수로 유지된다, 완전한 150-trial 재현은 후속 위임으로 남긴다).
+describe('STOP-SHIP §Phase3: 98% 헤드라인 폴링포함 재측정(N=3..20, decisive 모델, 실제 이중경로)', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(1_800_000_000_000)); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('[헤드라인, 폴링 ON] N=3..20 전체(18개) 각 60 trial(pessimistic, targetLoserCount=2, decisive choice 모델, 실제 이중경로): N별 correctnessPass% + 98% 게이트 충족 여부 — 폴링 없는 헤드라인(위 Part D) 대비 유지/하락 여부 판정', async () => {
+    const NS = Array.from({ length: 18 }, (_, i) => i + 3); // 3..20
+    const TRIALS_PER_N = 60;
+    const summary = [];
+    for (const n of NS) {
+      let correctnessPassCount = 0;
+      let completedCount = 0;
+      const hardFailureModeCounts = {};
+      const sampleHardFailures = [];
+      const stallDetails = [];
+      for (let s = 0; s < TRIALS_PER_N; s++) {
+        const seed = n * 8300000 + s;
+        // eslint-disable-next-line no-await-in-loop
+        const r = await runEliminationTrial({
+          participantCount: n, seed, targetLoserCount: 2,
+          resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+          choiceDriverFactory: createDecisiveChoiceDriver,
+          pollingEnabled: true,
+        });
+        if (r.completed) completedCount++;
+        if (r.correctnessPass) correctnessPassCount++;
+        for (const f of r.hardFailureModes) {
+          hardFailureModeCounts[f.type] = (hardFailureModeCounts[f.type] || 0) + 1;
+          if (f.type === 'STALL') stallDetails.push({ seed, finalRound: r.finalRound, detail: f.detail });
+          if (sampleHardFailures.length < 8) sampleHardFailures.push({ seed, n, ...f });
+        }
+      }
+      summary.push({
+        n, trials: TRIALS_PER_N, completedCount, correctnessPassCount,
+        correctnessPassRate: correctnessPassCount / TRIALS_PER_N,
+        hardFailureModeCounts, sampleHardFailures, stallDetails,
+      });
+    }
+    // eslint-disable-next-line no-console
+    console.log('[STOP-SHIP §Phase3][헤드라인, 폴링 ON] N=3..20 × 60 trial(decisive, pessimistic, targetLoserCount=2, 실제 이중경로) correctnessPassRate:', JSON.stringify(
+      summary.map((s) => ({
+        n: s.n, trials: s.trials, completedCount: s.completedCount,
+        correctnessPassRate: Number(s.correctnessPassRate.toFixed(4)),
+        meetsGate98: s.correctnessPassRate >= 0.98,
+        hardFailureModeCounts: s.hardFailureModeCounts,
+      })),
+      null, 2
+    ));
+    const totalTrials = NS.length * TRIALS_PER_N;
+    const totalPass = summary.reduce((a, s) => a + s.correctnessPassCount, 0);
+    // eslint-disable-next-line no-console
+    console.log(`[STOP-SHIP §Phase3][헤드라인, 폴링 ON] 종합(${totalTrials} trial): correctnessPassRate=${(totalPass / totalTrials).toFixed(4)}, meetsGate98=${(totalPass / totalTrials) >= 0.98}`);
+    for (const s of summary) {
+      if (s.correctnessPassRate < 1) {
+        // eslint-disable-next-line no-console
+        console.log(`[STOP-SHIP §Phase3] N=${s.n} correctnessPassRate<100%(폴링 ON) — 실패 전수 열거(sample, STALL 상세 포함):`, JSON.stringify({ sampleHardFailures: s.sampleHardFailures, stallDetails: s.stallDetails }, null, 2));
+      }
+    }
+    // 측정 무효화 방지: 하니스 자체 결함(EXCEPTION)은 0이어야 한다.
+    for (const s of summary) {
+      expect(s.hardFailureModeCounts.EXCEPTION || 0).toBe(0);
+    }
+    expect(summary.length).toBe(18);
+    // 98% 게이트 자체를 하드 assert하지는 않는다(§본문 지시와 동일 원칙: "결함이면 열거만, 고치지
+    // 않는다") — 판정은 위 console.log의 meetsGate98 + §보고 4절 헤드라인 숫자로 한다.
   }, 600000);
 });

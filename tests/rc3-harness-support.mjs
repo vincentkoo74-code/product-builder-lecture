@@ -269,6 +269,12 @@ export const REALTIME_DELAY_REGIMES = {
   pessimistic: { bodyHi: 1400, midHi: 4000, tailHi: 9000 },
 };
 
+// REAL index.html:5586-5590의 `state.pollInterval = setInterval(..., 2600)` 주기와 바이트 동일한
+// 값 — 아래 startDevicePolling/createTrialWorld/runMeasuredTrial/runEliminationTrial의
+// pollIntervalMs 기본값도 이 상수와 일치한다(새 숫자 발명 아님, §STOP-SHIP Phase0 재측정 테스트가
+// 이 값을 그대로 재사용해 fidelity를 주장한다).
+export const REAL_POLL_INTERVAL_MS = 2600;
+
 // db.rpc('server_now') RTT 분포(RC-1 skew simulator와 동일 계열: rttBase + 비대칭 + jitter).
 export function sampleClockRtt(rng, deviceIndex) {
   const rttBase = 120 + rng() * 380; // 120..500ms 기본 RTT
@@ -524,6 +530,77 @@ function makeFinishRoundLocalSubstitute({
   };
 }
 
+// ── STOP-SHIP Phase0(2.6초 REST 폴링 채널 충실 모델링) ────────────────────────
+// REAL subscribeToRoom(index.html 5578-5590)의 폴링 백업:
+//   state.pollInterval = setInterval(async () => {
+//     const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
+//     await fetchParticipants(roomCode);
+//     if (room) await handleRoomUpdate(room);
+//   }, 2600);
+// 이 폴링은 realtime 채널(postgres_changes 구독)과 완전히 독립된 별도 REST 경로다 — 방에 연결된
+// "모든" 클라이언트(host 포함)에서 2.6초마다 무조건 돈다. 지금까지(§Part A/D §7 한계) 이 채널
+// 자체는 이 하니스에 전혀 존재하지 않았다 — realtime 배달 순서만 재정렬하는 deliveryOrderMode:
+// 'outOfOrder'는 "폴링이 있으면 이런 재정렬이 생길 수 있다"는 위협 모델의 일반화된 프록시였을 뿐,
+// 실제 2.6초 주기·실제 독립 REST 지연·실제 fetchParticipants 동반 호출을 재현하지 않았다.
+//
+// 아래 createDevice의 poll 타이머는 REAL과 동일한 3단계 순서(room select → participants →
+// handleRoomUpdate(room))를 그대로 재현한다:
+//   (1) db.from('rooms').select('*').eq(...).single() — createDb의 opRoomsSelectSingle을 그대로
+//       호출한다. 이 select는 realtime 브로드캐스트 큐(scheduleReorderableDelivery)를 전혀 거치지
+//       않고 db의 ackDelayFn(60~280ms, sampleRealtimeDelayMs와 완전히 독립된 분포)만 거쳐
+//       roomStore.row의 "그 시점 현재값"을 직접 읽는다 — 그래서 이 스냅샷이 realtime 배달과
+//       완료 순서가 무보장으로 인터리빙된다(§본문 Phase0 요구사항의 핵심).
+//   (2) fetchParticipants(roomCode) 자체(index.html ~6066, cleanupDuplicateRoomProfiles/host 승계/
+//       중복 프로필 정리 등과 강결합)는 여전히 추출하지 않는다 — 이미 §Part A/D에 문서화된 동일한
+//       gap이다(그 함수 전체를 새로 추출하지 않고는 host 승계 부작용까지 충실히 재현할 수 없다).
+//       그러나 이 폴링 자체가 존재한다는 것의 "가시 효과"(participants 테이블을 REST로 재조회해
+//       state.participants를 새로고침)는 no-op으로 건너뛰지 않고 pollFetchParticipants()가 실제로
+//       db.from('participants').select(...)(REAL db 경유, 독립 ackDelay)를 호출해 재현한다.
+//   (3) room이 truthy면 REAL handleRoomUpdate(room)을 그대로 호출한다(추출 코드, 손대지 않음) —
+//       isStaleRoomRow 가드/WRPS-079 hruGen 재진입 가드 등 REAL 방어 로직이 이 폴링 경로에도 동일하게
+//       적용된다.
+// pollingEnabled 기본값(false)은 기존 회귀 스윕 전부(717 baseline)에 영향이 없다 — 타이머 자체가
+// 생성되지 않는다. 켜졌을 때도 REAL과 동일하게 "이전 tick의 async 본문이 아직 안 끝났어도 다음
+// tick은 그냥 또 발화한다"(setInterval은 콜백 완료를 기다리지 않는다) — 손으로 재진입 가드를
+// 추가하지 않는다(REAL도 안 하므로 이게 충실성이다).
+//
+// ⚠️ 충실성 수정(1차 구현 실측으로 발견): 처음 구현은 poll tick의 3단계 중 (3)을
+// `implRef().handleRoomUpdate(room)`으로 device impl을 직접 호출했다 — 그런데 createTrialWorld의
+// realtime 배달 경로(roomStore.subscribers[i].onRoomRow)는 REAL handleRoomUpdate 호출을
+// begin/finishStaleRowRegressionCheck·begin/finishReadyBranchClobberCheck로 감싸고, 그 직후 접합부
+// ②(현재 라운드 참가자면 즉시 선택 제출)/③(result 상태면 REAL scheduleRematchAutoAdvance 호출)까지
+// 수행한다(§createTrialWorld 상단 주석). poll이 이 wrapper를 건너뛰고 impl.handleRoomUpdate를 직접
+// 부르면: (a) REAL isStaleRoomRow 가드가 뚫려도 이 detector가 관측하지 못해
+// STALE_ROW_REGRESSION이 구조적으로 0으로만 나오고(측정 자체가 무효), (b) poll이 유일하게 이번
+// 라운드 'playing' 전환을 알려준 경우에도 참가자가 선택을 제출하지 않는 시나리오가 생겨 실제
+// 앱에서는 안 일어날 STALL/desync를 하니스가 인위적으로 만들어낼 수 있다. 그래서 poll은 반드시
+// realtime과 "동일한" onRoomRow 래퍼를 통해서만 room row를 전달해야 한다 — 이 함수는 그 래퍼
+// 자체를 인자로 받는다(createTrialWorld가 subscriber 등록 직후 넘겨준다).
+function startDevicePolling({ pollingEnabled, pollIntervalMs, db, roomStore, implRef, telemetry, onRoomRow }) {
+  let handle = null;
+  async function pollFetchParticipants() {
+    const { data: rows } = await db.from('participants').select('*')
+      .eq('room_id', roomStore.id).order('created_at', { ascending: true });
+    if (rows) implRef().state.participants = rows;
+  }
+  function start() {
+    if (!pollingEnabled || handle) return;
+    handle = setInterval(async () => {
+      try {
+        const { data: room } = await db.from('rooms').select('*').eq('id', roomStore.id).single();
+        await pollFetchParticipants();
+        if (room) await onRoomRow(room);
+      } catch (e) {
+        try { telemetry.emit('metric', { wrps: 'RC3-HARNESS', eventType: 'POLL_TICK_THREW', message: String(e && e.message || e) }); } catch (_) {}
+      }
+    }, pollIntervalMs);
+  }
+  function stop() {
+    if (handle) { clearInterval(handle); handle = null; }
+  }
+  return { start, stop };
+}
+
 // ── device(= 앱 인스턴스 1개) 생성 ───────────────────────────────────────────
 export function createDevice({ id, isHost, roomStore, rng, participantCount, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, targetLoserCount = 1, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', deliveryOrderMode = 'monotonic', index = 0, skewMsOverrideFn = null }) {
   const dom = createFakeDom();
@@ -740,6 +817,13 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
     },
   });
 
+  // §STOP-SHIP Phase0: 2.6초 REST 폴링 채널은 이 device 생성 시점이 아니라 createTrialWorld에서
+  // roomStore.subscribers에 onRoomRow 래퍼를 등록한 "직후"에 시작된다(위 startDevicePolling의
+  // 충실성 수정 주석 참고 — poll이 realtime과 동일한 onRoomRow 래퍼를 거쳐야 stale-row-regression/
+  // ready-branch-clobber 검출기와 접합부 ②/③ 글루가 poll 경로에도 동일하게 적용된다. 이 시점엔
+  // 그 래퍼가 아직 없으므로 여기서는 폴링을 시작하지 않는다 — stopPolling은 createTrialWorld가
+  // device 객체에 사후 부착한다(기본값 미부착 시 아래 optional chaining으로 안전하게 no-op).
+
   return { id, isHost, impl, dom, telemetry, rendered, roomStore, skewMs, clockRtt, env };
 }
 
@@ -854,7 +938,7 @@ export function finishReadyBranchClobberCheck(device, checkCtx) {
 // 호출 결과를 그대로 쓴다. 3곳만 하니스가 대신한다: ①1라운드 시작 트리거 ②참가자 선택 제출
 // 트리거(실제 UI 클릭 대신) ③"전원 ready 렌더 완료" 감지 후 다음 라운드 시작 트리거(실제 UI의
 // markReady 버튼 클릭 체인 대신, host의 실제 startGame()을 직접 호출).
-export function createTrialWorld({ participantCount, seed, targetLoserCount = 1, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', choiceDriverFn = null, deliveryOrderMode = 'monotonic', skewMsOverrideFn = null }) {
+export function createTrialWorld({ participantCount, seed, targetLoserCount = 1, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', choiceDriverFn = null, deliveryOrderMode = 'monotonic', skewMsOverrideFn = null, pollingEnabled = false, pollIntervalMs = 2600 }) {
   const rng = mulberry32(seed);
   const roomStore = createRoomStore(`ROOM-${seed}-${participantCount}`);
   const devices = [];
@@ -946,6 +1030,23 @@ export function createTrialWorld({ participantCount, seed, targetLoserCount = 1,
         }
       },
     });
+  }
+
+  // §STOP-SHIP Phase0: 2.6초 REST 폴링 채널은 위 subscriber 등록이 끝난 "직후" 시작한다 — 각
+  // device의 poll tick이 이제 막 등록된 그 device 자신의 onRoomRow 래퍼(바로 위 §충실성 보정)를
+  // 그대로 재사용하므로, stale-row-regression/ready-branch-clobber 검출 + 접합부 ②/③ 글루가
+  // realtime 배달과 poll 배달 양쪽에 동일하게 적용된다(poll이 realtime과 다른 코드 경로를 타지
+  // 않는다). pollingEnabled=false(기본값)이면 startDevicePolling 내부에서 타이머가 아예 생성되지
+  // 않는다(회귀 없음).
+  for (let i = 0; i < devices.length; i++) {
+    const d = devices[i];
+    const sub = roomStore.subscribers[i];
+    const polling = startDevicePolling({
+      pollingEnabled, pollIntervalMs, db: d.env.db, roomStore, implRef: () => d.impl,
+      telemetry: d.telemetry, onRoomRow: sub.onRoomRow,
+    });
+    polling.start();
+    d.stopPolling = polling.stop;
   }
 
   return { devices, roomStore, rng, submittedChoiceRound, readyTriggeredForRound, clockSyncPromises, roundChoicesByRound };
@@ -1607,11 +1708,13 @@ export async function runMeasuredTrial({
   resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
   stepMs = 250, budgetMsPerRound = 40000, choiceBase = 'scissors', vi, combinedSourceOverride = null,
   realtimeDelayRegime = 'pessimistic', deliveryOrderMode = 'monotonic', skewMsOverrideFn = null,
+  // §STOP-SHIP Phase0: 2.6초 REST 폴링 채널(위 startDevicePolling). 기본값(false)은 회귀 없음.
+  pollingEnabled = false, pollIntervalMs = 2600,
 }) {
   const world = createTrialWorld({
     participantCount, seed, targetLoserCount: targetLoserCount ?? Math.max(1, Math.floor(participantCount / 2)),
     resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride,
-    realtimeDelayRegime, deliveryOrderMode, skewMsOverrideFn,
+    realtimeDelayRegime, deliveryOrderMode, skewMsOverrideFn, pollingEnabled, pollIntervalMs,
   });
   const host = world.devices[0];
   const realRandom = Math.random;
@@ -1646,6 +1749,12 @@ export async function runMeasuredTrial({
     }
   } finally {
     Math.random = realRandom;
+    // §STOP-SHIP Phase0: 트라이얼 종료 시 폴링 타이머를 반드시 정리한다 — 정리하지 않으면 같은
+    // vi.useFakeTimers() 세션 안에서 반복 호출되는(§헤드라인 스윕 수백~수천 trial) 다음 트라이얼들
+    // 동안에도 이전 트라이얼의 poll setInterval이 계속 살아남아 무한히 누적된다(REAL 앱은
+    // destroyRoomAndGoHome()류에서 clearInterval하지만, 이 하니스는 그 이탈 경로를 추출하지
+    // 않았으므로 트라이얼 드라이버가 대신 정리해야 한다 — 판정 로직과 무관한 하니스 자원 정리).
+    for (const d of world.devices) { try { d.stopPolling && d.stopPolling(); } catch (e) {} }
   }
 
   const completed = allDevicesRenderedResultFor(world, targetRounds);
@@ -1938,6 +2047,8 @@ export async function runEliminationTrial({
   combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic',
   choiceSeed = null, choiceDriverFactory = null,
   deliveryOrderMode = 'monotonic', skewMsOverrideFn = null,
+  // §STOP-SHIP Phase0: 2.6초 REST 폴링 채널(위 startDevicePolling). 기본값(false)은 회귀 없음.
+  pollingEnabled = false, pollIntervalMs = 2600,
 }) {
   // N이 클수록 "전원이 3가지 타입을 모두 낼" 확률이 급격히 올라가 allDraw가 자주 나온다(judgePure의
   // "selectedTypes.length===3이면 draw" 규칙 — 참가자가 많을수록 3종류가 다 나올 확률이 높아짐).
@@ -1955,6 +2066,7 @@ export async function runEliminationTrial({
     participantCount, seed, targetLoserCount,
     resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
     combinedSourceOverride, realtimeDelayRegime, choiceDriverFn, deliveryOrderMode, skewMsOverrideFn,
+    pollingEnabled, pollIntervalMs,
   });
   const host = world.devices[0];
   const realRandom = Math.random;
@@ -1988,6 +2100,8 @@ export async function runEliminationTrial({
     }
   } finally {
     Math.random = realRandom;
+    // §STOP-SHIP Phase0: 위 runMeasuredTrial과 동일한 이유로 트라이얼 종료 시 폴링 타이머를 정리한다.
+    for (const d of world.devices) { try { d.stopPolling && d.stopPolling(); } catch (e) {} }
   }
 
   const completed = isGameOverSettled(world);
