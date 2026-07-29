@@ -114,13 +114,17 @@ function buildScenario(raceFn) {
   const db = {
     from: (table) => ({
       update: (payload) => ({
+        // WRPS-081: rooms.update()가 이제 .eq('id',...).eq('status','result')로 체이닝된다(조건부
+        // game_over write) — 반환값이 thenable이면서 .eq()로 계속 체이닝 가능해야 한다.
         eq: (col, val) => {
           calls.push({ table, payload, col, val });
           if (table === 'participants' && !raced) {
             raced = true;
             raceFn(state);
           }
-          return Promise.resolve({ data: null, error: null });
+          const result = Promise.resolve({ data: null, error: null });
+          result.eq = () => result;
+          return result;
         },
       }),
     }),

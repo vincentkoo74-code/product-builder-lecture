@@ -8443,7 +8443,26 @@
         }
         state.confirmedSafeIds = [...prevSafeIds, ...activePlayers.map(p => p.id)];
         if (getOnlineMode() && state.role === "host") {
-          await db.from('rooms').update({ status: 'game_over' }).eq('id', state.roomCode);
+          // STOP-SHIP(2번째 실 HIGH, becomeNextHost 2-writer 레이스): 이 write는 old host의
+          // finishRoundLocal이 언제든 지연 커밋될 수 있는 "blind" write였다 — 술래(패자)가 이
+          // 라운드 결과를 이미 로컬로 확정(hasStoredResults/localJudge, 이 write와 무관하게
+          // 독립 계산)한 직후 곧바로 becomeNextHost()를 눌러 다음 호스트가 되면(상태 재확인·역할
+          // 가드 없이 즉시 is_host write + beginNewGameRound({status:"waiting", round:1, 새
+          // penalty}) 커밋), old host의 이 write가 그 이후에 커밋될 수 있다. status 필드만 무조건
+          // 덮어써 새 게임의 round/penalty는 그대로 둔 채 status만 'game_over'로 되돌리는
+          // 모순 행(status:game_over ∧ round/penalty는 새 게임)을 만들고, 제3자 참가자는
+          // handleRoomUpdate의 `oldStatus !== state.status` 게이트가 이미 game_over→game_over로
+          // 무변화라고 판단해 화면이 정지한다(gameRound/confirmedIds는 내부적으로 갱신되지만
+          // 화면 디스패치가 재발화하지 않음). returnToLobbyAfterGame(12608 부근)이 이미 쓰는
+          // "실행 직전 상태 재확인" 방어와 동일한 취지로, 이 write가 실제로 확정하려는 그 라운드가
+          // 아직 'result'인 경우에만 적용되도록 조건부 UPDATE로 좁힌다 — 이미 다른 write(다음
+          // 호스트의 새 게임 시작 등)가 상태를 옮겨놓았다면 0행 매치로 조용히 skip한다(정상:
+          // 새 게임이 이미 시작됐으므로 이 게임의 game_over 확정은 더 이상 의미가 없다). 이미
+          // 정상적으로 game_over가 확정된 뒤의 idempotent 재진입(2차 호출, WRPS-046/072-B19)도
+          // 마찬가지로 0행 매치가 되지만 그 경우 값 자체가 이미 game_over이므로 무해하다.
+          // 로컬 렌더(태거 팝업/autoSave/SFX, 아래)는 이 write의 성공 여부와 무관하게 그대로
+          // 진행한다(결과를 검사하지 않음 — 기존과 동일).
+          await db.from('rooms').update({ status: 'game_over' }).eq('id', state.roomCode).eq('status', 'result');
         }
         renderRoundResult("gameOver", 0, remainingSlots);
         showScreen("screenRoundResult");
@@ -8466,7 +8485,9 @@
       if (activePlayers.length > 0 && activePlayers.length <= remainingSlots) {
         state.confirmedLoserIds = [...prevLoserIds, ...activePlayers.map(p => p.id)];
         if (getOnlineMode() && state.role === "host") {
-          await db.from('rooms').update({ status: 'game_over' }).eq('id', state.roomCode);
+          // STOP-SHIP(becomeNextHost 2-writer 레이스 방어, 위 8445 부근 상세 주석 참고): 조건부
+          // UPDATE — 이 write가 확정하려는 라운드가 아직 'result'일 때만 적용한다.
+          await db.from('rooms').update({ status: 'game_over' }).eq('id', state.roomCode).eq('status', 'result');
         }
         renderRoundResult("gameOver", activePlayers.length, remainingSlots);
         showScreen("screenRoundResult");
@@ -8512,7 +8533,9 @@
         state.confirmedLoserIds = [...prevLoserIds, ...roundLosers.map(p => p.id)];
 	        state.confirmedSafeIds = [...prevSafeIds, ...roundWinners.map(p => p.id)];
 	        if (getOnlineMode() && state.role === "host") {
-	          await db.from('rooms').update({ status: 'game_over' }).eq('id', state.roomCode);
+	          // STOP-SHIP(becomeNextHost 2-writer 레이스 방어, 위 8445 부근 상세 주석 참고): 조건부
+	          // UPDATE — 이 write가 확정하려는 라운드가 아직 'result'일 때만 적용한다.
+	          await db.from('rooms').update({ status: 'game_over' }).eq('id', state.roomCode).eq('status', 'result');
 	        }
         renderRoundResult("gameOver", roundLosers.length, remainingSlots);
         showScreen("screenRoundResult");

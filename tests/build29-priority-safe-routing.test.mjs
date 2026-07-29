@@ -99,7 +99,9 @@ function makeDb() {
   const db = {
     from: (table) => ({
       update: (payload) => ({
-        eq: (col, val) => { calls.push({ table, payload, col, val }); return Promise.resolve({ data: null, error: null }); },
+        // WRPS-081: rooms.update()가 이제 .eq('id',...).eq('status','result')로 체이닝된다(조건부
+        // game_over write) — 반환값이 thenable이면서 .eq()로 계속 체이닝 가능해야 한다.
+        eq: (col, val) => { calls.push({ table, payload, col, val }); const result = Promise.resolve({ data: null, error: null }); result.eq = () => result; return result; },
       }),
     }),
   };
