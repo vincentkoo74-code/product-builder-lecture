@@ -8139,6 +8139,25 @@
       // 온라인 통계는 publishHostRoundResult()에서 호스트가 한 번만 저장한다.
       // result -> game_over 상태 전환 때 finishRoundLocal()이 다시 호출될 수 있으므로
       // 여기서 DB 통계를 다시 더하면 1승/1패가 2승/2패로 중복 집계된다.
+      // WRPS-080(STOP-SHIP, MEDIUM): 아래 Promise.all은 finishRoundLocal() 전체에서 유일한
+      // "커밋 분기 이전" 내부 await다(handleRoomUpdate가 finishRoundLocal()을 await 없이
+      // fire-and-forget 호출하므로 — 5888 부근 — 이 await가 실행되는 동안 이 클라이언트의 다음
+      // handleRoomUpdate 호출(realtime 콜백/2.6초 폴링)이 먼저 완주해 state.round/gameRound/
+      // participants/confirmedSafeIds·LoserIds를 이미 더 최신 컨텍스트로 옮겨놓을 수 있다 —
+      // WRPS-079가 고친 재진입과 동일 계열의 레이스지만 handleRoomUpdate 재호출이 아니라 "이미
+      // 시작된 이 finishRoundLocal 호출 자신의" 재개 지점이라는 점만 다르다(설계 의도는 위
+      // hruGen 필드 선언부 4306-4325에 이미 "finishRoundLocal() 커밋 직전에만 이 세대를
+      // 재확인한다"로 명시돼 있었으나 실제 구현이 빠져 있었다). 재개 직후(아래 8177 부근)
+      // 커밋 분기(confirmedSafeIds/LoserIds mutation + rooms.update game_over)로 들어가기
+      // 전에 defer-retry 경로의 checkRetryContext와 동일한 계약(roomCode/eventId)에 더해 status도
+      // "진입 시점 값 그대로인가"로 재검증한다 — checkRetryContext는 status를 result/game_over
+      // 화이트리스트로 검사하지만(그 경로는 항상 result/game_over 상태에서만 예약되므로), 이
+      // 내부 await는 status==="playing"인 채로 정상 진입하는 경로도 있어(온라인 호스트가 result로
+      // 전이하기 전 직접 판정하는 경우, 아래 조건 참고) 화이트리스트를 그대로 재사용하면 그 정당한
+      // 케이스를 오탐 처리한다 — 그래서 진입 시점 status 값과의 등치 비교로 대체한다(의미는 동일:
+      // "이 호출이 관찰한 컨텍스트가 하나도 바뀌지 않았는가").
+      const finishRoundCommitRoomCodeAtEntry = state.roomCode;
+      const finishRoundCommitStatusAtEntry = state.status;
       if (getOnlineMode() && state.role === "host" && !hasStoredResults && state.status === "playing") {
 	        state.participants.forEach(p => {
 	          const status = result[p.id];
@@ -8157,6 +8176,34 @@
             penalties: p.penalties || 0
           }).eq('id', p.id)
         ));
+      }
+
+      // WRPS-080(STOP-SHIP, MEDIUM): 위 내부 await 재개 직후, confirmedSafeIds/LoserIds
+      // mutation과 rooms.update({status:'game_over'}) 커밋 이전에 컨텍스트를 재확인한다 —
+      // checkRetryContext(8266 부근)와 동일한 3중 계약(roomCode/eventId/status). 셋 중 하나라도
+      // 바뀌었으면 이 호출은 더 이상 "지금" 라운드를 대표하지 않으므로 커밋하지 않고 조용히
+      // 포기한다. ⚠️ 게임 진행 정지 없음: 컨텍스트가 바뀌었다는 것 자체가 이미 이 라운드가 다른
+      // (더 최신) handleRoomUpdate 처리 경로(ready/playing/lobby 분기 또는 다음 finishRoundLocal
+      // 호출)로 진행됐거나 진행될 것이라는 뜻이다 — 이 stale 커밋을 포기해도 그 최신 경로의 진행을
+      // 막지 않는다(아래 보고 참고). state.finishingRound를 반드시 풀어줘야 그 최신 경로가 막히지
+      // 않는다(그러지 않으면 최상단 재진입 가드가 모든 후속 호출을 영구히 차단한다).
+      {
+        const finishRoundCommitCurrentEventId = getGameRound() + ':' + (state.round || 1);
+        const finishRoundCommitStale =
+          state.roomCode !== finishRoundCommitRoomCodeAtEntry ||
+          finishRoundCommitCurrentEventId !== roundEventId ||
+          state.status !== finishRoundCommitStatusAtEntry;
+        if (finishRoundCommitStale) {
+          try {
+            QA.emit('metric', {
+              wrps: 'WRPS-080', eventType: 'FINISH_ROUND_LOCAL_STALE_GENERATION_ABORTED',
+              capturedEventId: roundEventId, currentEventId: finishRoundCommitCurrentEventId,
+              roomCodeChanged: state.roomCode !== finishRoundCommitRoomCodeAtEntry, status: state.status
+            });
+          } catch (e) {}
+          state.finishingRound = false;
+          return;
+        }
       }
 
       const prevSafeIds = [...(state.confirmedSafeIds || [])];
