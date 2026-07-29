@@ -16,6 +16,8 @@ import {
   DEFAULT_EG_TARGET_LOSER_COUNT,
   // WRPS-079 Round2(STOP-SHIP, HIGH 잔존 수정): ready 분기 commit 게이트 직접 재현 시나리오.
   runReadyBranchClobberScenario,
+  // STOP-SHIP(Part A/B/D, 미커버 커버리지 닫기 + 종합 correctnessPass 측정) — 신규 export.
+  createAlternatingSkewFn, pickDecisiveChoiceBase, createDecisiveChoiceDriver,
 } from './rc3-harness-support.mjs';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1085,4 +1087,492 @@ describe('WRPS-079 Round2(STOP-SHIP) ready 분기 commit 게이트 — 직접 �
     expect(r.finalConfirmedSafeIds).not.toEqual(r.confirmedSafeIdsBeforeResume);
     expect(r.finalConfirmedLoserIds).not.toEqual(r.confirmedLoserIdsBeforeResume);
   }, 30000);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// STOP-SHIP Part A: 폴링-realtime out-of-order 주입.
+//
+// §7 한계(정직 명시, 축소 인정): 실제 2.6초 참가자 폴링 채널(fetchParticipants, index.html
+// ~6066)은 handleRoomUpdate와 완전히 별개인 독립 함수(cleanupDuplicateRoomProfiles/
+// destroyRoomAndGoHome/beginNewGameRound 등과 강결합)이고, 이번 측정 범위에서도 여전히 추출하지
+// 않았다(이 하니스는 그 채널을 한 번도 구동한 적이 없다 — 전적으로 미커버). deliveryOrderMode:
+// 'outOfOrder'(§rc3-harness-support.mjs 상단 주석)는 그 채널 자체를 재현하는 것이 아니라, "폴링이
+// realtime과 순서보장 없이 경쟁해 이 기기에 스냅샷이 커밋 순서와 다르게 도착할 수 있다"는 핵심
+// 위협 모델만 REAL(무수정) handleRoomUpdate가 이미 소비하는 room-row realtime 전송 계층에서
+// 일반화해 재현한다 — 구독자별 단조증가 배달 강제를 끄면 뒤에 커밋된 row가 앞선 row를 추월해
+// 도착할 수 있다(§충실성 보정 주석이 "하니스 버그"라 부르며 되돌렸던 원래 동작을 여기서는 의도적
+// 스트레스 모드로 재사용). REAL isStaleRoomRow 가드(WRPS-079/081 포함) 자체는 손대지 않는다.
+describe('STOP-SHIP Part A: 폴링-realtime out-of-order 주입(deliveryOrderMode)', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(1_800_000_000_000)); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('sanity: deliveryOrderMode 미지정(기본값 monotonic)은 기존 동작과 완전히 동일하다(회귀 없음 — 파라미터 추가 자체가 기존 시드 결과를 바꾸지 않는지 확인)', async () => {
+    const realRandom = Math.random;
+    Math.random = () => 0;
+    try {
+      const r = await runMeasuredTrial({
+        participantCount: 6, seed: 9001, targetRounds: 2,
+        resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+      });
+      expect(r.completed).toBe(true);
+      expect(r.correctnessPass).toBe(true);
+    } finally {
+      Math.random = realRandom;
+    }
+  }, 15000);
+
+  it('[allDraw baseline, out-of-order] N={3,5,8,12,16,20} 각 100 trial: REAL isStaleRoomRow/WRPS-079/WRPS-081 가드가 재정렬된 room-row 배달에서도 correctnessPass를 유지하는가 — 새 desync 유무를 correctness 채널로 판정(결함이면 열거만, 여기서 고치지 않음)', async () => {
+    const NS = [3, 5, 8, 12, 16, 20];
+    const TRIALS_PER_N = 100;
+    const realRandom = Math.random;
+    Math.random = () => 0;
+    const summary = [];
+    try {
+      for (const n of NS) {
+        let correctnessPassCount = 0;
+        const hardFailureModeCounts = {};
+        const sampleHardFailures = [];
+        for (let s = 0; s < TRIALS_PER_N; s++) {
+          const seed = n * 5100000 + s;
+          // eslint-disable-next-line no-await-in-loop
+          const r = await runMeasuredTrial({
+            participantCount: n, seed, targetRounds: DEFAULT_TARGET_ROUNDS,
+            resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+            deliveryOrderMode: 'outOfOrder',
+          });
+          if (r.correctnessPass) correctnessPassCount++;
+          for (const f of r.hardFailureModes) {
+            hardFailureModeCounts[f.type] = (hardFailureModeCounts[f.type] || 0) + 1;
+            if (sampleHardFailures.length < 10) sampleHardFailures.push({ seed, n, ...f });
+          }
+        }
+        summary.push({ n, trials: TRIALS_PER_N, correctnessPassCount, correctnessPassRate: correctnessPassCount / TRIALS_PER_N, hardFailureModeCounts, sampleHardFailures });
+      }
+    } finally {
+      Math.random = realRandom;
+    }
+    // eslint-disable-next-line no-console
+    console.log('[STOP-SHIP Part A][allDraw, out-of-order] N별 correctnessPassRate + hardFailureModeCounts:', JSON.stringify(
+      summary.map((s) => ({ n: s.n, trials: s.trials, correctnessPassRate: Number(s.correctnessPassRate.toFixed(3)), hardFailureModeCounts: s.hardFailureModeCounts })),
+      null, 2
+    ));
+    for (const s of summary) {
+      if (s.correctnessPassRate < 1) {
+        // eslint-disable-next-line no-console
+        console.log(`[STOP-SHIP Part A] N=${s.n} correctnessPassRate<100%(out-of-order) — 실패 전수 열거(sample):`, JSON.stringify(s.sampleHardFailures, null, 2));
+      }
+    }
+    // 하니스 자체 결함(EXCEPTION)만은 이 모드에서도 0이어야 한다(있으면 측정 자체가 무효 — 이
+    // deliveryOrderMode 확장 자체가 새 미처리 예외를 던지지 않는지 확인).
+    for (const s of summary) {
+      expect(s.hardFailureModeCounts.EXCEPTION || 0).toBe(0);
+    }
+    expect(summary.length).toBe(NS.length);
+  }, 400000);
+
+  it('[EG 혼합(mixed) 선택, out-of-order] N={3,8,16} 각 40 trial(targetLoserCount=2): 재정렬된 배달 아래서도 CROSS_DEVICE_OUTCOME_MISMATCH/STALE_ROW_REGRESSION 등 EG 하드 실패 채널이 새로 발화하는지 측정(결함이면 열거만)', async () => {
+    const NS = [3, 8, 16];
+    const TRIALS_PER_N = 40;
+    const summary = [];
+    for (const n of NS) {
+      let correctnessPassCount = 0;
+      const hardFailureModeCounts = {};
+      const sampleHardFailures = [];
+      for (let s = 0; s < TRIALS_PER_N; s++) {
+        const seed = n * 5200000 + s;
+        // eslint-disable-next-line no-await-in-loop
+        const r = await runEliminationTrial({
+          participantCount: n, seed, targetLoserCount: 2,
+          resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+          deliveryOrderMode: 'outOfOrder',
+        });
+        if (r.correctnessPass) correctnessPassCount++;
+        for (const f of r.hardFailureModes) {
+          hardFailureModeCounts[f.type] = (hardFailureModeCounts[f.type] || 0) + 1;
+          if (sampleHardFailures.length < 10) sampleHardFailures.push({ seed, n, ...f });
+        }
+      }
+      summary.push({ n, trials: TRIALS_PER_N, correctnessPassCount, correctnessPassRate: correctnessPassCount / TRIALS_PER_N, hardFailureModeCounts, sampleHardFailures });
+    }
+    // eslint-disable-next-line no-console
+    console.log('[STOP-SHIP Part A][EG mixed, out-of-order] N별 correctnessPassRate + hardFailureModeCounts:', JSON.stringify(
+      summary.map((s) => ({ n: s.n, trials: s.trials, correctnessPassRate: Number(s.correctnessPassRate.toFixed(3)), hardFailureModeCounts: s.hardFailureModeCounts })),
+      null, 2
+    ));
+    for (const s of summary) {
+      if (s.correctnessPassRate < 1) {
+        // eslint-disable-next-line no-console
+        console.log(`[STOP-SHIP Part A][EG] N=${s.n} correctnessPassRate<100%(out-of-order) — 실패 전수 열거(sample):`, JSON.stringify(s.sampleHardFailures, null, 2));
+      }
+    }
+    for (const s of summary) {
+      expect(s.hardFailureModeCounts.EXCEPTION || 0).toBe(0);
+    }
+    expect(summary.length).toBe(NS.length);
+  }, 400000);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// STOP-SHIP Part B: 기기별 비대칭 clock skew 주입 — ON_TIME_CONCURRENCY_EXCEEDED 활성화.
+//
+// critic B의 지적(§rc3-harness-support.mjs ON_TIME_CONCURRENCY_EXCEEDED 문서 참고): 기존
+// mutation(computeChoiceRemainingSeconds 앵커 제거/lead 축소류)은 combinedSourceOverride로 "전
+// 기기 동일 소스"를 바꾸는 방식이라, on-time으로 분류된 기기들끼리는 여전히 같은(깨진) 공식으로
+// 수렴해 상대 스프레드 자체가 벌어지지 않는다 — 그래서 이 지표는 구조적으로 트립 불가였다.
+// 이 구간은 두 가지를 함께 바꾼다: (1) createAlternatingSkewFn으로 기기 절반은 +스프레드, 절반은
+// -스프레드로 결정론적으로 이분화된 skew를 주입하고, (2) waitForPhaseRender의 REAL 두 줄
+// (index.html ~5295/~5300, waitMs/lateRenderMs 계산)에서 serverNow()(RC-1 clock-sync 보정을 거친
+// 값)를 Date.now()(env.Date.now() — 보정되지 않은, skew가 그대로 남은 값)로 치환하는 REAL 텍스트
+// mutation을 적용한다. mutation이 없으면(baseline) 비대칭 skew가 있어도 syncServerClock()의
+// serverNow() 보정이 각 기기의 skew를 흡수해 on-time 코호트끼리는 여전히 clock-sync 잔차(≤1500ms)
+// 안에 머문다 — mutation이 그 보정 자체를 우회하게 만들면, 기기마다 다른(비대칭) skew가 그대로
+// waitMs/lateRenderMs 계산에 새어 들어가 on-time 코호트의 렌더 스프레드가 실제로
+// ON_TIME_CONCURRENCY_CEILING_MS(3000ms)를 넘을 수 있다 — 이게 "구조적으로 트립 불가"였던 채널을
+// 실제로 살리는 최소 개입이다(§본문 acceptance: baseline은 상한 이내, mutation은 실제 트립).
+describe('STOP-SHIP Part B: 기기별 비대칭 skew — ON_TIME_CONCURRENCY_EXCEEDED 활성화', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(1_800_000_000_000)); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('mutation 소스가 실제로 REAL waitForPhaseRender의 serverNow() 두 곳을 Date.now()로 치환한다(치환 자체가 성립하는지 sanity)', () => {
+    const brokenSource = EXTRACTED_COMBINED_SOURCE
+      .replace(
+        'const waitMs = scheduledAt ? Math.max(0, scheduledAt - serverNow()) : 0;',
+        'const waitMs = scheduledAt ? Math.max(0, scheduledAt - Date.now()) : 0; /* MUTATION(STOP-SHIP Part B): clock-sync 보정 우회 */'
+      )
+      .replace(
+        'const lateRenderMs = scheduledAt ? Math.max(0, serverNow() - scheduledAt) : 0;',
+        'const lateRenderMs = scheduledAt ? Math.max(0, Date.now() - scheduledAt) : 0; /* MUTATION(STOP-SHIP Part B) */'
+      );
+    expect(brokenSource).not.toBe(EXTRACTED_COMBINED_SOURCE);
+    expect(brokenSource.includes('MUTATION(STOP-SHIP Part B)')).toBe(true);
+  });
+
+  it('[baseline, REAL 무수정] N={3,6,10,14,20} 각 100 trial(alternating skew ±5000ms): on-time 코호트 스프레드가 ON_TIME_CONCURRENCY_CEILING_MS(3000ms) 이내로 유지된다(syncServerClock() 보정이 비대칭 skew를 흡수) — correctnessPass도 baseline 수준 유지', async () => {
+    const NS = [3, 6, 10, 14, 20];
+    const TRIALS_PER_N = 100;
+    const skewMsOverrideFn = createAlternatingSkewFn(5000);
+    const realRandom = Math.random;
+    Math.random = () => 0;
+    const summary = [];
+    try {
+      for (const n of NS) {
+        let correctnessPassCount = 0;
+        let onTimeConcurrencyExceededCount = 0;
+        const sampleViolations = [];
+        for (let s = 0; s < TRIALS_PER_N; s++) {
+          const seed = n * 6100000 + s;
+          // eslint-disable-next-line no-await-in-loop
+          const r = await runMeasuredTrial({
+            participantCount: n, seed, targetRounds: DEFAULT_TARGET_ROUNDS,
+            resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+            skewMsOverrideFn,
+          });
+          if (r.correctnessPass) correctnessPassCount++;
+          if (!r.onTimeConcurrencyPass) {
+            onTimeConcurrencyExceededCount++;
+            if (sampleViolations.length < 5) sampleViolations.push({ seed, violations: r.onTimeConcurrencyViolations });
+          }
+        }
+        summary.push({
+          n, trials: TRIALS_PER_N,
+          correctnessPassRate: correctnessPassCount / TRIALS_PER_N,
+          onTimeConcurrencyExceededCount, sampleViolations,
+        });
+      }
+    } finally {
+      Math.random = realRandom;
+    }
+    // eslint-disable-next-line no-console
+    console.log('[STOP-SHIP Part B][baseline, alternating skew ±5000ms] N별 correctnessPassRate + ON_TIME_CONCURRENCY_EXCEEDED count:', JSON.stringify(
+      summary.map((s) => ({ n: s.n, correctnessPassRate: Number(s.correctnessPassRate.toFixed(3)), onTimeConcurrencyExceededCount: s.onTimeConcurrencyExceededCount })),
+      null, 2
+    ));
+    expect(summary.length).toBe(NS.length);
+    for (const s of summary) {
+      // [범주1] correctness는 skew 자체와 무관하다 — clock-sync 보정이 정상 동작하면 스프레드에
+      // 영향이 없어야 한다.
+      expect(s.correctnessPassRate).toBeGreaterThanOrEqual(0.99);
+      // acceptance(§본문): baseline(REAL, 무수정)은 이 비대칭 skew 아래서도 상한 이내 유지 —
+      // 트립이 있더라도 드물어야 한다(완전 0을 강제하면 clock-sync 잔차(≤1500ms×2=3000ms 경계
+      // 근접) 자체의 자연 변동에 과민해질 수 있어 5% 여유를 둔다).
+      expect(s.onTimeConcurrencyExceededCount / TRIALS_PER_N).toBeLessThanOrEqual(0.05);
+    }
+  }, 400000);
+
+  it('[mutation, 반공허성] 위와 같은 alternating skew ±5000ms + waitForPhaseRender의 clock-sync 보정 우회 mutation을 함께 적용하면 N={3,6,10,14,20} 각 100 trial에서 ON_TIME_CONCURRENCY_EXCEEDED가 실제로(유의미한 빈도로) 트립된다 — 이 채널이 이제 "구조적으로 죽은 코드"가 아니라는 직접 증거. 동시에 correctnessPass([범주1])는 baseline과 거의 동일하게 유지되는지도 확인한다(순수 타이밍/스케줄링 mutation이지 correctness 회귀가 아님, 과민 재발 금지 원칙 준수)', async () => {
+    const NS = [3, 6, 10, 14, 20];
+    const TRIALS_PER_N = 100;
+    const skewMsOverrideFn = createAlternatingSkewFn(5000);
+    const brokenSource = EXTRACTED_COMBINED_SOURCE
+      .replace(
+        'const waitMs = scheduledAt ? Math.max(0, scheduledAt - serverNow()) : 0;',
+        'const waitMs = scheduledAt ? Math.max(0, scheduledAt - Date.now()) : 0; /* MUTATION(STOP-SHIP Part B): clock-sync 보정 우회 */'
+      )
+      .replace(
+        'const lateRenderMs = scheduledAt ? Math.max(0, serverNow() - scheduledAt) : 0;',
+        'const lateRenderMs = scheduledAt ? Math.max(0, Date.now() - scheduledAt) : 0; /* MUTATION(STOP-SHIP Part B) */'
+      );
+    expect(brokenSource).not.toBe(EXTRACTED_COMBINED_SOURCE);
+    const realRandom = Math.random;
+    Math.random = () => 0;
+    const summary = [];
+    let totalExceeded = 0;
+    let totalTrials = 0;
+    try {
+      for (const n of NS) {
+        let correctnessPassCount = 0;
+        let onTimeConcurrencyExceededCount = 0;
+        for (let s = 0; s < TRIALS_PER_N; s++) {
+          const seed = n * 6200000 + s;
+          totalTrials++;
+          // eslint-disable-next-line no-await-in-loop
+          const r = await runMeasuredTrial({
+            participantCount: n, seed, targetRounds: DEFAULT_TARGET_ROUNDS,
+            resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+            skewMsOverrideFn, combinedSourceOverride: brokenSource,
+          });
+          if (r.correctnessPass) correctnessPassCount++;
+          if (!r.onTimeConcurrencyPass) { onTimeConcurrencyExceededCount++; totalExceeded++; }
+        }
+        summary.push({
+          n, trials: TRIALS_PER_N,
+          correctnessPassRate: correctnessPassCount / TRIALS_PER_N,
+          onTimeConcurrencyExceededCount, onTimeConcurrencyExceededRate: onTimeConcurrencyExceededCount / TRIALS_PER_N,
+        });
+      }
+    } finally {
+      Math.random = realRandom;
+    }
+    // eslint-disable-next-line no-console
+    console.log('[STOP-SHIP Part B][mutation, alternating skew ±5000ms + clock-sync 보정 우회] N별 correctnessPassRate + ON_TIME_CONCURRENCY_EXCEEDED rate:', JSON.stringify(
+      summary.map((s) => ({ n: s.n, correctnessPassRate: Number(s.correctnessPassRate.toFixed(3)), onTimeConcurrencyExceededRate: Number(s.onTimeConcurrencyExceededRate.toFixed(3)) })),
+      null, 2
+    ));
+    // 핵심 단정(mutation 부하검증, 반공허성): 이 채널이 실제로 트립 가능해야 한다 — 전체 trial의
+    // 상당수(≥30%)에서 ON_TIME_CONCURRENCY_EXCEEDED가 관측되어야 baseline의 "≤5%"가 이 mutation
+    // 덕분에 대비된다고 주장할 수 있다(임의의 낮은 빈도라면 "구조적으로 죽은 코드"라는 원 지적이
+    // 여전히 유효할 수 있으므로 넉넉한 문턱을 둔다).
+    expect(totalExceeded / totalTrials).toBeGreaterThanOrEqual(0.3);
+    for (const s of summary) {
+      // correctnessPass([범주1])는 이 순수 타이밍 mutation으로 오염되지 않아야 한다(과민 재발 금지).
+      expect(s.correctnessPassRate).toBeGreaterThanOrEqual(0.99);
+    }
+  }, 400000);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// STOP-SHIP Part C: 다양 targetLoserCount 스윕.
+//
+// 기존 EG 스윕(§Phase1/2 COVERAGE, §Phase3 SWEEP, WRPS-079 넓은 회귀 스윕)은 전부
+// targetLoserCount=2로 고정돼 있었다(§본문 실측 근거: N에 비례한 target은 대N에서 균등 랜덤
+// 선택 모델과 결합하면 수렴이 지나치게 느려짐). 이 구간은 그 축을 스윕한다 — tooMany/tooFew/
+// gameOver 분기 비율이 targetLoserCount에 따라 달라지므로 각 config에서 correctnessPass를
+// 별도로 측정한다. §Part D의 "결정적 choice 모델"(pickDecisiveChoiceBase)을 함께 써서 큰
+// targetLoserCount·큰 N 조합에서도 유한 예산 안에 gameOver에 안정적으로 도달하게 한다(§Part D
+// 문서 참고 — 균등 랜덤 모델을 그대로 썼다면 이 스윕 자체가 STALL 아티팩트에 오염됐을 것이다).
+describe('STOP-SHIP Part C: 다양 targetLoserCount 스윕(1, 2, N-비례) — 결정적 choice 모델', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(1_800_000_000_000)); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('N={3,5,8,12,16,20} × targetLoserCount∈{1,2,floor(N/2)} 각 60 trial(decisive choice 모델): config별 correctnessPass + outcome 분포(tooMany/tooFew/gameOver 비율이 targetLoserCount에 따라 실제로 달라지는지) 측정', async () => {
+    const NS = [3, 5, 8, 12, 16, 20];
+    const LOSER_CONFIGS = [
+      { label: 'fixed1', fn: () => 1 },
+      { label: 'fixed2', fn: (n) => Math.min(2, maxLoserCountFor(n)) },
+      { label: 'nProportionalHalf', fn: (n) => Math.max(1, Math.min(maxLoserCountFor(n), Math.floor(n / 2))) },
+    ];
+    const TRIALS_PER_CELL = 60;
+    const surface = [];
+    for (const n of NS) {
+      for (const cfg of LOSER_CONFIGS) {
+        const targetLoserCount = cfg.fn(n);
+        let correctnessPassCount = 0;
+        const outcomeTotals = {};
+        const hardFailureModeCounts = {};
+        const sampleHardFailures = [];
+        for (let s = 0; s < TRIALS_PER_CELL; s++) {
+          const seed = n * 7100000 + cfg.label.length * 131 + s;
+          // eslint-disable-next-line no-await-in-loop
+          const r = await runEliminationTrial({
+            participantCount: n, seed, targetLoserCount,
+            resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+            choiceDriverFactory: createDecisiveChoiceDriver,
+          });
+          if (r.correctnessPass) correctnessPassCount++;
+          for (const [outcome, count] of Object.entries(r.outcomeCounts)) {
+            outcomeTotals[outcome] = (outcomeTotals[outcome] || 0) + count;
+          }
+          for (const f of r.hardFailureModes) {
+            hardFailureModeCounts[f.type] = (hardFailureModeCounts[f.type] || 0) + 1;
+            if (sampleHardFailures.length < 6) sampleHardFailures.push({ seed, n, targetLoserCount, ...f });
+          }
+        }
+        surface.push({
+          n, targetLoserCountLabel: cfg.label, targetLoserCount, trials: TRIALS_PER_CELL,
+          correctnessPassRate: correctnessPassCount / TRIALS_PER_CELL,
+          outcomeTotals, hardFailureModeCounts, sampleHardFailures,
+        });
+      }
+    }
+    // eslint-disable-next-line no-console
+    console.log('[STOP-SHIP Part C] N × targetLoserCount config별 correctnessPassRate + outcome 분포:', JSON.stringify(
+      surface.map((c) => ({
+        n: c.n, targetLoserCount: c.targetLoserCount, label: c.targetLoserCountLabel,
+        correctnessPassRate: Number(c.correctnessPassRate.toFixed(3)), outcomeTotals: c.outcomeTotals,
+        hardFailureModeCounts: c.hardFailureModeCounts,
+      })),
+      null, 2
+    ));
+    for (const c of surface) {
+      if (c.correctnessPassRate < 1) {
+        // eslint-disable-next-line no-console
+        console.log(`[STOP-SHIP Part C] N=${c.n} targetLoserCount=${c.targetLoserCount}(${c.targetLoserCountLabel}) correctnessPassRate<100% — 실패 전수 열거(sample):`, JSON.stringify(c.sampleHardFailures, null, 2));
+      }
+    }
+    expect(surface.length).toBe(NS.length * LOSER_CONFIGS.length);
+    // 하니스 자체 결함(EXCEPTION)만은 config와 무관하게 0이어야 한다.
+    for (const c of surface) {
+      expect(c.hardFailureModeCounts.EXCEPTION || 0).toBe(0);
+    }
+  }, 600000);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// STOP-SHIP Part D: 종합 correctnessPass 측정(N=3..20, 98% 게이트).
+//
+// §근거(결정적 choice 모델 채택 이유, 위 rc3-harness-support.mjs pickDecisiveChoiceBase 정의부
+// 참고): 균등 3종 랜덤(pickMixedChoiceBase)은 N이 클수록 judgePure의 "3종류가 다 나오면 draw"
+// 규칙 때문에 allDraw로 수렴해, 유한 라운드 예산 안에 gameOver에 못 닿는 STALL이 "진짜 멈춤"과
+// "그냥 안 끝남"으로 뒤섞인다(§EG Phase3 SWEEP 로그의 N=20 STALL 샘플이 실제로 이 현상 — 전부
+// status:'playing'/'ready'에서 예산 소진, EXCEPTION/오판정 없음). pickDecisiveChoiceBase(rock/
+// scissors 두 종류만 사용)는 이 아티팩트를 구조적으로 없앤다 — 매 라운드 draw 확률이 활성인원
+// 수에 지수적으로 감소하므로(2×0.5^m) 오히려 N이 클수록 더 빨리 결판난다. 아래 타이밍 캘리브레이션
+// (사전 실측, 이 파일에는 남기지 않음)으로 N=20/targetLoserCount=2에서도 평균 10라운드 안팎,
+// 기본 예산(maxRounds=max(30,N*6), budgetMsPerRound=20000)을 전혀 위협하지 않음을 확인했다 — 그래서
+// 이 스윕에서 STALL이 나오면 그건 "budget 내 미완주"가 아니라 "결판 났는데도 실제로 멈췄다"는
+// 강한 신호로 해석해도 된다(§본문 요구사항 그대로).
+//
+// §7 한계(정직 명시): host-handover 시나리오는 이번 라운드에서 구현하지 않았다 — 실제 host
+// 승계(transferHostAndLeave/becomeNextHost)는 fetchParticipants() 폴링 함수(index.html ~6066,
+// Part A와 동일 사유로 미추출) 안에서 감지·처리되는데, 그 함수 전체(cleanupDuplicateRoomProfiles/
+// destroyRoomAndGoHome/beginNewGameRound 등과 강결합)를 새로 추출하지 않고는 "다른 기기가 실제로
+// host 권한과 함께 rooms.update 쓰기 권한을 이어받는" 전이를 이 하니스의 "host 단일 writer" 불변식
+// (§createDb 상단 주석) 안에서 충실히 재현할 수 없다 — 얕은 모조(mock)로 구색만 맞추면 §no-op mock
+// 금지 원칙을 어기게 되므로, 이번 측정에서는 이 시나리오를 아예 뺀다(§보고 5절에 명시적 gap으로
+// 기록, 고치지 않고 후속 위임으로 남긴다).
+describe('STOP-SHIP Part D: 종합 correctnessPass 측정(N=3..20, decisive 모델, 98% 게이트)', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(1_800_000_000_000)); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('[헤드라인] N=3..20 전체(18개) 각 150 trial(pessimistic, targetLoserCount=2, decisive choice 모델): N별 correctnessPass% + 98% 게이트 충족 여부 + STALL을 "결판났는데 멈춤"(실결함) vs "budget 내 미완주"(측정한계)로 구분', async () => {
+    const NS = Array.from({ length: 18 }, (_, i) => i + 3); // 3..20
+    const TRIALS_PER_N = 150;
+    const summary = [];
+    for (const n of NS) {
+      let correctnessPassCount = 0;
+      let completedCount = 0;
+      const hardFailureModeCounts = {};
+      const sampleHardFailures = [];
+      const stallDetails = [];
+      for (let s = 0; s < TRIALS_PER_N; s++) {
+        const seed = n * 8100000 + s;
+        // eslint-disable-next-line no-await-in-loop
+        const r = await runEliminationTrial({
+          participantCount: n, seed, targetLoserCount: 2,
+          resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+          choiceDriverFactory: createDecisiveChoiceDriver,
+        });
+        if (r.completed) completedCount++;
+        if (r.correctnessPass) correctnessPassCount++;
+        for (const f of r.hardFailureModes) {
+          hardFailureModeCounts[f.type] = (hardFailureModeCounts[f.type] || 0) + 1;
+          if (f.type === 'STALL') stallDetails.push({ seed, finalRound: r.finalRound, detail: f.detail });
+          if (sampleHardFailures.length < 8) sampleHardFailures.push({ seed, n, ...f });
+        }
+      }
+      summary.push({
+        n, trials: TRIALS_PER_N, completedCount, correctnessPassCount,
+        correctnessPassRate: correctnessPassCount / TRIALS_PER_N,
+        hardFailureModeCounts, sampleHardFailures, stallDetails,
+      });
+    }
+    // eslint-disable-next-line no-console
+    console.log('[STOP-SHIP Part D][헤드라인] N=3..20 × 150 trial(decisive, pessimistic, targetLoserCount=2) correctnessPassRate:', JSON.stringify(
+      summary.map((s) => ({
+        n: s.n, trials: s.trials, completedCount: s.completedCount,
+        correctnessPassRate: Number(s.correctnessPassRate.toFixed(4)),
+        meetsGate98: s.correctnessPassRate >= 0.98,
+        hardFailureModeCounts: s.hardFailureModeCounts,
+      })),
+      null, 2
+    ));
+    for (const s of summary) {
+      if (s.correctnessPassRate < 1) {
+        // eslint-disable-next-line no-console
+        console.log(`[STOP-SHIP Part D] N=${s.n} correctnessPassRate<100% — 실패 전수 열거(sample, STALL 상세 포함):`, JSON.stringify({ sampleHardFailures: s.sampleHardFailures, stallDetails: s.stallDetails }, null, 2));
+      }
+    }
+    // 측정 무효화 방지: 하니스 자체 결함(EXCEPTION)은 0이어야 한다.
+    for (const s of summary) {
+      expect(s.hardFailureModeCounts.EXCEPTION || 0).toBe(0);
+    }
+    expect(summary.length).toBe(18);
+    // 98% 게이트 자체를 하드 assert하지는 않는다(§본문 지시: "결함이면 열거만, 고치지 않는다" —
+    // 이 스윕의 목적은 "98%를 강제로 통과시키는 것"이 아니라 "실제로 98% 이상인지, 아니면
+    // STALL이 진짜 결함으로 나오는지"를 정직하게 측정해 보고하는 것이다). 게이트 판정 자체는
+    // 위 console.log의 meetsGate98과 §보고 4절 헤드라인 숫자로 한다.
+  }, 600000);
+
+  it('[레짐 × targetLoserCount 교차] N={3,6,10,14,20} × {optimistic,moderate,pessimistic} × targetLoserCount∈{1,2,floor(N/2)} 각 50 trial(decisive 모델): correctnessPass가 레짐/구성 전반에서 일관되는지 교차 확인(레짐은 지연 종속 [범주2]에만 영향, correctness는 지연 독립이어야 한다는 §RC-3 taxonomy 수렴 가설의 EG 확장 재확인)', async () => {
+    const NS = [3, 6, 10, 14, 20];
+    const REGIMES = ['optimistic', 'moderate', 'pessimistic'];
+    const LOSER_CONFIGS = [
+      { label: 'fixed1', fn: () => 1 },
+      { label: 'fixed2', fn: (n) => Math.min(2, maxLoserCountFor(n)) },
+      { label: 'nProportionalHalf', fn: (n) => Math.max(1, Math.min(maxLoserCountFor(n), Math.floor(n / 2))) },
+    ];
+    const TRIALS_PER_CELL = 50;
+    const surface = [];
+    let totalTrials = 0;
+    let totalPass = 0;
+    let totalException = 0;
+    for (const regime of REGIMES) {
+      for (const n of NS) {
+        for (const cfg of LOSER_CONFIGS) {
+          const targetLoserCount = cfg.fn(n);
+          let correctnessPassCount = 0;
+          const hardFailureModeCounts = {};
+          for (let s = 0; s < TRIALS_PER_CELL; s++) {
+            const seed = n * 8200000 + regime.length * 97 + cfg.label.length * 131 + s;
+            totalTrials++;
+            // eslint-disable-next-line no-await-in-loop
+            const r = await runEliminationTrial({
+              participantCount: n, seed, targetLoserCount,
+              resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+              choiceDriverFactory: createDecisiveChoiceDriver, realtimeDelayRegime: regime,
+            });
+            if (r.correctnessPass) { correctnessPassCount++; totalPass++; }
+            for (const f of r.hardFailureModes) {
+              hardFailureModeCounts[f.type] = (hardFailureModeCounts[f.type] || 0) + 1;
+              if (f.type === 'EXCEPTION') totalException++;
+            }
+          }
+          surface.push({
+            regime, n, targetLoserCount, label: cfg.label, trials: TRIALS_PER_CELL,
+            correctnessPassRate: correctnessPassCount / TRIALS_PER_CELL, hardFailureModeCounts,
+          });
+        }
+      }
+    }
+    // eslint-disable-next-line no-console
+    console.log(`[STOP-SHIP Part D][레짐×targetLoserCount 교차] ${totalTrials} trial 종합: correctnessPassRate=${(totalPass / totalTrials).toFixed(4)}`);
+    for (const c of surface) {
+      if (c.correctnessPassRate < 1) {
+        // eslint-disable-next-line no-console
+        console.log(`[STOP-SHIP Part D][교차] regime=${c.regime} N=${c.n} targetLoserCount=${c.targetLoserCount}(${c.label}) correctnessPassRate=${c.correctnessPassRate.toFixed(3)} hardFailureModeCounts:`, JSON.stringify(c.hardFailureModeCounts, null, 2));
+      }
+    }
+    expect(surface.length).toBe(REGIMES.length * NS.length * LOSER_CONFIGS.length);
+    expect(totalException).toBe(0);
+  }, 600000);
 });

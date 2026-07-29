@@ -283,8 +283,54 @@ function sampleSkewMs(rng) {
   return Math.round((rng() - 0.5) * 6000);
 }
 
+// ── STOP-SHIP Part B(기기별 비대칭 clock skew 주입) ──────────────────────────
+// 기존 sampleSkewMs는 기기마다 독립적으로 무작위 skew를 뽑긴 하지만("비대칭"이라는 표현 자체는
+// 이미 성립), critic B의 지적은 그 skew 자체가 아니라 "mutation이 전 기기 동일 소스를 바꾸는
+// 방식이라(combinedSourceOverride) 스케줄링이 깨져도 on-time 코호트 구성원끼리는 여전히 같은
+// (깨진) 공식으로 같은 목표시각에 수렴해 스프레드가 벌어지지 않는다"는 것이었다. 그래서 진짜
+// 필요한 건 "skew 분포를 더 넓히는 것"이 아니라 "mutation이 clock-sync 보정 자체를 우회하게
+// 만들었을 때, 그 우회된 결과가 기기마다 실제로 다르게 나오도록 skew 자체를 결정론적으로
+// 이분화(절반은 +스프레드, 절반은 -스프레드)해 신호를 명확히 분리하는 것"이다 — 아래
+// createAlternatingSkewFn이 그 역할을 한다(순수 skew 함수 교체일 뿐, 판정/스케줄링 로직은
+// 손대지 않는다). 기본값(undefined)은 기존 sampleSkewMs 그대로라 회귀가 없다.
+export function createAlternatingSkewFn(spreadMs = 5000) {
+  return ({ index, isHost, rng }) => {
+    if (isHost) return 0; // 대조군 단순화 유지(기존 정책과 동일).
+    const sign = index % 2 === 0 ? 1 : -1;
+    return Math.round(sign * spreadMs * (0.7 + rng() * 0.3));
+  };
+}
+
+// ── STOP-SHIP Part A(폴링-realtime out-of-order 주입) ────────────────────────
+// 기존(§충실성 보정) 로직은 구독자별 배달을 단조증가하도록 강제해 "단일 순서보장 realtime
+// 스트림"만 재현했다. 그러나 실제 앱은 이 realtime 채널과 별도로 2.6초 참가자 폴링
+// (fetchParticipants, index.html ~6066 — 이 하니스에는 여전히 추출되지 않음, §7 한계 명시)이
+// 독립적으로 경쟁한다. 그 폴링 채널 자체를 전부 추출하지 않고도, "이 구독자에게 커밋 순서와
+// 다르게 스냅샷이 도착할 수 있다"는 그 핵심 위협 모델만은 이 realtime 전송 계층에서도 일반화해
+// 재현할 수 있다 — deliveryOrderMode:'outOfOrder'는 구독자별 단조증가 강제를 끄고 각 커밋마다
+// 독립적으로 지연을 샘플링한다(이게 바로 위 §충실성 보정 주석이 "하니스 자체 결함"이라 부르며
+// 되돌렸던 그 원래 동작 — 여기서는 버그가 아니라 "실제로 이런 재정렬이 생기면 REAL
+// isStaleRoomRow/WRPS-079 hruGen/WRPS-081 가드가 버티는지" 확인하려는 의도적 스트레스 모드다).
+// 기본값('monotonic')은 기존 동작 그대로라 회귀가 없다.
+function scheduleReorderableDelivery({ roomStore, sub, snapshot, rng, participantCount, realtimeDelayRegime, deliveryOrderMode, delay }) {
+  const propDelay = sampleRealtimeDelayMs(rng, participantCount, realtimeDelayRegime);
+  const rawTargetAbsMs = Date.now() + propDelay;
+  let targetAbsMs;
+  if (deliveryOrderMode === 'outOfOrder') {
+    // 의도적으로 단조증가 강제를 생략한다 — 뒤에 커밋된 이벤트가 앞선 이벤트를 추월해 도착할 수
+    // 있다(폴링 스냅샷이 더 새 realtime 이벤트보다 늦게 도착하는 상황의 일반화).
+    targetAbsMs = rawTargetAbsMs;
+  } else {
+    const prevAbsMs = roomStore.subscriberLastScheduledAbsMs.get(sub.deviceId) || -Infinity;
+    targetAbsMs = Math.max(rawTargetAbsMs, prevAbsMs + 1);
+  }
+  roomStore.subscriberLastScheduledAbsMs.set(sub.deviceId, targetAbsMs);
+  const waitMs = Math.max(0, targetAbsMs - Date.now());
+  delay(waitMs).then(() => sub.onRoomRow({ ...snapshot }));
+}
+
 // ── 가짜 db 팩토리: 하나의 roomStore를 여러 device가 공유한다. ────────────────
-function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, realtimeDelayRegime = 'pessimistic' }) {
+function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, realtimeDelayRegime = 'pessimistic', deliveryOrderMode = 'monotonic' }) {
   function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.round(ms))));
   }
@@ -304,15 +350,13 @@ function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, re
     // 뽑을 경우 "역전 도착"이 생겨 handleRoomUpdate가 최신 상태를 구버전으로 덮어써 버리는
     // stall을 만들어냈다(하니스 자체 결함으로 실측 — 실제 프로덕션 결함이 아님, 아래 report의
     // "확신 낮은 부분"에 별도로 기록). 구독자별 도착 시각을 단조증가하도록 강제해(직전 예정
-    // 도착시각 이후로만 배달) 실제 단일 순서보장 채널을 충실히 재현한다.
+    // 도착시각 이후로만 배달) 실제 단일 순서보장 채널을 충실히 재현한다. deliveryOrderMode가
+    // 'outOfOrder'면(위 §STOP-SHIP Part A) 이 강제를 의도적으로 끈다.
     for (const sub of roomStore.subscribers) {
-      const propDelay = sampleRealtimeDelayMs(rng, roomStore.subscribers.length, realtimeDelayRegime);
-      const rawTargetAbsMs = Date.now() + propDelay;
-      const prevAbsMs = roomStore.subscriberLastScheduledAbsMs.get(sub.deviceId) || -Infinity;
-      const targetAbsMs = Math.max(rawTargetAbsMs, prevAbsMs + 1);
-      roomStore.subscriberLastScheduledAbsMs.set(sub.deviceId, targetAbsMs);
-      const waitMs = Math.max(0, targetAbsMs - Date.now());
-      delay(waitMs).then(() => sub.onRoomRow({ ...snapshot }));
+      scheduleReorderableDelivery({
+        roomStore, sub, snapshot, rng, participantCount: roomStore.subscribers.length,
+        realtimeDelayRegime, deliveryOrderMode, delay,
+      });
     }
     await delay(ackDelay);
     return { error: null };
@@ -481,10 +525,14 @@ function makeFinishRoundLocalSubstitute({
 }
 
 // ── device(= 앱 인스턴스 1개) 생성 ───────────────────────────────────────────
-export function createDevice({ id, isHost, roomStore, rng, participantCount, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, targetLoserCount = 1, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic' }) {
+export function createDevice({ id, isHost, roomStore, rng, participantCount, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, targetLoserCount = 1, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', deliveryOrderMode = 'monotonic', index = 0, skewMsOverrideFn = null }) {
   const dom = createFakeDom();
   const telemetry = createTelemetry();
-  const skewMs = isHost ? 0 : sampleSkewMs(rng); // host도 skew를 가질 수 있으나 대조군 단순화를 위해 0 고정(보고서에 명시)
+  // §STOP-SHIP Part B: skewMsOverrideFn이 주어지면(예: createAlternatingSkewFn) 그것으로 skew를
+  // 결정한다 — 기본값(null)은 기존 sampleSkewMs 그대로라 회귀 없음.
+  const skewMs = skewMsOverrideFn
+    ? skewMsOverrideFn({ index, isHost, rng })
+    : (isHost ? 0 : sampleSkewMs(rng)); // host도 skew를 가질 수 있으나 대조군 단순화를 위해 0 고정(보고서에 명시)
   const clockRtt = sampleClockRtt(rng, id);
   const RealDate = Date;
   const FakeDate = { now: () => RealDate.now() + skewMs };
@@ -535,6 +583,7 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
     clockRttFn: () => clockRtt,
     ackDelayFn: () => 60 + rng() * 220,
     realtimeDelayRegime,
+    deliveryOrderMode,
   });
 
   // 하니스 관측용 기록(측정 전용 — 판정 로직에 영향 없음).
@@ -805,7 +854,7 @@ export function finishReadyBranchClobberCheck(device, checkCtx) {
 // 호출 결과를 그대로 쓴다. 3곳만 하니스가 대신한다: ①1라운드 시작 트리거 ②참가자 선택 제출
 // 트리거(실제 UI 클릭 대신) ③"전원 ready 렌더 완료" 감지 후 다음 라운드 시작 트리거(실제 UI의
 // markReady 버튼 클릭 체인 대신, host의 실제 startGame()을 직접 호출).
-export function createTrialWorld({ participantCount, seed, targetLoserCount = 1, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', choiceDriverFn = null }) {
+export function createTrialWorld({ participantCount, seed, targetLoserCount = 1, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', choiceDriverFn = null, deliveryOrderMode = 'monotonic', skewMsOverrideFn = null }) {
   const rng = mulberry32(seed);
   const roomStore = createRoomStore(`ROOM-${seed}-${participantCount}`);
   const devices = [];
@@ -815,7 +864,7 @@ export function createTrialWorld({ participantCount, seed, targetLoserCount = 1,
     const device = createDevice({
       id, isHost, roomStore, rng, participantCount, resolveElimination, judgePure,
       computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, targetLoserCount, combinedSourceOverride,
-      realtimeDelayRegime,
+      realtimeDelayRegime, deliveryOrderMode, index: i, skewMsOverrideFn,
     });
     devices.push(device);
   }
@@ -928,6 +977,33 @@ export function pickMixedChoiceBase(rng) {
 export function createMixedChoiceDriver(seed) {
   const choiceRng = mulberry32(seed);
   return () => pickMixedChoiceBase(choiceRng);
+}
+
+// ── STOP-SHIP Part D: "결정적" choice 모델(균등 3종 랜덤 대신) ────────────────
+// pickMixedChoiceBase(균등 3종 랜덤)는 judgePure의 "selectedTypes.length===3이면 draw" 규칙
+// 때문에 N이 클수록 3종류가 다 나올 확률이 급격히 올라가 allDraw로 수렴한다(§EG Phase1/2
+// COVERAGE 실측으로 이미 확인) — 그 결과 큰 N에서는 결정적 라운드 자체가 희소해져 유한 라운드
+// 예산 안에서 gameOver에 못 닿는 STALL이 "진짜 멈춤"이 아니라 "그냥 안 끝남"이라는 측정 아티팩트로
+// 섞여든다(§EG Phase3 SWEEP 로그의 N=20 STALL 샘플들이 실제로 이 현상이다 — 실패 유형이 전부
+// status:'playing'/'ready'에서 멈춰 있고 EXCEPTION/오판정류는 없다). 이 아티팩트를 없애려면 매
+// 라운드가 "실제로 결판나게" 만들어야 한다.
+// 설계: 두 종류(rock/scissors)만 사용하고 세 번째(paper)는 아예 후보에서 뺀다 — judgePure는
+// selectedTypes.length가 정확히 2일 때만 승/패를 내므로, 이 두 종류만 쓰면 "3종류가 다 나와
+// draw"라는 경로 자체가 구조적으로 불가능해진다(paper가 후보에 없으므로). 남은 유일한 draw
+// 경로는 "활성자 전원이 우연히 같은 종류를 냄"뿐인데, 이 확률은 독립 베르누이(p=0.5)로 각
+// 라운드 active count가 m명일 때 2×0.5^m이라 m이 클수록 오히려 exponentially 작아진다(균등
+// 3종 모델과 정반대 방향 — N이 클수록 이 모델은 더 빨리 결판난다). 이건 하니스가 새로 발명한
+// 편향이 아니라 "실제 왜 draw가 나는지"(judgePure의 selectedTypes.length 규칙, REAL 소스)를
+// 근거로 고른 최소 개입이다 — 어느 두 종류를 골라도(rock/scissors, scissors/paper, paper/rock)
+// getWinningChoice가 대칭적으로 처리하므로 결과 분포에 실질적 차이는 없다(§7에 명시).
+export function pickDecisiveChoiceBase(rng) {
+  const bases = ['rock', 'scissors'];
+  return bases[Math.floor(rng() * 2)];
+}
+
+export function createDecisiveChoiceDriver(seed) {
+  const choiceRng = mulberry32(seed);
+  return () => pickDecisiveChoiceBase(choiceRng);
 }
 
 // 이 세계가 "게임오버로 완전히 정착"했는가 — REAL room.status broadcast가 전원에게 도달해
@@ -1530,12 +1606,12 @@ export async function runMeasuredTrial({
   participantCount, seed, targetRounds = DEFAULT_TARGET_ROUNDS, targetLoserCount,
   resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
   stepMs = 250, budgetMsPerRound = 40000, choiceBase = 'scissors', vi, combinedSourceOverride = null,
-  realtimeDelayRegime = 'pessimistic',
+  realtimeDelayRegime = 'pessimistic', deliveryOrderMode = 'monotonic', skewMsOverrideFn = null,
 }) {
   const world = createTrialWorld({
     participantCount, seed, targetLoserCount: targetLoserCount ?? Math.max(1, Math.floor(participantCount / 2)),
     resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride,
-    realtimeDelayRegime,
+    realtimeDelayRegime, deliveryOrderMode, skewMsOverrideFn,
   });
   const host = world.devices[0];
   const realRandom = Math.random;
@@ -1860,7 +1936,8 @@ export async function runEliminationTrial({
   resolveEliminationOracle = null, judgePureOracle = null,
   stepMs = 250, budgetMsPerRound = 20000, maxRounds = null, vi,
   combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic',
-  choiceSeed = null,
+  choiceSeed = null, choiceDriverFactory = null,
+  deliveryOrderMode = 'monotonic', skewMsOverrideFn = null,
 }) {
   // N이 클수록 "전원이 3가지 타입을 모두 낼" 확률이 급격히 올라가 allDraw가 자주 나온다(judgePure의
   // "selectedTypes.length===3이면 draw" 규칙 — 참가자가 많을수록 3종류가 다 나올 확률이 높아짐).
@@ -1870,11 +1947,14 @@ export async function runEliminationTrial({
   // 혼동하지 않는다.
   const resolvedMaxRounds = maxRounds ?? Math.max(30, participantCount * 6);
   const resolvedChoiceSeed = choiceSeed ?? (seed * 2654435761 + 0x9E3779B9);
-  const choiceDriverFn = createMixedChoiceDriver(resolvedChoiceSeed);
+  // §STOP-SHIP Part D: choiceDriverFactory가 주어지면(예: createDecisiveChoiceDriver) 그것으로
+  // 선택 드라이버를 만든다 — 기본값(null)은 기존 createMixedChoiceDriver(균등 3종 랜덤) 그대로라
+  // 회귀 없음(EG §Phase0~WRPS-079 스윕 전부가 이 기본값을 계속 쓴다).
+  const choiceDriverFn = (choiceDriverFactory || createMixedChoiceDriver)(resolvedChoiceSeed);
   const world = createTrialWorld({
     participantCount, seed, targetLoserCount,
     resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
-    combinedSourceOverride, realtimeDelayRegime, choiceDriverFn,
+    combinedSourceOverride, realtimeDelayRegime, choiceDriverFn, deliveryOrderMode, skewMsOverrideFn,
   });
   const host = world.devices[0];
   const realRandom = Math.random;
