@@ -199,10 +199,22 @@ function createFakeDom() {
 // ── 시뮬레이션 룸(공유 상태) ─────────────────────────────────────────────────
 // host 단일 writer 원칙: rooms.update는 오직 host 디바이스만 호출한다(실제 앱과 동일하게
 // 하니스도 host 이외 디바이스에서 rooms.update를 호출하지 않는다 — participants.update만 호출).
-export function createRoomStore(roomId = 'ROOM-SIM') {
+//
+// ⚠️ initialPenalty 기본값('')은 REAL 앱과의 불일치를 그대로 물려받는다는 뜻이 아니다 — REAL
+// 앱에서는 host가 로비에서 savePenalty()를 먼저 커밋해야만(index.html ~7280-7310,
+// db.from('rooms').update({ penalty: buildPenaltyValue({loserCount,...}), status: nextStatus })
+// 만) screenHostRoom의 startGameBtn이 활성화되므로(showHostRoom의 state.status==='ready' 분기,
+// index.html ~6599), room.penalty가 ''(빈 문자열)인 채로 startGame()이 호출되는 경우는 REAL
+// 앱에는 **존재하지 않는다**. 이 기본값을 계속 ''로 두는 이유는 오직 하위호환(§createRoomStore를
+// 직접 호출해 판정 단위 테스트에만 쓰는 rc3-multiparticipant-sim.test.mjs 등 — 이 테스트들은
+// handleRoomUpdate/room row 동기화 경로를 아예 타지 않고 device.impl.state를 직접 조작하므로
+// room.penalty 초기값과 무관)이다. targetLoserCount를 실제로 주입해 라운드를 굴리는
+// createTrialWorld는 아래에서 REAL savePenalty 상당 단계로 이 기본값을 반드시 덮어쓴다 —
+// PHANTOM_OR_CORRUPTED_OUTCOME 원인 규명 참고(§STOP-SHIP 보고).
+export function createRoomStore(roomId = 'ROOM-SIM', { initialPenalty = '' } = {}) {
   return {
     id: roomId,
-    row: { id: roomId, penalty: '', round: 1, status: 'waiting' },
+    row: { id: roomId, penalty: initialPenalty, round: 1, status: 'waiting' },
     participants: new Map(), // id -> row
     order: [], // insertion order (created_at asc 흉내)
     subscribers: [], // { deviceId, onRoomRow(rowSnapshot) }
@@ -960,6 +972,27 @@ export function createTrialWorld({ participantCount, seed, targetLoserCount = 1,
     roomStore.order.push(d.id);
   }
   for (const d of devices) d.impl.state.participants = roomStore.order.map((id) => ({ ...roomStore.participants.get(id) }));
+
+  // 접합부 ⓪-pre(STOP-SHIP, PHANTOM_OR_CORRUPTED_OUTCOME 원인 수정): REAL savePenalty() 상당 단계.
+  // REAL 앱에서는 host가 로비에서 savePenalty()를 커밋해야만(index.html ~7280-7310,
+  // db.from('rooms').update({ penalty: buildPenaltyValue({loserCount,...}), status: nextStatus }))
+  // screenHostRoom의 startGameBtn이 활성화된다(showHostRoom의 state.status==='ready' 분기) — 즉
+  // REAL startGame()이 호출되는 시점에는 room.penalty가 이미 항상 유효한(올바른 loserCount를
+  // 인코딩한) JSON이고, 절대 ''(빈 문자열)일 수 없다. 이 하니스는 로비/방입장 시퀀스 자체를
+  // 모델링하지 않으므로(위 참가자 시딩도 동일하게 handleRoomUpdate를 거치지 않고 직접 대입한다),
+  // savePenalty의 "실제 효과"만 동일하게 재현한다: REAL buildPenaltyValue(REAL 추출)로
+  // targetLoserCount를 인코딩한 값을 room row에 커밋한다.
+  //   수정 전 결함: createRoomStore의 기본 row.penalty(='')가 게임 시작 전까지 그대로 남아있었고,
+  //   REAL getTargetLoserCount() = parsePenalty(state.penalty).loserCount || state.targetLoserCount || 1
+  //   는 parsePenalty('')의 JSON.parse 실패 폴백이 loserCount:1을 반환하므로(파싱 실패 시 fallback,
+  //   위 parsePenalty 참고) `1 || state.targetLoserCount || 1`가 `||` 단락평가로 항상 1로
+  //   클로버되어(주입한 targetLoserCount가 2 이상이어도 무시) 활성 참가자 수와 무관하게 loserCount=1
+  //   기준으로 조기 gameOver 판정이 나 오라클(§EG runEliminationTrial)과 불일치하는
+  //   PHANTOM_OR_CORRUPTED_OUTCOME을 만들었다 — REAL 앱은 room.penalty가 이 시점에 이미 올바르므로
+  //   무해했다(하니스 전용 아티팩트). host 디바이스(devices[0])의 REAL buildPenaltyValue를 그대로
+  //   호출할 뿐 손으로 인코딩을 재작성하지 않는다.
+  const initialPenalty = devices[0].impl.buildPenaltyValue({ text: '', loserCount: targetLoserCount, gameRound: 1 });
+  roomStore.row.penalty = initialPenalty;
 
   // 접합부 ⓪(중요, 앞서 실측 버그로 발견): 실제 앱은 방 입장 직후 syncServerClock()을 1회 호출해
   // serverClockOffsetMs를 채운다(subscribeToRoom 계열 초기화 — DOM/채널 강결합이라 이 함수 자체는
