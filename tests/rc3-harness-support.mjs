@@ -1487,6 +1487,336 @@ function getPenaltyGameRoundForTest(device, penaltyRaw) {
   try { return device.impl.getPenaltyGameRound(penaltyRaw); } catch (e) { return null; }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// STOP-SHIP 재수정(Review Correction Loop) 게이팅 시나리오 2종.
+//
+// codex-critic 지적: 기존 isGameOverSettled(위)는 "전 기기 status==='game_over'"에서 멈춰,
+// endGame()의 game_over→stats 전이(§CRITICAL-1)와 requestReplayFromJoinedRoom()의
+// {status:'reinviting', round:1} 전이(§MEDIUM)를 이 하니스가 전혀 관측하지 못했다 — 그래서 이 두
+// 실제 프로덕션 전이를 REAL 채널로 재현하는 시나리오를 추가한다.
+//
+// §설계(§runStaleRowGuardScenario와 동일 성격의 "직접 구성" 기법 재사용): 라운드 진행 로직 자체
+// (finishRoundLocal/resolveElimination 등)는 이 두 시나리오의 관심사가 아니므로, "게임이 이미 이
+// (gameRound, round, status) 조합에 도달해 있다"는 선행 상태를 REAL buildPenaltyValue + REAL
+// db.from('rooms').update(...)(host 전용, 정상 구독자 전파 경로)로 직접 커밋한다. 그 다음 전이만이
+// 이 시나리오의 진짜 관심사이고, 그 전이는 REAL endGame()/requestReplayFromJoinedRoom()이 실제로
+// 쓰는 것과 정확히 동일한 payload로 커밋한다(손으로 다시 짠 로직 아님 — endGame()은
+// updateRoomStatus("stats")만 호출하므로 REAL 추출 함수 impl.updateRoomStatus를 그대로 호출하고,
+// reinviting 전이는 index.html 7146의 실제 payload `{status:'reinviting', round:1}`을 그대로
+// db.update에 넣는다).
+//
+// pollingEnabled:true(REAL_POLL_INTERVAL_MS)로 2.6초 REST 폴링 백업도 함께 구동한다 — self-heal이
+// 이 폴링 채널로 뚫리는 실제 메커니즘(§CRITICAL-1 보고 근거)까지 재현하기 위함이다.
+export async function runGameOverToStatsScenario({
+  seed = 5252525, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
+  combinedSourceOverride = null, vi, settleBudgetMs = 45000, stepMs = 250, pollIntervalMs = REAL_POLL_INTERVAL_MS,
+}) {
+  const world = createTrialWorld({
+    participantCount: 3, seed, targetLoserCount: 1,
+    resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride,
+    pollingEnabled: true, pollIntervalMs,
+  });
+  const host = world.devices[0];
+  const victim = world.devices[1];
+
+  async function advanceUntil(predicate, budgetMs) {
+    let elapsed = 0;
+    while (elapsed < budgetMs && !predicate()) {
+      // eslint-disable-next-line no-await-in-loop
+      await vi.advanceTimersByTimeAsync(stepMs);
+      elapsed += stepMs;
+    }
+    return predicate();
+  }
+  async function fireAndAdvanceUntil(promiseFactory, predicate, budgetMs) {
+    const p = promiseFactory();
+    p.catch(() => {}); // §runStaleRowGuardScenario와 동일 이유(브로드캐스트 전파는 별도 스케줄).
+    return advanceUntil(predicate, budgetMs);
+  }
+
+  const clockSyncSettled = await advanceUntil(
+    () => world.devices.every((d) => d.impl.getServerClockSynced()), settleBudgetMs
+  );
+
+  // 1) 정당한 game_over 도달을 직접 구성(gameRound=1, round=1 그대로 — endGame() 진입 직전 상태).
+  const penaltyG1 = host.impl.buildPenaltyValue({ gameRound: 1, phaseScheduledAt: 0 });
+  const gameOverSettled = await fireAndAdvanceUntil(
+    () => host.env.db.from('rooms').update({ penalty: penaltyG1, round: 1, status: 'game_over' }).eq(),
+    () => victim.impl.state.status === 'game_over' && victim.impl.state.gameRound === 1 && victim.impl.state.round === 1,
+    settleBudgetMs
+  );
+
+  // 관측 커서: 위 1) 단계까지의 telemetry는 이 시나리오의 관심사가 아니다(그 회귀는 이미 §Phase2/
+  // 다른 게이팅 테스트가 감시) — 여기 "이후" 이벤트만 stats 전이 판정에 쓴다.
+  const cursor = victim.telemetry.events.length;
+
+  // 2) REAL endGame()이 실제로 하는 것과 정확히 동일: round/gameRound/penalty 변경 없이
+  //    updateRoomStatus("stats")만 호출한다(REAL 추출 함수, 손으로 payload를 짜지 않음).
+  const statsSettled = await fireAndAdvanceUntil(
+    () => host.impl.updateRoomStatus('stats'),
+    () => victim.impl.state.status === 'stats',
+    settleBudgetMs
+  );
+
+  const eventsSinceCursor = victim.telemetry.events.slice(cursor);
+  const staleSkipEventsForStats = eventsSinceCursor.filter(
+    (e) => e.eventType === 'STALE_ROOM_UPDATE_SKIPPED' && e.roomStatus === 'stats'
+  );
+  const selfHealEvents = eventsSinceCursor.filter((e) => e.eventType === 'STALE_ROOM_UPDATE_SELF_HEAL');
+
+  return {
+    clockSyncSettled, gameOverSettled, statsSettled,
+    victimStatusAfterStats: victim.impl.state.status,
+    staleSkipCountForStats: staleSkipEventsForStats.length,
+    selfHealCount: selfHealEvents.length,
+    world,
+  };
+}
+
+// §MEDIUM 재현: requestReplayFromJoinedRoom()의 {status:'reinviting', round:1} 전이 — 직전 게임이
+// round>1(단일 gameRound 안에서 여러 라운드 진행)에서 끝난 뒤 재대결 초대가 오는 경우, round-축이
+// "round가 감소했다"는 이유만으로(전이의 status가 reset 상태인지 무관하게) 정당한 리셋을 stale로
+// 오판하는지를 검증한다.
+export async function runReinvitingRoundResetScenario({
+  seed = 6363636, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
+  combinedSourceOverride = null, vi, settleBudgetMs = 45000, stepMs = 250, pollIntervalMs = REAL_POLL_INTERVAL_MS,
+}) {
+  const world = createTrialWorld({
+    participantCount: 3, seed, targetLoserCount: 1,
+    resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride,
+    pollingEnabled: true, pollIntervalMs,
+  });
+  const host = world.devices[0];
+  const victim = world.devices[1];
+
+  async function advanceUntil(predicate, budgetMs) {
+    let elapsed = 0;
+    while (elapsed < budgetMs && !predicate()) {
+      // eslint-disable-next-line no-await-in-loop
+      await vi.advanceTimersByTimeAsync(stepMs);
+      elapsed += stepMs;
+    }
+    return predicate();
+  }
+  async function fireAndAdvanceUntil(promiseFactory, predicate, budgetMs) {
+    const p = promiseFactory();
+    p.catch(() => {});
+    return advanceUntil(predicate, budgetMs);
+  }
+
+  const clockSyncSettled = await advanceUntil(
+    () => world.devices.every((d) => d.impl.getServerClockSynced()), settleBudgetMs
+  );
+
+  // 1) 직전 게임이 round=3까지 진행된 뒤 끝난 상황을 직접 구성(gameRound=1 그대로, round만 3).
+  const penaltyG1 = host.impl.buildPenaltyValue({ gameRound: 1, phaseScheduledAt: 0 });
+  const round3Settled = await fireAndAdvanceUntil(
+    () => host.env.db.from('rooms').update({ penalty: penaltyG1, round: 3, status: 'game_over' }).eq(),
+    () => victim.impl.state.status === 'game_over' && victim.impl.state.gameRound === 1 && victim.impl.state.round === 3,
+    settleBudgetMs
+  );
+
+  const cursor = victim.telemetry.events.length;
+
+  // 2) REAL requestReplayFromJoinedRoom()이 실제로 쓰는 것과 정확히 동일한 payload(index.html
+  //    ~7146) — penalty 필드는 손대지 않는다(그대로 유지되어 incomingGameRound===state.gameRound).
+  const reinvitingSettled = await fireAndAdvanceUntil(
+    () => host.env.db.from('rooms').update({ status: 'reinviting', round: 1 }).eq(),
+    () => victim.impl.state.status === 'reinviting',
+    settleBudgetMs
+  );
+
+  const eventsSinceCursor = victim.telemetry.events.slice(cursor);
+  const staleSkipEventsForReinviting = eventsSinceCursor.filter(
+    (e) => e.eventType === 'STALE_ROOM_UPDATE_SKIPPED' && e.roomStatus === 'reinviting'
+  );
+  const selfHealEvents = eventsSinceCursor.filter((e) => e.eventType === 'STALE_ROOM_UPDATE_SELF_HEAL');
+
+  return {
+    clockSyncSettled, round3Settled, reinvitingSettled,
+    victimStatusAfterReinviting: victim.impl.state.status,
+    victimRoundAfterReinviting: victim.impl.state.round,
+    staleSkipCountForReinviting: staleSkipEventsForReinviting.length,
+    selfHealCount: selfHealEvents.length,
+    world,
+  };
+}
+
+// §STOP-SHIP 3차 재현: inviteForReplay()의 round-불변 `{status:'reinviting'}` 전이(CRITICAL-2) —
+// 위 runReinvitingRoundResetScenario는 requestReplayFromJoinedRoom()의 `{status:'reinviting',
+// round:1}`(round를 명시적으로 1로 "쓰는" 경로)만 재현한다. 그러나 index.html ~9899의
+// inviteForReplay()(같은 방에서 "다시 하기" 버튼 → statsReplayBtn의 주 재대결 경로)는 round 필드를
+// 전혀 쓰지 않는다(`db.from('rooms').update({ status: 'reinviting' }).eq(...)`) — 그래서 round
+// column은 직전 게임이 끝난 값 그대로 남는다(round-"불변" 리셋, round=1로 "쓰는" 리셋이 아님). 이
+// 차이가 중요한 이유: incomingRound === state.round(불변이므로 round-축은 애초에 적용 안 됨)가 되고,
+// 그 결과 CRITICAL-2는 순수하게 phase-축(isStaleStatusWithinRound)만의 문제였다 — 재수정 2차(차단
+// 목록) 코드는 round-축에서만 'reinviting'을 예외 처리했을 뿐 phase-축에는 그 예외가 전혀 없어서
+// (phase-축은 `|| 0` 기본값만 썼다), reinviting=0 < stats(4)/game_over(3)로 오판해 그대로 막았다.
+// fromStatus 파라미터로 game_over 뒤(round 필드 없이 재초대) / stats 뒤(round 필드 없이 재초대) 두
+// 경로를 모두 재현한다(보고서 "critic 확정 잔존 결함" CRITICAL-2 원문의 "stats(4)/game_over(3) 뒤
+// same-round로 옴" 그대로).
+export async function runInviteForReplayReinvitingScenario({
+  seed = 7474747, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
+  combinedSourceOverride = null, vi, settleBudgetMs = 45000, stepMs = 250, pollIntervalMs = REAL_POLL_INTERVAL_MS,
+  fromStatus = 'stats',
+}) {
+  const world = createTrialWorld({
+    participantCount: 3, seed, targetLoserCount: 1,
+    resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride,
+    pollingEnabled: true, pollIntervalMs,
+  });
+  const host = world.devices[0];
+  const victim = world.devices[1];
+
+  async function advanceUntil(predicate, budgetMs) {
+    let elapsed = 0;
+    while (elapsed < budgetMs && !predicate()) {
+      // eslint-disable-next-line no-await-in-loop
+      await vi.advanceTimersByTimeAsync(stepMs);
+      elapsed += stepMs;
+    }
+    return predicate();
+  }
+  async function fireAndAdvanceUntil(promiseFactory, predicate, budgetMs) {
+    const p = promiseFactory();
+    p.catch(() => {});
+    return advanceUntil(predicate, budgetMs);
+  }
+
+  const clockSyncSettled = await advanceUntil(
+    () => world.devices.every((d) => d.impl.getServerClockSynced()), settleBudgetMs
+  );
+
+  // 1) 직전 게임이 round=3까지 진행된 뒤 game_over에 도달한 상황을 직접 구성(gameRound=1 그대로).
+  const penaltyG1 = host.impl.buildPenaltyValue({ gameRound: 1, phaseScheduledAt: 0 });
+  const gameOverSettled = await fireAndAdvanceUntil(
+    () => host.env.db.from('rooms').update({ penalty: penaltyG1, round: 3, status: 'game_over' }).eq(),
+    () => victim.impl.state.status === 'game_over' && victim.impl.state.gameRound === 1 && victim.impl.state.round === 3,
+    settleBudgetMs
+  );
+
+  // 2) fromStatus==='stats'면 REAL endGame()과 정확히 동일하게 updateRoomStatus("stats")만 호출해
+  //    game_over→stats로 한 단계 더 전진시킨다(round/gameRound는 여전히 그대로).
+  let statsSettled = true;
+  if (fromStatus === 'stats') {
+    statsSettled = await fireAndAdvanceUntil(
+      () => host.impl.updateRoomStatus('stats'),
+      () => victim.impl.state.status === 'stats',
+      settleBudgetMs
+    );
+  }
+
+  const cursor = victim.telemetry.events.length;
+
+  // 3) REAL inviteForReplay()가 실제로 쓰는 것과 정확히 동일한 payload(index.html ~9899) —
+  //    round/penalty 필드를 전혀 건드리지 않는다(그래서 round=3 그대로 victim에 남아야 정상).
+  const reinvitingSettled = await fireAndAdvanceUntil(
+    () => host.env.db.from('rooms').update({ status: 'reinviting' }).eq(),
+    () => victim.impl.state.status === 'reinviting',
+    settleBudgetMs
+  );
+
+  const eventsSinceCursor = victim.telemetry.events.slice(cursor);
+  const staleSkipEventsForReinviting = eventsSinceCursor.filter(
+    (e) => e.eventType === 'STALE_ROOM_UPDATE_SKIPPED' && e.roomStatus === 'reinviting'
+  );
+  const selfHealEvents = eventsSinceCursor.filter((e) => e.eventType === 'STALE_ROOM_UPDATE_SELF_HEAL');
+
+  return {
+    clockSyncSettled, gameOverSettled, statsSettled, reinvitingSettled,
+    victimStatusAfterReinviting: victim.impl.state.status,
+    victimRoundAfterReinviting: victim.impl.state.round, // round-불변 리셋이므로 3 그대로여야 정상
+    staleSkipCountForReinviting: staleSkipEventsForReinviting.length,
+    selfHealCount: selfHealEvents.length,
+    world,
+  };
+}
+
+// §STOP-SHIP 3차 재현: goToReadyScreen()의 round-불변 `{status:'ready'}` 전이(LOW, 재현 가능성
+// 원 보고에서 미확정) — index.html ~10603의 goToReadyScreen()은 updateRoomStatus('ready')만
+// 호출한다(round 필드 없음, inviteForReplay와 동일하게 round-불변). 다만 실제 도달 경로상 이
+// 함수는 항상 beginNewGameRound({status:'lobby'|'waiting', increment:true, ...})가 이미 round를
+// 1로 리셋해 둔 "새 gameRound의 lobby/waiting" 화면(screenHostRoom)에서만 호출되므로(§index.html
+// grep: startGameBtn은 screenHostRoom에만 존재), 이 시나리오에서 game_over/stats에 도달해 있던
+// round=3인 채로 goToReadyScreen()이 곧바로 불릴 수 있는지는 이 하니스만으로 확정할 수 없다(DOM
+// 네비게이션 자체를 재현하지 않으므로) — 그래서 이 함수는 "만약 그 상태에서 불린다면 어떻게
+// 처리되는가"만 격리해서 보여준다(도달 가능성 자체를 증명하지 않음, 원 보고의 "미확정" 그대로
+// 유지). 'ready'는 §회복-보존 실증 근거로 ACTIVE_ROUND_PHASE_ORDER에 여전히 남아있으므로(0), 이
+// 경로는 CRITICAL-2/MEDIUM과 달리 여전히 stale로 막힌다 — 이는 회귀가 아니라 재설계 이전과 동일한
+// 기존 동작이 그대로 유지된 것이다(트레이드오프, 아래 게이팅 테스트가 이 사실 자체를 감시한다).
+export async function runGoToReadyScreenRoundInvariantScenario({
+  seed = 8484848, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
+  combinedSourceOverride = null, vi, settleBudgetMs = 45000, stepMs = 250, pollIntervalMs = REAL_POLL_INTERVAL_MS,
+  fromStatus = 'stats',
+}) {
+  const world = createTrialWorld({
+    participantCount: 3, seed, targetLoserCount: 1,
+    resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride,
+    pollingEnabled: true, pollIntervalMs,
+  });
+  const host = world.devices[0];
+  const victim = world.devices[1];
+
+  async function advanceUntil(predicate, budgetMs) {
+    let elapsed = 0;
+    while (elapsed < budgetMs && !predicate()) {
+      // eslint-disable-next-line no-await-in-loop
+      await vi.advanceTimersByTimeAsync(stepMs);
+      elapsed += stepMs;
+    }
+    return predicate();
+  }
+  async function fireAndAdvanceUntil(promiseFactory, predicate, budgetMs) {
+    const p = promiseFactory();
+    p.catch(() => {});
+    return advanceUntil(predicate, budgetMs);
+  }
+
+  const clockSyncSettled = await advanceUntil(
+    () => world.devices.every((d) => d.impl.getServerClockSynced()), settleBudgetMs
+  );
+
+  const penaltyG1 = host.impl.buildPenaltyValue({ gameRound: 1, phaseScheduledAt: 0 });
+  const gameOverSettled = await fireAndAdvanceUntil(
+    () => host.env.db.from('rooms').update({ penalty: penaltyG1, round: 3, status: 'game_over' }).eq(),
+    () => victim.impl.state.status === 'game_over' && victim.impl.state.gameRound === 1 && victim.impl.state.round === 3,
+    settleBudgetMs
+  );
+
+  let statsSettled = true;
+  if (fromStatus === 'stats') {
+    statsSettled = await fireAndAdvanceUntil(
+      () => host.impl.updateRoomStatus('stats'),
+      () => victim.impl.state.status === 'stats',
+      settleBudgetMs
+    );
+  }
+
+  const cursor = victim.telemetry.events.length;
+
+  // REAL goToReadyScreen()이 실제로 쓰는 것과 정확히 동일한 payload(index.html ~10603) — round
+  // 필드를 전혀 건드리지 않는다.
+  const readySettled = await fireAndAdvanceUntil(
+    () => host.env.db.from('rooms').update({ status: 'ready' }).eq(),
+    () => victim.impl.state.status === 'ready',
+    settleBudgetMs
+  );
+
+  const eventsSinceCursor = victim.telemetry.events.slice(cursor);
+  const staleSkipEventsForReady = eventsSinceCursor.filter(
+    (e) => e.eventType === 'STALE_ROOM_UPDATE_SKIPPED' && e.roomStatus === 'ready'
+  );
+  const selfHealEvents = eventsSinceCursor.filter((e) => e.eventType === 'STALE_ROOM_UPDATE_SELF_HEAL');
+
+  return {
+    clockSyncSettled, gameOverSettled, statsSettled, readySettled,
+    victimStatusAfterReady: victim.impl.state.status,
+    staleSkipCountForReady: staleSkipEventsForReady.length,
+    selfHealCount: selfHealEvents.length,
+    world,
+  };
+}
+
 // ── WRPS-079 Round2(STOP-SHIP, HIGH 잔존 수정) 전용 시나리오: ready 분기 재진입 직접 재현 ──
 // §Phase3/EG 넓은 시드 스윕(N=3..20, 각 40 seed, 총 360 trial, pessimistic 레짐 + 위 REPRO_SEEDS
 // 2종 포함)으로는 이 하니스의 타이밍 모델(참가자 select ackDelay 60~280ms, 고정 상한) 안에서

@@ -5635,14 +5635,127 @@
       // 반영하는 정도이고, 그마저도 fetchParticipants가 이후 재동기화한다.
       const STALE_ROOM_UPDATE_SELF_HEAL_THRESHOLD = 5;
       const incomingGameRound = getPenaltyGameRound(room.penalty);
-      const isStaleRoomRow = incomingGameRound > 0 && incomingGameRound < state.gameRound;
+      const isStaleGameRoundRow = incomingGameRound > 0 && incomingGameRound < state.gameRound;
+      // STOP-SHIP(라운드-레벨 staleness, 이중경로 폴링 레이스): 위 isStaleGameRoundRow는
+      // gameRound(게임 회차) 축만 비교한다 — 같은 게임 안(gameRound 불변, 예: 5라운드 단일 게임은
+      // gameRound=1 그대로)에서는 이 row의 round가 이미 지나간 과거 round를 들고 있어도 이 가드가
+      // 전혀 걸리지 않는다. subscribeToRoom의 2.6초 폴링(5586-5590)은 realtime 구독과 완전히
+      // 독립된 별도 조회라 두 경로의 handleRoomUpdate 호출 "완료" 순서를 보장하지 않는다 — 폴링이
+      // 더 이전 시점에 조회한 스냅샷을 늦게 들고 도착하면(네트워크 재정렬), 그 사이 realtime으로
+      // 이미 더 앞선 round까지 진행된 뒤에도 이 오래된 row가 그대로 처리되어 아래
+      // `state.round = room.round`(무보호 대입)가 round를 과거로 되돌리고, 뒤이은 status 전이
+      // 감지(`oldStatus !== state.status`)가 이미 끝난 전이를 다시 "새 전이"로 오판해
+      // enterPlayingStateFromRoomUpdate()가 이미 마친 라운드의 카운트다운을 다시 실행한다(실측
+      // 회귀: countdown SYNC_RENDER round 시퀀스에 중복 발생, 폴링 ON correctnessPass 붕괴).
+      // 같은 게임(gameRound) 안에서는 room.round column write가 항상 비감소임을 아래 근거로
+      // 확인했다 — beginNewGameRound()의 모든 호출부는 increment:true를 고정으로 넘기는 다수
+      // 호출부(participant_dropped/participant_or_host_changed/host_left_after_round_activity/
+      // loser_became_next_host/game_completed_return_lobby 등) 외에, increment 값이 매 호출마다
+      // 계산되어 false일 수 있는 호출부가 정확히 3곳 있다(STOP-SHIP 3차, codex-critic MEDIUM
+      // 지적으로 정정 — 이전 주석은 "resetGameKeepRoom이 유일한 increment:false 호출부"라고 썼는데
+      // 틀렸다, 실제로는 3곳이고 그중 하나는 아래처럼 근거가 다르다):
+      //  1) resetGameKeepRoom(아래 9879행 부근): `increment: hasCurrentGameRoundActivity()`.
+      //  2) transferHostAndLeave(아래 10831행 부근): `const shouldIncrement =
+      //     hasCurrentGameRoundActivity(); increment: shouldIncrement`.
+      //     — 이 두 곳은 hasCurrentGameRoundActivity()를 그대로(가공 없이) increment에 넘기므로
+      //     "increment===false ⟺ hasCurrentGameRoundActivity()===false"가 동치로 성립하고,
+      //     hasCurrentGameRoundActivity()의 첫 줄(`if ((state.round || 1) > 1) return true;`,
+      //     위 4944행 부근)의 대우명제로 "hasCurrentGameRoundActivity()===false ⟹ round<=1"이
+      //     항상 성립한다 — 그래서 이 두 곳의 round=1 대입은 항상 no-op이다.
+      //  3) startFromLobby(아래 12683행 부근): `const shouldAdvanceGameRound =
+      //     !hasCurrentGameRoundActivity() && (lastStartedGameRound >= currentGameRound);
+      //     increment: shouldAdvanceGameRound`. 이 곳은 위 두 곳과 근거가 다르다 — increment는
+      //     hasCurrentGameRoundActivity() 자체가 아니라 그것과의 **논리곱**이라서, increment===false는
+      //     "hasCurrentGameRoundActivity()===false이면서 lastStartedGameRound<currentGameRound"인
+      //     (round<=1이 보장되는) 흔한 경우뿐 아니라 "hasCurrentGameRoundActivity()===true"인
+      //     경우에도 성립한다(드모르간) — 후자에서는 위 동치가 깨져 round<=1이 보장되지 않는다
+      //     (예: hasCurrentGameRoundActivity()가 round>1 때문이 아니라 confirmedSafeIds/participant
+      //     stats 잔존 때문에 true인 경우는 실제로 round<=1일 수 있지만, round>1 때문에 true인
+      //     경우는 이 회차의 round=1 대입이 진짜 감소다). 이 경로가 실제 UI 흐름에서 도달
+      //     가능한지는 이번 STOP-SHIP에서 확인하지 않았다(정상 흐름상 startFromLobby는 항상
+      //     beginNewGameRound({status:"lobby"|"waiting", increment:true, ...})가 이미 round=1로
+      //     리셋해 둔 화면에서만 호출되므로 hasCurrentGameRoundActivity()===false가 일반적이다) —
+      //     그래서 기능이 "안전하다"는 결론은 이 3곳 모두에 무차별로 적용할 수 없고, 1)·2)는
+      //     불변식으로 증명되지만 3)은 "일반적인 흐름에서는 성립, edge case는 미확인"이라는 더 약한
+      //     주장이다(§STOP-SHIP 보고서 "확신 낮은 부분"에 동일 내용 기록).
+      // nextRound/autoStartDrawRematch 등 라운드 진행 write는 항상 state.round+1만 쓴다 — 그래서
+      // "같은 gameRound 안에서 지금까지 본 것보다 작은 round"는 위 3)의 미확인 edge case를 제외하면
+      // 항상 stale(과거) 데이터다. incomingGameRound가 0(파싱 실패/필드 없음, 위 isStaleGameRoundRow와
+      // 동일한 "알 수 없음" sentinel)이면 이 축도 함께 판단을 보류한다(모르면 막지 않는다는 기존
+      // 원칙 재사용 — gameRound를 모르면 그 값이 진짜 같은 게임인지 알 수 없어 round 비교 자체가
+      // 무의미하다).
+      const incomingRound = toPositiveInt(room.round, 0);
+      // STOP-SHIP 원리적 재설계(Review Correction Loop 3차): 위 두 축(round-축/phase-축)은 지금까지
+      // 두 차례 "이번에 실패로 드러난 status 하나"를 개별 예외(1차 허용목록 → 2차 차단목록, 방향만
+      // 바꿔 status를 하나씩 나열)로 땜질했다 — round-축에 'reinviting' 예외, phase-축에 'stats'
+      // 등록. 그런데 3차 회귀(CRITICAL-2)가 다시 증명했듯 이 방식은 "지금까지 발견된 status"만
+      // 고치고 "같은 메커니즘의 다음 status"를 계속 놓친다 — 'reinviting'은 round-축에서는 이미
+      // 제외됐지만 phase-축에는 그 예외가 전혀 없어서(phase-축은 그냥 `|| 0` 기본값을 썼다),
+      // inviteForReplay()가 쓰는 round-불변 `{status:'reinviting'}`이 stats/game_over 뒤 같은
+      // round로 도착하면 phase-축이 reinviting=0 < stats(4)/game_over(3)로 오판해 그대로 막았다.
+      // status를 하나씩 나열하는 목록은(허용/차단 방향과 무관하게) 원리적으로 whack-a-mole이다 —
+      // "이 status가 의미론적으로 무엇인지"가 아니라 "이 status를 이미 본 적 있는지"로 판정하기
+      // 때문이다.
+      //
+      // 그래서 판정 원리 자체를 바꾼다: staleness 비교는 "진행 중인 라운드의 순서 있는 4단계
+      // (playing→result→game_over→stats)" 안에서만 의미가 있다 — 이 4개 status만 같은
+      // (gameRound, round) 버킷 안에서 절대 후퇴하지 않는 전진 전용 phase이므로("뒤 phase가 이미
+      // 관측됐는데 그보다 앞선 phase의 row가 도착하면 그 row는 반드시 stale"이라는 명제가 이 4개
+      // 에 대해서만 성립한다). reinviting/waiting/lobby/penalty_setting류(그리고 이름을 알 수 없는
+      // 앞으로의 모든 status)는 애초에 "그 round 안의 진행 단계"가 아니라 "라운드/게임을
+      // 리셋·재구성하는 전이"라서 이 4단계 순서 비교 자체에 넣을 수 없다 — 이런 전이가 함께 쓰는
+      // (gameRound, round) 조합은 리셋마다 의미가 다르다(예: inviteForReplay의 reinviting은 직전
+      // 게임의 round를 그대로 물려받고, requestReplayFromJoinedRoom의 reinviting은 round=1을 새로
+      // 쓴다). 그래서 두 축 모두 "들어오는 status가 이 4단계 중 하나일 때만" 적용하고, 그 외 모든
+      // status(이름을 아는 것도 모르는 것도 포함)는 두 축 모두에서 무조건 통과시킨다(정당한
+      // 리셋/전이로 간주). 이전 1차 시도의 "허용목록"과 겉보기 동작은 비슷해 보이지만 근거가
+      // 다르다 — 1차는 "매핑 안 된 status는 판단 보류(fail-open, 비교를 그냥 skip)"였고 이번은
+      // "이 4단계는 진행 phase, 나머지는 전부 리셋/전이"라는 상태공간의 의미론적 분류다(추후 새
+      // status가 생겨도 "진행 phase인가 리셋/전이인가"만 분류하면 되고, 그 판단은 이 4개 목록에
+      // 넣을지 말지로 표현된다 — 예외를 나열하는 게 아니라 분류 기준 자체가 원리다).
+      //
+      // ⚠️ 'ready'는 이 4단계 안에 넣지 않는다(순서상으로는 playing 이전에 넣을 법하지만 의도적으로
+      // 뺐다) — 그 근거는 이 STOP-SHIP 보고서의 "회복 보존 실증" 섹션에 실측으로 남긴다. 요지만
+      // 적으면: 'ready' 문자열은 상반된 두 의미로 쓰인다 — nextRound()가 쓰는 'ready'는 그 round
+      // 번호를 "새로 여는" 진행 phase(그 뒤의 playing/result/game_over/stats가 같은 round 번호를
+      // 그대로 공유)인 반면, goToReadyScreen()/resetGameKeepRoom() 등이 쓰는 'ready'는 이전 게임의
+      // round를 그대로 물려받거나 round=1로 되돌리는 리셋 전이다. 같은 문자열이 두 역할을 겸하기
+      // 때문에 "ready는 항상 리셋"이라고 단정해 4단계 밖으로 완전히 빼면 nextRound()의 진행형
+      // ready가 보호를 잃는다 — 그래서 'ready'는 여전히 4단계 순서표 안에 남겨둔다(아래 상수 참고).
+      const ACTIVE_ROUND_PHASE_ORDER = { ready: 0, playing: 1, result: 2, game_over: 3, stats: 4 };
+      const isActiveRoundPhaseStatus = (s) => Object.prototype.hasOwnProperty.call(ACTIVE_ROUND_PHASE_ORDER, s);
+      const getActiveRoundPhaseOrder = (s) => ACTIVE_ROUND_PHASE_ORDER[s];
+      // round-축: "같은 게임(gameRound) 안에서, 진행 중인 5단계(ready 포함) status가 더 작은 round
+      // 번호를 들고 왔는가"만 stale로 본다. reinviting(양쪽 경로 모두)/waiting/lobby/
+      // penalty_setting 등은 room.status가 이 목록 밖이므로 이 축을 그냥 통과한다 — CRITICAL-2
+      // (inviteForReplay의 round-불변 reinviting)와 기존 MEDIUM(requestReplayFromJoinedRoom의
+      // round=1 reinviting)이 이 축에서 함께 해결된다. 더 이상 "reinviting만" 예외로 나열하지
+      // 않아도 앞으로 등장할 어떤 새 리셋 status도 자동으로 통과한다.
+      const isStaleRoundWithinGame = incomingGameRound > 0 && incomingRound > 0 &&
+        incomingGameRound === state.gameRound && incomingRound < state.round &&
+        isActiveRoundPhaseStatus(room.status);
+      // phase-축: "같은 (gameRound, round) 버킷 안에서, 두 status가 모두 이 5단계 중 하나이고
+      // 들어오는 쪽이 더 이른 단계인가"만 stale로 본다. 한쪽이라도 목록 밖(reinviting/waiting/
+      // lobby/penalty_setting/미래의 새 status)이면 비교 자체를 하지 않고 통과시킨다 — 그래서
+      // CRITICAL-2(reinviting이 stats/game_over 뒤 같은 round로 오는 경우, 이전 코드는 `|| 0`
+      // 기본값 때문에 reinviting=0 < stats(4)/game_over(3)로 오판해 막았다)와 LOW(goToReadyScreen의
+      // round-불변 ready가 game_over/stats 뒤에 오는 경우 — 다만 'ready'는 위에서 목록에 남겨뒀으므로
+      // 이 경우는 여전히 0 < 3/4으로 막힌다. 이 LOW 항목의 재현 가능성 자체가 미확정이라는 원 보고와
+      // 일관되게, 이번 재설계에서도 새로 안전해지지는 않았다 — 회복 보존(§실증)을 위해 'ready'를
+      // 목록에 남긴 트레이드오프다)가 여기서 논의된다.
+      const isStaleStatusWithinRound = incomingGameRound > 0 && incomingRound > 0 &&
+        incomingGameRound === state.gameRound && incomingRound === state.round &&
+        isActiveRoundPhaseStatus(room.status) && isActiveRoundPhaseStatus(state.status) &&
+        getActiveRoundPhaseOrder(room.status) < getActiveRoundPhaseOrder(state.status);
+      const isStaleRoomRow = isStaleGameRoundRow || isStaleRoundWithinGame || isStaleStatusWithinRound;
       if (isStaleRoomRow) {
+        const staleDimension = isStaleGameRoundRow ? 'gameRound' : (isStaleRoundWithinGame ? 'round' : 'status');
         state.staleRoomUpdateSkipStreak = (state.staleRoomUpdateSkipStreak || 0) + 1;
         if (state.staleRoomUpdateSkipStreak < STALE_ROOM_UPDATE_SELF_HEAL_THRESHOLD) {
-          try { QA.emit('metric', { wrps: 'WRPS-075', eventType: 'STALE_ROOM_UPDATE_SKIPPED', roomRound: room.round, roomStatus: room.status, roomGameRound: incomingGameRound, localGameRound: state.gameRound }); } catch (e) {}
+          try { QA.emit('metric', { wrps: 'WRPS-075', eventType: 'STALE_ROOM_UPDATE_SKIPPED', roomRound: room.round, roomStatus: room.status, roomGameRound: incomingGameRound, localGameRound: state.gameRound, staleDimension, localRound: state.round, localStatus: state.status }); } catch (e) {}
           return;
         }
-        try { QA.emit('metric', { wrps: 'WRPS-075', eventType: 'STALE_ROOM_UPDATE_SELF_HEAL', consecutiveSkips: state.staleRoomUpdateSkipStreak, roomGameRound: incomingGameRound, localGameRound: state.gameRound }); } catch (e) {}
+        try { QA.emit('metric', { wrps: 'WRPS-075', eventType: 'STALE_ROOM_UPDATE_SELF_HEAL', consecutiveSkips: state.staleRoomUpdateSkipStreak, roomGameRound: incomingGameRound, localGameRound: state.gameRound, staleDimension, localRound: state.round, localStatus: state.status }); } catch (e) {}
         // 카운터를 리셋하고 이번 row는 막지 않고 통과시킨다(fall-through, return 없음).
       }
       state.staleRoomUpdateSkipStreak = 0;

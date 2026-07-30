@@ -20,6 +20,12 @@ import {
   createAlternatingSkewFn, pickDecisiveChoiceBase, createDecisiveChoiceDriver,
   // STOP-SHIP Phase0~3(2.6초 REST 폴링 채널 충실 모델링 + Part A/D 재측정) — 신규 export.
   REAL_POLL_INTERVAL_MS,
+  // STOP-SHIP 재수정(Review Correction Loop, isStaleRoomRow 게이팅): game_over→stats(CRITICAL-1)
+  // / reinviting round=1(MEDIUM) 전이를 REAL 채널로 직접 재현하는 시나리오 2종.
+  runGameOverToStatsScenario, runReinvitingRoundResetScenario,
+  // STOP-SHIP 3차(원리적 재설계, isStaleRoomRow 게이팅): inviteForReplay()의 round-불변 reinviting
+  // (CRITICAL-2) / goToReadyScreen()의 round-불변 ready(LOW, 도달 가능성 미확정) 전이 시나리오.
+  runInviteForReplayReinvitingScenario, runGoToReadyScreenRoundInvariantScenario,
 } from './rc3-harness-support.mjs';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -646,9 +652,14 @@ describe('RC-3 §반공허성 B: stale-row 역주입 — isStaleRoomRow 가드 o
   }, 20000);
 
   it('isStaleRoomRow 가드를 mutation으로 무력화하면(incomingGameRound 비교를 항상 false로) 같은 재주입이 그대로 처리되어 round가 stale row 값으로 되돌아가고, STALE_ROW_REGRESSION이 실제로 검출된다(반공허성 B 핵심 단정). gameRound 자체는 REAL getGameRound()의 별도 Math.max 방어 때문에 가드 유무와 무관하게 2로 유지된다 — 그래서 "gameRound 감소"가 아니라 "객관적으로 stale인 row가 round/countdownStartAt을 실제로 바꿨는가"가 이 재설계의 검출 기준이다.', async () => {
+    // STOP-SHIP(라운드-레벨 staleness 추가) 이후 gameRound 축 판정은 isStaleGameRoundRow로
+    // 개명되었고 isStaleRoomRow = isStaleGameRoundRow || isStaleRoundWithinGame로 합성된다 — 이
+    // 시나리오는 gameRound 자체가 다른(1 vs 2) stale row이므로 isStaleRoundWithinGame(같은
+    // gameRound 안에서만 성립)은 애초에 false다. 따라서 isStaleGameRoundRow만 무력화해도 이
+    // mutation의 의도(가드 전체 무력화와 동일한 관측 결과)가 그대로 재현된다.
     const brokenSource = EXTRACTED_COMBINED_SOURCE.replace(
-      'const isStaleRoomRow = incomingGameRound > 0 && incomingGameRound < state.gameRound;',
-      'const isStaleRoomRow = false && incomingGameRound > 0 && incomingGameRound < state.gameRound; /* MUTATION(RC-3 반공허성 B): isStaleRoomRow 가드 무력화 */'
+      'const isStaleGameRoundRow = incomingGameRound > 0 && incomingGameRound < state.gameRound;',
+      'const isStaleGameRoundRow = false && incomingGameRound > 0 && incomingGameRound < state.gameRound; /* MUTATION(RC-3 반공허성 B): isStaleGameRoundRow 가드 무력화 */'
     );
     expect(brokenSource).not.toBe(EXTRACTED_COMBINED_SOURCE);
 
@@ -1886,6 +1897,330 @@ describe('STOP-SHIP §Phase2: Part A 진짜 이중경로(realtime 순서보장 +
     }
     expect(summary.length).toBe(NS.length);
   }, 600000);
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// STOP-SHIP 게이팅 테스트(하드 assert, Phase3 지시사항 #4): 위 §Phase2 두 테스트는 카운트를
+// console.log로만 보고하고(정보용) EXCEPTION만 하드 assert한다 — "결함이면 열거만" 원칙 때문에
+// 의도적으로 그렇게 설계되었다. 이 테스트는 그와 별개로, isStaleRoomRow의 라운드/phase 레벨
+// staleness 가드(§본문 수정)가 실제로 회귀하면 CI가 RED로 잡아내도록 ROUND_NOT_MONOTONIC/
+// DOUBLE_COUNTDOWN_RENDER/STALE_ROW_REGRESSION을 하드 assert(=== 0)한다.
+// 수정 전(isStaleRoomRow가 gameRound 축만 비교)에는 이 테스트가 FAIL했다 — allDraw baseline만도
+// N=3..20 각 15 trial에서 매 N마다 최소 1건 이상의 ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER가
+// 트립됐다(§보고 Phase0/Phase3 실측). 수정 후에는 allDraw baseline(1080 trial)과 EG decisive
+// 혼합선택(540 trial) 양쪽 모두에서 0건으로 확인됐다(§보고 Phase3 §Phase2 재측정 표 참고) — 여기서는
+// 그 회귀 감시를 더 빠른 예산(N당 15 trial, allDraw + decisive 둘 다)으로 상시 CI에 남긴다.
+describe('STOP-SHIP §Phase2 게이팅(하드 assert): 라운드/phase-레벨 staleness 가드 회귀 감시', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(1_800_000_000_000)); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('[allDraw baseline, 실제 이중경로, 하드 게이트] N=3..20 각 15 trial: ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER/STALE_ROW_REGRESSION은 항상 0이어야 한다', async () => {
+    const NS = Array.from({ length: 18 }, (_, i) => i + 3); // 3..20
+    const TRIALS_PER_N = 15;
+    const realRandom = Math.random;
+    Math.random = () => 0;
+    const allFailures = [];
+    try {
+      for (const n of NS) {
+        for (let s = 0; s < TRIALS_PER_N; s++) {
+          const seed = n * 6100000 + s;
+          // eslint-disable-next-line no-await-in-loop
+          const r = await runMeasuredTrial({
+            participantCount: n, seed, targetRounds: DEFAULT_TARGET_ROUNDS,
+            resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+            pollingEnabled: true,
+          });
+          for (const f of r.hardFailureModes) {
+            if (['ROUND_NOT_MONOTONIC', 'DOUBLE_COUNTDOWN_RENDER', 'STALE_ROW_REGRESSION'].includes(f.type)) {
+              allFailures.push({ seed, n, ...f });
+            }
+          }
+        }
+      }
+    } finally {
+      Math.random = realRandom;
+    }
+    if (allFailures.length) {
+      // eslint-disable-next-line no-console
+      console.log('[STOP-SHIP §Phase2 게이팅][allDraw] 회귀 검출:', JSON.stringify(allFailures, null, 2));
+    }
+    expect(allFailures).toEqual([]);
+  }, 300000);
+
+  it('[EG decisive 모델, 실제 이중경로, 하드 게이트] N=3..20 각 15 trial(targetLoserCount=2): ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER/STALE_ROW_REGRESSION/CROSS_DEVICE_OUTCOME_MISMATCH은 항상 0이어야 한다', async () => {
+    const NS = Array.from({ length: 18 }, (_, i) => i + 3); // 3..20
+    const TRIALS_PER_N = 15;
+    const allFailures = [];
+    for (const n of NS) {
+      for (let s = 0; s < TRIALS_PER_N; s++) {
+        const seed = n * 6200000 + s;
+        // eslint-disable-next-line no-await-in-loop
+        const r = await runEliminationTrial({
+          participantCount: n, seed, targetLoserCount: 2,
+          resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+          choiceDriverFactory: createDecisiveChoiceDriver,
+          pollingEnabled: true,
+        });
+        for (const f of r.hardFailureModes) {
+          if (['ROUND_NOT_MONOTONIC', 'DOUBLE_COUNTDOWN_RENDER', 'STALE_ROW_REGRESSION', 'CROSS_DEVICE_OUTCOME_MISMATCH'].includes(f.type)) {
+            allFailures.push({ seed, n, ...f });
+          }
+        }
+      }
+    }
+    if (allFailures.length) {
+      // eslint-disable-next-line no-console
+      console.log('[STOP-SHIP §Phase2 게이팅][EG decisive] 회귀 검출:', JSON.stringify(allFailures, null, 2));
+    }
+    expect(allFailures).toEqual([]);
+  }, 300000);
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// STOP-SHIP 3차 재설계(Review Correction Loop) 게이팅: isStaleRoomRow를 "status를 하나씩 나열하는
+// 허용/차단목록"에서 "진행 중인 라운드의 4단계(playing/result/game_over/stats)에만 staleness
+// 비교를 적용하고, 그 외 모든 status(reinviting/waiting/lobby/penalty_setting/미래의 새 status)는
+// 두 축 모두 무조건 통과시킨다"는 원리적 분류로 교체했다(§index.html ACTIVE_ROUND_PHASE_ORDER).
+// 이 describe 그룹은 그 재설계가 실제로 다음을 해소하는지 REAL 채널로 직접 검증한다:
+//  1) CRITICAL-2(신규, 3차): inviteForReplay()의 round-불변 `{status:'reinviting'}`이 phase-축
+//     `|| 0` 기본값 때문에 stats/game_over 뒤 stale로 오판되던 것.
+//  2) CRITICAL-1(2차 잔존 회귀 감시): game_over→stats 정당 전이.
+//  3) MEDIUM(1차 잔존 회귀 감시): requestReplayFromJoinedRoom()의 reinviting round=1 리셋.
+//  4) render-desync 회복 게이트(ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER) 자체가 여전히
+//     mutation에 민감한지(mutation-3, 완전 무력화 / ready-제외 두 변형).
+//
+// ⚠️ 정직 기록(codex-main 자가 발견, §회복-보존 실증): 직전(2차) 에이전트는 "허용목록 방식은
+// nextRound()의 정상 'ready' 전이(그 round를 새로 여는 phase, 뒤이은 playing/result/game_over/
+// stats와 같은 round 번호를 공유)를 잘못 배제해 render-desync 회복이 깨진다"고 기록했다. 이번
+// 3차 재설계에서 이 주장을 재검증했다 — 'ready'를 ACTIVE_ROUND_PHASE_ORDER 밖으로 완전히 빼고(원
+// STOP-SHIP 지시서의 문자 그대로의 스펙) 아래 "mutation-3b" 테스트를 실행하자 실제로
+// ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER가 재현됐다(이 파일의 최종 코드에는 반영하지 않은
+// 실험 결과, §STOP-SHIP 보고서 "회복 보존 실증" 절에 원문 로그 남김) — 그래서 이전 에이전트의
+// 주장은 데이터로 확인됐고, index.html의 최종 ACTIVE_ROUND_PHASE_ORDER는 `ready: 0`을 포함한다.
+// 다만 이번엔 "왜 안 되는지" 원인이 이전 기록보다 한 겹 더 정확하다 — 'ready'가 문제인 이유는
+// "허용목록이라서"가 아니라, 'ready' 문자열이 진행 phase(nextRound)와 리셋 전이(goToReadyScreen/
+// resetGameKeepRoom)를 모두 나타내는 오버로드된 상태라서 두 의미를 하나의 이름으로 구분할 수
+// 없기 때문이다(그래서 "진행 phase만 통과 대상에서 제외"라는 이번 설계 원리 자체는 유지하되,
+// 'ready'만 예외적으로 4단계 목록에 남긴다). 아래 mutation-3b가 이 트레이드오프를 회귀 테스트로
+// 고정한다(index.html에서 `ready: 0,`을 지우면 이 테스트가 RED로 반응해야 한다).
+describe('STOP-SHIP 3차 재설계 mutation: render-desync 회복 게이트(ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER) 무력화 재현', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(1_800_000_000_000)); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('[mutation-3a, 완전 무력화] round-축(isStaleRoundWithinGame)과 phase-축(isStaleStatusWithinRound)을 모두 false로 완전 무력화하면 N=5,10,16 각 10 trial(폴링 ON, 결정적 choice 모델)에서 ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER가 실제로 재현된다(render-desync 회복 게이트 자체의 mutation 민감도 증명)', async () => {
+    const mutatedSource = EXTRACTED_COMBINED_SOURCE
+      .replace(
+        `      const isStaleRoundWithinGame = incomingGameRound > 0 && incomingRound > 0 &&
+        incomingGameRound === state.gameRound && incomingRound < state.round &&
+        isActiveRoundPhaseStatus(room.status);`,
+        `      const isStaleRoundWithinGame = false; /* MUTATION 3a: round-축 완전 무력화 */`
+      )
+      .replace(
+        `      const isStaleStatusWithinRound = incomingGameRound > 0 && incomingRound > 0 &&
+        incomingGameRound === state.gameRound && incomingRound === state.round &&
+        isActiveRoundPhaseStatus(room.status) && isActiveRoundPhaseStatus(state.status) &&
+        getActiveRoundPhaseOrder(room.status) < getActiveRoundPhaseOrder(state.status);`,
+        `      const isStaleStatusWithinRound = false; /* MUTATION 3a: phase-축 완전 무력화 */`
+      );
+    expect(mutatedSource).not.toBe(EXTRACTED_COMBINED_SOURCE);
+    const NS = [5, 10, 16];
+    const TRIALS_PER_N = 10;
+    const allFailures = [];
+    for (const n of NS) {
+      for (let s = 0; s < TRIALS_PER_N; s++) {
+        const seed = n * 9999000 + s;
+        // eslint-disable-next-line no-await-in-loop
+        const r = await runMeasuredTrial({
+          participantCount: n, seed, targetRounds: DEFAULT_TARGET_ROUNDS,
+          resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+          pollingEnabled: true, combinedSourceOverride: mutatedSource,
+        });
+        for (const f of r.hardFailureModes) {
+          if (['ROUND_NOT_MONOTONIC', 'DOUBLE_COUNTDOWN_RENDER'].includes(f.type)) {
+            allFailures.push({ seed, n, ...f });
+          }
+        }
+      }
+    }
+    // eslint-disable-next-line no-console
+    console.log('[mutation-3a] round+phase 축 완전 무력화 재현 건수:', allFailures.length, JSON.stringify(allFailures.slice(0, 5), null, 2));
+    expect(allFailures.length).toBeGreaterThan(0);
+  }, 300000);
+
+  it("[mutation-3b, §회복-보존 실증 핵심] ACTIVE_ROUND_PHASE_ORDER에서 'ready: 0,' 항목 하나만 제거하면(그 외 4단계는 그대로) N=5,10,16 각 10 trial(폴링 ON)에서 ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER가 재현된다 — 이전 에이전트가 기록한 \"허용목록은 'ready'를 배제해 회복을 깬다\"는 주장을 이번 3차 재설계 위에서 데이터로 재확인한다(막연히 폐기하지 않고 직접 재현)", async () => {
+    const mutatedSource = EXTRACTED_COMBINED_SOURCE.replace(
+      `      const ACTIVE_ROUND_PHASE_ORDER = { ready: 0, playing: 1, result: 2, game_over: 3, stats: 4 };`,
+      `      const ACTIVE_ROUND_PHASE_ORDER = { playing: 1, result: 2, game_over: 3, stats: 4 }; /* MUTATION 3b: ready 제외(원 지시서 리터럴 스펙) */`
+    );
+    expect(mutatedSource).not.toBe(EXTRACTED_COMBINED_SOURCE);
+    const NS = [5, 10, 16];
+    const TRIALS_PER_N = 10;
+    const allFailures = [];
+    for (const n of NS) {
+      for (let s = 0; s < TRIALS_PER_N; s++) {
+        const seed = n * 7777000 + s;
+        // eslint-disable-next-line no-await-in-loop
+        const r = await runMeasuredTrial({
+          participantCount: n, seed, targetRounds: DEFAULT_TARGET_ROUNDS,
+          resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+          pollingEnabled: true, combinedSourceOverride: mutatedSource,
+        });
+        for (const f of r.hardFailureModes) {
+          if (['ROUND_NOT_MONOTONIC', 'DOUBLE_COUNTDOWN_RENDER'].includes(f.type)) {
+            allFailures.push({ seed, n, ...f });
+          }
+        }
+      }
+    }
+    // eslint-disable-next-line no-console
+    console.log("[mutation-3b] 'ready' 단독 제외 재현 건수:", allFailures.length, JSON.stringify(allFailures.slice(0, 5), null, 2));
+    expect(allFailures.length).toBeGreaterThan(0);
+  }, 300000);
+});
+
+describe('STOP-SHIP 3차 재설계 게이팅(하드 assert): inviteForReplay reinviting(CRITICAL-2) / game_over→stats(CRITICAL-1) / reinviting round=1(MEDIUM)', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(1_800_000_000_000)); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  for (const fromStatus of ['game_over', 'stats']) {
+    it(`[CRITICAL-2 회귀 감시, 무수정, from=${fromStatus}] inviteForReplay()의 round-불변 reinviting(직전 game_over/stats와 같은 round)은 stale로 막히지 않고 즉시 전원 reinviting에 도달한다(STALE_ROOM_UPDATE_SKIPPED 0건, self-heal 불필요)`, async () => {
+      const r = await runInviteForReplayReinvitingScenario({
+        resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi, fromStatus,
+      });
+      expect(r.clockSyncSettled).toBe(true);
+      expect(r.gameOverSettled).toBe(true);
+      expect(r.statsSettled).toBe(true);
+      expect(r.reinvitingSettled).toBe(true); // 참가자가 실제로 'reinviting'에 도달(stall 없음)
+      expect(r.victimStatusAfterReinviting).toBe('reinviting');
+      expect(r.victimRoundAfterReinviting).toBe(3); // round-불변 리셋이므로 직전 round(3)가 그대로 남아야 정상
+      // eslint-disable-next-line no-console
+      console.log(`[CRITICAL-2 무수정, from=${fromStatus}]`, JSON.stringify({ staleSkipCountForReinviting: r.staleSkipCountForReinviting, selfHealCount: r.selfHealCount }));
+      expect(r.staleSkipCountForReinviting).toBe(0);
+      expect(r.selfHealCount).toBe(0);
+    }, 60000);
+  }
+
+  it('[CRITICAL-2 재현, pre-fix mutation: phase-축 active-gating 제거] phase-축의 "양쪽 다 4단계 안에 있어야 비교한다"는 게이팅을 제거하고 예전처럼 `|| 0` 기본값으로 되돌리면, inviteForReplay()의 round-불변 reinviting이 stats 뒤에서 다시 stale로 오판되어 스킵되고(self-heal로만 뒤늦게 복구) CRITICAL-2가 재현된다', async () => {
+    const mutatedSource = EXTRACTED_COMBINED_SOURCE.replace(
+      `      const isStaleStatusWithinRound = incomingGameRound > 0 && incomingRound > 0 &&
+        incomingGameRound === state.gameRound && incomingRound === state.round &&
+        isActiveRoundPhaseStatus(room.status) && isActiveRoundPhaseStatus(state.status) &&
+        getActiveRoundPhaseOrder(room.status) < getActiveRoundPhaseOrder(state.status);`,
+      `      const isStaleStatusWithinRound = incomingGameRound > 0 && incomingRound > 0 &&
+        incomingGameRound === state.gameRound && incomingRound === state.round &&
+        (getActiveRoundPhaseOrder(room.status) || 0) < (getActiveRoundPhaseOrder(state.status) || 0); /* MUTATION(재설계 되돌림): active-gating 제거, 2차 스타일 OR-0 기본값 복원 */`
+    );
+    expect(mutatedSource).not.toBe(EXTRACTED_COMBINED_SOURCE);
+
+    const r = await runInviteForReplayReinvitingScenario({
+      resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+      fromStatus: 'stats', combinedSourceOverride: mutatedSource,
+    });
+    expect(r.clockSyncSettled).toBe(true);
+    expect(r.gameOverSettled).toBe(true);
+    expect(r.statsSettled).toBe(true);
+    // self-heal이 결국 rescue하므로 완전 영구 정지는 아니다 — 그 rescue 자체가 회귀의 증거다.
+    expect(r.reinvitingSettled).toBe(true);
+    // eslint-disable-next-line no-console
+    console.log('[CRITICAL-2 재현]', JSON.stringify({ staleSkipCountForReinviting: r.staleSkipCountForReinviting, selfHealCount: r.selfHealCount }));
+    expect(r.staleSkipCountForReinviting).toBeGreaterThan(0); // pre-fix에서는 반드시 stale로 스킵됨
+    expect(r.selfHealCount).toBeGreaterThan(0); // self-heal이 실제로 발동해야만 rescue됨
+  }, 60000);
+
+  it('[CRITICAL-1 회귀 감시, 무수정] game_over→stats 정당 전이는 stale로 막히지 않고 즉시 전원 stats에 도달한다(STALE_ROOM_UPDATE_SKIPPED 0건, self-heal 불필요)', async () => {
+    const r = await runGameOverToStatsScenario({
+      resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+    });
+    expect(r.clockSyncSettled).toBe(true);
+    expect(r.gameOverSettled).toBe(true);
+    expect(r.statsSettled).toBe(true); // 참가자가 실제로 'stats'에 도달(stall 없음)
+    expect(r.victimStatusAfterStats).toBe('stats');
+    // eslint-disable-next-line no-console
+    console.log('[CRITICAL-1 무수정]', JSON.stringify({ staleSkipCountForStats: r.staleSkipCountForStats, selfHealCount: r.selfHealCount }));
+    expect(r.staleSkipCountForStats).toBe(0); // 정당 전이가 단 한 번도 stale로 스킵되지 않음
+    expect(r.selfHealCount).toBe(0); // self-heal이 뚫어줄 필요 자체가 없음(즉시 정상 통과)
+  }, 60000);
+
+  // ⚠️ 정직 기록: 2차 재수정의 "[CRITICAL-1 재현, pre-fix mutation]"(ACTIVE_ROUND_PHASE_ORDER에서
+  // 'stats'만 빼는 mutation)는 이번 3차 설계 위에서는 더 이상 회귀를 재현하지 못한다 — 직접
+  // 실행해 확인했다: 'stats'가 목록에서 빠지면 isActiveRoundPhaseStatus(room.status==='stats')가
+  // false가 되어 phase-축이 애초에 적용되지 않고(양쪽 다 활성 상태여야 비교하므로) 그냥
+  // 통과한다(막지 않음) — 즉 이 설계에서는 "진행 phase를 목록에 등록하는 걸 깜빡함"이 더 이상
+  // 오탐(false positive, 정당한 전이를 막음)으로 이어지지 않는다(최악의 경우 어떤 stale row를
+  // 놓치는 방향으로만 실패한다). 그래서 CRITICAL-1류(진행 phase 등록 누락) 회귀를 다시 만들려면
+  // "누락"이 아니라 "리셋 status를 실수로 4단계 목록에 넣는" 정반대 방향의 실수가 필요한데, 그건
+  // 이 저장소에 그런 실수가 없어 인위적으로 mutation을 만들어야 하고 이 STOP-SHIP의 실제 회귀
+  // 이력과 무관해진다 — 그래서 이 자리에는 남기지 않는다(허위로 "재현됨"을 주장하지 않기 위해
+  // 정직하게 생략). 대신 위 [CRITICAL-2 재현] 테스트가 이 설계에서 실제로 유효한 "active-gating
+  // 제거" mutation을 담당한다.
+
+  it('[MEDIUM 회귀 감시, 무수정] round>1에서 끝난 게임에 대한 reinviting round=1 리셋은 stale로 막히지 않고 즉시 통과한다(STALE_ROOM_UPDATE_SKIPPED 0건, self-heal 불필요)', async () => {
+    const r = await runReinvitingRoundResetScenario({
+      resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+    });
+    expect(r.clockSyncSettled).toBe(true);
+    expect(r.round3Settled).toBe(true);
+    expect(r.reinvitingSettled).toBe(true);
+    expect(r.victimStatusAfterReinviting).toBe('reinviting');
+    expect(r.victimRoundAfterReinviting).toBe(1); // round=1 리셋이 실제로 적용됨(막히지 않음)
+    // eslint-disable-next-line no-console
+    console.log('[MEDIUM 무수정]', JSON.stringify({ staleSkipCountForReinviting: r.staleSkipCountForReinviting, selfHealCount: r.selfHealCount }));
+    expect(r.staleSkipCountForReinviting).toBe(0);
+    expect(r.selfHealCount).toBe(0);
+  }, 60000);
+
+  it('[MEDIUM 재현, pre-fix mutation: round-축 active-gating 제거] round-축의 "진행 phase일 때만 적용한다"는 게이팅을 제거해 status와 무관하게 "round가 감소했는가"만 보게 되돌리면, reinviting round=1 리셋이 다시 stale로 오판되어 스킵되고(self-heal로만 뒤늦게 복구) 회귀가 재현된다', async () => {
+    const mutatedSource = EXTRACTED_COMBINED_SOURCE.replace(
+      `      const isStaleRoundWithinGame = incomingGameRound > 0 && incomingRound > 0 &&
+        incomingGameRound === state.gameRound && incomingRound < state.round &&
+        isActiveRoundPhaseStatus(room.status);`,
+      `      const isStaleRoundWithinGame = incomingGameRound > 0 && incomingRound > 0 &&
+        incomingGameRound === state.gameRound && incomingRound < state.round; /* MUTATION(재설계 되돌림): active-gating 제거 */`
+    );
+    expect(mutatedSource).not.toBe(EXTRACTED_COMBINED_SOURCE);
+
+    const r = await runReinvitingRoundResetScenario({
+      resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+      combinedSourceOverride: mutatedSource,
+    });
+    expect(r.clockSyncSettled).toBe(true);
+    expect(r.round3Settled).toBe(true);
+    expect(r.reinvitingSettled).toBe(true);
+    // eslint-disable-next-line no-console
+    console.log('[MEDIUM 재현]', JSON.stringify({ staleSkipCountForReinviting: r.staleSkipCountForReinviting, selfHealCount: r.selfHealCount }));
+    expect(r.staleSkipCountForReinviting).toBeGreaterThan(0); // pre-fix에서는 반드시 stale로 스킵됨
+    expect(r.selfHealCount).toBeGreaterThan(0); // self-heal이 실제로 발동해야만 rescue됨
+  }, 60000);
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// STOP-SHIP 3차 §LOW 문서화(도달 가능성 미확정, 원 보고 그대로 유지): goToReadyScreen()의
+// round-불변 `{status:'ready'}`가 game_over/stats 뒤 같은 round로 도착하는 경우 — 'ready'가
+// §회복-보존 실증(위 mutation-3b) 근거로 ACTIVE_ROUND_PHASE_ORDER에 남아있으므로, 이 경로는
+// CRITICAL-2/MEDIUM과 달리 이번 재설계로 새로 안전해지지 않았다(여전히 stale로 막힌다). 이는
+// 회귀가 아니라 재설계 이전과 동일한 기존 동작이 유지된 것이다 — 아래 테스트는 "새로 고쳐졌다"를
+// 주장하지 않고 "현재 이렇게 동작하며, 그 이유(회복 보존 트레이드오프)가 무엇인지"를 감시·문서화
+// 한다(이 하니스는 goToReadyScreen()이 실제로 이 상태에서 호출될 수 있는지 자체는 확정하지 못한다
+// — DOM 네비게이션을 재현하지 않으므로, 도달 가능성은 원 보고와 동일하게 "미확정"으로 남긴다).
+describe('STOP-SHIP 3차 §LOW 문서화: goToReadyScreen round-불변 ready (도달 가능성 미확정)', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(1_800_000_000_000)); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  for (const fromStatus of ['game_over', 'stats']) {
+    it(`[문서화, from=${fromStatus}] goToReadyScreen()의 round-불변 ready는 'ready'가 여전히 ACTIVE_ROUND_PHASE_ORDER에 남아있어(§회복-보존 실증) stale로 막힌다 — 회귀 아님, 기존 동작 그대로(self-heal로 최종 rescue됨)`, async () => {
+      const r = await runGoToReadyScreenRoundInvariantScenario({
+        resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi, fromStatus,
+      });
+      expect(r.clockSyncSettled).toBe(true);
+      expect(r.gameOverSettled).toBe(true);
+      expect(r.statsSettled).toBe(true);
+      expect(r.readySettled).toBe(true); // self-heal로 결국 rescue되어 stall이 영구화되지는 않음
+      // eslint-disable-next-line no-console
+      console.log(`[LOW 문서화, from=${fromStatus}]`, JSON.stringify({ staleSkipCountForReady: r.staleSkipCountForReady, selfHealCount: r.selfHealCount }));
+      expect(r.staleSkipCountForReady).toBeGreaterThan(0); // 현재 설계에서는 여전히 최소 1회 이상 stale 스킵됨
+      expect(r.selfHealCount).toBeGreaterThan(0);
+    }, 60000);
+  }
 });
 
 // ────────────────────────────────────────────────────────────────────────────

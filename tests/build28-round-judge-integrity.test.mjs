@@ -102,11 +102,11 @@ function runRoomUpdateHead(room, state) {
   const QA = { emit: (channel, data) => emitted.push(data) };
   const scheduling = loadSchedulingHelpers(state);
   const factory = new Function(
-    'room', 'state', 'QA', 'getTargetLoserCount', 'getGameRound', 'getCountdownStartAt', 'getPenaltyGameRound', 'getChoiceEndAt',
+    'room', 'state', 'QA', 'getTargetLoserCount', 'getGameRound', 'getCountdownStartAt', 'getPenaltyGameRound', 'getChoiceEndAt', 'toPositiveInt',
     CHOICE_HELPERS_BLOCK + '\n(() => {\n' + ROOM_UPDATE_HEAD_SRC + '\nstate.status = room.status;\n})();'
   );
   factory(room, state, QA, scheduling.getTargetLoserCount, scheduling.getGameRound,
-    scheduling.getCountdownStartAt, scheduling.getPenaltyGameRound, scheduling.getChoiceEndAt);
+    scheduling.getCountdownStartAt, scheduling.getPenaltyGameRound, scheduling.getChoiceEndAt, scheduling.toPositiveInt);
   return emitted;
 }
 
