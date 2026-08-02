@@ -26,6 +26,9 @@ import {
   // STOP-SHIP 3차(원리적 재설계, isStaleRoomRow 게이팅): inviteForReplay()의 round-불변 reinviting
   // (CRITICAL-2) / goToReadyScreen()의 round-불변 ready(LOW, 도달 가능성 미확정) 전이 시나리오.
   runInviteForReplayReinvitingScenario, runGoToReadyScreenRoundInvariantScenario,
+  // STOP-SHIP 4차(CEO 지시, mutation-3b 결정론 재설계): ACTIVE_ROUND_PHASE_ORDER의 'ready' 순서
+  // 위반을 무작위 스윕 없이 최소 이벤트열로 직접 발현시키는 표적 시나리오.
+  runStaleReadyPhaseOrderScenario,
 } from './rc3-harness-support.mjs';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -2001,8 +2004,9 @@ describe('STOP-SHIP §Phase2 게이팅(하드 assert): 라운드/phase-레벨 st
 // "허용목록이라서"가 아니라, 'ready' 문자열이 진행 phase(nextRound)와 리셋 전이(goToReadyScreen/
 // resetGameKeepRoom)를 모두 나타내는 오버로드된 상태라서 두 의미를 하나의 이름으로 구분할 수
 // 없기 때문이다(그래서 "진행 phase만 통과 대상에서 제외"라는 이번 설계 원리 자체는 유지하되,
-// 'ready'만 예외적으로 4단계 목록에 남긴다). 아래 mutation-3b가 이 트레이드오프를 회귀 테스트로
-// 고정한다(index.html에서 `ready: 0,`을 지우면 이 테스트가 RED로 반응해야 한다).
+// 'ready'만 예외적으로 4단계 목록에 남긴다). 이 트레이드오프의 회귀 고정은 아래 §STOP-SHIP 4차
+// (결정론적 표적 시나리오) describe 그룹이 담당한다 — index.html에서 `ready: 0,`을 지우면 그
+// 그룹의 baseline 테스트가 항상(확률 아님) RED로 반응한다.
 describe('STOP-SHIP 3차 재설계 mutation: render-desync 회복 게이트(ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER) 무력화 재현', () => {
   beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(1_800_000_000_000)); });
   afterEach(() => { vi.useRealTimers(); });
@@ -2047,34 +2051,269 @@ describe('STOP-SHIP 3차 재설계 mutation: render-desync 회복 게이트(ROUN
     expect(allFailures.length).toBeGreaterThan(0);
   }, 300000);
 
-  it("[mutation-3b, §회복-보존 실증 핵심] ACTIVE_ROUND_PHASE_ORDER에서 'ready: 0,' 항목 하나만 제거하면(그 외 4단계는 그대로) N=5,10,16 각 10 trial(폴링 ON)에서 ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER가 재현된다 — 이전 에이전트가 기록한 \"허용목록은 'ready'를 배제해 회복을 깬다\"는 주장을 이번 3차 재설계 위에서 데이터로 재확인한다(막연히 폐기하지 않고 직접 재현)", async () => {
-    const mutatedSource = EXTRACTED_COMBINED_SOURCE.replace(
-      `      const ACTIVE_ROUND_PHASE_ORDER = { ready: 0, playing: 1, result: 2, game_over: 3, stats: 4 };`,
-      `      const ACTIVE_ROUND_PHASE_ORDER = { playing: 1, result: 2, game_over: 3, stats: 4 }; /* MUTATION 3b: ready 제외(원 지시서 리터럴 스펙) */`
-    );
-    expect(mutatedSource).not.toBe(EXTRACTED_COMBINED_SOURCE);
-    const NS = [5, 10, 16];
-    const TRIALS_PER_N = 10;
-    const allFailures = [];
-    for (const n of NS) {
-      for (let s = 0; s < TRIALS_PER_N; s++) {
-        const seed = n * 7777000 + s;
-        // eslint-disable-next-line no-await-in-loop
-        const r = await runMeasuredTrial({
-          participantCount: n, seed, targetRounds: DEFAULT_TARGET_ROUNDS,
-          resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
-          pollingEnabled: true, combinedSourceOverride: mutatedSource,
-        });
-        for (const f of r.hardFailureModes) {
-          if (['ROUND_NOT_MONOTONIC', 'DOUBLE_COUNTDOWN_RENDER'].includes(f.type)) {
-            allFailures.push({ seed, n, ...f });
+  // ⚠️ 제거됨(STOP-SHIP 4차, CEO 지시): 종전 [mutation-3b]는 같은 mutant(ACTIVE_ROUND_PHASE_ORDER에서
+  //    `ready: 0`만 제거)를 N=5,10,16 × 150 trial(총 450) 무작위 스윕으로 "언젠가 걸리기를 기대"하는
+  //    확률적 검출이었다 — 실측 검출률 8 이벤트 / 4 trial = 0.9%, 단언도 450 trial 풀링 1건 이상
+  //    (`toBeGreaterThan(0)`)이라 "각 N마다 최소 1건"조차 보장하지 않았다. 게다가 이 분포는 하니스의
+  //    happens-before 수정 한 번으로 이미 한 차례 이동한 전력이 있고(그때 trial 수를 10→150으로
+  //    재보정했다), P2가 렌더 버퍼 타이밍을 건드리면 또 이동해 검출이 조용히 사라질 수 있었다.
+  //    → 아래 §STOP-SHIP 4차 describe 그룹의 결정론적 표적 시나리오로 완전히 대체한다. 대체본은
+  //      (a) 동일 mutant를 100% 검출하고(무작위 0, 20/20 재현 실증),
+  //      (b) 종전이 쫓던 바로 그 실패모드(ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER)를 그대로
+  //          재현하며(echoStalePlayingAfterInjection 변형),
+  //      (c) round-축/phase-축을 분리한 mutation까지 추가로 커버하고,
+  //      (d) 450 trial(수십 초)을 4개 handleRoomUpdate 호출로 줄인다.
+  //    informational로 강등하지 않고 완전히 제거한 이유: 강등해도 450 trial의 CI 비용은 그대로 남는
+  //    반면 게이팅 가치는 0이고, 같은 mutant에 대한 검출 책임은 대체본이 100%로 인수하기 때문이다.
+  //    (mutation-3a는 강한 detector(22/30)이므로 위에 그대로 보존한다 — 건드리지 않았다.)
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// STOP-SHIP 4차(CEO 지시, "잔존 리스크 수용 불가"): ACTIVE_ROUND_PHASE_ORDER의 'ready' 순서 위반을
+// 무작위 스윕이 아니라 손으로 구성한 최소 이벤트열로 직접 발현시키는 결정론적 표적 게이트.
+//
+// 이벤트열(§rc3-harness-support.mjs runStaleReadyPhaseOrderScenario 상단 주석에 상세):
+//   E1 playing(round=1)  ← REAL startGame() payload          → 라운드1 카운트다운 렌더
+//   E2 playing(round=2)  ← REAL autoStartDrawRematch() payload → 라운드2 카운트다운이 lead sleep에서 suspend
+//   E3 ready(round=N) 직접 주입 ← REAL nextRound() payload      → 이 시나리오의 유일한 관심 이벤트
+//        axis='round' : N=1 (지난 라운드의 ready row가 라운드2 진행 중 늦게 도착 → round-축 담당)
+//        axis='phase' : N=2 (같은 라운드의 ready row가 playing 뒤에 재정렬 도착 → phase-축 담당)
+//   E4 시간 진행         → suspend된 coroutine이 깨어나며 결과가 관측된다
+//
+// 왜 결정론적인가: E3의 판정 결과(state.round/state.status가 되돌아갔는가)는 REAL handleRoomUpdate가
+// 함수 최상단부터 :5867까지 await를 전혀 거치지 않는 구간에서 확정되므로(index.html:5837 계약),
+// 시나리오는 그 값을 "fire 직후 동기 시점"에 그대로 읽는다 — 타이머/네트워크 추첨/렌더 버퍼가
+// 개입할 여지가 원리적으로 없다. suspend 창 역시 PHASE_RENDER_BUFFER_MS(900)가 아니라
+// getNextCountdownStartAt()의 lead(3600)로 만들어지고, 그 창 안에서 주입됐는지를
+// injectedWhileCountdownSuspended로 매 실행 검증한다(P2가 버퍼를 바꿔도 검출력이 유지되며, 만에
+// 하나 전제가 깨지면 조용히 통과하지 않고 큰 소리로 실패한다).
+describe('STOP-SHIP 4차 결정론 게이트: ACTIVE_ROUND_PHASE_ORDER의 ready 순서 위반 최소 시나리오 재현', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(1_800_000_000_000)); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const DEPS = { resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor };
+
+  // mutation-3b-1: 원 지시서 리터럴 스펙 — ACTIVE_ROUND_PHASE_ORDER에서 'ready: 0'만 제거한다.
+  // 두 축이 동시에 'ready'를 놓치게 되므로 axis='round'/axis='phase' 양쪽 모두에서 재현돼야 한다.
+  const MUTATION_READY_REMOVED = EXTRACTED_COMBINED_SOURCE.replace(
+    `      const ACTIVE_ROUND_PHASE_ORDER = { ready: 0, playing: 1, result: 2, game_over: 3, stats: 4 };`,
+    `      const ACTIVE_ROUND_PHASE_ORDER = { playing: 1, result: 2, game_over: 3, stats: 4 }; /* MUTATION 3b-1: ready 제외(원 지시서 리터럴 스펙) */`
+  );
+  // mutation-3b-2: round-축에서만 'ready'를 무력화한다(phase-축은 무손상).
+  const MUTATION_ROUND_AXIS_READY_BLIND = EXTRACTED_COMBINED_SOURCE.replace(
+    `        incomingGameRound === state.gameRound && incomingRound < state.round &&
+        isActiveRoundPhaseStatus(room.status);`,
+    `        incomingGameRound === state.gameRound && incomingRound < state.round &&
+        isActiveRoundPhaseStatus(room.status) && room.status !== 'ready'; /* MUTATION 3b-2: round-축만 ready 실명 */`
+  );
+  // mutation-3b-3: phase-축에서만 'ready'를 무력화한다(round-축은 무손상).
+  const MUTATION_PHASE_AXIS_READY_BLIND = EXTRACTED_COMBINED_SOURCE.replace(
+    `        isActiveRoundPhaseStatus(room.status) && isActiveRoundPhaseStatus(state.status) &&
+        getActiveRoundPhaseOrder(room.status) < getActiveRoundPhaseOrder(state.status);`,
+    `        isActiveRoundPhaseStatus(room.status) && room.status !== 'ready' && isActiveRoundPhaseStatus(state.status) &&
+        getActiveRoundPhaseOrder(room.status) < getActiveRoundPhaseOrder(state.status); /* MUTATION 3b-3: phase-축만 ready 실명 */`
+  );
+
+  // 시나리오 자체가 의도한 상태에 실제로 도달했는지(=측정이 성립하는지) 확인하는 공통 전제.
+  // 이 전제가 깨지면 결과가 무엇이든 그 실행은 무효다 — 조용한 검출력 상실을 막는 안전장치.
+  function expectScenarioPreconditions(r) {
+    expect(r.clockSyncSettled).toBe(true);
+    expect(r.round1CountdownRendered).toBe(true);   // 라운드1 카운트다운이 실제로 렌더됨
+    expect(r.round1CountdownFinished).toBe(true);   // 라운드1 coroutine이 완주해 세대 경합이 없음
+    expect(r.round2CountdownStarted).toBe(true);    // 라운드2 coroutine이 lead sleep에 진입함
+    expect(r.injectedWhileCountdownSuspended).toBe(true); // 주입이 그 suspend 창 "안"에서 일어남
+    expect(r.roundBeforeInjection).toBe(2);
+    expect(r.statusBeforeInjection).toBe('playing');
+  }
+
+  for (const echo of [false, true]) {
+    it(`[무수정 baseline, axis=round, echo=${echo}] 라운드2 진행 중 도착한 과거 라운드1 'ready' row는 round-축이 stale로 막는다 — state.round는 되돌아가지 않고 라운드2 카운트다운이 정상 렌더된다(countdown 수열 [1,2], ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER 0건)`, async () => {
+      const r = await runStaleReadyPhaseOrderScenario({ axis: 'round', echoStalePlayingAfterInjection: echo, ...DEPS, vi });
+      expectScenarioPreconditions(r);
+      // eslint-disable-next-line no-console
+      console.log(`[4차 baseline|round|echo=${echo}]`, JSON.stringify({
+        afterSync: [r.roundAfterInjectionSync, r.statusAfterInjectionSync],
+        staleSkip: r.staleSkipCountForReady, seq: r.countdownRoundSeq,
+        nonMono: r.roundNotMonotonicCount, dbl: r.doubleCountdownRenderCount,
+      }));
+      expect(r.staleSkipCountForReady).toBe(1);      // 정확히 이 row 1건만 stale로 막힘
+      expect(r.selfHealCount).toBe(0);               // self-heal이 필요 없음(1건은 임계 미만)
+      expect(r.roundAfterInjectionSync).toBe(2);     // round 되돌림 없음
+      expect(r.statusAfterInjectionSync).toBe('playing'); // status 되돌림 없음
+      expect(r.round2CountdownRendered).toBe(true);  // 라운드2 카운트다운이 실제로 렌더됨
+      expect(r.countdownRoundSeq).toEqual([1, 2]);
+      expect(r.roundNotMonotonicCount).toBe(0);
+      expect(r.doubleCountdownRenderCount).toBe(0);
+    }, 60000);
+
+    it(`[무수정 baseline, axis=phase, echo=${echo}] 같은 라운드2의 'ready' row가 playing 뒤에 재정렬 도착해도 phase-축이 stale로 막는다 — status는 'playing'에 머물고 라운드2 카운트다운이 정상 렌더된다`, async () => {
+      const r = await runStaleReadyPhaseOrderScenario({ axis: 'phase', echoStalePlayingAfterInjection: echo, ...DEPS, vi });
+      expectScenarioPreconditions(r);
+      // eslint-disable-next-line no-console
+      console.log(`[4차 baseline|phase|echo=${echo}]`, JSON.stringify({
+        afterSync: [r.roundAfterInjectionSync, r.statusAfterInjectionSync],
+        staleSkip: r.staleSkipCountForReady, seq: r.countdownRoundSeq,
+        nonMono: r.roundNotMonotonicCount, dbl: r.doubleCountdownRenderCount,
+      }));
+      expect(r.staleSkipCountForReady).toBe(1);
+      expect(r.selfHealCount).toBe(0);
+      expect(r.roundAfterInjectionSync).toBe(2);
+      expect(r.statusAfterInjectionSync).toBe('playing');
+      expect(r.round2CountdownRendered).toBe(true);
+      expect(r.countdownRoundSeq).toEqual([1, 2]);
+      expect(r.roundNotMonotonicCount).toBe(0);
+      expect(r.doubleCountdownRenderCount).toBe(0);
+    }, 60000);
+  }
+
+  it("[mutation-3b-1, axis=round] ACTIVE_ROUND_PHASE_ORDER에서 'ready: 0'만 제거하면 round-축이 과거 라운드의 ready row를 그대로 통과시켜 state.round가 2→1로 되돌아가고(:5832 Math.max 보호 없음) 진행 중이던 라운드2 카운트다운이 세대 가드 checkpoint(leadSleep)에서 중단된다 — 확률이 아니라 항상 재현된다", async () => {
+    expect(MUTATION_READY_REMOVED).not.toBe(EXTRACTED_COMBINED_SOURCE);
+    const r = await runStaleReadyPhaseOrderScenario({
+      axis: 'round', ...DEPS, vi, combinedSourceOverride: MUTATION_READY_REMOVED,
+    });
+    expectScenarioPreconditions(r);
+    // eslint-disable-next-line no-console
+    console.log('[4차 mutation-3b-1|round]', JSON.stringify({
+      afterSync: [r.roundAfterInjectionSync, r.statusAfterInjectionSync],
+      staleSkip: r.staleSkipCountForReady, seq: r.countdownRoundSeq,
+      aborts: r.countdownAbortCheckpointsSinceInjection,
+    }));
+    expect(r.staleSkipCountForReady).toBe(0);        // 게이트가 이 row를 전혀 막지 못함
+    expect(r.roundAfterInjectionSync).toBe(1);       // ← 결함: 라운드가 과거로 되돌아감
+    expect(r.statusAfterInjectionSync).toBe('ready');
+    expect(r.round2CountdownRendered).toBe(false);   // 라운드2 카운트다운이 실종됨
+    expect(r.countdownAbortCheckpointsSinceInjection).toContain('leadSleep');
+  }, 60000);
+
+  it("[mutation-3b-1, axis=round + stale playing 에코] 같은 mutant에서 되돌아간 상태 위로 과거 라운드1 playing row가 한 번 더 에코되면 종전 mutation-3b가 450 trial 무작위 스윕으로 0.9%만 잡던 바로 그 실패모드(ROUND_NOT_MONOTONIC + DOUBLE_COUNTDOWN_RENDER, countdown 수열 [1,1])가 결정론적으로 재현된다", async () => {
+    expect(MUTATION_READY_REMOVED).not.toBe(EXTRACTED_COMBINED_SOURCE);
+    const r = await runStaleReadyPhaseOrderScenario({
+      axis: 'round', echoStalePlayingAfterInjection: true, ...DEPS, vi,
+      combinedSourceOverride: MUTATION_READY_REMOVED,
+    });
+    expectScenarioPreconditions(r);
+    // eslint-disable-next-line no-console
+    console.log('[4차 mutation-3b-1|round|echo]', JSON.stringify({
+      afterSync: [r.roundAfterInjectionSync, r.statusAfterInjectionSync],
+      seq: r.countdownRoundSeq, nonMono: r.roundNotMonotonicCount, dbl: r.doubleCountdownRenderCount,
+    }));
+    expect(r.staleSkipCountForReady).toBe(0);
+    expect(r.roundAfterInjectionSync).toBe(1);
+    expect(r.countdownRoundSeq).toEqual([1, 1]);
+    expect(r.roundNotMonotonicCount).toBeGreaterThan(0);
+    expect(r.doubleCountdownRenderCount).toBeGreaterThan(0);
+  }, 60000);
+
+  it("[mutation-3b-1, axis=phase] 같은 mutant에서 phase-축도 함께 실명한다 — 같은 라운드의 'ready' row가 playing 뒤에 도착하면 status가 'playing'→'ready'로 되돌아가 진행 중인 라운드에서 기기가 이탈한다(라운드2 카운트다운 실종)", async () => {
+    expect(MUTATION_READY_REMOVED).not.toBe(EXTRACTED_COMBINED_SOURCE);
+    const r = await runStaleReadyPhaseOrderScenario({
+      axis: 'phase', ...DEPS, vi, combinedSourceOverride: MUTATION_READY_REMOVED,
+    });
+    expectScenarioPreconditions(r);
+    // eslint-disable-next-line no-console
+    console.log('[4차 mutation-3b-1|phase]', JSON.stringify({
+      afterSync: [r.roundAfterInjectionSync, r.statusAfterInjectionSync],
+      staleSkip: r.staleSkipCountForReady, seq: r.countdownRoundSeq,
+      aborts: r.countdownAbortCheckpointsSinceInjection,
+    }));
+    expect(r.staleSkipCountForReady).toBe(0);
+    expect(r.roundAfterInjectionSync).toBe(2);       // round-축은 애초에 적용 대상이 아님(같은 round)
+    expect(r.statusAfterInjectionSync).toBe('ready'); // ← 결함: phase가 과거로 되돌아감
+    expect(r.round2CountdownRendered).toBe(false);
+    expect(r.countdownAbortCheckpointsSinceInjection).toContain('leadSleep');
+  }, 60000);
+
+  // ── 축 분리 증명: 어느 축이 무엇을 지키는지 ─────────────────────────────────
+  it("[mutation-3b-2, round-축만 실명] round-축에서만 'ready'를 제외하면 cross-round 케이스(axis=round)만 깨지고 same-round 케이스(axis=phase)는 그대로 지켜진다", async () => {
+    expect(MUTATION_ROUND_AXIS_READY_BLIND).not.toBe(EXTRACTED_COMBINED_SOURCE);
+    const broken = await runStaleReadyPhaseOrderScenario({
+      axis: 'round', ...DEPS, vi, combinedSourceOverride: MUTATION_ROUND_AXIS_READY_BLIND,
+    });
+    expectScenarioPreconditions(broken);
+    expect(broken.staleSkipCountForReady).toBe(0);
+    expect(broken.roundAfterInjectionSync).toBe(1);  // round-축이 지키던 것: 라운드 단조성
+    expect(broken.round2CountdownRendered).toBe(false);
+
+    const intact = await runStaleReadyPhaseOrderScenario({
+      axis: 'phase', ...DEPS, vi, combinedSourceOverride: MUTATION_ROUND_AXIS_READY_BLIND,
+    });
+    expectScenarioPreconditions(intact);
+    expect(intact.staleSkipCountForReady).toBe(1);   // phase-축은 무손상 — 여전히 막는다
+    expect(intact.statusAfterInjectionSync).toBe('playing');
+    expect(intact.countdownRoundSeq).toEqual([1, 2]);
+    // eslint-disable-next-line no-console
+    console.log('[4차 mutation-3b-2 축분리]', JSON.stringify({
+      roundAxisCase: { staleSkip: broken.staleSkipCountForReady, round: broken.roundAfterInjectionSync },
+      phaseAxisCase: { staleSkip: intact.staleSkipCountForReady, status: intact.statusAfterInjectionSync },
+    }));
+  }, 90000);
+
+  it("[mutation-3b-3, phase-축만 실명] phase-축에서만 'ready'를 제외하면 same-round 케이스(axis=phase)만 깨지고 cross-round 케이스(axis=round)는 round-축이 그대로 지켜준다", async () => {
+    expect(MUTATION_PHASE_AXIS_READY_BLIND).not.toBe(EXTRACTED_COMBINED_SOURCE);
+    const broken = await runStaleReadyPhaseOrderScenario({
+      axis: 'phase', ...DEPS, vi, combinedSourceOverride: MUTATION_PHASE_AXIS_READY_BLIND,
+    });
+    expectScenarioPreconditions(broken);
+    expect(broken.staleSkipCountForReady).toBe(0);
+    expect(broken.statusAfterInjectionSync).toBe('ready'); // phase-축이 지키던 것: 라운드 내 phase 단조성
+    expect(broken.round2CountdownRendered).toBe(false);
+
+    const intact = await runStaleReadyPhaseOrderScenario({
+      axis: 'round', ...DEPS, vi, combinedSourceOverride: MUTATION_PHASE_AXIS_READY_BLIND,
+    });
+    expectScenarioPreconditions(intact);
+    expect(intact.staleSkipCountForReady).toBe(1);   // round-축은 무손상 — 여전히 막는다
+    expect(intact.roundAfterInjectionSync).toBe(2);
+    expect(intact.countdownRoundSeq).toEqual([1, 2]);
+    // eslint-disable-next-line no-console
+    console.log('[4차 mutation-3b-3 축분리]', JSON.stringify({
+      phaseAxisCase: { staleSkip: broken.staleSkipCountForReady, status: broken.statusAfterInjectionSync },
+      roundAxisCase: { staleSkip: intact.staleSkipCountForReady, round: intact.roundAfterInjectionSync },
+    }));
+  }, 90000);
+
+  // ── CEO 필수 요구 #4의 상시 고정: "20회 반복 시 20/20 동일 결과" ────────────────
+  // 결정론 자체를 회귀 대상으로 못박는다 — 정상 코드 20/20 PASS, mutant 20/20 FAIL이며 20회의
+  // 결과가 "모두 같아야" 한다(결과 집합의 크기가 1). 확률적 검출이었다면 여기서 즉시 드러난다.
+  // (표적 시나리오 1회가 handleRoomUpdate 3~4콜 규모라 20회 반복도 밀리초 단위다 — 종전
+  // mutation-3b의 450 trial 무작위 스윕과 비용 자릿수 자체가 다르다.)
+  it('[결정론 20회 반복 실증] 정상 코드는 20/20 PASS, mutant(ready 제외)는 20/20 FAIL이며 20회 결과가 완전히 동일하다(axis=round/phase 각각)', async () => {
+    // baseline 불변식(위 baseline 테스트 본문과 동일 의미) — 만족하면 true, 아니면 throw.
+    const assertBaselineInvariant = (r) => {
+      expect(r.injectedWhileCountdownSuspended).toBe(true);
+      expect(r.staleSkipCountForReady).toBe(1);
+      expect(r.selfHealCount).toBe(0);
+      expect(r.roundAfterInjectionSync).toBe(2);
+      expect(r.statusAfterInjectionSync).toBe('playing');
+      expect(r.round2CountdownRendered).toBe(true);
+      expect(r.countdownRoundSeq).toEqual([1, 2]);
+      expect(r.roundNotMonotonicCount).toBe(0);
+      expect(r.doubleCountdownRenderCount).toBe(0);
+    };
+    const REPEATS = 20;
+    const summary = [];
+    for (const axis of ['round', 'phase']) {
+      for (const [label, src] of [['normal', null], ['mutant', MUTATION_READY_REMOVED]]) {
+        const verdicts = new Set();
+        let passCount = 0;
+        for (let i = 0; i < REPEATS; i++) {
+          // eslint-disable-next-line no-await-in-loop
+          const r = await runStaleReadyPhaseOrderScenario({ axis, ...DEPS, vi, combinedSourceOverride: src });
+          try {
+            assertBaselineInvariant(r);
+            verdicts.add('PASS'); passCount++;
+          } catch (e) {
+            verdicts.add('FAIL:' + String((e && e.message) || e).split('\n')[0]);
           }
         }
+        summary.push({ axis, label, passCount, distinctVerdicts: [...verdicts] });
+        // 20회가 전부 같은 결과여야 한다(확률적 검출이면 여기서 2가지 이상이 섞인다).
+        expect(verdicts.size).toBe(1);
+        expect(passCount).toBe(label === 'normal' ? REPEATS : 0);
       }
     }
     // eslint-disable-next-line no-console
-    console.log("[mutation-3b] 'ready' 단독 제외 재현 건수:", allFailures.length, JSON.stringify(allFailures.slice(0, 5), null, 2));
-    expect(allFailures.length).toBeGreaterThan(0);
+    console.log('[4차 결정론 20회 반복]', JSON.stringify(summary, null, 2));
   }, 300000);
 });
 

@@ -296,6 +296,23 @@ export function sampleClockRtt(rng, deviceIndex) {
   return { rttBase, upFrac, jitterMs };
 }
 
+// ── STOP-SHIP §Step1(clockRtt 정직화): sampleClockRtt는 realtimeDelayRegime/deliveryOrderMode와
+// 무관하게 항상 동일 분포(120~500ms 기본 RTT)를 쓴다 — Degraded/Extreme profile이 realtime 전파
+// 지연은 늘려도 "server_now RPC(clock sync) 자체의 RTT"는 늘리지 않는다는 뜻이라, 이 두 profile의
+// clock skew 보정 오차를 과소측정한다(§STOP-SHIP 보고 §1). clockRttOverrideFn이 주어지면(예: 아래
+// makeClockRttOverrideFn) 그것으로 RTT 분포를 대체한다 — 기본값(null)은 기존 sampleClockRtt 그대로라
+// 회귀 없음(§skewMsOverrideFn과 완전히 동형 패턴).
+export function makeClockRttOverrideFn({ rttBaseMin, rttBaseMax, jitterFrac = 0.4 }) {
+  return ({ rng }) => {
+    const span = Math.max(0, rttBaseMax - rttBaseMin);
+    const rttBase = rttBaseMin + rng() * span;
+    const asymmetrySwing = (rng() - 0.5) * 0.6; // -0.3..0.3(기존 sampleClockRtt와 동일 비대칭 폭)
+    const upFrac = Math.min(0.95, Math.max(0.05, 0.5 + asymmetrySwing));
+    const jitterMs = rng() * rttBase * jitterFrac;
+    return { rttBase, upFrac, jitterMs };
+  };
+}
+
 function sampleSkewMs(rng) {
   // 기기 wall-clock skew: -3000..+3000ms 대칭 분포(실기기 시계 오차 현실적 범위).
   return Math.round((rng() - 0.5) * 6000);
@@ -580,8 +597,12 @@ function makeFinishRoundLocalSubstitute({
 // `implRef().handleRoomUpdate(room)`으로 device impl을 직접 호출했다 — 그런데 createTrialWorld의
 // realtime 배달 경로(roomStore.subscribers[i].onRoomRow)는 REAL handleRoomUpdate 호출을
 // begin/finishStaleRowRegressionCheck·begin/finishReadyBranchClobberCheck로 감싸고, 그 직후 접합부
-// ②(현재 라운드 참가자면 즉시 선택 제출)/③(result 상태면 REAL scheduleRematchAutoAdvance 호출)까지
-// 수행한다(§createTrialWorld 상단 주석). poll이 이 wrapper를 건너뛰고 impl.handleRoomUpdate를 직접
+// ②(현재 라운드 참가자면 즉시 선택 제출)까지 수행한다(§createTrialWorld 상단 주석). ⚠️ H-1 정정:
+// 이 주석이 함께 열거하던 "접합부 ③(result 상태면 REAL scheduleRematchAutoAdvance 호출)"은 이미
+// STOP-SHIP happens-before 수정 때 이 위치에서 제거됐고(§createTrialWorld의 접합부 ③ 제거 주석),
+// 그 예약은 finishRoundLocal 대체의 onOutcome 콜백으로 옮겨졌다 — poll 경로에도 동일하게 적용되는
+// 것은 그 onOutcome(=finishRoundLocal 호출 자체)이지 이 wrapper의 별도 트리거가 아니다.
+// poll이 이 wrapper를 건너뛰고 impl.handleRoomUpdate를 직접
 // 부르면: (a) REAL isStaleRoomRow 가드가 뚫려도 이 detector가 관측하지 못해
 // STALE_ROW_REGRESSION이 구조적으로 0으로만 나오고(측정 자체가 무효), (b) poll이 유일하게 이번
 // 라운드 'playing' 전환을 알려준 경우에도 참가자가 선택을 제출하지 않는 시나리오가 생겨 실제
@@ -614,7 +635,7 @@ function startDevicePolling({ pollingEnabled, pollIntervalMs, db, roomStore, imp
 }
 
 // ── device(= 앱 인스턴스 1개) 생성 ───────────────────────────────────────────
-export function createDevice({ id, isHost, roomStore, rng, participantCount, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, targetLoserCount = 1, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', deliveryOrderMode = 'monotonic', index = 0, skewMsOverrideFn = null }) {
+export function createDevice({ id, isHost, roomStore, rng, participantCount, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, targetLoserCount = 1, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', deliveryOrderMode = 'monotonic', index = 0, skewMsOverrideFn = null, clockRttOverrideFn = null }) {
   const dom = createFakeDom();
   const telemetry = createTelemetry();
   // §STOP-SHIP Part B: skewMsOverrideFn이 주어지면(예: createAlternatingSkewFn) 그것으로 skew를
@@ -622,7 +643,9 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
   const skewMs = skewMsOverrideFn
     ? skewMsOverrideFn({ index, isHost, rng })
     : (isHost ? 0 : sampleSkewMs(rng)); // host도 skew를 가질 수 있으나 대조군 단순화를 위해 0 고정(보고서에 명시)
-  const clockRtt = sampleClockRtt(rng, id);
+  // §STOP-SHIP §Step1: clockRttOverrideFn이 주어지면(예: makeClockRttOverrideFn) 그것으로 clock
+  // sync RPC RTT 분포를 대체한다 — 기본값(null)은 기존 sampleClockRtt(rng, id) 그대로라 회귀 없음.
+  const clockRtt = clockRttOverrideFn ? clockRttOverrideFn({ index, isHost, rng }) : sampleClockRtt(rng, id);
   const RealDate = Date;
   const FakeDate = { now: () => RealDate.now() + skewMs };
 
@@ -826,6 +849,39 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
     db, getOnlineMode: impl.getOnlineMode,
     onOutcome: (res) => {
       rendered.resultByRound[impl.state.round] = { ...(rendered.resultByRound[impl.state.round] || {}), outcome: res.outcome, ts: RealDate.now() };
+      // STOP-SHIP(happens-before 수정, critic A/B 검증): REAL finishRoundLocal은
+      // scheduleRematchAutoAdvance()를 이번 라운드 확정 집합이 이미 정해진 그 지점에서, 같은 동기
+      // tick 안에서 호출한다 — index.html allDraw:8636 / tooMany:8670 / tooFew:8682.
+      // ⚠️ H-1 정정(이전 서술 "셋 다 confirmedSafeIds/LoserIds 대입 직후"는 부정확했다):
+      //   - tooMany(:8663-8670)는 `state.confirmedSafeIds = [...prevSafeIds, ...roundWinners]`
+      //     (:8664) 직후가 맞고, tooFew(:8671-8682)도 `state.confirmedLoserIds = [...prevLoserIds,
+      //     ...roundLosers]`(:8672) 직후가 맞다.
+      //   - 그러나 allDraw 분기(:8621-8637)에는 그 대입 자체가 아예 없다(allDraw는 아무도 새로
+      //     확정하지 않으므로 REAL도 state.confirmedSafeIds/LoserIds를 건드리지 않는다 —
+      //     resolveElimination의 allDraw 반환도 prevSafes/prevLosers를 그대로 돌려준다). 그래도
+      //     "이번 라운드 확정 집합이 최종적으로 정해진 시점"이라는 happens-before 성질은 동일하므로
+      //     onOutcome(=resolveElimination 반환 직후) 시점 재현은 세 분기 모두에 대해 유효하다.
+      //   - gameOver 분기(:8531-8593, :8598-8618, :8645-8662)는 scheduleRematchAutoAdvance를 전혀
+      //     호출하지 않는다(nextRound 없이 게임 종료) — 아래 res.outcome!=='gameOver' 가드와 일치.
+      //   - 이 3곳 외의 REAL 호출부 2곳(안전망 A :9733 / 안전망 B :9759)은 finishRoundLocal 본문
+      //     밖이라 이 콜백이 아니라 §makeFinishRoundLocalSubstitute의 idempotency 조기반환과
+      //     §createDb dbErrorInjectionFn 경로로 재현된다(H-1).
+      // 반면 REAL handleRoomUpdate(index.html:6001)는 finishRoundLocal()을 await 없이
+      // fire-and-forget 호출하므로, "result 상태를 봤다"는 handleRoomUpdate의 리턴 시점은
+      // finishRoundLocal의 async 본문(waitForPhaseRender/fetchFreshParticipantsForResult 등 버퍼
+      // 비례 지연 포함)이 confirmedSafeIds/LoserIds를 확정하기 훨씬 전일 수 있다. 이전 버전의 이
+      // 하니스는 handleRoomUpdate 리턴 직후(옛 접합부 ③, 아래 createTrialWorld 참고)
+      // scheduleRematchAutoAdvance를 별도로 호출해 이 happens-before를 깨고 있었다 — 그 결과
+      // 고정 1500ms 예약 vs 실제 버퍼 지연 경합에서 nextRound가 아직 []인 confirmedLoserIds를 읽어
+      // loser 마커를 유실하는 PHANTOM_OR_CORRUPTED_OUTCOME을 하니스 스스로 만들어냈다(REAL 결함이
+      // 아니라 하니스 측정도구 결함). 이제는 onOutcome이 resolveElimination 반환 직후(=REAL이
+      // state.confirmedSafeIds/LoserIds를 대입한 바로 그 지점과 동일한 동기 시점) 호출되므로, 여기서
+      // res.outcome!=='gameOver'일 때만 REAL scheduleRematchAutoAdvance()를 호출하면 REAL의
+      // happens-before(확정 이후에만 예약)를 정확히 재현한다(gameOver는 REAL도 예약하지 않으므로
+      // 제외 — 더 이르지도 늦지도 않게).
+      if (res.outcome !== 'gameOver') {
+        try { impl.scheduleRematchAutoAdvance(); } catch (e) {}
+      }
     },
   });
 
@@ -950,7 +1006,7 @@ export function finishReadyBranchClobberCheck(device, checkCtx) {
 // 호출 결과를 그대로 쓴다. 3곳만 하니스가 대신한다: ①1라운드 시작 트리거 ②참가자 선택 제출
 // 트리거(실제 UI 클릭 대신) ③"전원 ready 렌더 완료" 감지 후 다음 라운드 시작 트리거(실제 UI의
 // markReady 버튼 클릭 체인 대신, host의 실제 startGame()을 직접 호출).
-export function createTrialWorld({ participantCount, seed, targetLoserCount = 1, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', choiceDriverFn = null, deliveryOrderMode = 'monotonic', skewMsOverrideFn = null, pollingEnabled = false, pollIntervalMs = 2600 }) {
+export function createTrialWorld({ participantCount, seed, targetLoserCount = 1, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', choiceDriverFn = null, deliveryOrderMode = 'monotonic', skewMsOverrideFn = null, clockRttOverrideFn = null, pollingEnabled = false, pollIntervalMs = 2600 }) {
   const rng = mulberry32(seed);
   const roomStore = createRoomStore(`ROOM-${seed}-${participantCount}`);
   const devices = [];
@@ -960,8 +1016,8 @@ export function createTrialWorld({ participantCount, seed, targetLoserCount = 1,
     const device = createDevice({
       id, isHost, roomStore, rng, participantCount, resolveElimination, judgePure,
       computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, targetLoserCount, combinedSourceOverride,
-      realtimeDelayRegime, deliveryOrderMode, index: i, skewMsOverrideFn,
-    });
+      realtimeDelayRegime, deliveryOrderMode, index: i, skewMsOverrideFn, clockRttOverrideFn,
+      });
     devices.push(device);
   }
   for (const d of devices) {
@@ -1056,11 +1112,30 @@ export function createTrialWorld({ participantCount, seed, targetLoserCount = 1,
             try { await d.impl.updateParticipantChoice(choiceBase); } catch (e) {}
           }
         }
-        // 접합부 ③(스케줄링만): result 상태가 되면 REAL scheduleRematchAutoAdvance를 호출한다
-        // (host가 아니면 REAL 함수 내부에서 즉시 no-op — 안전).
-        if (d.impl.state.status === 'result') {
-          try { d.impl.scheduleRematchAutoAdvance(); } catch (e) {}
-        }
+        // 접합부 ③ 제거됨(STOP-SHIP happens-before 수정, critic A/B 검증): 이 위치(handleRoomUpdate
+        // 리턴 "직후")에서 status==='result'를 보고 scheduleRematchAutoAdvance()를 발화하던 예전
+        // 트리거는 REAL의 happens-before를 위반했다 — REAL handleRoomUpdate(index.html:6001)는
+        // finishRoundLocal()을 await 없이 fire-and-forget 호출하므로, 이 지점에서 handleRoomUpdate가
+        // 이미 리턴했다는 것이 finishRoundLocal의 async 본문(waitForPhaseRender/
+        // fetchFreshParticipantsForResult, 버퍼 비례 지연)이 confirmedSafeIds/LoserIds를 확정했다는
+        // 것을 전혀 보장하지 않는다. 그 결과 고정 1500ms 예약 vs 실제 버퍼 지연 경합에서 nextRound가
+        // 아직 빈 confirmedLoserIds를 읽어 loser 마커를 유실하는 PHANTOM_OR_CORRUPTED_OUTCOME을
+        // 하니스가 스스로 만들어냈다(REAL 앱 결함이 아니라 하니스 측정도구 결함, §A/B 재현 확인).
+        // ⚠️ H-1 정정(이전 서술 "REAL 호출부는 3곳뿐"은 사실이 아니었다): REAL
+        // scheduleRematchAutoAdvance() 호출부는 정확히 5곳이다 —
+        //   #1 index.html:8636 finishRoundLocal allDraw 분기
+        //   #2 index.html:8670 finishRoundLocal tooMany 분기(confirmedSafeIds 대입 :8664 직후)
+        //   #3 index.html:8682 finishRoundLocal tooFew 분기(confirmedLoserIds 대입 :8672 직후)
+        //   #4 index.html:9733 scheduleRematchAdvanceRetryAfterFailure(안전망 A) ← nextRound() catch(:9825)
+        //   #5 index.html:9759 maybeRecoverStalledRematchAdvance(안전망 B) ← finishRoundLocal:8212
+        //      (idempotent 조기반환 :8188 안, 비-gameOver일 때만)
+        // 이 접합부에서 재현해야 하는 것은 그 중 #1~#3(본문 내부, 정상 예약)이고, 그 정확한 지점을
+        // 재현하려면 하니스도 resolveElimination이 반환하는 바로 그 순간(=REAL이 이번 라운드
+        // 확정 집합을 최종 결정하는 지점과 동일한 동기 시점)에 예약해야 한다. 그래서 그 예약은
+        // makeFinishRoundLocalSubstitute의 onOutcome 콜백(위 §onOutcome 주석, resolveElimination
+        // 반환 직후·gameOver 제외)에서 수행한다. #4/#5는 이 접합부가 아니라 각각 §createDb의
+        // dbErrorInjectionFn(기본 off)과 §makeFinishRoundLocalSubstitute의 idempotency 조기반환이
+        // 도달 가능하게 만든다(둘 다 REAL 함수를 호출만 하고 재구현하지 않는다).
       },
     });
   }
@@ -1850,6 +1925,249 @@ export async function runGoToReadyScreenRoundInvariantScenario({
   };
 }
 
+// ── countdown SYNC_RENDER 시퀀스 검출기(추출 헬퍼) ──────────────────────────────
+// runMeasuredTrial/runEliminationTrial이 각자 인라인으로 들고 있던 것과 동일한 판정 규칙이다
+// (SYNC_RENDER phase:'countdown'의 round 수열이 순증하는가 / 같은 round가 2회 이상 렌더됐는가).
+// 두 인라인 블록은 §STOP-SHIP §1~§4 전 구간이 이미 검증한 코드라 이번 작업에서 건드리지 않았고
+// (회귀 위험 회피), 여기서는 표적 시나리오가 world 없이 device 배열만으로 같은 규칙을 재사용할 수
+// 있도록 동일 규칙을 함수로 노출한다. 필터의 `kind === 'metric'`은 runEliminationTrial 쪽 표현을
+// 따랐다 — 두 인라인 표현의 유일한 차이지만 SYNC_RENDER는 QA.emit('metric', ...)으로만 발행되므로
+// 결과는 항상 동일하다(§createTelemetry: 모든 이벤트가 kind를 갖는다).
+export function collectCountdownRenderFailureModes(devices) {
+  const failureModes = [];
+  for (const d of devices) {
+    const countdownEvents = d.telemetry.events.filter((e) => e.kind === 'metric' && e.eventType === 'SYNC_RENDER' && e.phase === 'countdown');
+    const seq = countdownEvents.map((e) => e.round);
+    for (let i = 1; i < seq.length; i++) {
+      if (seq[i] <= seq[i - 1]) failureModes.push({ type: 'ROUND_NOT_MONOTONIC', device: d.id, seq });
+    }
+    const byRound = {};
+    for (const e of countdownEvents) { byRound[e.round] = (byRound[e.round] || 0) + 1; }
+    for (const [round, count] of Object.entries(byRound)) {
+      if (count > 1) failureModes.push({ type: 'DOUBLE_COUNTDOWN_RENDER', device: d.id, round: Number(round), count });
+    }
+  }
+  return failureModes;
+}
+
+// ── STOP-SHIP 4차(CEO 지시): ACTIVE_ROUND_PHASE_ORDER의 'ready' 순서 위반 결정론적 표적 재현 ──
+//
+// 배경(왜 재설계했나): 종전 mutation-3b는 `ACTIVE_ROUND_PHASE_ORDER`에서 `ready: 0`을 지운
+// mutant를 N=5/10/16 × 150 trial(총 450) 무작위 스윕으로 "언젠가 걸리기를 기대"하는 확률적
+// 검출이었다(실측 8 이벤트 / 4 trial = 0.9%). 이 시나리오는 같은 결함을 무작위 없이 손으로 구성한
+// 최소 이벤트열로 직접 발현시킨다 — 정상 코드는 항상 통과하고 mutant는 항상 실패한다.
+//
+// ── 결함 메커니즘(index.html 실코드 기준) ──
+//   isActiveRoundPhaseStatus(s) = ACTIVE_ROUND_PHASE_ORDER에 s가 있는가(:5726).
+//   round-축 (:5734) : 같은 gameRound 안에서 incomingRound < state.round 이고, 들어오는 status가
+//                      진행 phase일 때만 stale로 본다.
+//   phase-축 (:5746) : 같은 (gameRound, round) 안에서 양쪽 status가 모두 진행 phase이고 들어오는
+//                      쪽 순번이 더 작을 때만 stale로 본다.
+//   `ready: 0`을 지우면 isActiveRoundPhaseStatus('ready')가 false가 되어 들어오는 'ready' row가
+//   두 축을 모두 무조건 통과한다 → :5832 `state.round = room.round`(Math.max 보호 없음)와
+//   :5867 `state.status = room.status`가 과거 값으로 되돌아간다.
+//
+// ── 최소 이벤트열(무작위 스윕/2.6초 폴링/재정렬 추첨 전부 불필요) ──
+//   E1  playing(round=1)  : REAL startGame()이 커밋하는 payload와 동일
+//                           ({status:'playing', penalty:buildPenaltyValue({gameRound, countdownStartAt:
+//                           getNextCountdownStartAt()})}, index.html:7364-7375).
+//                           → victim이 라운드1 카운트다운을 실제로 렌더한다(SYNC_RENDER countdown round=1).
+//   E2  playing(round=2)  : REAL autoStartDrawRematch()가 커밋하는 payload와 동일
+//                           ({round:nextRoundNo, status:'playing', penalty:...countdownStartAt:
+//                           getNextCountdownStartAt()}, index.html:9629-9636).
+//                           → victim의 라운드2 카운트다운 coroutine이 시작되어 lead sleep
+//                             (runCountdown :7551, `await sleep(min(waitMs,4800))`)에서 suspend된다.
+//   E3  stale ready 주입   : REAL nextRound()가 커밋하는 ready payload와 동일
+//                           ({round:N, status:'ready', penalty:buildPenaltyValue({gameRound,
+//                           phaseScheduledAt:getNextPhaseScheduledAt(), phaseKind:'ready'})},
+//                           index.html:9798-9801)를 정상 구독 큐를 우회해 victim의 REAL
+//                           handleRoomUpdate에 직접 1회 전달한다(§runStaleRowGuardScenario/
+//                           §runReadyBranchClobberScenario와 동일한 "직접 배달" 접합부).
+//                             axis='round' → N=1 (지난 라운드의 ready row가 라운드2 진행 중 늦게 도착)
+//                             axis='phase' → N=2 (같은 라운드의 ready row가 playing 뒤에 재정렬 도착)
+//   E4  시간 진행          : suspend돼 있던 라운드2 coroutine이 lead sleep에서 깨어나 SYNC_RENDER
+//                           countdown을 발행한다 — 그 이벤트의 round는 `state.round || 1`(:7562)이라
+//                           E3가 state.round를 되돌렸으면 그대로 과거 라운드 번호로 찍힌다.
+//
+//   왜 이게 최소인가: (a) 되돌아갈 "과거 라운드"가 있어야 하므로 라운드가 최소 2개 필요하고,
+//   (b) ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER는 countdown 렌더가 2회 이상이어야 정의되므로
+//   라운드1 렌더 1회 + 라운드2 렌더 1회가 최소이며, (c) 되돌림이 두 렌더 "사이"에 끼어들어야 하므로
+//   라운드2 렌더가 아직 안 끝난 지점(lead sleep) 1곳에 주입이 필요하다. E1/E2/E3 중 하나라도 빼면
+//   위 세 조건 중 하나가 무너진다. 라운드1↔2 사이의 'ready'/'result' 전이는 이 결함과 무관하므로
+//   넣지 않았다(REAL autoStartDrawRematch가 실제로 playing→playing으로 바로 넘어가는 경로다).
+//
+// ── P2(PHASE_RENDER_BUFFER_MS) 내성 ──
+//   이 시나리오의 suspend 창은 `getNextCountdownStartAt()`의 lead(:4546, 기본 3600ms)로 만들어진다 —
+//   PHASE_RENDER_BUFFER_MS(:4567)는 getNextPhaseScheduledAt()에만 쓰이고, 그 값은 stale 게이트가
+//   판정을 끝낸 "뒤"의 waitForPhaseRender('nextRound', ...) 대기에만 관여한다. 게다가 E3의 판정
+//   결과(state.round/state.status 되돌림 여부)는 handleRoomUpdate 최상단~:5867 구간이 await를 전혀
+//   거치지 않는 완전 동기 구간이라(index.html:5837 주석), 아래에서 "fire 직후" 그 자리에서 바로
+//   관측한다 — 어떤 타이머/버퍼 값과도 무관하다. 버퍼가 바뀌어 이 전제가 깨지는 경우를 대비해
+//   injectedWhileCountdownSuspended(주입 시점에 라운드2 COUNTDOWN_START는 이미 찍혔고 SYNC_RENDER는
+//   아직 안 찍혔는가)를 함께 반환해, 조용히 검출력을 잃는 대신 테스트가 큰 소리로 깨지게 한다.
+export async function runStaleReadyPhaseOrderScenario({
+  axis = 'round', seed = 313131, echoStalePlayingAfterInjection = false,
+  resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
+  combinedSourceOverride = null, vi, settleBudgetMs = 30000, stepMs = 250, injectionStepMs = 50,
+}) {
+  if (axis !== 'round' && axis !== 'phase') throw new Error(`[rc3-harness] unsupported axis: ${axis}`);
+  // 폴링 OFF: 2.6초 REST 채널이 같은 row를 임의 시점에 재배달하면 "언제 무엇이 도착했는가"가
+  // 다시 확률적이 된다 — 이 시나리오의 목적은 그 확률성을 제거하는 것이므로 의도적으로 끈다
+  // (폴링/이중경로 자체의 회귀 감시는 §Phase2 게이팅 테스트가 이미 상시로 담당한다).
+  const world = createTrialWorld({
+    participantCount: 2, seed, targetLoserCount: 1,
+    resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride,
+  });
+  const host = world.devices[0];
+  const victim = world.devices[1];
+  const roomId = world.roomStore.id;
+
+  async function advanceUntil(predicate, budgetMs, step = stepMs) {
+    let elapsed = 0;
+    while (elapsed < budgetMs && !predicate()) {
+      // eslint-disable-next-line no-await-in-loop
+      await vi.advanceTimersByTimeAsync(step);
+      elapsed += step;
+    }
+    return predicate();
+  }
+
+  const countdownRenders = () => victim.telemetry.events.filter(
+    (e) => e.kind === 'metric' && e.eventType === 'SYNC_RENDER' && e.phase === 'countdown');
+  const countdownStarts = () => victim.telemetry.events.filter(
+    (e) => e.kind === 'metric' && e.eventType === 'COUNTDOWN_START');
+
+  const clockSyncSettled = await advanceUntil(
+    () => world.devices.every((d) => d.impl.getServerClockSynced()), settleBudgetMs
+  );
+
+  // ── E1: 라운드1 playing (REAL startGame() payload) ──────────────────────────
+  const rowPlayingRound1 = {
+    id: roomId, round: 1, status: 'playing',
+    penalty: victim.impl.buildPenaltyValue({
+      gameRound: 1, countdownStartAt: victim.impl.getNextCountdownStartAt(),
+    }),
+  };
+  const p1 = victim.impl.handleRoomUpdate(rowPlayingRound1);
+  p1.catch(() => {});
+  const round1CountdownRendered = await advanceUntil(
+    () => countdownRenders().some((e) => e.round === 1), settleBudgetMs
+  );
+  // 라운드1 coroutine이 완주해 자신의 active key를 반납할 때까지 기다린다 — 두 coroutine이 겹친
+  // 상태에서 라운드2를 시작하면 세대 토큰 경합(중복 차단/stale abort)이 섞여 관측이 흐려진다.
+  const round1CountdownFinished = await advanceUntil(
+    () => victim.impl.state.countdownCoroutineActiveKey == null, settleBudgetMs
+  );
+
+  // ── E3용 stale 'ready' row(REAL nextRound() payload)를 "지금" 만들어 둔다 ──────
+  // 이 시점에 만든다는 것 자체가 충실하다: 실제로도 이 row는 라운드2 playing보다 먼저 커밋된 뒤
+  // 배달만 늦어져 도착하는 과거 스냅샷이다(phaseScheduledAt도 그래서 과거 시각이 된다).
+  const staleReadyRow = {
+    id: roomId,
+    round: axis === 'round' ? 1 : 2,
+    status: 'ready',
+    penalty: victim.impl.buildPenaltyValue({
+      gameRound: 1, phaseScheduledAt: victim.impl.getNextPhaseScheduledAt(), phaseKind: 'ready',
+    }),
+  };
+
+  // ── E2: 라운드2 playing (REAL autoStartDrawRematch() payload) ────────────────
+  const rowPlayingRound2 = {
+    id: roomId, round: 2, status: 'playing',
+    penalty: victim.impl.buildPenaltyValue({
+      gameRound: 1, countdownStartAt: victim.impl.getNextCountdownStartAt(),
+    }),
+  };
+  const p2 = victim.impl.handleRoomUpdate(rowPlayingRound2);
+  p2.catch(() => {});
+  // 라운드2 coroutine이 lead sleep 직전까지(COUNTDOWN_START 발행, index.html:7538) 도달할 때까지만
+  // 진행시킨다 — 이 지점부터 SYNC_RENDER(:7561)까지 사이가 곧 주입 창(lead ≈ 3600ms)이다.
+  const round2CountdownStarted = await advanceUntil(
+    () => countdownStarts().some((e) => e.round === 2), settleBudgetMs, injectionStepMs
+  );
+
+  // ── E3: stale 'ready' row 직접 주입 ─────────────────────────────────────────
+  const cursor = victim.telemetry.events.length;
+  const injectedWhileCountdownSuspended =
+    countdownStarts().some((e) => e.round === 2) && !countdownRenders().some((e) => e.round === 2);
+  const roundBeforeInjection = victim.impl.state.round;
+  const statusBeforeInjection = victim.impl.state.status;
+  const pInject = victim.impl.handleRoomUpdate(staleReadyRow);
+  pInject.catch(() => {});
+  // ⚠️ 바로 이 자리가 관측의 핵심이다 — REAL handleRoomUpdate는 함수 최상단부터 stale 게이트
+  //    (:5751)와 `state.round = room.round`(:5832) / `state.status = room.status`(:5867)까지 await를
+  //    전혀 거치지 않는다(index.html:5837 주석이 명시하는 계약). 따라서 "fire 직후, 아직 어떤
+  //    fake timer도 흘려보내지 않은" 이 동기 시점의 값이 곧 게이트의 판정 결과 그 자체다.
+  const roundAfterInjectionSync = victim.impl.state.round;
+  const statusAfterInjectionSync = victim.impl.state.status;
+
+  // ── E3b(옵션): 같은 과거 세대의 playing row 1회 재에코 ───────────────────────
+  // WRPS-078의 카운트다운 세대 가드(isCountdownGenerationCurrent :7478)는 `state.status !==
+  // "playing"`도 stale 조건으로 본다 — 그래서 E3만으로 status가 'ready'로 되돌아가면, suspend돼
+  // 있던 라운드2 coroutine은 SYNC_RENDER를 "찍고 어긋나는" 대신 checkpoint 2에서 조용히
+  // abort된다(COUNTDOWN_STALE_GENERATION_ABORTED). 즉 이 세대 가드가 되돌림 피해를
+  // "이중/역행 카운트다운"이 아니라 "카운트다운 실종"으로 흡수한다 — 종전 mutation-3b의 무작위
+  // 스윕이 ROUND_NOT_MONOTONIC/DOUBLE_COUNTDOWN_RENDER를 0.9%밖에 못 본 이유가 이것이다(대부분의
+  // 경우 피해가 다른 실패모드로 바뀐다).
+  // 이 옵션은 그 흡수를 뚫고 종전 실패모드 자체를 결정론적으로 재현한다: 되돌아간 (round=1,
+  // status='ready') 위로 "그 시점에 실제로 존재했던" 라운드1 playing row(E1과 동일 스냅샷)가 한 번
+  // 더 도착하면(realtime 재정렬/폴링 이중경로에서 흔한 중복 에코), status가 다시 'playing'이 되어
+  // 라운드1 카운트다운이 통째로 다시 렌더된다 → SYNC_RENDER countdown round 수열이 [1, 1]이 되어
+  // ROUND_NOT_MONOTONIC + DOUBLE_COUNTDOWN_RENDER가 동시에 성립한다.
+  // 정상 코드에서는 이 에코 자체가 round-축(incomingRound 1 < state.round 2, 'playing'은 진행
+  // phase)에서 그대로 stale로 막히므로 아무 일도 일어나지 않는다.
+  let stalePlayingEchoSettled = null;
+  if (echoStalePlayingAfterInjection) {
+    const pEcho = victim.impl.handleRoomUpdate(rowPlayingRound1);
+    pEcho.catch(() => {});
+    stalePlayingEchoSettled = false;
+    pEcho.then(() => { stalePlayingEchoSettled = true; }, () => { stalePlayingEchoSettled = true; });
+  }
+
+  // ── E4: suspend돼 있던 라운드2 coroutine을 깨워 SYNC_RENDER를 발행시킨다 ──────
+  const countdownRenderCountBeforeResume = countdownRenders().length;
+  await advanceUntil(
+    () => countdownRenders().length > countdownRenderCountBeforeResume, settleBudgetMs
+  );
+  // 주입/에코 호출의 async 잔여분(ready 분기 Promise.all, 카운트다운 coroutine 등)도 정리한다 —
+  // 관측값에는 영향이 없지만 미해결 promise를 남기지 않는다.
+  let injectSettled = false;
+  pInject.then(() => { injectSettled = true; }, () => { injectSettled = true; });
+  await advanceUntil(
+    () => injectSettled && (stalePlayingEchoSettled !== false) && victim.impl.state.countdownCoroutineActiveKey == null,
+    settleBudgetMs
+  );
+
+  const eventsSinceCursor = victim.telemetry.events.slice(cursor);
+  const staleSkipEventsForReady = eventsSinceCursor.filter(
+    (e) => e.eventType === 'STALE_ROOM_UPDATE_SKIPPED' && e.roomStatus === 'ready');
+  const selfHealEvents = eventsSinceCursor.filter((e) => e.eventType === 'STALE_ROOM_UPDATE_SELF_HEAL');
+  const countdownRoundSeq = countdownRenders().map((e) => e.round);
+  const failureModes = collectCountdownRenderFailureModes([victim]);
+  // WRPS-078 세대 가드가 "되돌림 피해를 카운트다운 실종으로 흡수"한 흔적(§E3b 주석) — 어느 실패
+  // 모드로 나타났는지를 테스트가 구분해 단언할 수 있게 함께 노출한다.
+  const countdownAbortEventsSinceInjection = eventsSinceCursor.filter(
+    (e) => e.eventType === 'COUNTDOWN_STALE_GENERATION_ABORTED');
+
+  return {
+    axis, echoStalePlayingAfterInjection, clockSyncSettled,
+    round1CountdownRendered, round1CountdownFinished, round2CountdownStarted,
+    injectedWhileCountdownSuspended,
+    roundBeforeInjection, statusBeforeInjection,
+    roundAfterInjectionSync, statusAfterInjectionSync,
+    staleSkipCountForReady: staleSkipEventsForReady.length,
+    selfHealCount: selfHealEvents.length,
+    countdownRoundSeq,
+    round2CountdownRendered: countdownRenders().some((e) => e.round === 2),
+    countdownAbortCheckpointsSinceInjection: countdownAbortEventsSinceInjection.map((e) => e.checkpoint),
+    failureModes,
+    roundNotMonotonicCount: failureModes.filter((f) => f.type === 'ROUND_NOT_MONOTONIC').length,
+    doubleCountdownRenderCount: failureModes.filter((f) => f.type === 'DOUBLE_COUNTDOWN_RENDER').length,
+    hostId: host.id, victimId: victim.id,
+    world,
+  };
+}
+
 // ── WRPS-079 Round2(STOP-SHIP, HIGH 잔존 수정) 전용 시나리오: ready 분기 재진입 직접 재현 ──
 // §Phase3/EG 넓은 시드 스윕(N=3..20, 각 40 seed, 총 360 trial, pessimistic 레짐 + 위 REPRO_SEEDS
 // 2종 포함)으로는 이 하니스의 타이밍 모델(참가자 select ackDelay 60~280ms, 고정 상한) 안에서
@@ -2065,19 +2383,49 @@ export const PHASE_TOLERANCE_MS = {
 
 export const DEFAULT_TARGET_ROUNDS = 5;
 
+// ── clock-sync settle 예산: REAL 계약에서 유도 ────────────────────────────────
+// codex-critic CRITICAL-1(P1 독립검증): 이 예산은 원래 `const clockSyncBudgetMs = 8000;`이라는
+// 하드코딩 매직넘버였고, REAL에는 대응하는 데드라인이 아예 없다. 그 결과 Extreme profile에서
+// "REAL이라면 그냥 (느리게) 성공했을" 트라이얼이 CLOCK_SYNC_NOT_SETTLED(EG_HARD_FAILURE_TYPES)로
+// 실패 처리돼 correctness 게이트를 단독으로 막았다(실측 재현: 3 profile × N=3..20 × 20 trial =
+// profile당 360 trial에서 Normal 0/360, Degraded 0/360, Extreme 9/360 — 순수 하니스 아티팩트).
+//
+// REAL 계약(index.html:4461-4542 syncServerClock)에서 그대로 유도한다:
+//   - :4464  for (let i = 0; i < 5; i++)                      → 시도당 샘플 5개
+//   - :4470  withTimeout(db.rpc("server_now"), 4000, ...)     → 샘플당 상한 4000ms
+//   - :4528-4532 !samples.length && retry → await sleep(1500); await syncServerClock(false)
+//                                                             → 전량 실패 시 1500ms 후 재시도 1회
+//   - 재시도(retry=false)는 다시 재귀하지 않으므로 총 시도는 2회(:4534 주석 "총 최대 10회 RPC 시도")
+// 따라서 "최초 1회 clock sync가 REAL에서 소요할 수 있는 최악 시간"은 아래 산식으로 닫힌다.
+export const REAL_CLOCK_SYNC_SAMPLE_TIMEOUT_MS = 4000;   // index.html:4470
+export const REAL_CLOCK_SYNC_SAMPLES_PER_ATTEMPT = 5;    // index.html:4464
+export const REAL_CLOCK_SYNC_RETRY_SLEEP_MS = 1500;      // index.html:4530
+export const REAL_CLOCK_SYNC_ATTEMPTS = 2;               // 최초 1회 + :4531 syncServerClock(false) 1회
+export const REAL_CLOCK_SYNC_WORST_CASE_MS =
+  REAL_CLOCK_SYNC_ATTEMPTS * REAL_CLOCK_SYNC_SAMPLES_PER_ATTEMPT * REAL_CLOCK_SYNC_SAMPLE_TIMEOUT_MS
+  + REAL_CLOCK_SYNC_RETRY_SLEEP_MS; // = 41500ms
+// 관측 슬랙: 이 하니스는 stepMs(기본 250ms) 단위로만 시간을 전진시키고 settle 판정도 그 경계에서만
+// 하므로 최악값에 딱 맞추면 양자화 경계에서 오탐이 난다. 5 stepMs 상당(1250ms) + 타이머 스케줄링
+// 여유를 합쳐 3500ms를 더한다(= 45000ms). 이 숫자는 "느슨하게 잡은 관용치"가 아니라 REAL 상한 위의
+// 관측 여유이며, 예산 초과는 여전히 CLOCK_SYNC_NOT_SETTLED 하드실패로 기록된다(무한 대기 안전망
+// 유지 — 아래 runMeasuredTrial/runEliminationTrial 사용처 주석 참고).
+export const CLOCK_SYNC_OBSERVATION_SLACK_MS = 3500;
+export const CLOCK_SYNC_SETTLE_BUDGET_MS = REAL_CLOCK_SYNC_WORST_CASE_MS + CLOCK_SYNC_OBSERVATION_SLACK_MS;
+
 // ── 트라이얼 1회 실행 + 측정(성공률 집계의 단일 진입점) ───────────────────────
 export async function runMeasuredTrial({
   participantCount, seed, targetRounds = DEFAULT_TARGET_ROUNDS, targetLoserCount,
   resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
   stepMs = 250, budgetMsPerRound = 40000, choiceBase = 'scissors', vi, combinedSourceOverride = null,
   realtimeDelayRegime = 'pessimistic', deliveryOrderMode = 'monotonic', skewMsOverrideFn = null,
+  clockRttOverrideFn = null,
   // §STOP-SHIP Phase0: 2.6초 REST 폴링 채널(위 startDevicePolling). 기본값(false)은 회귀 없음.
   pollingEnabled = false, pollIntervalMs = 2600,
 }) {
   const world = createTrialWorld({
     participantCount, seed, targetLoserCount: targetLoserCount ?? Math.max(1, Math.floor(participantCount / 2)),
     resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride,
-    realtimeDelayRegime, deliveryOrderMode, skewMsOverrideFn, pollingEnabled, pollIntervalMs,
+    realtimeDelayRegime, deliveryOrderMode, skewMsOverrideFn, clockRttOverrideFn, pollingEnabled, pollIntervalMs,
   });
   const host = world.devices[0];
   const realRandom = Math.random;
@@ -2088,11 +2436,23 @@ export async function runMeasuredTrial({
   let elapsed = 0;
   const budget = budgetMsPerRound * targetRounds;
   try {
-    // 접합부 ⓪ 대기: 전원 syncServerClock() settle(성공/실패 무관, 최초 1회 시도 완료)까지 시간을
-    // 흘려보낸다 — 이래야 serverNow()가 실제로 skew를 보정한 뒤 라운드1이 시작된다(위 createTrialWorld
-    // 주석 참고). 예산 안에서 settle 안 되면(이론상 발생하지 않음 — syncServerClock은 항상 resolve)
-    // 그냥 진행한다.
-    const clockSyncBudgetMs = 8000;
+    // 접합부 ⓪ 대기: 전원 syncServerClock()이 settle될 때까지 시간을 흘려보낸다 — 이래야
+    // serverNow()가 실제로 skew를 보정한 뒤 라운드1이 시작된다(위 createTrialWorld 주석 참고).
+    // ⚠️ 용어 정정(codex-critic P1 독립검증): 여기서 "settle"의 실제 술어는
+    // getServerClockSynced()(= index.html serverClockSynced, "유효 샘플을 하나라도 얻어 offset을
+    // 갱신했다")이므로 "성공/실패 무관, 시도 완료"가 아니라 엄밀히 "동기화 성공"이다. 이 하니스의
+    // 가짜 rpc('server_now')는 항상 성공 resolve하므로(§createDb rpc) 현재는 두 정의가 일치하지만,
+    // 향후 RPC 실패를 주입하면 갈라진다 — 그때는 REAL 재시도 경로(sleep 1500 + 5샘플)까지
+    // 소요되며, 아래 예산은 그 최악값까지 이미 포괄한다.
+    // 예산 안에서 settle 안 되면 CLOCK_SYNC_NOT_SETTLED를 기록하고 그냥 진행한다.
+    // codex-critic CRITICAL-1: 예산은 REAL syncServerClock 계약에서 유도한다(위
+    // CLOCK_SYNC_SETTLE_BUDGET_MS 주석 — 8000ms 매직넘버는 REAL에 없는 데드라인이었다).
+    // ⚠️ STALL 안전망 관점: 이 루프는 settle되는 즉시 빠져나오므로 정상 경로의 소요시간은 변하지
+    // 않고, 예산을 다 쓰는 경우에도 그 시간은 아래 메인 루프와 공유하는 `elapsed`에 누적되며
+    // (budget = budgetMsPerRound × targetRounds = 40000×5 = 200000ms) 초과 시 여전히
+    // CLOCK_SYNC_NOT_SETTLED 하드실패로 기록된다 — 즉 "clock이 영원히 안 맞는" 무한 대기는
+    // 45000ms 시점에 확정 검출되고, 그 이후의 진짜 진행 불가는 trial 총예산이 STALL로 잡는다.
+    const clockSyncBudgetMs = CLOCK_SYNC_SETTLE_BUDGET_MS;
     let clockSyncElapsed = 0;
     let clockSyncSettled = false;
     while (clockSyncElapsed < clockSyncBudgetMs && !clockSyncSettled) {
@@ -2181,7 +2541,19 @@ export async function runMeasuredTrial({
       choiceStart: diff(choiceStartTs), choiceStartCoverage: choiceStartTs.length,
       choiceEnd: diff(choiceEndTs), choiceEndCoverage: choiceEndTs.length,
       result: diff(resultTs), resultCoverage,
-      ready: (r < targetRounds) ? diff(readyTs) : null,
+      // ── codex-critic MEDIUM-3: ready(nextRound) 인덱싱 정정 ────────────────────
+      // nextRound SYNC_RENDER의 round 필드는 "떠나는 라운드"가 아니라 "새로 진입하는 라운드"다:
+      //   index.html:9802  host write `{ round: state.round + 1, status: 'ready', penalty }`
+      //   index.html:5832  handleRoomUpdate가 `state.round = room.round`를 먼저 반영하고
+      //   index.html:6017  그 뒤에 waitForPhaseRender("nextRound", readyScheduledAt, ...)를 호출
+      //   index.html:5283  waitForPhaseRender 내부 `const round = state.round || 1`이 그 값을 기록
+      // 따라서 r=1에는 nextRound 이벤트가 아예 없고(자연히 빈 배열 → diff=null), "마지막 라운드로
+      // 진입하는 ready"(r === targetRounds)는 반드시 존재한다. 종전 `(r < targetRounds) ? ... : null`
+      // 가드는 "round = 떠나는 라운드"라는 틀린 전제에서만 정당했고, 실제로는 매 trial마다 마지막
+      // 라운드 진입 ready 측정을 통째로 버리고 있었다(측정 누락 = false negative).
+      // tests/ceo-official-measurement.test.mjs §M-1이 이미 같은 정정을 했고, 이제 두 측정 경로가
+      // 같은 인덱싱 전제를 공유한다.
+      ready: diff(readyTs),
       readyCoverage: readyTs.length,
     };
     if (countdownCoverage < participantCount) failureModes.push({ type: 'MISSING_COUNTDOWN_RENDER', round: r, coverage: countdownCoverage, of: participantCount });
@@ -2197,8 +2569,10 @@ export async function runMeasuredTrial({
     // result/ready 3개 phase만 REAL 계측이 있다(위 getPhaseLateRenderMs 주석) — choiceStart/
     // choiceEnd는 countdown의 late 여부를 상속하되 별도 SYNC_RENDER가 없으므로 이 집계 모수에는
     // 넣지 않는다(이중 계상 방지).
+    // codex-critic MEDIUM-3: 여기서도 `r >= targetRounds` 스킵을 제거한다(위 ready 인덱싱 정정과
+    // 동일 근거). r=1은 nextRound 이벤트 자체가 없어 getPhaseLateRenderMs가 null을 돌려주므로
+    // 별도 가드가 필요 없고, 마지막 라운드 진입 ready의 late-render는 실제로 존재하는 측정이다.
     for (const phase of ['countdown', 'result', 'nextRound']) {
-      if (phase === 'nextRound' && r >= targetRounds) continue;
       for (const d of world.devices) {
         const lateMs = getPhaseLateRenderMs(d, phase, r);
         if (lateMs == null) continue; // 렌더 자체가 없음 — MISSING_*_RENDER가 이미 별도로 잡음
@@ -2211,8 +2585,11 @@ export async function runMeasuredTrial({
     // network-stress quality(informational, HARD FAILURE 아님, §본문 taxonomy 수렴 참고). 5개
     // phase 모두 다룬다 — choiceStart/choiceEnd는 countdown의 수신-기준 판정을 상속(근사, §7
     // 한계 명시)한다.
+    // codex-critic MEDIUM-3: `phase === 'ready' && r >= targetRounds` 스킵 제거(위와 동일 근거 —
+    // "ready는 마지막 라운드엔 없다"는 종전 주석 자체가 틀린 인덱싱 전제였다. 마지막 라운드로
+    // 진입하는 ready는 존재하고, 없는 쪽은 r=1이며 그건 isPhaseReceivedBeforeAnchor가 null을
+    // 돌려줘 자연히 코호트가 비므로 별도 가드가 필요 없다).
     for (const phase of ['countdownStart', 'result', 'ready', 'choiceStart', 'choiceEnd']) {
-      if (phase === 'ready' && r >= targetRounds) continue; // ready는 마지막 라운드엔 없음(기존 범위 유지)
       const measurePhase = phase === 'countdownStart' ? 'countdown' : (phase === 'ready' ? 'nextRound' : phase);
       const onTimeTrue = [];
       const lateReceived = [];
@@ -2409,7 +2786,7 @@ export async function runEliminationTrial({
   stepMs = 250, budgetMsPerRound = 20000, maxRounds = null, vi,
   combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic',
   choiceSeed = null, choiceDriverFactory = null,
-  deliveryOrderMode = 'monotonic', skewMsOverrideFn = null,
+  deliveryOrderMode = 'monotonic', skewMsOverrideFn = null, clockRttOverrideFn = null,
   // §STOP-SHIP Phase0: 2.6초 REST 폴링 채널(위 startDevicePolling). 기본값(false)은 회귀 없음.
   pollingEnabled = false, pollIntervalMs = 2600,
 }) {
@@ -2429,7 +2806,7 @@ export async function runEliminationTrial({
     participantCount, seed, targetLoserCount,
     resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
     combinedSourceOverride, realtimeDelayRegime, choiceDriverFn, deliveryOrderMode, skewMsOverrideFn,
-    pollingEnabled, pollIntervalMs,
+    clockRttOverrideFn, pollingEnabled, pollIntervalMs,
   });
   const host = world.devices[0];
   const realRandom = Math.random;
@@ -2443,7 +2820,14 @@ export async function runEliminationTrial({
   let elapsed = 0;
   const budget = budgetMsPerRound * resolvedMaxRounds;
   try {
-    const clockSyncBudgetMs = 8000;
+    // codex-critic CRITICAL-1: §runMeasuredTrial과 동일 — 예산은 REAL syncServerClock 계약에서
+    // 유도한다(위 CLOCK_SYNC_SETTLE_BUDGET_MS 주석). 이 경로가 CEO 3-profile 매트릭스가 쓰는
+    // 경로이고, 8000ms 매직넘버 때문에 Extreme 9/360이 CLOCK_SYNC_NOT_SETTLED로 오분류돼 출시
+    // 게이트를 단독 차단하고 있었다.
+    // ⚠️ STALL 안전망: settle 즉시 탈출이므로 정상 경로 소요시간 불변, 예산 초과는 여전히
+    // CLOCK_SYNC_NOT_SETTLED 하드실패이고 남은 시간은 trial 총예산
+    // (budgetMsPerRound × resolvedMaxRounds = 20000 × max(30, N×6) ≥ 600000ms)이 STALL로 잡는다.
+    const clockSyncBudgetMs = CLOCK_SYNC_SETTLE_BUDGET_MS;
     let clockSyncElapsed = 0;
     let clockSyncSettled = false;
     while (clockSyncElapsed < clockSyncBudgetMs && !clockSyncSettled) {
