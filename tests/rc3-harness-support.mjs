@@ -16,10 +16,13 @@
 //     computeChoiceRemainingSeconds/beginRoundTimer, enterPlayingStateFromRoomUpdate,
 //     handleRoomUpdate(★ stale-row guard + phase dispatch), updateRoomStatus/updateRoomStatusScheduled,
 //     startGame, updateParticipantChoice, publishHostRoundResult/judgeRound(judgePure 주입),
-//     scheduleRematchAutoAdvance류, nextRound, isSafeParticipant/isConfirmedLoser/isCurrentRoundParticipant,
+//     scheduleRematchAutoAdvance류(scheduleRematchAdvanceRetryAfterFailure=안전망 A /
+//     maybeRecoverStalledRematchAdvance=안전망 B / getRematchAdvanceRetryAttempts 포함 — 이 5개
+//     함수는 index.html:9658-9760의 한 블록(rematchAdvance)으로 통째 추출돼 그대로 구동된다),
+//     nextRound, isSafeParticipant/isConfirmedLoser/isCurrentRoundParticipant,
 //     getPlayingEntryKey, syncConfirmedIdsFromParticipants, showScreen/hideAllScreens(가짜 DOM 위에서 실행).
 //   하니스 대체(SUBSTITUTED, 정직하게 공개):
-//     finishRoundLocal(460줄, DOM+음성+통계+idempotency 캐시 강결합) 전체는 추출하지 않는다.
+//     finishRoundLocal(460줄, DOM+음성+통계 강결합) 전체는 추출하지 않는다.
 //     RC-3 Phase1(codex-critic HIGH 충실성 수정) 이후: 판정 입력을 어느 소스에서 가져올지 가르는
 //     핵심 분기(hasStoredResults 판정 + 미충족 시 judgeRound(raw) 폴백, index.html ~8036-8043)는
 //     REAL 텍스트를 그대로(바이트 동일) 추출해 new Function으로 실행한다(hasStoredResultsCheckFactory
@@ -28,9 +31,24 @@
 //     거짓이면 REAL judgeRound(judgePure 주입)로 raw base choice에서 재계산한다 — 이 갈림길
 //     이후의 술래-소거 상태 전이(allDraw/tooMany/tooFew/gameOver) 자체는 여전히
 //     src/game-logic.mjs의 resolveElimination()(REAL, engine-parity.test.mjs가 이미 교차검증한
-//     단일 소스 판정 함수)에 위임한다 — 손으로 짠 tooMany/tooFew 판정이 아니다. finishRoundLocal의
-//     나머지(DOM 렌더 분기/음성/SFX/통계 DB쓰기/idempotency 캐시/defer 재시도 스케줄러)는 여전히
-//     하니스가 대체한다 — 그 부분은 렌더/부작용 표면이지 판정 로직이 아니라고 판단했기 때문이다.
+//     단일 소스 판정 함수)에 위임한다 — 손으로 짠 tooMany/tooFew 판정이 아니다.
+//     H-1(rematch auto-advance 5경로 모델링) 이후: finishRoundLocal의 idempotency 캐시
+//     (state.lastRoundResolution / roundEventId = getGameRound()+':'+(state.round||1),
+//     index.html:8169/8188-8215/8498-8505)와 그 조기반환 안의 안전망 B 호출
+//     (maybeRecoverStalledRematchAdvance, index.html:8212)도 REAL과 동일 의미로 재현한다 —
+//     이게 없으면 duplicate 'result' 호출이 매번 재판정돼(재분류 phantom) REAL에는 없는
+//     오분류/오복구가 하니스에서만 생긴다(§makeFinishRoundLocalSubstitute 주석 참고).
+//     ⚠️ 위상 정정(codex-critic P1 독립검증): 안전망 B(:8212)를 "REAL 5경로 중 #5"라고 다른
+//     4경로와 동등한 위상으로 읽으면 과장이다. 온라인 REAL에서 이 경로는 구조적으로 도달하기
+//     어려운 defense-in-depth다 — waitForPhaseRender의 dedup(키 phase:gameNo:round:scheduledAt,
+//     index.html:5284-5292)이 result→game_over 재진입을 먼저 막아 finishRoundLocal 자체가 같은
+//     roundEventId로 두 번 불리지 않는다. 그래서 idempotency 캐시의 주된 값은 "duplicate를
+//     자주 처리하는 것"이 아니라 "혹시 duplicate가 들어와도 하니스가 REAL에 없는 재판정을
+//     발명하지 않게 막는 것"이다(정상 sweep 실측: 3 profile × N=3..20 × 20 trial = 1080 trial에서
+//     FINISH_ROUND_SUBSTITUTE_IDEMPOTENT 0건 — 캐시는 정상 판정에 전혀 개입하지 않는다).
+//     나머지(DOM 렌더 분기/음성/SFX/통계 DB쓰기/defer 재시도 스케줄러/state.finishingRound
+//     재진입 가드)는 여전히 하니스가 대체하거나 모델하지 않는다 — 그 부분은 렌더/부작용
+//     표면이지 판정 로직이 아니라고 판단했기 때문이다.
 //     ready 화면 "모두 준비 완료 → 다음 라운드 시작" 트리거(markReady 등 DOM 버튼 클릭 체인)는
 //     추출하지 않고, 하니스가 각 기기의 "ready 화면 렌더 완료"를 감지해 host의 실제 startGame()을
 //     직접 호출한다(마지막 준비 참가자가 버튼을 누른 효과와 동일 — 클릭 자체만 생략).
@@ -82,7 +100,8 @@ const M = {
   withAuthTimeoutStart: 'function withAuthTimeout(promise, ms, label) {',
   // RC-3 Phase1(codex-critic HIGH 충실성 수정): finishRoundLocal(~7969) 내부의 hasStoredResults
   // 판정 + 미충족 시 judgeRound(raw) 폴백 분기를 그대로(바이트 동일) 추출한다. finishRoundLocal
-  // 전체(460줄, DOM/음성/idempotency 캐시 강결합)는 여전히 추출하지 않지만, "무엇을 신뢰하고
+  // 전체(460줄, DOM/음성/통계 강결합)는 여전히 추출하지 않지만(H-1 이후 idempotency 캐시만은
+  // §makeFinishRoundLocalSubstitute가 REAL과 동일 의미로 재현한다), "무엇을 신뢰하고
   // 무엇을 raw 재계산하는지"를 가르는 핵심 결정 지점만큼은 손으로 재작성하지 않는다 — 이전
   // finishRoundLocalSubstitute는 이 분기 자체가 아예 없어 getChoiceResult()가 항상 신뢰된다고
   // 가정했고, 그게 PHANTOM_OR_CORRUPTED_OUTCOME의 원인이었다(§1 보고 참고).
@@ -365,14 +384,45 @@ function scheduleReorderableDelivery({ roomStore, sub, snapshot, rng, participan
 }
 
 // ── 가짜 db 팩토리: 하나의 roomStore를 여러 device가 공유한다. ────────────────
-function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, realtimeDelayRegime = 'pessimistic', deliveryOrderMode = 'monotonic' }) {
+// ── H-1(안전망 A 도달성): dbErrorInjectionFn(기본값 null = opt-in) ─────────────
+// 이 fake db는 지금까지 모든 write에 대해 무조건 `{ error: null }`만 반환했다 — 그래서 REAL
+// nextRound()가 각 write의 error를 직접 검사해 throw로 승격하는 구간
+// (index.html:9789/9793/9797/9803)이 구조적으로 절대 발화하지 못했고, 그 catch(:9809-9826)가
+// 트리거하는 안전망 A(scheduleRematchAdvanceRetryAfterFailure → scheduleRematchAutoAdvance,
+// index.html:9733 = REAL 5개 호출부 중 #4)가 이 하니스에서 dead code였다. dbErrorInjectionFn이
+// 주어지면 그 함수가 반환한 error 객체를 vendored supabase-js v2의 실전 실패 모델 그대로
+// ({ error } 로 resolve — reject 아님, §tests/build29-rematch-advance-resilience.mjs makeResolveDb
+// 주석과 동일 근거) 돌려준다.
+// ⚠️ 기본값(null)일 때의 실행 경로는 수정 전과 바이트 동일하다(추가 분기 1개는 함수 진입 즉시
+// falsy 체크로 끝나고 rng()를 단 한 번도 더 소비하지 않는다) — 기존 고정 seed 측정치 전부가
+// 그대로 재현되어야 한다는 회귀 방지 계약(§본문 H-1 요구사항 "기본 경로 rng 소비 불변").
+// 주입이 실제로 켜진 경우에도 ackDelayFn()은 정상 경로와 동일하게 1회 소비한다 — 실패한 write도
+// 네트워크 왕복 시간은 쓰이며, 이래야 주입 on/off가 rng 스트림 자체를 어긋내지 않는다.
+function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, realtimeDelayRegime = 'pessimistic', deliveryOrderMode = 'monotonic', dbErrorInjectionFn = null }) {
   function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.round(ms))));
+  }
+  // table/op/patch/keyOrIds만 넘긴다(객체 리터럴 할당조차 기본 경로에서는 발생하지 않도록
+  // 위치 인자 사용) — 반환값이 truthy면 그것을 그대로 { error }로 쓴다.
+  function injectedError(table, op, patch, keyOrIds) {
+    if (!dbErrorInjectionFn) return null;
+    try {
+      return dbErrorInjectionFn({ table, op, patch, keyOrIds, deviceId, isHost, roomStore }) || null;
+    } catch (e) {
+      return { message: '[rc3-harness] dbErrorInjectionFn threw: ' + String(e && e.message || e) };
+    }
   }
   async function opRoomsUpdate(patch) {
     if (!isHost) {
       // 실제 앱도 host만 rooms.update를 호출한다 — 방어적으로 하니스 버그를 조기 발견.
       throw new Error('[rc3-harness] non-host device attempted rooms.update — harness bug');
+    }
+    // H-1: 실패 주입은 커밋/브로드캐스트 "이전"에 판정한다 — 실패한 write는 row를 바꾸지도,
+    // 구독자에게 전파되지도 않는다(실제 DB 실패와 동일 의미).
+    const roomsUpdateError = injectedError('rooms', 'update', patch, roomStore.id);
+    if (roomsUpdateError) {
+      await delay(ackDelayFn());
+      return { error: roomsUpdateError };
     }
     const ackDelay = ackDelayFn();
     Object.assign(roomStore.row, patch);
@@ -408,12 +458,16 @@ function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, re
     return { data: getParticipantRows().map((r) => ({ ...r })), error: null };
   }
   async function opParticipantsUpdateEq(patch, id) {
+    const eqError = injectedError('participants', 'update-eq', patch, id);
+    if (eqError) { await delay(ackDelayFn()); return { error: eqError }; }
     await delay(ackDelayFn());
     const row = roomStore.participants.get(id);
     if (row) Object.assign(row, patch);
     return { error: null };
   }
   async function opParticipantsUpdateIn(patch, ids) {
+    const inError = injectedError('participants', 'update-in', patch, ids);
+    if (inError) { await delay(ackDelayFn()); return { error: inError }; }
     await delay(ackDelayFn());
     for (const id of ids) {
       const row = roomStore.participants.get(id);
@@ -464,7 +518,8 @@ function createTelemetry() {
 }
 
 // ── finishRoundLocal 대체(하니스, 정직하게 공개) ───────────────────────────────
-// 실제 finishRoundLocal(460줄, DOM/음성/통계/idempotency 캐시 강결합)은 여전히 추출하지 않는다.
+// 실제 finishRoundLocal(460줄, DOM/음성/통계 강결합)은 여전히 추출하지 않는다(H-1 이후
+// idempotency 캐시/안전망 B 호출만은 아래에서 REAL과 동일 의미로 재현한다).
 // 그러나 RC-3 Phase1(codex-critic HIGH 충실성 결함 수정) 이전 버전은 활성 참가자 전원이
 // hasConfirmedRoundResult(choice)를 만족하는지(hasStoredResults) 전혀 확인하지 않고 항상
 // getChoiceResult(choice)를 신뢰했다 — REAL finishRoundLocal(index.html ~8042-8056)은 그 조건이
@@ -488,13 +543,89 @@ function createTelemetry() {
 // 대체 함수가 처음부터 이 부작용을 재현하지 않았던 것뿐이다(원래 finishRoundLocal은 여전히
 // 추출하지 않으므로, 이 한 줄의 DB 부작용만 REAL과 동일하게 재현한다 — 판정 로직 자체는 여전히
 // 위 resolveElimination REAL 호출에만 위임, 손으로 새 판정을 짜지 않는다).
+// ── H-1(REAL 5경로 모델링): idempotency 캐시 + 안전망 B ───────────────────────
+// REAL finishRoundLocal의 scheduleRematchAutoAdvance() 도달 경로는 정확히 5개이고, 그 중 3개는
+// 이 대체 함수의 onOutcome 콜백(§createDevice, resolveElimination 반환 직후)이 이미 재현한다:
+//   #1 index.html:8636 allDraw 분기 / #2 :8670 tooMany 분기 / #3 :8682 tooFew 분기.
+// 나머지 2개는 finishRoundLocal 본문 "밖"의 REAL 함수(추출 블록 rematchAdvance에 이미 포함)를
+// 통해서만 도달한다:
+//   #4 :9733 scheduleRematchAdvanceRetryAfterFailure(안전망 A) ← nextRound() catch(:9825).
+//      → fake db가 항상 { error: null }이라 구조적으로 도달 불가였다 → §createDb의
+//        dbErrorInjectionFn(기본 off)로 도달 가능해짐(하니스는 REAL 함수를 호출만 한다).
+//   #5 :9759 maybeRecoverStalledRematchAdvance(안전망 B) ← finishRoundLocal 본문 :8212, 즉
+//      "idempotent 조기반환(:8188)" 안에서만 호출된다. 이 대체 함수에 idempotency 캐시가 없어
+//      :8188 조건(state.lastRoundResolution.eventId === roundEventId)이 영원히 거짓이었고,
+//      그래서 duplicate 호출은 매번 전량 재판정됐다 — REAL에는 없는 재분류(phantom outcome)와
+//      "REAL 예산(MAX_REMATCH_ADVANCE_RETRIES)을 무시한 무제한 재예약"이 하니스에서만
+//      발생했다(onOutcome이 조건 없이 예약하므로). 아래에서 REAL과 동일 의미로 재현한다.
+//      ⚠️ 위상 정정(codex-critic P1 독립검증) — #5는 위 #1~#3(정상 판정 분기)이나 #4(write 실패
+//      catch)와 동등한 위상의 "정상 경로"가 아니라, 온라인 REAL에서는 구조적으로 도달하기 어려운
+//      defense-in-depth다:
+//        (a) waitForPhaseRender의 dedup(키 phase:gameNo:round:scheduledAt, index.html:5284-5292)이
+//            result→game_over 재진입을 먼저 차단해, 같은 roundEventId로 finishRoundLocal이 두 번
+//            호출되는 상황 자체가 온라인에서는 잘 만들어지지 않는다.
+//        (b) finishRoundLocal()의 또 다른 직접 호출부인 hostJudgeRound(:9360)는 오프라인 전용이다 —
+//            :9345 `if (getOnlineMode()) { await publishHostRoundResult(...) } else { ... :9360 }`.
+//            즉 온라인 경로에서 이 호출은 애초에 일어나지 않는다.
+//      실측도 이 판정과 일치한다: 정상 sweep(3 profile × N=3..20 × 20 trial = 1080 trial)에서
+//      FINISH_ROUND_SUBSTITUTE_IDEMPOTENT 0건 — 캐시/안전망 B는 정상 판정에 개입하지 않는다.
+//      따라서 이 재현의 목적은 "자주 쓰이는 경로를 모델링"이 아니라 "duplicate가 들어오는
+//      표적 시나리오(§runRematchSafetyNetB* 류)에서 하니스가 REAL에 없는 재판정을 발명하지 않게
+//      하는 것"이다.
+// roundEventId 산식과 캐시 기록 조건은 추측이 아니라 index.html 원문 그대로다:
+//   - roundEventId: `getGameRound() + ':' + (state.round || 1)`(index.html:8169)
+//   - 조기반환 조건: `state.lastRoundResolution && state.lastRoundResolution.eventId === roundEventId`(:8188)
+//   - 조기반환 시: prev.confirmedSafeIds/LoserIds 복원(:8190-8191) → 비-gameOver면
+//     maybeRecoverStalledRematchAdvance()(:8212, gameOver면 호출하지 않음 :8194-8197)
+//   - 기록 조건: recordRoundResolution(:8498-8505) — judgeQuality==='localJudge' && activePlayers
+//     .length===0이면 기록하지 않는다(ROUND_RESOLUTION_CACHE_SKIPPED). 이 대체 함수의
+//     activeForStoredResult는 REAL activePlayers(:8324-8327)와 필터 술어가 동일하고(같은
+//     prevSafe/prevLoser 기준) 그 사이에 await가 없으므로 그대로 대응된다.
+// 안전망 A/B의 공유 예산 계약(REAL: B는 카운터를 "확인만" 하고 증가시키지 않는다,
+// index.html:9740-9746)은 하니스가 재구현하지 않는다 — REAL maybeRecoverStalledRematchAdvance를
+// 그대로 호출하므로 계약이 자동으로 보존된다.
 function makeFinishRoundLocalSubstitute({
   stateRef, resolveElimination, getChoiceBase, getChoiceResult, isNonPlayingChoice,
   hasConfirmedRoundResult, syncConfirmedIdsFromParticipants, judgeRound,
   getTargetLoserCount, showScreen, telemetry, onOutcome, db, getOnlineMode,
+  getGameRound, maybeRecoverStalledRematchAdvance, idempotencyCacheEnabled = true,
 }) {
   return async function finishRoundLocalSubstitute() {
     const state = stateRef();
+    // H-1: REAL index.html:8169/8188-8215 — 재판정 금지(idempotency) 조기반환. REAL은 이 검사를
+    // hasAnyMarkers 복원(:8222 이후)보다 "앞"에서 수행하므로 순서도 그대로 따른다.
+    // idempotencyCacheEnabled=false는 H-1 이전 동작(캐시 없음)으로 되돌리는 mutation 토글이다.
+    const roundEventId = getGameRound ? (getGameRound() + ':' + (state.round || 1)) : null;
+    if (idempotencyCacheEnabled && roundEventId != null
+      && state.lastRoundResolution && state.lastRoundResolution.eventId === roundEventId) {
+      const prev = state.lastRoundResolution;
+      state.confirmedSafeIds = [...prev.confirmedSafeIds];
+      state.confirmedLoserIds = [...prev.confirmedLoserIds];
+      try {
+        // REAL의 TAGGER_REPLAY_IDEMPOTENT(:8192)에 대응하는 하니스 관측 이벤트. 판정 이벤트
+        // (FINISH_ROUND_SUBSTITUTE)를 다시 emit하지 않는 것이 핵심이다 — REAL도 이 경로에서는
+        // 판정을 다시 하지 않으므로, 여기서 emit하면 "재분류"를 하니스가 스스로 만들어낸다.
+        telemetry.emit('metric', {
+          wrps: 'RC3-HARNESS', eventType: 'FINISH_ROUND_SUBSTITUTE_IDEMPOTENT',
+          eventId: roundEventId, outcome: prev.outcome, round: state.round,
+        });
+      } catch (e) {}
+      // REAL은 gameOver면 showScreen("screenRoundResult")+showTaggerPopup, 아니면
+      // showRoundResultOrWait(...)로 분기한다 — 이 하니스의 가짜 DOM에는 대기화면 라우팅이 없어
+      // 정상 경로와 동일하게 결과화면 표시로만 대체한다(렌더 표면, 판정/스케줄링 무관).
+      try { showScreen('screenRoundResult'); } catch (e) {}
+      if (prev.outcome !== 'gameOver' && maybeRecoverStalledRematchAdvance) {
+        // 경로 #5(안전망 B) — REAL 함수를 그대로 호출한다(host/online/status==='result'/
+        // 타이머·advancingRound 없음/상한 검사 4+1 가드 전부 REAL 소스가 수행).
+        try { maybeRecoverStalledRematchAdvance(); } catch (e) {}
+      }
+      return {
+        outcome: prev.outcome,
+        newConfirmedSafeIds: [...prev.confirmedSafeIds],
+        newConfirmedLoserIds: [...prev.confirmedLoserIds],
+        idempotentReplay: true,
+      };
+    }
     // REAL(추출) — hasAnyMarkers 복원(잔존 __safe__/__loser__ 마커에서 confirmedSafeIds/LoserIds
     // 재구성) + hasStoredResults/activeForStoredResult 판정. state.confirmedSafeIds/LoserIds를
     // 이 호출이 바꿀 수 있으므로(REAL도 동일), 아래 prevSafeIds/prevLoserIds는 이 호출 "이후"에
@@ -526,6 +657,40 @@ function makeFinishRoundLocalSubstitute({
     });
     state.confirmedSafeIds = res.newConfirmedSafeIds;
     state.confirmedLoserIds = res.newConfirmedLoserIds;
+    // H-1: REAL recordRoundResolution(index.html:8498-8505)과 동일 계약으로 idempotency 캐시에
+    // 기록한다 — localJudge이면서 활성자가 0명인 "판정 불가" 결과는 캐시에 고착시키지 않는다
+    // (WRPS-075 실측 결함B 재발 방지 조항 그대로). roundLoserCount/remainingSlots는 REAL이
+    // renderRoundResult 재렌더에만 쓰는 필드인데 이 대체 함수는 렌더를 하지 않으므로 값을
+    // 발명하지 않고 생략한다(조기반환 경로도 이 두 필드를 읽지 않는다).
+    // ── codex-critic LOW-1: outcome 라벨 차이(무해함을 명시) ────────────────────
+    // REAL recordRoundResolution이 캐시에 쓰는 라벨과 이 하니스가 쓰는 resolveElimination 라벨의
+    // 대응은 다음과 같다 — 4개 중 3개는 문자열까지 동일하고, allDraw 하나만 다르다:
+    //     REAL(index.html)                        하니스(resolveElimination)
+    //     :8591/:8616/:8685 "gameOver"       ==   'gameOver'
+    //     :8685             "tooMany"        ==   'tooMany'
+    //     :8685             "tooFew"         ==   'tooFew'
+    //     :8630             "draw"           !=   'allDraw'   ← 유일한 차이
+    // 이 차이가 무해한 이유(전수 확인):
+    //   (1) 로직 분기는 조기반환의 `prev.outcome !== 'gameOver'`(:8194 대응) 단 한 곳뿐이고,
+    //       'allDraw'/'draw' 어느 쪽이든 이 술어의 값이 동일하다.
+    //   (2) REAL에서 이 값을 읽는 나머지 두 곳은 전부 관측/렌더 전용이다 —
+    //       buildAutoAdvanceMetricPayload의 caseType(:9697, QA metric payload)과
+    //       renderRoundResult(prev.outcome, ...)(:8193, 이 하니스는 렌더를 대체하지 않음).
+    //       즉 caseType 문자열이 'allDraw'로 찍히는 것은 하니스 텔레메트리 라벨링 차이일 뿐
+    //       판정/스케줄링 어디에도 영향을 주지 않는다.
+    //   (3) 하니스 자신의 판정 코드도 'allDraw' 쪽 라벨에 맞춰져 있다
+    //       (§runMeasuredTrial PHANTOM_OR_CORRUPTED_OUTCOME의 `e.outcome !== 'allDraw'`).
+    // 그래서 라벨을 REAL 문자열로 바꾸지 않고 그대로 보존한다(바꾸면 로직 이득 0인데 하니스
+    // 전반의 라벨 규약과 tests/h1-rematch-recovery-model.test.mjs의 기대치만 흔들린다).
+    if (idempotencyCacheEnabled && roundEventId != null
+      && !(!hasStoredResults && activeForStoredResult.length === 0)) {
+      state.lastRoundResolution = {
+        eventId: roundEventId,
+        confirmedSafeIds: [...res.newConfirmedSafeIds],
+        confirmedLoserIds: [...res.newConfirmedLoserIds],
+        outcome: res.outcome,
+      };
+    }
     // REAL finishRoundLocal의 gameOver 분기(index.html ~8317-8318/8340-8341, host 전용)와 동일한
     // 부작용 재현: room.status를 'game_over'로 커밋한다 — 위 함수 주석 참고, 이게 없으면 room이
     // 영원히 'result'에 머물러 어떤 device도 gameOver로 전이하지 못한다(EG 실측 발견).
@@ -635,7 +800,11 @@ function startDevicePolling({ pollingEnabled, pollIntervalMs, db, roomStore, imp
 }
 
 // ── device(= 앱 인스턴스 1개) 생성 ───────────────────────────────────────────
-export function createDevice({ id, isHost, roomStore, rng, participantCount, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, targetLoserCount = 1, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', deliveryOrderMode = 'monotonic', index = 0, skewMsOverrideFn = null, clockRttOverrideFn = null }) {
+export function createDevice({ id, isHost, roomStore, rng, participantCount, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, targetLoserCount = 1, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', deliveryOrderMode = 'monotonic', index = 0, skewMsOverrideFn = null, clockRttOverrideFn = null,
+  // H-1: 기본값(null/true)은 기존 동작과 완전히 동일하다 — dbErrorInjectionFn=null이면 fake db는
+  // 수정 전과 바이트 동일 경로로 동작하고(§createDb), idempotencyCacheEnabled=false는 H-1 이전
+  // (캐시 없음) 동작으로 되돌리는 mutation 토글이다(§makeFinishRoundLocalSubstitute).
+  dbErrorInjectionFn = null, idempotencyCacheEnabled = true }) {
   const dom = createFakeDom();
   const telemetry = createTelemetry();
   // §STOP-SHIP Part B: skewMsOverrideFn이 주어지면(예: createAlternatingSkewFn) 그것으로 skew를
@@ -696,6 +865,7 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
     ackDelayFn: () => 60 + rng() * 220,
     realtimeDelayRegime,
     deliveryOrderMode,
+    dbErrorInjectionFn,
   });
 
   // 하니스 관측용 기록(측정 전용 — 판정 로직에 영향 없음).
@@ -813,6 +983,14 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
       publishHostRoundResult,
       judgeRound,
       scheduleRematchAutoAdvance, nextRound,
+      // H-1: REAL rematchAdvance 블록(index.html:9658-9760)에 이미 통째로 들어있는 나머지
+      // 함수들을 그대로 노출한다(재구현 금지 원칙 — 하니스는 호출만 한다).
+      //   scheduleRematchAdvanceRetryAfterFailure = 안전망 A(:9717, 카운터를 증가시키는 유일한 곳)
+      //   maybeRecoverStalledRematchAdvance      = 안전망 B(:9747, 카운터를 확인만 함)
+      //   getRematchAdvanceRetryKey/Attempts     = A/B가 공유하는 라운드별 예산(:9682/9685)
+      scheduleRematchAdvanceRetryAfterFailure, maybeRecoverStalledRematchAdvance,
+      getRematchAdvanceRetryKey, getRematchAdvanceRetryAttempts,
+      getMaxRematchAdvanceRetries: () => MAX_REMATCH_ADVANCE_RETRIES,
       withTimeout,
     };
   `;
@@ -847,6 +1025,10 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
     showScreen: impl.showScreen,
     telemetry,
     db, getOnlineMode: impl.getOnlineMode,
+    // H-1: roundEventId 산식(index.html:8169)과 안전망 B(:9747)는 둘 다 REAL 함수를 그대로 쓴다.
+    getGameRound: impl.getGameRound,
+    maybeRecoverStalledRematchAdvance: impl.maybeRecoverStalledRematchAdvance,
+    idempotencyCacheEnabled,
     onOutcome: (res) => {
       rendered.resultByRound[impl.state.round] = { ...(rendered.resultByRound[impl.state.round] || {}), outcome: res.outcome, ts: RealDate.now() };
       // STOP-SHIP(happens-before 수정, critic A/B 검증): REAL finishRoundLocal은
@@ -1006,7 +1188,9 @@ export function finishReadyBranchClobberCheck(device, checkCtx) {
 // 호출 결과를 그대로 쓴다. 3곳만 하니스가 대신한다: ①1라운드 시작 트리거 ②참가자 선택 제출
 // 트리거(실제 UI 클릭 대신) ③"전원 ready 렌더 완료" 감지 후 다음 라운드 시작 트리거(실제 UI의
 // markReady 버튼 클릭 체인 대신, host의 실제 startGame()을 직접 호출).
-export function createTrialWorld({ participantCount, seed, targetLoserCount = 1, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', choiceDriverFn = null, deliveryOrderMode = 'monotonic', skewMsOverrideFn = null, clockRttOverrideFn = null, pollingEnabled = false, pollIntervalMs = 2600 }) {
+export function createTrialWorld({ participantCount, seed, targetLoserCount = 1, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', choiceDriverFn = null, deliveryOrderMode = 'monotonic', skewMsOverrideFn = null, clockRttOverrideFn = null, pollingEnabled = false, pollIntervalMs = 2600,
+  // H-1: 기본값(null/true)은 기존 동작과 동일 — §createDevice/§createDb 주석 참고.
+  dbErrorInjectionFn = null, idempotencyCacheEnabled = true }) {
   const rng = mulberry32(seed);
   const roomStore = createRoomStore(`ROOM-${seed}-${participantCount}`);
   const devices = [];
@@ -1017,7 +1201,8 @@ export function createTrialWorld({ participantCount, seed, targetLoserCount = 1,
       id, isHost, roomStore, rng, participantCount, resolveElimination, judgePure,
       computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, targetLoserCount, combinedSourceOverride,
       realtimeDelayRegime, deliveryOrderMode, index: i, skewMsOverrideFn, clockRttOverrideFn,
-      });
+      dbErrorInjectionFn, idempotencyCacheEnabled,
+    });
     devices.push(device);
   }
   for (const d of devices) {
@@ -2304,6 +2489,169 @@ export async function runReadyBranchClobberScenario({
   };
 }
 
+// ── H-1 전용 시나리오: rematch auto-advance 5경로(#1~#5) 실집행 재현 ─────────────
+// 이 시나리오는 "REAL이 실제로 어떻게 result에서 빠져나오는가"를 5개 호출부 기준으로 한 번에
+// 실집행한다(§makeFinishRoundLocalSubstitute 상단 5경로 표 참고):
+//   #1~#3 정상 예약  : 라운드1 결과가 확정되는 순간 host가 scheduleRematchAutoAdvance()를 건다
+//                      (여기서는 tooMany 분기 = index.html:8670에 대응하는 onOutcome 예약).
+//   #4 안전망 A      : dbErrorInjectionFn으로 nextRound()의 rooms.update를 실패시키면 REAL
+//                      catch(:9825) → scheduleRematchAdvanceRetryAfterFailure(:9717) →
+//                      scheduleRematchAutoAdvance(backoff, :9733)가 실제로 발화한다.
+//   #5 안전망 B      : duplicate 'result' 호출이 도착하면 REAL idempotent 조기반환(:8188) →
+//                      maybeRecoverStalledRematchAdvance(:8212 → :9759)가 재예약한다.
+//
+// 하니스 개입(정직 공개, 이 3가지뿐 — 전부 §runStaleRowGuardScenario/§runReadyBranchClobberScenario와
+// 동일 성격의 "직접 구성"이다):
+//   (가) 라운드1의 결과 스냅샷(각 참가자 row의 "base|result")을 REAL encodeRoundChoice로 직접
+//        만들어 넣는다 — 카운트다운/선택창을 5초씩 굴리지 않고 결과 전이 자체만 격리하기 위함.
+//        판정은 여전히 REAL 경로(handleRoomUpdate result 분기 → fetchFreshParticipantsForResult →
+//        finishRoundLocal 대체 → REAL resolveElimination)가 수행한다.
+//   (나) simulateLostTimer: REAL 안전망 B의 전제 조건("(A)의 재예약이 유실됐거나 최초 스케줄
+//        자체가 안 걸린 경우", index.html:9736-9739)을 그대로 만들기 위해 예약된 타이머 1개를
+//        clearTimeout으로 없앤다. 이 전제 자체를 만들어내는 상위 원인(WRPS-079 hruGen 게이트가
+//        그 호출을 통째로 차단하는 경우 등)은 이 하니스가 재현하지 않는다(§한계).
+//   (다) applyNextRoundMarkerWrites: REAL nextRound()가 duplicate echo 이전에 이미 커밋해 둘 수
+//        있는 중간 상태(확정자 __safe__/__loser__ 마커 + 나머지 choice:null 리셋,
+//        index.html:9788-9797)를 참가자 스토어에 반영한다 — §runReadyBranchClobberScenario 3)과
+//        동일한 기법. ⚠️ 이 하니스의 fake db는 `.eq('room_id', roomCode)` 대량 업데이트를
+//        지원하지 않아(§createDb opParticipantsUpdateEq는 id 1건만 매치) REAL nextRound의 1단계
+//        (전원 choice 리셋)가 무음으로 누락된다 — 이 시나리오는 그 누락된 REAL 부작용만 명시적으로
+//        재현한다(하니스 기존 한계이며, 기본 스윕 동작은 이번 H-1에서 바꾸지 않았다).
+//
+// duplicate echo 전달 방식: REAL handleRoomUpdate는 `oldStatus !== state.status`일 때만 result
+// 분기로 들어가므로(index.html:5870), status가 이미 'result'인 상태에서 같은 row를 다시 브로드캐스트해도
+// finishRoundLocal에 도달하지 못한다. 그래서 이 시나리오는 REAL:6001이 실제로 하는 호출
+// (`finishRoundLocal()`)만 1회 그대로 재현한다 — 그 호출이 다시 일어나게 만드는 상위 조건
+// (out-of-order 재전달로 status가 잠시 다른 값으로 갔다 돌아오는 등)은 재현 대상이 아니다(§한계).
+export async function runRematchAdvanceRecoveryScenario({
+  seed = 919191, participantCount = 3, targetLoserCount = 1,
+  resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
+  combinedSourceOverride = null, dbErrorInjectionFn = null, idempotencyCacheEnabled = true,
+  simulateLostTimer = true, applyNextRoundMarkerWrites = true, deliverDuplicateEcho = true,
+  preEchoDrainMs = 0, vi, settleBudgetMs = 30000, stepMs = 250,
+}) {
+  const world = createTrialWorld({
+    participantCount, seed, targetLoserCount,
+    resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
+    combinedSourceOverride, dbErrorInjectionFn, idempotencyCacheEnabled,
+  });
+  const host = world.devices[0];
+
+  async function advanceUntil(predicate, budgetMs) {
+    let elapsed = 0;
+    while (elapsed < budgetMs && !predicate()) {
+      // eslint-disable-next-line no-await-in-loop
+      await vi.advanceTimersByTimeAsync(stepMs);
+      elapsed += stepMs;
+    }
+    return predicate();
+  }
+  async function advanceFor(budgetMs) {
+    let elapsed = 0;
+    while (elapsed < budgetMs) {
+      // eslint-disable-next-line no-await-in-loop
+      await vi.advanceTimersByTimeAsync(stepMs);
+      elapsed += stepMs;
+    }
+  }
+  async function fireAndAdvanceUntil(promiseFactory, predicate, budgetMs) {
+    const p = promiseFactory();
+    p.catch(() => {}); // 브로드캐스트 전파는 별도 스케줄(§runStaleRowGuardScenario 주석과 동일 이유)
+    return advanceUntil(predicate, budgetMs);
+  }
+  const substituteEvents = () => host.telemetry.events.filter((e) => e.eventType === 'FINISH_ROUND_SUBSTITUTE');
+  const idempotentEvents = () => host.telemetry.events.filter((e) => e.eventType === 'FINISH_ROUND_SUBSTITUTE_IDEMPOTENT');
+  const autoAdvanceEvents = (type) => host.telemetry.events.filter((e) => e.eventType === type);
+
+  const clockSyncSettled = await advanceUntil(
+    () => world.devices.every((d) => d.impl.getServerClockSynced()), settleBudgetMs
+  );
+
+  // (가) 라운드1 결과 스냅샷 직접 구성 — REAL encodeRoundChoice로 인코딩한다(손으로 "rock|win"
+  //      문자열을 짜지 않는다). N=3/targetLoserCount=1이면 win 1 + lose 2 → REAL tooMany 분기
+  //      (index.html:8663-8670, 하니스에서는 resolveElimination의 'tooMany')에 대응한다.
+  const scriptedResults = world.devices.map((d, i) => (
+    i === 0 ? { id: d.id, base: 'rock', result: 'win' } : { id: d.id, base: 'scissors', result: 'lose' }
+  ));
+  for (const s of scriptedResults) {
+    world.roomStore.participants.get(s.id).choice = host.impl.encodeRoundChoice(s.base, s.result);
+  }
+
+  // 라운드1 'result' 전이를 REAL 채널(host rooms.update → realtime 전파 → 전 기기
+  // handleRoomUpdate result 분기)로 발행한다.
+  const resultPenalty = host.impl.buildPenaltyValue({ gameRound: 1, phaseScheduledAt: 0, phaseKind: 'result' });
+  const firstResolutionReached = await fireAndAdvanceUntil(
+    () => host.env.db.from('rooms').update({ penalty: resultPenalty, round: 1, status: 'result' }).eq(),
+    () => substituteEvents().length > 0,
+    settleBudgetMs
+  );
+  const firstOutcome = substituteEvents().length ? substituteEvents()[0].outcome : null;
+  const timerAfterFirstResolution = Boolean(host.impl.state.rematchAdvanceTimer);
+  const retryAttemptsAfterFirstResolution = host.impl.getRematchAdvanceRetryAttempts();
+
+  // (나) 예약 타이머 유실 모사(REAL 안전망 B의 전제 — 위 주석 참고).
+  if (simulateLostTimer && host.impl.state.rematchAdvanceTimer) {
+    clearTimeout(host.impl.state.rematchAdvanceTimer);
+    host.impl.state.rematchAdvanceTimer = null;
+  }
+
+  // 안전망 A를 관측하려면(타이머 유실 없이) 예약된 타이머가 실제로 발화해 nextRound()가 실패할
+  // 때까지 시간을 흘려보내야 한다 — preEchoDrainMs가 그 구간이다(기본 0 = 즉시 다음 단계).
+  if (preEchoDrainMs > 0) await advanceFor(preEchoDrainMs);
+
+  const retryAttemptsBeforeEcho = host.impl.getRematchAdvanceRetryAttempts();
+  const timerBeforeEcho = Boolean(host.impl.state.rematchAdvanceTimer);
+
+  // (다) REAL nextRound()의 다단계 write 중간 상태 반영(선택).
+  if (applyNextRoundMarkerWrites) {
+    const safeIds = [...(host.impl.state.confirmedSafeIds || [])];
+    const loserIds = [...(host.impl.state.confirmedLoserIds || [])];
+    for (const d of world.devices) {
+      const row = world.roomStore.participants.get(d.id);
+      if (safeIds.includes(d.id)) { row.choice = '__safe__'; row.is_ready = true; }
+      else if (loserIds.includes(d.id)) { row.choice = '__loser__'; row.is_ready = true; }
+      else { row.choice = null; row.is_ready = false; }
+    }
+    for (const d of world.devices) {
+      d.impl.state.participants = world.roomStore.order.map((id) => ({ ...world.roomStore.participants.get(id) }));
+    }
+  }
+
+  // duplicate 'result' 호출 재현(REAL index.html:6001의 `finishRoundLocal()` 그 자체).
+  if (deliverDuplicateEcho) {
+    try { await host.env.finishRoundLocal(); } catch (e) {}
+  }
+  const timerAfterEcho = Boolean(host.impl.state.rematchAdvanceTimer);
+  const retryAttemptsAfterEcho = host.impl.getRematchAdvanceRetryAttempts();
+
+  // 실제로 다음 라운드로 진행했는가 — REAL nextRound()가 성공했을 때만 room row가
+  // { round: 2, status: 'ready' }로 커밋된다(index.html:9802). 이 하니스가 별도로 만들어내는
+  // 신호가 아니라 REAL write 그 자체를 본다.
+  const advancedToNextRound = await advanceUntil(
+    () => world.roomStore.row.round >= 2 && world.roomStore.row.status === 'ready',
+    settleBudgetMs
+  );
+
+  for (const d of world.devices) { try { d.stopPolling && d.stopPolling(); } catch (e) {} }
+
+  return {
+    clockSyncSettled, firstResolutionReached, firstOutcome,
+    timerAfterFirstResolution, retryAttemptsAfterFirstResolution,
+    timerBeforeEcho, retryAttemptsBeforeEcho,
+    timerAfterEcho, retryAttemptsAfterEcho,
+    advancedToNextRound,
+    finalRoomStatus: world.roomStore.row.status,
+    finalRoomRound: world.roomStore.row.round,
+    finalHostStatus: host.impl.state.status,
+    substituteOutcomes: substituteEvents().map((e) => e.outcome),
+    idempotentReplayCount: idempotentEvents().length,
+    nextRoundFailedEvents: autoAdvanceEvents('AUTO_ADVANCE_NEXTROUND_FAILED'),
+    retryScheduledEvents: autoAdvanceEvents('AUTO_ADVANCE_RETRY_SCHEDULED'),
+    retryExhaustedEvents: autoAdvanceEvents('AUTO_ADVANCE_RETRY_EXHAUSTED'),
+    hostId: host.id, world,
+  };
+}
+
 // 라운드 진행 드라이버: vitest fake timers 환경에서 호출한다(vi.advanceTimersByTimeAsync로
 // 시간을 흘려보내는 것은 호출자 책임 — 이 함수는 그 사이사이 "다음 라운드를 시작해도 되는가"만
 // REAL 함수 호출로 판단한다).
@@ -2421,11 +2769,14 @@ export async function runMeasuredTrial({
   clockRttOverrideFn = null,
   // §STOP-SHIP Phase0: 2.6초 REST 폴링 채널(위 startDevicePolling). 기본값(false)은 회귀 없음.
   pollingEnabled = false, pollIntervalMs = 2600,
+  // H-1: 기본값(null/true)은 기존 측정치와 동일 경로 — §createDb/§makeFinishRoundLocalSubstitute.
+  dbErrorInjectionFn = null, idempotencyCacheEnabled = true,
 }) {
   const world = createTrialWorld({
     participantCount, seed, targetLoserCount: targetLoserCount ?? Math.max(1, Math.floor(participantCount / 2)),
     resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride,
     realtimeDelayRegime, deliveryOrderMode, skewMsOverrideFn, clockRttOverrideFn, pollingEnabled, pollIntervalMs,
+    dbErrorInjectionFn, idempotencyCacheEnabled,
   });
   const host = world.devices[0];
   const realRandom = Math.random;
@@ -2789,6 +3140,8 @@ export async function runEliminationTrial({
   deliveryOrderMode = 'monotonic', skewMsOverrideFn = null, clockRttOverrideFn = null,
   // §STOP-SHIP Phase0: 2.6초 REST 폴링 채널(위 startDevicePolling). 기본값(false)은 회귀 없음.
   pollingEnabled = false, pollIntervalMs = 2600,
+  // H-1: 기본값(null/true)은 기존 측정치와 동일 경로 — §createDb/§makeFinishRoundLocalSubstitute.
+  dbErrorInjectionFn = null, idempotencyCacheEnabled = true,
 }) {
   // N이 클수록 "전원이 3가지 타입을 모두 낼" 확률이 급격히 올라가 allDraw가 자주 나온다(judgePure의
   // "selectedTypes.length===3이면 draw" 규칙 — 참가자가 많을수록 3종류가 다 나올 확률이 높아짐).
@@ -2806,7 +3159,7 @@ export async function runEliminationTrial({
     participantCount, seed, targetLoserCount,
     resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
     combinedSourceOverride, realtimeDelayRegime, choiceDriverFn, deliveryOrderMode, skewMsOverrideFn,
-    clockRttOverrideFn, pollingEnabled, pollIntervalMs,
+    clockRttOverrideFn, pollingEnabled, pollIntervalMs, dbErrorInjectionFn, idempotencyCacheEnabled,
   });
   const host = world.devices[0];
   const realRandom = Math.random;
