@@ -1,0 +1,72 @@
+name: Release Gate
+
+# ─────────────────────────────────────────────────────────────────────────────
+# M-A′: CEO 공식 릴리즈 게이트의 CI 실행 경로.
+#
+# 트리거 선택 이유:
+#   · pull_request      — 게이트는 "머지 전"에 보여야 의미가 있다. 여기서 붉게 뜨는 것이
+#                         곧 release readiness 신호다.
+#   · workflow_dispatch — 수동 릴리즈 판정(브랜치 지정)을 언제든 돌릴 수 있어야 한다.
+#   · push: tags v*     — 실제 출시 후보(tag)에서 반드시 판정이 남아야 한다.
+#   ✗ push: branches    — 제외. 측정 스윕이 수십 분 단위라 모든 push에 돌리면 러너 비용이
+#                         과하고, 게이트 신호가 노이즈에 묻힌다. main 보호는 PR 경로가 맡는다.
+#
+# ⚠️ 현재 Normal timing 실측은 74.72%(< 95%)이므로 `test:release-gate` 스텝은 **FAIL하는
+#    것이 정상**이다. 이 워크플로의 목적은 CI를 green으로 만드는 것이 아니라 "게이트가
+#    실제로 출시를 막는다"를 증명하는 것이다. threshold를 낮춰서 green을 만들지 마라.
+#    (release-gate 스텝은 continue-on-error를 쓰지 않는다 — 실패는 실패로 남긴다.)
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  release-gate:
+    name: CEO release gate (strict)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Full test suite
+        run: npm test
+
+      - name: HTML inline <script> syntax gate
+        run: npm run test:syntax
+
+      # 여기서만 릴리즈 판정이 난다. CEO_GATE_STRICT는 scripts/run-release-gate.mjs가
+      # 내부에서 강제하므로 워크플로가 env로 켜고 끌 수 없다(우회 불가).
+      - name: Release gate (strict — Normal timing >= 95%, correctness == 100%)
+        run: npm run test:release-gate
+
+      - name: Gate verdict
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "RELEASE GATE PASS"
+          else
+            echo "RELEASE GATE FAIL — 출시 차단. 수치를 완화하지 말고 원인을 고쳐라."
+          fi
