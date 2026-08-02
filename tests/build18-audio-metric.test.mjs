@@ -74,8 +74,18 @@ describe('WRPS-072 — ROUND_RESULT metric 중복 제거', () => {
   });
 
   it('finishRoundLocal 2회 호출은 설계임을 근거로 명시한다(판정/DB 중복 아님)', () => {
-    // 근거 주석(6695 WRPS-046)과 dedup 사유 주석 존재
-    expect(html).toContain('finishRoundLocal은 result→game_over 전이로 라운드당 2회 이상 호출');
+    // 근거 주석(WRPS-046)과 dedup 사유 주석 존재.
+    // [정정 2026-08-02 / STOP-SHIP P1] 종전에는 "result→game_over 전이로 라운드당 2회 이상 호출된다"는
+    // 문구를 그대로 pin했다. 그러나 그 전이 경로는 Build22-B 이후 성립하지 않는다 — game_over 쓰기는
+    // status만 패치해 waitForPhaseRender의 renderKey(phase:gameNo:round:scheduledAt)가 동일해지고,
+    // duplicate-skip으로 그 안쪽의 finishRoundLocal() 호출에 도달하지 않는다(같은 사실을
+    // build22-critical-sync-safety.test.mjs의 "result→game_over 2차 전이에서 duplicate-skip 키가
+    // 살아남는다" 테스트가 반대편에서 검증한다). index.html 주석을 그에 맞게 정정했으므로 이 pin도
+    // 함께 갱신한다. 이 테스트의 의도(= 다중 호출이 설계임이 코드에 문서화돼 있는가)는 그대로다:
+    // 다중성 자체는 여전히 참이고(scheduleRoundJudgeDeferRetry bounded 재귀 + 오프라인 경로),
+    // 그 사실과 정정된 근거가 둘 다 문서화돼 있는지를 pin한다.
+    expect(html).toContain('finishRoundLocal은 라운드당 2회 이상 호출될 수 있다');
+    expect(html).toContain('scheduleRoundJudgeDeferRetry');
   });
 });
 

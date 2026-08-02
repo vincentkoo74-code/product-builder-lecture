@@ -8043,9 +8043,18 @@
       }
     }
 
-    // WRPS-046: finishRoundLocal()은 result→game_over 상태 전이로 한 라운드에 2회 호출될 수
-    // 있다(통계 중복은 기존 가드로 방지됨). 결과 음성도 중복 재생되지 않도록 (게임회차:라운드)
-    // 단위로 1회만 재생한다. 다음 라운드/다음 게임은 키가 달라져 정상적으로 다시 재생된다.
+    // WRPS-046: finishRoundLocal()은 한 라운드에 2회 이상 호출될 수 있다(통계 중복은 기존
+    // 가드로 방지됨). 결과 음성도 중복 재생되지 않도록 (게임회차:라운드) 단위로 1회만
+    // 재생한다. 다음 라운드/다음 게임은 키가 달라져 정상적으로 다시 재생된다.
+    // [정정 2026-08-02 / STOP-SHIP P1] 종전 이 주석은 재호출 경로를 "result→game_over 상태
+    // 전이"로 적었으나 그 경로는 **정상 단일-writer 경로에서는** Build22-B 이후 성립하지 않는다:
+    // game_over 쓰기는 status만 패치하고 penalty(=phaseScheduledAt)를 건드리지 않으므로
+    // waitForPhaseRender의 renderKey(phase:gameNo:round:scheduledAt)가 동일해져 duplicate로
+    // 스킵되고, 그 안쪽의 finishRoundLocal() 호출 자체에 도달하지 않는다. 남아 있는 재호출
+    // 경로는 (a) scheduleRoundJudgeDeferRetry의 bounded 재귀 (b) 오프라인 finishRound()/
+    // hostJudgeRound()이며, 추가로 (c) host 승계 등 2-writer 상황(WRPS-081 영역)에서 penalty가
+    // 갱신되면 scheduledAt이 달라져 renderKey가 갈리므로 그 전이 경로도 부활할 수 있다.
+    // 다중성 자체는 여전히 참이므로 이 가드는 그대로 유효하다(경로 서술만 정정).
     function playResultVoiceOnce(eventKey, ttsText, pitch, rate, delayMs) {
       const key = `${getGameRound()}:${state.round || 1}`;
       if (state.resultVoiceKey === key) return;
@@ -8250,8 +8259,13 @@
 	      }
 	      state.participants.forEach(p => { p.lastResult = result[p.id] || getChoiceResult(p.choice) || p.lastResult; });
       // 온라인 통계는 publishHostRoundResult()에서 호스트가 한 번만 저장한다.
-      // result -> game_over 상태 전환 때 finishRoundLocal()이 다시 호출될 수 있으므로
+      // finishRoundLocal()이 같은 라운드에 다시 호출될 수 있으므로(아래 정정 참고)
       // 여기서 DB 통계를 다시 더하면 1승/1패가 2승/2패로 중복 집계된다.
+      // [정정 2026-08-02 / STOP-SHIP P1] 종전 서술 "result -> game_over 상태 전환 때"는
+      // **정상 단일-writer 경로에서는** 더 이상 재호출 경로가 아니다(Build22-B renderKey dedup이
+      // 그 전이를 duplicate로 스킵한다). 유효한 재호출 경로는 scheduleRoundJudgeDeferRetry의
+      // bounded 재귀와 오프라인 경로이며, 2-writer로 penalty가 갱신되면(WRPS-081 영역) 그 전이
+      // 경로도 부활할 수 있다. 재호출 가능성 자체는 유지되므로 이 중복집계 방지 설명은 유효하다.
       // WRPS-080(STOP-SHIP, MEDIUM): 아래 Promise.all은 finishRoundLocal() 전체에서 유일한
       // "커밋 분기 이전" 내부 await다(handleRoomUpdate가 finishRoundLocal()을 await 없이
       // fire-and-forget 호출하므로 — 5888 부근 — 이 await가 실행되는 동안 이 클라이언트의 다음
@@ -8338,10 +8352,15 @@
       // 라운드를 판정할 데이터 자체가 아직 도착하지 않았다(또는 상류 stale row로 인해 비었다).
       // 이 경우 판정/렌더/showScreen/음성/DB쓰기/lastRoundResolution 기록을 전부 하지 않고
       // finishingRound만 풀어준 뒤 재판정을 예약한다(아래 Round2 수정 참고).
-      // ⚠️ activePlayers.length===0만으로 막으면 정상 경로가 깨진다 — result→game_over 2차
-      // 전이에서 전원이 confirmed로 이동해 activePlayers=0 & remainingSlots=0인 상태는 정당한
-      // gameOver 재진입이다. 그래서 prevSafeIds.length===0 && prevLoserIds.length===0(확정자가
-      // 하나도 없음 = 진짜 빈 스냅샷)을 반드시 AND로 포함해야 그 정상 재진입을 막지 않는다.
+      // ⚠️ activePlayers.length===0만으로 막으면 정상 경로가 깨진다 — 전원이 confirmed로 이동해
+      // activePlayers=0 & remainingSlots=0인 상태는 정당한 gameOver 재진입이다. 그래서
+      // prevSafeIds.length===0 && prevLoserIds.length===0(확정자가 하나도 없음 = 진짜 빈 스냅샷)을
+      // 반드시 AND로 포함해야 그 정상 재진입을 막지 않는다.
+      // [정정 2026-08-02 / STOP-SHIP P1] 종전 이 주석은 그 재진입의 예로 "result→game_over 2차
+      // 전이"를 들었으나, 정상 단일-writer 경로에서 그 전이는 재진입을 만들지 않는다(game_over
+      // 쓰기가 status만 패치 → renderKey 동일 → waitForPhaseRender duplicate-skip → 그 안쪽의
+      // finishRoundLocal() 호출에 미도달). 실제 재진입 경로는 아래 scheduleRoundJudgeDeferRetry의
+      // bounded 재귀와 오프라인 경로다. 가드 논리 자체는 재진입 경로와 무관하게 그대로 유효하다.
       // Build29(WRPS-076): [수정1-a]와 아래 [P3](1-b 내부) 두 defer 지점이 공유하는 bounded
       // 재시도 스케줄러 — Build28이 이미 만든 재시도 로직(eventId별 카운터, 3중 가드 setTimeout)을
       // 그대로 함수로 추출한 것뿐이며 동작은 100% 동일하다(새 타이머 메커니즘 아님, 로직 재작성 아님).
@@ -8382,10 +8401,14 @@
         // `oldStatus !== state.status`이고 oldStatus는 호출마다 그 시점 state.status를 캡처하므로,
         // 완전히 동일한 status의 단순 echo/재수신은 이 게이트를 통과하지 못해 finishRoundLocal을
         // 재호출하지 않는다 — 이전 서술("echo/재수신으로 재호출됨")은 부정확했다. 실제로 같은 round
-        // 번호 안에서 예산을 공유할 수 있는 또 다른 경로는 result→game_over처럼 연속된 서로 다른
-        // real status 전이가 발생하는 경우다(round 번호는 그대로라 deferKey가 같음) — WRPS-046
-        // 주석(위 7254 부근)이 finishRoundLocal()이 result→game_over 전이로 한 라운드에 2회 호출될
-        // 수 있음을 이미 문서화하고 있다. 그리고 이건
+        // 번호 안에서 예산을 공유할 수 있는 또 다른 경로는 이 함수 자신의 bounded 재귀
+        // (scheduleRoundJudgeDeferRetry → finishRoundLocal, round 번호가 그대로라 deferKey가 같음)와
+        // 오프라인 경로다 — 위 WRPS-046 주석이 finishRoundLocal()이 한 라운드에 2회 이상 호출될 수
+        // 있음을 문서화하고 있다.
+        // [정정 2026-08-02 / STOP-SHIP P1] 종전에 여기 적혀 있던 "result→game_over처럼 연속된 서로
+        // 다른 real status 전이" 예시는 성립하지 않아 제거했다: 정상 단일-writer 경로에서 game_over
+        // 쓰기는 status만 패치하므로 renderKey가 동일해 waitForPhaseRender가 duplicate-skip하고,
+        // finishRoundLocal() 호출 자체에 도달하지 않는다. 그리고 이건
         // 무승부(allDraw)와는 무관하다 — nextRound()(8556행)는 allDraw든 아니든 항상
         // `round: state.round + 1`(DB)과 `state.round += 1`(로컬)을 실행해 round 번호를 반드시
         // 올리므로, 무승부 재대결도 다음 라운드에서는 eventId가 바뀐다(1차 서술 "무승부 재대결은
@@ -8419,10 +8442,12 @@
           // 즉시 포기(재시도 없음)한다.
           const capturedRoomCode = state.roomCode;
           const capturedEventId = roundEventId;
-          // status 화이트리스트 근거: online에서 finishRoundLocal이 정당하게 호출되는 지점은
-          // handleRoomUpdate의 `if (state.status === "result" || state.status === "game_over")`
-          // (5469 부근, 위 5455의 oldStatus !== state.status 게이트 안) 단 한 곳뿐이다 — 코드로 직접 확인.
-          // 그래서 'result'/'game_over' 두 값만 유효하다.
+          // status 화이트리스트 근거: online에서 finishRoundLocal의 진입점은 handleRoomUpdate의
+          // `if (state.status === "result" || state.status === "game_over")` 분기(그 위의
+          // oldStatus !== state.status 게이트 안) 단 한 곳뿐이다 — 코드로 직접 확인.
+          // (hostJudgeRound()의 호출은 오프라인 전용 분기이고, scheduleRoundJudgeDeferRetry는
+          // 이 함수 내부의 재귀라 새 진입점이 아니다.) 그래서 'result'/'game_over' 두 값만 유효하다.
+          // [정정 2026-08-02 / STOP-SHIP P1] 드리프트한 라인번호 인용(5469/5455)을 제거했다.
           const checkRetryContext = () => {
             if (state.roomCode !== capturedRoomCode) return 'roomChanged';
             const currentEventId = getGameRound() + ':' + (state.round || 1);
@@ -8543,7 +8568,9 @@
         // 활성자 전원을 분류")은 분류할 활성자가 애초에 없으므로 위반될 수 없다. activePlayers>0인
         // 정당한 1-b 케이스(결함C, 예: 방금 draw한 잔여 1명)는 이 가드를 통과하지 못해(activePlayers
         // 조건이 거짓) 기존대로 전원 safe 분류 + gameOver + '한번더' 노출로 처리된다.
-        // ⚠️ 정당한 gameOver 재진입(예: result→game_over 2차 호출)은 이 라운드의 결정적 순간에
+        // ⚠️ 정당한 gameOver 재진입(예: scheduleRoundJudgeDeferRetry의 bounded 재귀 재호출.
+        // [정정 2026-08-02 / STOP-SHIP P1] 종전 예시 "result→game_over 2차 호출"은 정상
+        // 단일-writer 경로에서 renderKey duplicate-skip으로 차단되므로 교체했다)은 이 라운드의 결정적 순간에
         // 실제로 판정된 참가자가 최소 1명은 "base|result"로 인코딩된 choice를 갖고 있어야 한다
         // (publishHostRoundResult가 hasStoredResults 판정 전에 이미 DB에 기록) — 순수 마커만으로
         // 구성된 스냅샷은 이전 게임의 잔재로 봐야 한다는 것이 이 가드의 전제다.
@@ -9288,7 +9315,12 @@ function summarizeGameStats(rows) {
         if (!match) { M.mismatches.push(rec); if (M.mismatches.length > 100) M.mismatches.shift(); }
         (match ? console.log : console.warn)('[SHADOW-WRPS049]', match ? 'MATCH' : 'MISMATCH', JSON.stringify(rec));
         // QA(WRPS-026): 결과 메트릭 — legacy vs shadow 결과/일치 + 내 결과값.
-        // Build18(WRPS-072): finishRoundLocal은 result→game_over 전이로 라운드당 2회 이상 호출된다(설계, 6695 참조).
+        // Build18(WRPS-072): finishRoundLocal은 라운드당 2회 이상 호출될 수 있다(설계).
+        // [정정 2026-08-02 / STOP-SHIP P1] 종전에 인용한 "result→game_over 전이"는 **정상
+        // 단일-writer 경로에서는** Build22-B의 renderKey dedup(phase:gameNo:round:scheduledAt)이
+        // 막아 재호출 경로가 아니다. 유효 경로는 scheduleRoundJudgeDeferRetry bounded 재귀 +
+        // 오프라인 경로이고, 2-writer로 penalty가 갱신되면(WRPS-081 영역) 그 전이도 부활 가능하다.
+        // 라인번호 인용은 드리프트하므로 제거했다.
         // 판정/DB 중복이 아니라 instrumentation 중복 → WRPS-046과 동일하게 (게임회차:라운드) 단위 1회만 기록한다.
         // 키는 resultVoiceKey/resultSfxKey와 같은 지점(방/게임 리셋)에서 초기화되어 새 방 라운드1 누락을 막는다(HIGH-2).
         try {
