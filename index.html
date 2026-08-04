@@ -4779,6 +4779,18 @@
       return (state.participants || []).filter(p => statuses[p.id] === PLAYER_STATUS.ACTIVE);
     }
 
+    // WRPS-083 2A: 이번 라운드 WAITING 참가자(라운드 진행 중 재입장자) — getActivePlayers와 동일한
+    // 단일 소스(computePlayerStatuses)를 쓴다. 확정 술래/안전이 WAITING보다 우선하므로, 확정자가
+    // 재입장해 choice가 '__waiting__'으로 덮여도 여기 집계되지 않는다(부활 금지).
+    function getWaitingPlayers() {
+      const statuses = computePlayerStatuses(
+        (state.participants || []).map(p => ({ id: p.id, isHost: p.is_host, choice: p.choice })),
+        state.confirmedSafeIds || [],
+        state.confirmedLoserIds || []
+      );
+      return (state.participants || []).filter(p => statuses[p.id] === PLAYER_STATUS.WAITING);
+    }
+
     // 활성 플레이어가 1명 이상이고 전원 준비 완료인가 → 자동 시작 트리거 조건.
     function areAllActivePlayersReady() {
       const active = getActivePlayers();
@@ -4807,8 +4819,20 @@
     // 카운트 비교 버전은 target이 항상 ≥1이라 우연히 이 경우도 안전하게 차단했었다). 현재 코드에서
     // 이 함수가 참가자 없이 호출되는 경로는 확인되지 않았지만(결과 화면은 항상 참가자가 있어야
     // 그려짐), 향후 호출부 추가에 대비해 명시적으로 방어한다.
+    // WRPS-083 2A: ACTIVE=0을 C-1(정상 완료)과 C-2(판정 참가자 없음)로 구분한다.
+    //   C-1  ACTIVE=0, (WAITING=0) 또는 확정 술래 수 >= 목표  → 선정 완료(기존 동작 그대로).
+    //   C-2  ACTIVE=0, WAITING>0, 확정 술래 수 < 목표          → 선정 미완료.
+    // C-2는 2A가 새로 만들어내는 상태다 — 종전에는 WAITING이 ACTIVE로 분류돼 ACTIVE=0 자체가
+    // 성립하지 않았다. 이 구분이 없으면 "판정에 참여할 사람이 아무도 없는데 목표 술래 수를
+    // 채우지 못한 방"이 선정 완료로 오판돼 gameOver/한번더가 열린다. 실제 복구는
+    // recoverRoundWhenAllPlayersWaiting()이 같은 라운드를 ready로 다시 여는 방식으로 수행한다.
+    // WAITING이 0인 기존 조합에서는 두 번째 조건이 항상 거짓이라 수정 전 반환값과 동일하다.
     function isTaggerSelectionComplete() {
-      return (state.participants || []).length > 0 && getActivePlayers().length === 0;
+      if ((state.participants || []).length === 0) return false;
+      if (getActivePlayers().length !== 0) return false;
+      if (getWaitingPlayers().length > 0 &&
+          (state.confirmedLoserIds || []).length < getTargetLoserCount()) return false;
+      return true;
     }
 
     // "한번더"(전체 참여자로 새 게임) 버튼을 노출/허용해도 되는가.
@@ -4837,8 +4861,17 @@
       return true;
     }
 
+    // WRPS-083 2A: ready 잠금 계산에서 WAITING 참가자를 제외한다.
+    // 제외하지 않으면 라운드 진행 중 재입장자의 is_ready=false(joinRoom이 __waiting__과 함께 그렇게
+    // 저장한다)가 ACTIVE 참가자 전원의 준비 완료를 영구히 가려, 방이 status='ready'에서 잠기지 않는다.
+    // 여기서는 computePlayerStatuses를 쓰지 않고 '__waiting__' 마커를 직접 본다 — 이 함수는
+    // state.participants가 아닌 임의의 DB 행 배열(joinRoom의 roomParticipants 등)로도 호출되고,
+    // 그 배열에는 이 단말의 confirmedSafeIds/confirmedLoserIds 문맥이 적용되지 않기 때문이다.
+    // 확정 술래/안전(__safe__/__loser__)은 종전대로 계속 계수한다(is_ready=true로 기록되므로
+    // 잠금을 막지 않는다) — 이번 변경은 WAITING 하나만 제외하는 최소 수정이다.
+    // WAITING이 0인 조합에서는 필터가 no-op이라 수정 전 반환값과 완전히 동일하다.
     function isJoinLocked(participants = state.participants, status = state.status) {
-      const players = participants.filter(p => !p.is_host);
+      const players = (participants || []).filter(p => !p.is_host && p.choice !== '__waiting__');
       return status === "playing" || status === "result" || status === "stats" ||
         (status === "ready" && players.length > 0 && players.every(p => p.is_ready));
     }
@@ -6271,6 +6304,12 @@
         // 폴링 부하 없음. 실패해도 다음 폴링(2.6s)에서 재시도되므로 여기서는 조용히 넘어간다.
         try { await ensureHostExists(); } catch (e) {}
 
+        // WRPS-083 2A(C-2 배선): 같은 최신 스냅샷에서 "판정 참가자 0 + WAITING 잔존 + 목표 술래
+        // 미달"을 연속 2회 관측하면 host가 같은 round를 ready로 다시 연다. 조건 불성립 시에는
+        // 배열 스캔뿐인 no-op이고, 1회 관측만으로는 write가 0건이다. 실패해도 다음 폴링(2.6s)에서
+        // 재시도되므로 여기서는 조용히 넘어간다.
+        try { await recoverRoundWhenAllPlayersWaiting(); } catch (e) {}
+
         // WRPS-018: 3초 폴링 기반 복구 안전망. status=ready인데 안전/술래/대기 대상이 아닌
         // 비호스트 참가자가 여전히 participantWait 화면에 떠 있으면(재초대 수락 고착 등) 준비화면으로 복구.
         // handleRoomUpdate는 status 변경 시에만 화면을 바꾸므로 동일-status 고착은 여기서만 풀 수 있다.
@@ -7151,13 +7190,24 @@
             return;
           }
 
+          // WRPS-083 2A(GAP-1): waitingChoice 계산을 existing/insert 분기 "밖"으로 끌어올린다.
+          // 종전에는 existing(기존 row 재사용) 분기에만 있어서, row가 없는 재입장자
+          // (returningParticipant=true → 위 입장 차단을 통과)가 insert 분기로 가면 choice가 누락돼
+          // NULL → 즉시 ACTIVE가 됐다. 1단계 transferHostAndLeave가 양도한 호스트의 row를 delete
+          // 하므로, 그 사용자가 라운드 진행 중 재입장하면 정확히 이 경로다(Build31 실기기 클래스).
+          // locked는 이 분기 진입 전에 같은 인자로 이미 계산돼 있다 — 재계산하지 않는다.
+          const waitingChoice = locked ? "__waiting__" : null;
           if (existing) {
             state.currentUserId = existing.id;
             state.role = existing.is_host ? "host" : "participant";
-            const waitingChoice = isJoinLocked(roomParticipants || [], room.status) ? "__waiting__" : null;
             await db.from('participants').update({ choice: waitingChoice, is_ready: false }).eq('id', existing.id);
           } else {
-            await db.from('participants').insert([{ id, room_id: code, name, is_host: false }]);
+            // Invariant 5-A: 재입장자는 언제나 일반 참가자다. 과거 Host 이력(state.joinRecentRoom.role,
+            // 저장된 recent room role 등)은 현재 권한의 근거가 될 수 없으므로 is_host는 항상 false로
+            // 고정하고, 현재 Host(DB is_host=true 한 명)는 이 insert로 절대 바뀌지 않는다.
+            await db.from('participants').insert([{
+              id, room_id: code, name, is_host: false, choice: waitingChoice, is_ready: false
+            }]);
             state.currentUserId = id;
             state.role = "participant";
           }
@@ -8762,6 +8812,10 @@ const PLAYER_STATUS = {
   ACTIVE: 'ACTIVE',
   LOSER_CONFIRMED: 'LOSER_CONFIRMED',
   WINNER_CONFIRMED: 'WINNER_CONFIRMED',
+  // WRPS-083 2A: 현재 라운드에 참여하지 않는 참가자(라운드 진행 중 재입장자).
+  // 방 참가자로는 유효하고 host 후보도 될 수 있으나, 현재 라운드의 판정/Ready/ForceStart/
+  // PlayAgain/active candidate/술래 선정 완료 계산에서는 제외된다.
+  WAITING: 'WAITING',
   HOST: 'HOST',
 };
 
@@ -8797,7 +8851,11 @@ function judgePure(active) {
 // WRPS-042/043(2026-06-22): 호스트도 일반 플레이어로 가위바위보에 참여한다(심판 모델 폐지).
 //   → isHost는 게임 상태 판정에 영향을 주지 않는다(방 관리/벌칙설정/승계 전용 플래그).
 //   PLAYER_STATUS.HOST는 하위호환을 위해 상수만 유지(더는 부여되지 않음).
-// 우선순위: 확정 술래 > 확정 안전 > ACTIVE. choice 마커는 확정 배열의 폴백.
+// 우선순위: 확정 술래 > 확정 안전 > WAITING > ACTIVE. choice 마커는 확정 배열의 폴백.
+// WRPS-083 2A: WAITING이 확정 술래/안전보다 뒤인 이유 — confirmedLoserIds/confirmedSafeIds는
+// "이번 게임에서 이미 확정된 결과"이고 choice 컬럼은 단일 값이라, 확정자가 퇴장 후 라운드
+// 진행 중에 재입장하면 그 row의 choice가 '__waiting__'으로 덮인다. 이때 WAITING이 이기면
+// 확정 술래가 재입장만으로 부활해 판정 결과가 뒤집힌다. 확정이 항상 우선해야 한다.
 function computePlayerStatuses(participants, confirmedSafeIds = [], confirmedLoserIds = []) {
   const safe = new Set(confirmedSafeIds || []);
   const loser = new Set(confirmedLoserIds || []);
@@ -8806,6 +8864,7 @@ function computePlayerStatuses(participants, confirmedSafeIds = [], confirmedLos
     if (!p || !p.id) return;
     if (loser.has(p.id) || p.choice === '__loser__') { map[p.id] = PLAYER_STATUS.LOSER_CONFIRMED; return; }
     if (safe.has(p.id) || p.choice === '__safe__') { map[p.id] = PLAYER_STATUS.WINNER_CONFIRMED; return; }
+    if (p.choice === '__waiting__') { map[p.id] = PLAYER_STATUS.WAITING; return; }
     map[p.id] = PLAYER_STATUS.ACTIVE;
   });
   return map;
@@ -12942,6 +13001,90 @@ function summarizeGameStats(rows) {
         }
       } finally {
         state.ensuringHostExists = false;
+      }
+    }
+
+    // ── WRPS-083 2A: C-2(판정 참가자 없음) 자동 복구 ─────────────────────────────
+    // C-1(ACTIVE=0 · 확정 술래 >= 목표)은 정상 완료다 — 여기서 손대지 않는다.
+    // C-2(ACTIVE=0 · WAITING>0 · 확정 술래 < 목표)는 이번 라운드를 판정할 사람이 아무도 없는데
+    // 목표 술래 수도 못 채운 상태다. gameOver로 끝낼 수도, 라운드를 진행할 수도 없어 방이 영구
+    // 정지한다. 복구는 "같은 round를 ready로 다시 여는 것"이다 — WAITING 마커를 지우면 재입장자가
+    // PARTICIPATING으로 복귀해 그 라운드를 다시 겨룰 수 있다.
+    // CEO 승인 8조건을 모두 만족할 때만 실행한다. 특히 (8) 2회 연속 관측 전에는 write가 0건이어야
+    // 한다 — 인계/리셋 전이 중의 반쯤 커밋된 스냅샷을 한 번 보고 개입하면 그 자체가 새 경쟁이 된다.
+    // round는 증가시키지 않는다(같은 라운드 재개). rooms 업데이트에 round 필드를 싣지 않는 것으로
+    // 보장한다 — nextRound()의 round+1 경로와 명확히 구분된다.
+    async function recoverRoundWhenAllPlayersWaiting() {
+      if (!getOnlineMode() || !db || !state.roomCode) { state.allWaitingObservationStreak = 0; return; }
+      // (1) host  (5) !roomClosing  (6) !gameStarting  (7) !advancingRound
+      // roomClosing은 2B(방 종료 tombstone)가 도입할 플래그다. 지금은 항상 falsy이므로 현재
+      // 동작에 영향이 없고, 2B가 붙는 즉시 종료 중인 방에서 이 writer가 자동으로 멈춘다.
+      if (state.role !== "host" || state.roomClosing || state.gameStarting || state.advancingRound) {
+        state.allWaitingObservationStreak = 0;
+        return;
+      }
+      // (2) ACTIVE === 0  (3) WAITING > 0  (4) 확정 술래 < 목표
+      const activeCount = getActivePlayers().length;
+      const waitingCount = getWaitingPlayers().length;
+      const confirmedLoserCount = (state.confirmedLoserIds || []).length;
+      const targetLoserCount = getTargetLoserCount();
+      if (!(activeCount === 0 && waitingCount > 0 && confirmedLoserCount < targetLoserCount)) {
+        state.allWaitingObservationStreak = 0;
+        return;
+      }
+      // (8) 같은 상태 2회 연속 관측 — 1회 관측에서는 어떤 write도 하지 않는다.
+      state.allWaitingObservationStreak = (state.allWaitingObservationStreak || 0) + 1;
+      if (state.allWaitingObservationStreak < 2) return;
+      if (state.recoveringAllWaiting) return; // 폴링/realtime 중복 진입 가드.
+      state.recoveringAllWaiting = true;
+      try {
+        try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ALL_WAITING_DETECTED',
+          waitingCount, confirmedLoserCount, targetLoserCount, round: state.round,
+          participantCount: (state.participants || []).length }); } catch (e) {}
+        const safeIds = state.confirmedSafeIds || [];
+        const loserIds = state.confirmedLoserIds || [];
+        // 방 전체 choice 초기화 → __waiting__ 소멸(다음 유효 라운드 복귀 규칙과 동일한 경로).
+        const { error: eReset } = await db.from('participants')
+          .update({ choice: null, is_ready: false })
+          .eq('room_id', state.roomCode);
+        if (eReset) {
+          try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ALL_WAITING_RECOVERY_FAILED', stage: 'reset', message: eReset.message || String(eReset) }); } catch (e) {}
+          return; // streak은 유지 — 다음 폴링에서 재시도한다.
+        }
+        // 확정 안전/술래 마커는 반드시 재기록한다(초기화가 확정 결과까지 지우면 재입장 없이도
+        // 확정자가 부활한다 — nextRound/startGame과 동일한 재기록 규칙).
+        if (safeIds.length > 0) {
+          const { error: eSafe } = await db.from('participants').update({ choice: '__safe__', is_ready: true }).in('id', safeIds);
+          if (eSafe) {
+            try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ALL_WAITING_RECOVERY_FAILED', stage: 'markSafe', message: eSafe.message || String(eSafe) }); } catch (e) {}
+            return;
+          }
+        }
+        if (loserIds.length > 0) {
+          const { error: eLoser } = await db.from('participants').update({ choice: '__loser__', is_ready: true }).in('id', loserIds);
+          if (eLoser) {
+            try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ALL_WAITING_RECOVERY_FAILED', stage: 'markLoser', message: eLoser.message || String(eLoser) }); } catch (e) {}
+            return;
+          }
+        }
+        // 모든 단말이 같은 서버 시각에 ready로 수렴하도록 기존 ready penalty 경로를 그대로 쓴다.
+        const readyPenalty = buildPenaltyValue({
+          gameRound: getGameRound(),
+          phaseScheduledAt: getNextPhaseScheduledAt(),
+          phaseKind: "ready"
+        });
+        const { error: eRoom } = await db.from('rooms')
+          .update({ status: 'ready', penalty: readyPenalty })
+          .eq('id', state.roomCode);
+        if (eRoom) {
+          try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ALL_WAITING_RECOVERY_FAILED', stage: 'room', message: eRoom.message || String(eRoom) }); } catch (e) {}
+          return;
+        }
+        state.penalty = readyPenalty;
+        state.allWaitingObservationStreak = 0;
+        try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ALL_WAITING_RECOVERED', round: state.round, waitingCount }); } catch (e) {}
+      } finally {
+        state.recoveringAllWaiting = false;
       }
     }
 

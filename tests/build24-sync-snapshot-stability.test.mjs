@@ -331,7 +331,9 @@ describe('Build24-B ROLLBACK — 실기기 회귀(room PP2C) 재현 및 수정 �
     // canShowPlayAgainButton()/isTaggerSelectionComplete()는 Build24에서 전혀 손대지 않았다 — 이번
     // 회귀는 그 앞단(입력 데이터 정규화)에서 발생했다. 이 테스트는 그 경계를 명확히 하기 위한
     // 소스 계약 확인이다(로직 자체는 tests/build23-play-again-guard.test.mjs가 이미 실제 실행으로 검증).
-    expect(html).toMatch(/function isTaggerSelectionComplete\(\) \{\s*\n\s*return \(state\.participants \|\| \[\]\)\.length > 0 && getActivePlayers\(\)\.length === 0;\s*\n\s*\}/);
+    // WRPS-083 2A(계약 갱신): C-2(WAITING 잔존 + 술래 미달) 예외가 추가됐다. Build24 범위(입력
+    // 스냅샷 정규화)는 이 guard를 여전히 전혀 건드리지 않는다.
+    expect(html).toMatch(/function isTaggerSelectionComplete\(\) \{\s*\n\s*if \(\(state\.participants \|\| \[\]\)\.length === 0\) return false;\s*\n\s*if \(getActivePlayers\(\)\.length !== 0\) return false;\s*\n\s*if \(getWaitingPlayers\(\)\.length > 0 &&\s*\n\s*\(state\.confirmedLoserIds \|\| \[\]\)\.length < getTargetLoserCount\(\)\) return false;\s*\n\s*return true;\s*\n\s*\}/);
   });
 
   it('요구사항 #6 — host, gameOver 상태에서도 재조회 경로가 항상 실행된다(resultValue null의 전제조건이었던 fast-path skip 제거 확인)', async () => {
@@ -372,7 +374,9 @@ describe('Build24 — 판정 알고리즘/partial replay guard 비침습 계약'
     expect(html).toContain('function judgePure(');
   });
   it('Build23 partial replay guard(isTaggerSelectionComplete/canShowPlayAgainButton/blockPlayAgainIfPartialReplay)는 재작성되지 않았다', () => {
-    expect(html).toMatch(/function isTaggerSelectionComplete\(\) \{\s*\n\s*return \(state\.participants \|\| \[\]\)\.length > 0 && getActivePlayers\(\)\.length === 0;\s*\n\s*\}/);
+    // WRPS-083 2A(계약 갱신): C-2(WAITING 잔존 + 술래 미달) 예외가 추가됐다. Build24 범위(입력
+    // 스냅샷 정규화)는 이 guard를 여전히 전혀 건드리지 않는다.
+    expect(html).toMatch(/function isTaggerSelectionComplete\(\) \{\s*\n\s*if \(\(state\.participants \|\| \[\]\)\.length === 0\) return false;\s*\n\s*if \(getActivePlayers\(\)\.length !== 0\) return false;\s*\n\s*if \(getWaitingPlayers\(\)\.length > 0 &&\s*\n\s*\(state\.confirmedLoserIds \|\| \[\]\)\.length < getTargetLoserCount\(\)\) return false;\s*\n\s*return true;\s*\n\s*\}/);
     expect(html).toContain('function canShowPlayAgainButton() {');
     expect(html).toContain('function blockPlayAgainIfPartialReplay() {');
   });

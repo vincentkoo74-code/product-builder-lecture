@@ -275,8 +275,15 @@ describe('Build23-#8 — UI 버튼 조건과 handler 조건이 같은 state sour
     expect(html).toMatch(/function blockPlayAgainIfPartialReplay\(\) \{\s*\n\s*if \(isTaggerSelectionComplete\(\)\) return false;/);
   });
 
-  it('isTaggerSelectionComplete()는 getActivePlayers().length===0(+ 참가자 존재)로만 정의된다(room.status/카운트 비교 미참조)', () => {
-    expect(html).toMatch(/function isTaggerSelectionComplete\(\) \{\s*\n\s*return \(state\.participants \|\| \[\]\)\.length > 0 && getActivePlayers\(\)\.length === 0;\s*\n\s*\}/);
+  // WRPS-083 2A(계약 갱신): ACTIVE=0을 C-1(정상 완료)과 C-2(판정 참가자 없음)로 구분하는 분기가
+  // 추가됐다. Build23의 원 계약(room.status 미참조 + 활성 풀 기반 단일 진실 소스)은 그대로다 —
+  // 술래 수 비교는 "WAITING이 남아 있을 때"로 한정된 예외이며, WAITING=0인 기존 조합에서는 이
+  // 분기가 항상 거짓이라 Build23 시점과 반환값이 동일하다(tests/waiting-state-stage2a.test.mjs가
+  // 그 동치성과 C-2 예외를 실제 실행으로 검증한다).
+  it('isTaggerSelectionComplete()는 활성 풀(getActivePlayers) 기반으로 정의되고, C-2(WAITING 잔존 + 술래 미달)만 예외다(room.status 미참조)', () => {
+    expect(html).toMatch(/function isTaggerSelectionComplete\(\) \{\s*\n\s*if \(\(state\.participants \|\| \[\]\)\.length === 0\) return false;\s*\n\s*if \(getActivePlayers\(\)\.length !== 0\) return false;\s*\n\s*if \(getWaitingPlayers\(\)\.length > 0 &&\s*\n\s*\(state\.confirmedLoserIds \|\| \[\]\)\.length < getTargetLoserCount\(\)\) return false;\s*\n\s*return true;\s*\n\s*\}/);
+    const body = html.slice(html.indexOf('function isTaggerSelectionComplete() {'));
+    expect(body.slice(0, body.indexOf('\n    }'))).not.toContain('state.status');
   });
 
   it('codex-critic 재검토(2차) LOW 지적 수정: 참가자가 비어있으면(state.participants=[]) 완료로 오판하지 않는다', () => {

@@ -618,7 +618,9 @@ describe('Build27 회귀 — 기존 자동 시작/라운드1 흐름 무변경', 
     expect(html).toContain('function judgeRound(');
     expect(html).toContain('function resolveElimination(');
     expect(html).toContain('function judgePure(');
-    expect(html).toMatch(/function isTaggerSelectionComplete\(\) \{\s*\n\s*return \(state\.participants \|\| \[\]\)\.length > 0 && getActivePlayers\(\)\.length === 0;\s*\n\s*\}/);
+    // WRPS-083 2A(계약 갱신): isTaggerSelectionComplete에 C-2(WAITING 잔존 + 술래 미달) 예외가
+    // 추가됐다. Build27 범위(강제 시작 컨트롤)는 여전히 이 함수를 호출만 하고 수정하지 않는다.
+    expect(html).toMatch(/function isTaggerSelectionComplete\(\) \{\s*\n\s*if \(\(state\.participants \|\| \[\]\)\.length === 0\) return false;\s*\n\s*if \(getActivePlayers\(\)\.length !== 0\) return false;\s*\n\s*if \(getWaitingPlayers\(\)\.length > 0 &&\s*\n\s*\(state\.confirmedLoserIds \|\| \[\]\)\.length < getTargetLoserCount\(\)\) return false;\s*\n\s*return true;\s*\n\s*\}/);
     expect(html).toContain('function blockPlayAgainIfPartialReplay() {');
     // forceStartReplay는 nextRound()를 대체하지 않는다 — nextRound 소스 존재/시그니처 유지.
     expect(html).toContain('async function nextRound() {');

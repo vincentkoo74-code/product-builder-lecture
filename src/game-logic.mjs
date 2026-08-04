@@ -16,6 +16,10 @@ export const PLAYER_STATUS = {
   ACTIVE: 'ACTIVE',
   LOSER_CONFIRMED: 'LOSER_CONFIRMED',
   WINNER_CONFIRMED: 'WINNER_CONFIRMED',
+  // WRPS-083 2A: 현재 라운드에 참여하지 않는 참가자(라운드 진행 중 재입장자).
+  // 방 참가자로는 유효하고 host 후보도 될 수 있으나, 현재 라운드의 판정/Ready/ForceStart/
+  // PlayAgain/active candidate/술래 선정 완료 계산에서는 제외된다.
+  WAITING: 'WAITING',
   HOST: 'HOST',
 };
 
@@ -51,7 +55,11 @@ export function judgePure(active) {
 // WRPS-042/043(2026-06-22): 호스트도 일반 플레이어로 가위바위보에 참여한다(심판 모델 폐지).
 //   → isHost는 게임 상태 판정에 영향을 주지 않는다(방 관리/벌칙설정/승계 전용 플래그).
 //   PLAYER_STATUS.HOST는 하위호환을 위해 상수만 유지(더는 부여되지 않음).
-// 우선순위: 확정 술래 > 확정 안전 > ACTIVE. choice 마커는 확정 배열의 폴백.
+// 우선순위: 확정 술래 > 확정 안전 > WAITING > ACTIVE. choice 마커는 확정 배열의 폴백.
+// WRPS-083 2A: WAITING이 확정 술래/안전보다 뒤인 이유 — confirmedLoserIds/confirmedSafeIds는
+// "이번 게임에서 이미 확정된 결과"이고 choice 컬럼은 단일 값이라, 확정자가 퇴장 후 라운드
+// 진행 중에 재입장하면 그 row의 choice가 '__waiting__'으로 덮인다. 이때 WAITING이 이기면
+// 확정 술래가 재입장만으로 부활해 판정 결과가 뒤집힌다. 확정이 항상 우선해야 한다.
 export function computePlayerStatuses(participants, confirmedSafeIds = [], confirmedLoserIds = []) {
   const safe = new Set(confirmedSafeIds || []);
   const loser = new Set(confirmedLoserIds || []);
@@ -60,6 +68,7 @@ export function computePlayerStatuses(participants, confirmedSafeIds = [], confi
     if (!p || !p.id) return;
     if (loser.has(p.id) || p.choice === '__loser__') { map[p.id] = PLAYER_STATUS.LOSER_CONFIRMED; return; }
     if (safe.has(p.id) || p.choice === '__safe__') { map[p.id] = PLAYER_STATUS.WINNER_CONFIRMED; return; }
+    if (p.choice === '__waiting__') { map[p.id] = PLAYER_STATUS.WAITING; return; }
     map[p.id] = PLAYER_STATUS.ACTIVE;
   });
   return map;
