@@ -57,13 +57,19 @@ const ROUND_HELPERS_AND_BEGIN_NEW_GAME_ROUND_SRC = extractBlock(
 const BECOME_NEXT_HOST_SRC = extractBlock(
   'async function becomeNextHost() {', 'function startGameOverCountdown(seconds) {', 'becomeNextHost'
 );
+// WRPS-083 1단계: becomeNextHost가 이제 promoteParticipantToHost/verifyExactlyOneHost(승격
+// 성공 확인 + exactly-one 사후 검증, index.html의 REAL 헬퍼)를 호출하므로 그 블록도 그대로
+// 추출해 함께 구동한다 — 스텁이 아니라 프로덕션 소스다.
+const HOST_SAFETY_HELPERS_SRC = extractBlock(
+  'function pickDeterministicHostCandidate(rows) {', 'async function leaveRoom() {', 'hostSafetyHelpers'
+);
 const HANDLE_ROOM_UPDATE_SRC = extractBlock(
   'async function handleRoomUpdate(room) {', 'function renderInlinePenaltyBox(el) {', 'handleRoomUpdate'
 );
 
 const COMBINED_FOR_HANDOVER = [
   PARSE_AND_SCHEDULE_SRC, GET_ONLINE_MODE_SRC, ROUND_HELPERS_AND_BEGIN_NEW_GAME_ROUND_SRC,
-  BECOME_NEXT_HOST_SRC, HANDLE_ROOM_UPDATE_SRC,
+  HOST_SAFETY_HELPERS_SRC, BECOME_NEXT_HOST_SRC, HANDLE_ROOM_UPDATE_SRC,
 ].join('\n');
 
 // ── REAL 추출: finishRoundLocal 전체(WRPS-080 테스트와 동일 마커 — 이 파일과 완전히 독립적으로
@@ -119,14 +125,20 @@ function buildHandoverImpl({ state, db }) {
   const scheduleFetchParticipants = () => { calls.scheduleFetchParticipants += 1; };
   const renderAll = () => { calls.renderAll += 1; };
 
+  // WRPS-083 1단계 대응: becomeNextHost 실패 경로가 showToast(t(...))를 호출하므로 렌더 표면
+  // 스텁 2개를 추가 주입한다(성공 경로에서는 호출되지 않음 — 이 파일의 시나리오는 성공 경로).
+  const showToast = () => {};
+  const t = (key) => key;
   const factory = new Function(
     'state', 'db', 'QA', 'resetTransientRoundUi', 'stopGameOverCountdown', 'saveState',
     'showHostRoom', 'showScreen', 'scheduleFetchParticipants', 'renderAll', 'maxLoserCountFor',
+    'showToast', 't',
     `${COMBINED_FOR_HANDOVER}\n; return { beginNewGameRound, becomeNextHost, handleRoomUpdate, getGameRound, getPenaltyGameRound };`
   );
   const impl = factory(
     state, db, QA, resetTransientRoundUi, stopGameOverCountdown, saveState,
-    showHostRoom, showScreen, scheduleFetchParticipants, renderAll, maxLoserCountFor
+    showHostRoom, showScreen, scheduleFetchParticipants, renderAll, maxLoserCountFor,
+    showToast, t
   );
   return { impl, calls };
 }
@@ -134,7 +146,14 @@ function buildHandoverImpl({ state, db }) {
 // 공유 room 행에 대해 Supabase 스타일 `.update(patch).eq(a,b).eq(c,d)...` 조건부 매치를 흉내낸다.
 // 모든 조건이 현재 행과 일치해야 patch가 적용된다(하나라도 불일치면 0행 매치, no-op) — 정확히
 // 우리가 검증하려는 조건부 UPDATE 시맨틱.
-function makeConditionalRoomsDb(roomRow, { onWrite } = {}) {
+function makeConditionalRoomsDb(roomRow, { onWrite, participantRows } = {}) {
+  // WRPS-083 1단계 대응: 시나리오(alice=old host, bob=loser, charlie=관찰자)와 동일한 참가자
+  // row 스토어. created_at은 결정 규칙 검증과 무관하게 실제 스키마 형태만 갖춘다.
+  const participantRowsStore = participantRows || [
+    { id: 'alice', is_host: true, created_at: '2026-01-01T00:00:00.000Z' },
+    { id: 'bob', is_host: false, created_at: '2026-01-01T00:00:05.000Z' },
+    { id: 'charlie', is_host: false, created_at: '2026-01-01T00:00:10.000Z' },
+  ];
   return {
     from(table) {
       if (table === 'rooms') {
@@ -159,7 +178,40 @@ function makeConditionalRoomsDb(roomRow, { onWrite } = {}) {
         };
       }
       if (table === 'participants') {
-        return { update: (patch) => ({ eq: async (col, val) => ({ data: null, error: null }) }) };
+        // WRPS-083 1단계 대응: becomeNextHost가 promoteParticipantToHost(승격 write 후 대상 row
+        // 재조회로 성공 확인)와 verifyExactlyOneHost(is_host row 목록 재조회 + 수렴)를 호출하므로,
+        // 이전의 무조건 no-op ack 대신 실제 row 스토어에 대해 update/select(.single/.order) 체인을
+        // 지원한다. write가 항상 성공하는 의미는 종전과 동일 — 이 파일의 관심사(rooms 2-writer
+        // 레이스)는 그대로 보존된다.
+        const makeBuilder = (op, patch) => {
+          const filters = [];
+          const b = {
+            _single: false,
+            eq(col, val) { filters.push([col, val]); return b; },
+            order() { return b; },
+            single() { b._single = true; return b; },
+            then(resolve, reject) { return exec().then(resolve, reject); },
+          };
+          async function exec() {
+            // 단일 방 하니스: room_id 필터는 항상 매치로 취급한다(row에 room_id 필드 없음).
+            const rows = participantRowsStore.filter((r) => filters.every(([col, val]) => col === 'room_id' ? true : r[col] === val));
+            if (op === 'update') { rows.forEach((r) => Object.assign(r, patch)); return { data: null, error: null }; }
+            if (op === 'delete') { for (const r of rows) participantRowsStore.splice(participantRowsStore.indexOf(r), 1); return { data: null, error: null }; }
+            const copies = rows.map((r) => ({ ...r }));
+            if (b._single) {
+              return copies.length === 1
+                ? { data: copies[0], error: null }
+                : { data: null, error: { code: 'PGRST116', message: '[wrps081] expected 1 row, got ' + copies.length } };
+            }
+            return { data: copies, error: null };
+          }
+          return b;
+        };
+        return {
+          update: (patch) => makeBuilder('update', patch),
+          delete: () => makeBuilder('delete'),
+          select: () => makeBuilder('select'),
+        };
       }
       throw new Error('[wrps081] unsupported table: ' + table);
     },

@@ -338,31 +338,44 @@ describe('Build29 [P4, F5] selectChoice — 같은 손 재클릭 write 스킵', 
 // ════════════════════════════════════════════════════════════════════
 describe('Build29 [P4, F6] becomeNextHost — 연타 방어', () => {
   const BECOME_NEXT_HOST_SRC = extractBlock('async function becomeNextHost() {', 'function startGameOverCountdown(seconds) {');
+  // WRPS-083 1단계 대응: becomeNextHost가 이제 REAL 헬퍼(promoteParticipantToHost/
+  // verifyExactlyOneHost — 승격 성공 확인 + exactly-one 사후 검증)를 호출하므로 그 블록도
+  // 그대로 추출해 함께 구동한다(스텁 아님). 승격 성공 확인은 select(...).single() 재조회를
+  // 쓰므로 makeDb의 single override로 "승격 반영된 row"를 돌려준다.
+  const HOST_SAFETY_HELPERS_SRC = extractBlock('function pickDeterministicHostCandidate(rows) {', 'async function leaveRoom() {');
 
   function loadBecomeNextHost({ state, db, beginNewGameRound }) {
     const calls = { showHostRoom: 0, stopGameOverCountdown: 0, beginNewGameRound: 0 };
     const factory = new Function(
       'state', 'getOnlineMode', 'stopGameOverCountdown', 'db', 'beginNewGameRound', 'showHostRoom',
-      BECOME_NEXT_HOST_SRC + '\n; return becomeNextHost;'
+      'showToast', 't', 'QA',
+      HOST_SAFETY_HELPERS_SRC + '\n' + BECOME_NEXT_HOST_SRC + '\n; return becomeNextHost;'
     );
     const becomeNextHost = factory(
       state, () => true, () => { calls.stopGameOverCountdown++; }, db,
       beginNewGameRound || (async () => { calls.beginNewGameRound++; }),
-      () => { calls.showHostRoom++; }
+      () => { calls.showHostRoom++; },
+      () => {}, (key) => key, { emit: () => {} }
     );
     return { becomeNextHost, calls };
   }
+
+  // 승격 성공 확인용 재조회(single) — 신규 host(p2)의 승격이 반영된 row를 돌려준다.
+  const promotedSingle = () => ({ data: { id: 'p2', is_host: true }, error: null });
 
   it('연타(동시 재호출) — 두 번째 호출은 즉시 no-op(is_host 승계 1세트만 실행)', async () => {
     const state = {
       becomingNextHost: false, currentUserId: 'p2', role: 'participant',
       participants: [{ id: 'p1', is_host: true }, { id: 'p2', is_host: false }],
     };
-    const { db, calls: dbCalls } = makeDb();
+    const { db, calls: dbCalls } = makeDb({ single: promotedSingle });
     const { becomeNextHost, calls } = loadBecomeNextHost({ state, db });
     await Promise.all([becomeNextHost(), becomeNextHost()]);
-    // is_host:false(구 호스트) + is_host:true(신규 호스트) = 2건 업데이트, 딱 1세트만.
+    // is_host:true(신규 호스트, 승격 선행) + is_host:false(구 호스트 해제 후행) = 2건 업데이트, 딱 1세트만.
+    // (WRPS-083 1단계로 순서만 해제→승격에서 승격→해제로 바뀌었고 세트 수는 동일하다.)
     expect(dbCalls.length).toBe(2);
+    expect(dbCalls[0].payload).toEqual({ is_host: true });
+    expect(dbCalls[1].payload).toEqual({ is_host: false });
     expect(calls.beginNewGameRound).toBe(1);
     expect(calls.showHostRoom).toBe(1);
   });
@@ -372,7 +385,7 @@ describe('Build29 [P4, F6] becomeNextHost — 연타 방어', () => {
       becomingNextHost: false, currentUserId: 'p2', role: 'participant',
       participants: [{ id: 'p1', is_host: true }, { id: 'p2', is_host: false }],
     };
-    const { db } = makeDb();
+    const { db } = makeDb({ single: promotedSingle });
     const { becomeNextHost } = loadBecomeNextHost({ state, db });
     await becomeNextHost();
     expect(state.role).toBe('host');

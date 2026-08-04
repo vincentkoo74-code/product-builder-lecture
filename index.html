@@ -3330,6 +3330,7 @@
         "toast.nameRequired": "닉네임을 입력해주세요.",
         "toast.roomNotFound": "존재하지 않는 방입니다.",
         "toast.roomClosedAlone": "혼자 남아 방이 종료되었어요. 홈으로 이동합니다.",
+        "toast.hostTransferFailed": "⚠️ 호스트 넘기기에 실패했어요. 잠시 후 다시 시도해 주세요.",
         "toast.joinLocked": "모든 참여자가 준비를 완료해서 새로 참가할 수 없습니다.",
         "toast.penaltyRequired": "벌칙을 입력해주세요.",
         "toast.penaltyNotSet": "먼저 벌칙을 설정해주세요.",
@@ -3684,6 +3685,7 @@
         "toast.nameRequired": "Please enter a nickname.",
         "toast.roomNotFound": "Room not found.",
         "toast.roomClosedAlone": "You're the only one left — the room was closed. Returning home.",
+        "toast.hostTransferFailed": "⚠️ Couldn't transfer the host role. Please try again.",
         "toast.joinLocked": "All players are ready — you can't join now.",
         "toast.penaltyRequired": "Please enter a penalty.",
         "toast.penaltyNotSet": "Please set a penalty first.",
@@ -4035,6 +4037,7 @@
         "toast.nameRequired": "ニックネームを入力してください。",
         "toast.roomNotFound": "存在しない部屋です。",
         "toast.roomClosedAlone": "一人になったため部屋を終了しました。ホームに戻ります。",
+        "toast.hostTransferFailed": "⚠️ ホストの引き継ぎに失敗しました。もう一度お試しください。",
         "toast.joinLocked": "全員準備完了で新規参加できません。",
         "toast.penaltyRequired": "罰ゲームを入力してください。",
         "toast.penaltyNotSet": "先に罰ゲームを設定してください。",
@@ -6259,6 +6262,14 @@
 	        state.participants = data;
         updateSelectedCount();
         renderAll();
+
+        // WRPS-083 1단계(host 0명 감지 배선): 위에서 방금 확정한 최신 스냅샷(data, :6188의
+        // created_at asc 정렬 그대로)을 기준으로 is_host row가 하나도 없으면 ensureHostExists가
+        // 결정적 후보(created_at 최소, 동률 시 id 오름차순)를 계산한다. 모든 단말이 같은 목록에서
+        // 같은 후보에 도달하고, "후보 본인 단말만" write하므로 중복 write 없이 수렴한다(내부에서
+        // 보장 — 다른 단말은 관측만). 정상 host 존재 시에는 배열 스캔 1회로 즉시 반환하는 no-op라
+        // 폴링 부하 없음. 실패해도 다음 폴링(2.6s)에서 재시도되므로 여기서는 조용히 넘어간다.
+        try { await ensureHostExists(); } catch (e) {}
 
         // WRPS-018: 3초 폴링 기반 복구 안전망. status=ready인데 안전/술래/대기 대상이 아닌
         // 비호스트 참가자가 여전히 participantWait 화면에 떠 있으면(재초대 수락 고착 등) 준비화면으로 복구.
@@ -10762,6 +10773,100 @@ function summarizeGameStats(rows) {
     }
     window.showConfirmPopup = showConfirmPopup;
 
+    // ── WRPS-083 1단계: host 인계/자동승격 안전화 헬퍼 3종 ─────────────────────────
+    // 범위: host transfer write error 검사 / 성공 확인 전 old host row 삭제 금지 /
+    //       host 0명 감지 / ensureHostExists 배선 / host exactly-one 사후 검증.
+    // 2단계(PLAYER_STATUS.WAITING/__waiting__ 분류) 코드는 이 diff에 포함하지 않는다.
+
+    // CEO 결정 2: 자동 host 승격 후보의 단일 결정 규칙 — 유효 참가자 중 created_at 최소,
+    // 동률이면 id 오름차순. 무작위 금지: 모든 단말이 같은 목록에서 같은 후보에 도달해야
+    // 중복 write 없이 수렴한다. created_at은 DB가 주는 값 그대로 비교한다(ISO 문자열은
+    // 사전순=시간순, 숫자면 수치 비교 — 한 방 안에서 형이 섞이지 않으므로 전 단말 동일 결론).
+    function pickDeterministicHostCandidate(rows) {
+      const list = (rows || []).filter(p => p && p.id);
+      if (!list.length) return null;
+      return list.slice().sort((a, b) => {
+        const ca = a.created_at ?? '';
+        const cb = b.created_at ?? '';
+        if (ca < cb) return -1;
+        if (ca > cb) return 1;
+        return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+      })[0];
+    }
+
+    // host 승격 write + 성공 확인. supabase update는 대상 row가 이미 사라졌을 때 error 없이
+    // 0-row no-op으로 끝난다 — 그 no-op을 성공으로 오인한 채 기존 host row를 지우면 방이
+    // host 0명으로 굳는다(Build31 실기기 Y1PK/1JDS 정지 클래스). 그래서 write ack의 error
+    // 검사에 더해, 대상 row를 재조회해 is_host=true가 실제로 반영됐는지까지 확인해야만
+    // true를 반환한다. false면 호출부는 절대 기존 host row를 삭제/해제하면 안 된다.
+    async function promoteParticipantToHost(participantId) {
+      if (!getOnlineMode() || !db || !participantId) return false;
+      try {
+        const { error: promoteError } = await db.from('participants')
+          .update({ is_host: true })
+          .eq('id', participantId);
+        if (promoteError) {
+          try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'HOST_PROMOTE_WRITE_FAILED', participantId, message: promoteError.message || String(promoteError) }); } catch (e) {}
+          return false;
+        }
+        const { data: verifyRow, error: verifyError } = await db.from('participants')
+          .select('id,is_host')
+          .eq('id', participantId)
+          .single();
+        if (verifyError || !verifyRow || verifyRow.is_host !== true) {
+          try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'HOST_PROMOTE_VERIFY_FAILED', participantId, found: !!verifyRow }); } catch (e) {}
+          return false;
+        }
+        return true;
+      } catch (e) {
+        try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'HOST_PROMOTE_WRITE_FAILED', participantId, message: String((e && e.message) || e) }); } catch (e2) {}
+        return false;
+      }
+    }
+
+    // host exactly-one 사후 검증(CEO 지시 3). 인계/승격 직후 그 "행위 단말"만 호출한다 —
+    // 여러 단말이 동시에 수렴을 시도하면 그 자체가 새 경쟁이 되므로, 비행위 단말은 이 함수를
+    // 호출하지 않고 host 0명 관측 시의 ensureHostExists(후보 본인만 write)로만 개입한다.
+    //   - 1명: 정상. 아무것도 쓰지 않는다.
+    //   - 2명 이상: 인계 중 과도기(승격 선행 → 해제 후행 순서상 정상적으로 잠깐 발생 가능)가
+    //     "고착"된 경우다. preferredHostId(이번 인계의 의도된 새 host)를 남기고 나머지를
+    //     해제한다 — 롤백이 아니라 이번 인계의 완성 방향으로 수렴시킨다.
+    //   - 0명: preferredHostId가 아직 방에 있으면 그를, 없으면 결정 규칙 후보를 재승격한다.
+    //   - 참가자 0명/조회 실패: 개입하지 않는다(빈 방 정리는 last_participant 파괴(:6224 계열)
+    //     소관 — 절대 변경 금지 영역이므로 이 함수는 rooms 테이블을 일절 건드리지 않는다).
+    async function verifyExactlyOneHost(roomCode, preferredHostId = null) {
+      if (!getOnlineMode() || !db || !roomCode) return null;
+      try {
+        const { data, error } = await db.from('participants')
+          .select('id,is_host,created_at')
+          .eq('room_id', roomCode)
+          .order('created_at', { ascending: true });
+        if (error || !data || !data.length) return null;
+        const hosts = data.filter(p => p.is_host);
+        if (hosts.length === 1) return hosts[0].id;
+        try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'HOST_EXACTLY_ONE_VIOLATION', hostCount: hosts.length, preferredHostId, participantCount: data.length }); } catch (e) {}
+        if (hosts.length === 0) {
+          const candidate = (preferredHostId && data.find(p => p.id === preferredHostId)) || pickDeterministicHostCandidate(data);
+          if (!candidate) return null;
+          const ok = await promoteParticipantToHost(candidate.id);
+          return ok ? candidate.id : null;
+        }
+        const keep = (preferredHostId && hosts.find(p => p.id === preferredHostId)) || pickDeterministicHostCandidate(hosts);
+        for (const extra of hosts) {
+          if (extra.id === keep.id) continue;
+          const { error: demoteError } = await db.from('participants')
+            .update({ is_host: false })
+            .eq('id', extra.id);
+          if (demoteError) {
+            try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'HOST_CONVERGE_DEMOTE_FAILED', participantId: extra.id, message: demoteError.message || String(demoteError) }); } catch (e) {}
+          }
+        }
+        return keep.id;
+      } catch (e) {
+        return null;
+      }
+    }
+
     async function leaveRoom() {
       if (state.role === "host") {
         const nonHosts = state.participants.filter(p => !p.is_host);
@@ -10783,15 +10888,31 @@ function summarizeGameStats(rows) {
 
     async function leaveRoomForce() {
       closeNextHostPopup();
-      // 랜덤으로 다음 호스트 자동 지명
+      // WRPS-083 1단계: 다음 호스트 자동 지명 — 무작위 금지(CEO 결정 2). created_at 최소,
+      // 동률 시 id 오름차순의 결정 규칙으로 지명하고, 승격 write의 성공(대상 row 존재 +
+      // is_host 반영)을 확인하기 전에는 자기(기존 host) row 삭제(_doLeaveRoom)를 진행하지
+      // 않는다 — 승격이 조용히 no-op된 채 host row만 삭제되면 방이 host 0명으로 굳는다.
+      let promotedHostId = null;
+      const roomCodeAtLeave = state.roomCode;
       if (getOnlineMode() && state.role === "host") {
         const nonHosts = state.participants.filter(p => !p.is_host);
         if (nonHosts.length > 0) {
-          const randomHost = nonHosts[Math.floor(Math.random() * nonHosts.length)];
-          await db.from('participants').update({ is_host: true }).eq('id', randomHost.id);
+          const candidate = pickDeterministicHostCandidate(nonHosts);
+          const promoted = candidate ? await promoteParticipantToHost(candidate.id) : false;
+          if (!promoted) {
+            try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'HOST_TRANSFER_ABORTED', path: 'leaveRoomForce', newHostId: candidate ? candidate.id : null }); } catch (e) {}
+            try { showToast(t("toast.hostTransferFailed")); } catch (e) {}
+            return; // 방에 남는다 — 다음 폴링으로 목록이 갱신된 뒤 재시도할 수 있다.
+          }
+          promotedHostId = candidate.id;
         }
       }
       await _doLeaveRoom();
+      // host exactly-one 사후 검증(행위 단말 책임) — _doLeaveRoom이 state를 정리하므로
+      // 위에서 캡처해 둔 roomCode로 검증한다. rooms 테이블은 건드리지 않는다.
+      if (promotedHostId && roomCodeAtLeave) {
+        await verifyExactlyOneHost(roomCodeAtLeave, promotedHostId);
+      }
     }
 
     async function _doLeaveRoom() {
@@ -10864,7 +10985,16 @@ function summarizeGameStats(rows) {
       closeNextHostPopup();
       if (getOnlineMode()) {
         const shouldIncrement = hasCurrentGameRoundActivity();
-        await db.from('participants').update({ is_host: true }).eq('id', newHostId);
+        // WRPS-083 1단계: 새 host 승격 write의 성공(대상 row 존재 + is_host 반영)을 확인하기
+        // 전에는 자기(기존 host) row를 절대 삭제하지 않는다. 종전 코드는 승격 write를 error
+        // 검사 없이 던지고 곧바로 자기 row를 지웠다 — 대상이 그 사이 퇴장해 update가 0-row
+        // no-op이 되면 방이 host 0명으로 굳는 실기기 정지 클래스(Build31 Y1PK/1JDS)였다.
+        const promoted = await promoteParticipantToHost(newHostId);
+        if (!promoted) {
+          try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'HOST_TRANSFER_ABORTED', path: 'transferHostAndLeave', newHostId }); } catch (e) {}
+          try { showToast(t("toast.hostTransferFailed")); } catch (e) {}
+          return; // 방에 남는다 — 사용자는 갱신된 목록에서 다른 대상을 골라 재시도할 수 있다.
+        }
         await db.from('participants').delete().eq('id', state.currentUserId);
         const beforeTransfer = [...state.participants]; // WRPS-056: 직전 세션 구성 캡처(멤버십 변경 전)
         state.participants = state.participants
@@ -10876,6 +11006,10 @@ function summarizeGameStats(rows) {
           reason: "host_transferred_after_round_activity",
           priorParticipants: beforeTransfer
         });
+        // WRPS-083 1단계: host exactly-one 사후 검증(행위 단말 책임). 이번 인계의 의도된
+        // 새 host(newHostId)를 preferred로 넘겨, 혹시 남은 이중 host가 있으면 인계 완성
+        // 방향으로 수렴시킨다.
+        await verifyExactlyOneHost(state.roomCode, newHostId);
       }
       clearRealtime();
       state.confirmedSafeIds = [];
@@ -10894,13 +11028,27 @@ function summarizeGameStats(rows) {
         // 로컬 카운트다운/자동 복귀 타이머 취소
         stopGameOverCountdown();
         if (state.gameOverTimeout) { clearTimeout(state.gameOverTimeout); state.gameOverTimeout = null; }
-        // 기존 호스트의 is_host 해제
-        const oldHost = state.participants.find(p => p.is_host);
-        if (oldHost) {
-          await db.from('participants').update({ is_host: false }).eq('id', oldHost.id);
+        // WRPS-083 1단계: 쓰기 순서 역전 — 나(술래)의 승격을 먼저 성공 확인하고, 그다음에만
+        // 기존 호스트의 is_host를 해제한다. 종전 순서(해제 → 승격)는 해제가 커밋된 뒤 승격
+        // write가 실패하면 방을 host 0명으로 떨어뜨렸다. 새 순서의 최악 실패 모드는
+        // "일시적 host 2명"(승격 성공 + 해제 실패)이며, 이는 아래 verifyExactlyOneHost가
+        // preferredHostId(나) 기준으로 수렴시킨다 — host 0명보다 항상 회복 가능한 상태다.
+        const promoted = await promoteParticipantToHost(state.currentUserId);
+        if (!promoted) {
+          try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'HOST_TRANSFER_ABORTED', path: 'becomeNextHost' }); } catch (e) {}
+          try { showToast(t("toast.hostTransferFailed")); } catch (e) {}
+          return; // 기존 host 그대로 유지 — 아무것도 해제/변경하지 않았다.
         }
-        // 나(술래)를 호스트로 승격
-        await db.from('participants').update({ is_host: true }).eq('id', state.currentUserId);
+        // 기존 호스트의 is_host 해제(실패해도 진행 — 이중 host는 사후 검증이 수렴)
+        const oldHost = state.participants.find(p => p.is_host && p.id !== state.currentUserId);
+        if (oldHost) {
+          const { error: demoteError } = await db.from('participants').update({ is_host: false }).eq('id', oldHost.id);
+          if (demoteError) {
+            try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'HOST_CONVERGE_DEMOTE_FAILED', participantId: oldHost.id, message: demoteError.message || String(demoteError) }); } catch (e) {}
+          }
+        }
+        // host exactly-one 사후 검증(행위 단말 책임): 승격/해제 직후 실제 DB 상태로 확인한다.
+        await verifyExactlyOneHost(state.roomCode, state.currentUserId);
         const beforePromote = [...state.participants]; // WRPS-056: 직전 세션 구성 캡처(호스트 교체 전)
         state.participants = state.participants.map(p => ({
           ...p,
@@ -12759,15 +12907,41 @@ function summarizeGameStats(rows) {
 	    }
 
     // 호스트 자동 재선택 (참여자 퇴장 시)
+    // WRPS-083 1단계: 종전에는 호출부가 0곳인 사장 코드였고(승격 규칙도 participants[0] 단순
+    // 선두 + error 미검사 + 모든 단말이 write 가능한 구조), fetchParticipants의 스냅샷 확정
+    // 직후에 배선하면서 CEO 승격 기준에 맞췄다:
+    //   - 후보 규칙: created_at 최소, 동률 시 id 오름차순(pickDeterministicHostCandidate).
+    //   - 전 단말이 같은 정렬 목록(:6188 created_at asc)에서 같은 후보를 계산하되,
+    //     "후보 본인 단말만" write한다 — 중복 write 원천 차단, 나머지 단말은 관측만.
+    //   - 승격 write는 promoteParticipantToHost(error 검사 + 반영 재확인)로만 수행한다.
+    //   - 과도기 오탐 방지: 정상 인계는 이제 항상 "승격 선행 → 해제/삭제 후행" 순서라
+    //     host 0명 스냅샷을 만들지 않지만, 외부 요인(동시 정리 삭제 등)으로 반쯤 커밋된
+    //     스냅샷을 한 번 볼 가능성은 남는다 — 연속 2회(폴링 기준 ≈2.6s 간격) 관측될 때만
+    //     개입해 진짜 고착(host 0명)만 회복한다.
     async function ensureHostExists() {
-      if (!getOnlineMode()) return;
-      const hasHost = state.participants.some(p => p.is_host);
-      if (!hasHost && state.participants.length > 0) {
-        const newHost = state.participants[0];
-        await db.from('participants').update({ is_host: true }).eq('id', newHost.id);
-        if (newHost.id === state.currentUserId) {
+      if (!getOnlineMode() || !db || !state.roomCode) return;
+      const rows = state.participants || [];
+      if (!rows.length || rows.some(p => p.is_host)) {
+        state.hostZeroObservationStreak = 0;
+        return;
+      }
+      state.hostZeroObservationStreak = (state.hostZeroObservationStreak || 0) + 1;
+      if (state.hostZeroObservationStreak < 2) return;
+      const candidate = pickDeterministicHostCandidate(rows);
+      if (!candidate) return;
+      if (candidate.id !== state.currentUserId) return; // 후보 본인만 write — 관측 단말은 대기.
+      if (state.ensuringHostExists) return; // 같은 단말의 폴링/realtime 중복 진입 가드.
+      state.ensuringHostExists = true;
+      try {
+        try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'HOST_ZERO_DETECTED', candidateId: candidate.id, participantCount: rows.length }); } catch (e) {}
+        const ok = await promoteParticipantToHost(candidate.id);
+        if (ok) {
           state.role = "host";
+          state.hostZeroObservationStreak = 0;
+          try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'HOST_AUTO_PROMOTED', hostId: candidate.id }); } catch (e) {}
         }
+      } finally {
+        state.ensuringHostExists = false;
       }
     }
 
