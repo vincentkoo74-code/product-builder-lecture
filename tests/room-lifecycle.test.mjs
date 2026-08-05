@@ -42,11 +42,24 @@ describe('WRPS-056 room lifecycle', () => {
     expect(html).toContain('destroyRoomAndGoHome("last_participant")');
   });
 
-  it('destroyRoomAndGoHome이 방/참가자 삭제 후 홈 복귀한다', () => {
+  // WRPS-083 2B(계약 갱신): hard DELETE → soft tombstone.
+  // 종전 rooms.delete()는 남은 단말의 rooms.select().single()을 null로 만들어 handleRoomUpdate의
+  // `if (room)` 가드에서 아무 것도 하지 않게 했다 — 즉 "방이 사라졌다"가 전파되지 않았다.
+  // tombstone은 row를 남겨 기존 2경로(realtime + 2.6s 폴링)로 자연 전파된다.
+  it('destroyRoomAndGoHome이 soft tombstone으로 종료하고 홈 복귀한다(hard DELETE 금지)', () => {
     const body = fnBody('destroyRoomAndGoHome');
-    expect(body).toContain("db.from('rooms').delete()");
+    expect(body).toContain("db.from('rooms').update({ status: 'destroyed' })");
+    expect(body).not.toContain("db.from('rooms').delete()");
+    // 순서 계약: rooms tombstone이 participants 정리보다 먼저다(역순 금지).
+    expect(body.indexOf("from('rooms')")).toBeLessThan(body.indexOf("from('participants')"));
+    expect(body).toContain('teardownRoomRuntime()');
+    expect(body).toContain('clearRoomScopedCache(');
     expect(body).toContain('goHome()');
     expect(body).toContain('ROOM_DESTROYED');
+  });
+
+  it('WRPS-083 2B: 소스 전체에서 rooms hard DELETE가 사라졌다', () => {
+    expect(html).not.toContain("db.from('rooms').delete()");
   });
 
   it('roomClosedAlone toast가 3개 로케일에 존재한다', () => {

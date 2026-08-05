@@ -46,6 +46,12 @@ const REMATCH_HELPERS_SRC = extractBlock(
   'function scheduleRematchAutoAdvance(delayMs = 1500) {',
   'async function nextRound() {'
 );
+// WRPS-083 2B: nextRound/beginNewGameRound가 destroyed 공통 가드를 호출한다.
+// hand-copy/no-op stub 금지 — index.html 원문을 함께 추출한다.
+const ROOM_GUARD_SRC = extractBlock(
+  'function isRoomClosingOrDestroyed() {',
+  'function isJoinLocked('
+);
 const NEXT_ROUND_SRC = extractBlock('async function nextRound() {', 'async function endGame() {');
 const DISCARD_IN_PROGRESS_SRC = extractBlock(
   'function discardInProgressRoomSession() {',
@@ -112,7 +118,7 @@ function loadRematchAdvanceCluster({ state, db, QA, buildPenaltyValue, getNextPh
     'state', 'getOnlineMode', 'getGameRound', 'getTargetLoserCount', 'QA', 'showToast', 't',
     'renderRoundResult', 'showScreen', 'buildPenaltyValue', 'getNextPhaseScheduledAt', 'db', 'saveState', 'showReadyScreen',
     'getActivePlayers', 'showTaggerPopup',
-    REMATCH_HELPERS_SRC + '\n' + NEXT_ROUND_SRC +
+    ROOM_GUARD_SRC + '\n' + REMATCH_HELPERS_SRC + '\n' + NEXT_ROUND_SRC +
       '\n; return { scheduleRematchAutoAdvance, scheduleRematchAdvanceRetryAfterFailure, maybeRecoverStalledRematchAdvance, nextRound, getRematchAdvanceRetryKey, getRematchAdvanceRetryAttempts, buildAutoAdvanceMetricPayload };'
   );
   const bundle = factory(
@@ -224,7 +230,7 @@ function loadBeginNewGameRound(state) {
     'state', 'db', 'hasCurrentGameRoundActivity', 'archiveCurrentRoundStats', 'resetTransientRoundUi',
     'getTargetLoserCount', 'getGameRound', 'getNextCountdownStartAt', 'buildPenaltyValue', 'getNextPhaseScheduledAt',
     'resetLocalParticipantsForNewGameRound', 'getOnlineMode', 'getNewGameRoundParticipantPatch', 'saveState',
-    BEGIN_NEW_GAME_ROUND_SRC + '\n; return beginNewGameRound;'
+    ROOM_GUARD_SRC + '\n' + BEGIN_NEW_GAME_ROUND_SRC + '\n; return beginNewGameRound;'
   );
   const beginNewGameRound = factory(
     state, db, hasCurrentGameRoundActivity, archiveCurrentRoundStats, resetTransientRoundUi,
@@ -919,7 +925,7 @@ describe('Build29 Round2 [CEO 인수기준 7/8/9] 오프라인/db-unavailable �
       'state', 'getOnlineMode', 'getTargetLoserCount', 'showToast', 't', 'renderRoundResult', 'showScreen',
       'buildPenaltyValue', 'getGameRound', 'getNextPhaseScheduledAt', 'db', 'saveState', 'showReadyScreen',
       'scheduleRematchAdvanceRetryAfterFailure',
-      NEXT_ROUND_SRC + '\n; return nextRound;'
+      ROOM_GUARD_SRC + '\n' + NEXT_ROUND_SRC + '\n; return nextRound;'
     );
     const calls = { showReadyScreen: 0, saveState: 0 };
     const nextRound = factory(

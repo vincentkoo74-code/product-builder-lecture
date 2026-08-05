@@ -52,6 +52,11 @@ function extractBlock(startMarker, endMarker, includeEndFirstChar = false) {
 
 // ── 실제 소스 블록 추출 ──────────────────────────────────────────────
 // handleRoomUpdate() 상단: round===1 리셋 블록 + round/status 할당(oldStatus 캡처 포함).
+// WRPS-083 2B: 아래 REAL 블록이 destroyed 공통 가드(isRoomClosingOrDestroyed)를 호출한다.
+// hand-copy/no-op stub 금지 — index.html 원문을 함께 추출한다.
+const ROOM_GUARD_SRC = extractBlock(
+  'function isRoomClosingOrDestroyed() {', 'function isJoinLocked('
+);
 const ROOM_UPDATE_HEAD_SRC = extractBlock(
   "const confirmedIdsResetKey = `${state.roomCode || ''}:${state.gameRound}`;",
   'if (oldStatus !== state.status) {'
@@ -172,7 +177,7 @@ function loadRealStartGame(state) {
     'state', 'db', '$', 'setBtnText', 't', 'getOnlineMode', 'getNextCountdownStartAt', 'buildPenaltyValue',
     'getGameRound', 'enterPlayingStateFromRoomUpdate', 'showToast', 'runCountdownThenShowGame', 'saveState',
     'isCurrentRoundParticipant',
-    START_GAME_SRC + '\n; return startGame;'
+    ROOM_GUARD_SRC + '\n' + START_GAME_SRC + '\n; return startGame;'
   );
   const startGame = factory(
     state, db, () => mockEl(), () => {}, (k) => k, () => true, () => Date.now() + 3000,

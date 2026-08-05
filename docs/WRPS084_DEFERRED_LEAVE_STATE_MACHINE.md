@@ -275,7 +275,7 @@ stateDiagram-v2
 | 선택 | 재사용 함수 | 상태 |
 |---|---|---|
 | 호스트 넘기고 나가기 | `transferHostAndLeave:11043` — promote → SELECT 재검증 → exactly-one → row 삭제 | **existing** (1단계 검증 로직 그대로) |
-| 방 종료하고 나가기 | `destroyRoomByHost` | **planned (2B 의존)** |
+| 방 종료하고 나가기 | `destroyRoomByHost:11323` | **existing (2B 완료)** |
 | 계속 참여 | `setLeaveAfterRound(false)` | **planned** |
 
 **팝업은 `showNextHostPopup:11025`를 재사용하지 않는다.** 그 팝업은 "나가기 즉시 실행" 문맥이고 2B가 같은 DOM에 "방 종료"를 추가할 예정이라, 결합하면 blast radius가 커진다. `showHostPostRoundPopup` (planned) 별도 신설.
@@ -731,7 +731,7 @@ stateDiagram-v2
 
 **남은 구현 blocker 2건** (설계 미결이 아니라 선행 작업)
 - 원격 DB에 `leave_after_round` 컬럼 미적용 (DR-084-1, 원격 적용 별도 승인 필요)
-- WRPS-083 2B 미구현 — Host 3선택 중 "방 종료하고 나가기"가 `destroyRoomByHost`(planned)에 의존
+- ~~WRPS-083 2B 미구현~~ → **해소.** `destroyRoomByHost`가 existing이 되어 Host 3선택 중 "방 종료하고 나가기"를 재사용할 수 있다
 
 ---
 
@@ -747,7 +747,7 @@ stateDiagram-v2
 | 6 | 결과 저장과 delete 순서 확정 | ✅ §7 (R8) |
 | 7 | 예약 취소 경합 처리 확정 | ✅ §8 F4/F5 (조건부 update CAS + SELECT 최종 판정) |
 | 8 | Host 사후 선택 처리 확정 | ✅ §6 |
-| 9 | 2B room destroy와 충돌 없음 | ⚠️ **2B 미구현** — "방 종료하고 나가기"가 `destroyRoomByHost`에 직접 의존 |
+| 9 | 2B room destroy와 충돌 없음 | ✅ **충족** — 2B 구현 완료(`destroyRoomByHost:11323`). 상호배제 플래그 `roomClosing`/`hostTransferInFlight`도 2B가 도입했다 |
 | 10 | 테스트 L1~L22 매핑 | ✅ §12 |
 | 11 | mutation Q1~Q14 매핑 | ✅ §13 |
 | 12 | CRITICAL/HIGH/MEDIUM 0 또는 수용 | ❌ CRITICAL 1 (§10-1), HIGH 2, MEDIUM 3 |

@@ -35,6 +35,11 @@ function extractBlock(startMarker, endMarker, label) {
 }
 
 // ── REAL 소스 추출 ────────────────────────────────────────────────────────────
+// WRPS-083 2B: 아래 REAL 블록이 destroyed 공통 가드(isRoomClosingOrDestroyed)를 호출한다.
+// hand-copy/no-op stub 금지 — index.html 원문을 함께 추출한다.
+const ROOM_GUARD_SRC = extractBlock(
+  'function isRoomClosingOrDestroyed() {', 'function isJoinLocked(', 'roomGuard'
+);
 const HELPERS_SRC = extractBlock(
   'function pickDeterministicHostCandidate(rows) {', 'async function leaveRoom() {', 'helpers'
 );
@@ -81,7 +86,7 @@ function buildFetchTerminal({ db, currentUserId, roomCode = 'ROOM1', fetchSource
   const calls = { qa: [], renderAll: 0 };
   const noop = () => {};
   const asyncNoop = async () => {};
-  const combined = `${HELPERS_SRC}\n${ENSURE_HOST_SRC}\n${fetchSourceOverride ?? FETCH_CLUSTER_SRC}`;
+  const combined = `${ROOM_GUARD_SRC}\n${HELPERS_SRC}\n${ENSURE_HOST_SRC}\n${fetchSourceOverride ?? FETCH_CLUSTER_SRC}`;
   const factory = new Function(
     'state', 'db', 'QA', 'getOnlineMode',
     'cleanupDuplicateRoomProfiles', 'destroyRoomAndGoHome', 'shouldResetForParticipantChange',
@@ -180,7 +185,7 @@ function buildTerminal({ db, currentUserId, role, participants, roomCode = 'ROOM
   const calls = { toast: [], beginNewGameRound: [], goHome: 0, clearRealtime: 0, qa: [], showHostRoom: 0 };
   const fakeEl = () => ({ classList: { add() {}, remove() {} }, style: {}, innerHTML: '', textContent: '', appendChild() {} });
   const combined = combinedSourceOverride
-    || `${HELPERS_SRC}\n${LEAVE_CLUSTER_SRC}\n${ENSURE_HOST_SRC}`;
+    || `${ROOM_GUARD_SRC}\n${HELPERS_SRC}\n${LEAVE_CLUSTER_SRC}\n${ENSURE_HOST_SRC}`;
   const factory = new Function(
     'state', 'db', 'QA', 'getOnlineMode', 'showToast', 't', 'clearRealtime', 'goHome',
     'beginNewGameRound', 'hasCurrentGameRoundActivity', 'loadNickname', 'stopGameOverCountdown',
@@ -500,7 +505,7 @@ describe('T6 — mutation: 안전장치 제거 시 T2/T3가 RED가 됨을 증명
         { id: 'h1', is_host: true, created_at: T0 },
         { id: 'p2', is_host: false, created_at: T5S },
       ],
-      combinedSourceOverride: `${HELPERS_SRC}\n${mutatedCluster}\n${ENSURE_HOST_SRC}`,
+      combinedSourceOverride: `${ROOM_GUARD_SRC}\n${HELPERS_SRC}\n${mutatedCluster}\n${ENSURE_HOST_SRC}`,
     });
     await t.impl.transferHostAndLeave('p2');
     // T2의 핵심 불변식("승격 실패 시 old host row 보존")이 mutant에서는 깨진다 → T2는 RED가 된다.

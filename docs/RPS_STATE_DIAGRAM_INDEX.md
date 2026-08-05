@@ -1,9 +1,8 @@
 # RPS 상태 다이어그램 인덱스
 
-> **STATUS: Draft — Implementation Pending**
-> 기준 HEAD `f6f7eb759fbe99ea0c8d983bbd82f67271115f75`
-> **이 문서군의 내용은 코드와 DB에 아직 적용되지 않았다.** `planned` 표기 항목은 설계일 뿐 구현물이 아니다.
-> CEO 판정(2026-08-05): 문서 품질 PASS / 구현 착수 HOLD / 미확정 전이 해결 후에만 구현 승인.
+> **STATUS: Living — WRPS-083 2B 구현 반영됨**
+> 기준 HEAD `281cb715af466825118d08ccbfe5ae31db3775fb` + WRPS-083 2B 작업본(커밋 대기)
+> WRPS-083 1단계·2A·2B는 `existing`. WRPS-084는 여전히 `planned`(원격 DB 마이그레이션 대기).
 
 마루의 가위바위보 상태 전이 문서의 진입점이다. 장애 분석·설계 리뷰·PR 승인에서 이 인덱스를 먼저 연다.
 
@@ -24,7 +23,7 @@
 | `RPS_STATE_DIAGRAM_INDEX.md` (이 문서) | — | 인덱스·추적성·갱신 규칙 | — |
 
 > **구현 게이트**: `WRPS084_DECISION_REGISTER.md`의 OPEN 항목이 전부 닫히기 전에는 WRPS-084 구현에 착수하지 않는다.
-> 2026-08-05 기준 DR-084-1~6 전부 **DECIDED**, 미결 항목 0건. 남은 blocker는 선행 작업 2건이다 — ① 원격 DB에 `leave_after_round` 미적용 ② WRPS-083 2B 미구현.
+> 2026-08-05 기준 DR-084-1~6 전부 **DECIDED**, 미결 항목 0건. WRPS-083 2B는 구현 완료됐다. 남은 blocker는 **① 원격 DB에 `leave_after_round` 미적용** 1건이다.
 
 기존 관련 문서: `docs/GAME_LOGIC.md`(판정 규칙), `docs/BUILD31_FIELD_QA_CHECKLIST.md`(실기기 QA), `PROJECT_CONTEXT.md`.
 
@@ -45,7 +44,7 @@ Level 1  축별 상태 머신 (4축은 서로 독립)
 Level 2  기능별 상세 전이
          ├ WRPS-083 Host Transfer        → ARCHITECTURE §7
          ├ WRPS-083 WAITING / Rejoin     → ARCHITECTURE §8
-         ├ WRPS-083 2B Room Destroy      → ARCHITECTURE §9   (planned)
+         ├ WRPS-083 2B Room Destroy      → ARCHITECTURE §9
          ├ WRPS-084 Deferred Leave       → DEFERRED_LEAVE §3
          └ WRPS-084 Host Post-Round      → DEFERRED_LEAVE §6
 
@@ -53,7 +52,7 @@ Level 3  실행 시퀀스
          ├ DB write sequence             → DEFERRED_LEAVE §7, ARCHITECTURE §10
          ├ 실패 / rollback sequence      → DEFERRED_LEAVE §8
          ├ realtime / polling convergence→ ARCHITECTURE §11
-         └ timer / channel teardown      → ARCHITECTURE §12  (planned)
+         └ timer / channel teardown      → ARCHITECTURE §12
 ```
 
 ---
@@ -64,7 +63,7 @@ Level 3  실행 시퀀스
 |---|---|---|---|---|
 | Host Transfer | 083-1 | `promoteParticipantToHost`, `verifyExactlyOneHost`, `pickDeterministicHostCandidate`, `transferHostAndLeave`, `becomeNextHost`, `ensureHostExists` | `tests/host-transfer-stage1.test.mjs` (20), `tests/waiting-state-stage2a.test.mjs` W25~W28 | **existing** — commit `e137530` |
 | WAITING / Rejoin | 083-2A | `computePlayerStatuses`, `getWaitingPlayers`, `isTaggerSelectionComplete`, `isJoinLocked`, `joinRoom`, `recoverRoundWhenAllPlayersWaiting` | `tests/waiting-state-stage2a.test.mjs` (44) | **existing** — commit `f6f7eb7` |
-| Room Destroy | 083-2B | `destroyRoomByHost`, `teardownRoomRuntime`, `isRoomClosingOrDestroyed`, `handleRoomUpdate` destroyed 분기 | `tests/room-destroy-stage2b.test.mjs` | **planned** — 설계 Phase 1 완료 |
+| Room Destroy | 083-2B | `destroyRoomByHost:11323`, `teardownRoomRuntime:11208`, `clearRoomScopedCache:11254`, `isRoomClosingOrDestroyed:4911`, `handleRoomUpdate` destroyed 분기 | `tests/room-destroy-stage2b.test.mjs` (52) | **existing** — 2B 구현 완료 |
 | Deferred Leave | 084 | `isRoundInProgress`, `setLeaveAfterRound`, `toggleLeaveAfterRound`, `processDeferredLeaves` | `tests/deferred-leave-wrps084.test.mjs` | **planned** — 조사 완료, DB 마이그레이션 대기 |
 | Host Post-Round Decision | 084 | `showHostPostRoundPopup`, `transferHostAndLeave`(재사용), `destroyRoomByHost`(2B 의존) | 위와 동일 | **planned** |
 
@@ -128,6 +127,6 @@ event
 | R7 | 예약은 처리 시작 전까지 취소 가능 | DEFERRED_LEAVE §2 | `leavingProcessing` 게이트 (planned) |
 | R8 | 결과·전적 저장 전 예약자 삭제 금지 | DEFERRED_LEAVE §2 | `processDeferredLeaves` 순서 (planned) |
 | R9 | 새 Host 검증 전 기존 Host 제거 금지 | ARCHITECTURE §13 | `promoteParticipantToHost` SELECT 재검증 |
-| R10 | 방 종료와 Host 승계 동시 실행 금지 | ARCHITECTURE §13 | `roomClosing` 상호배제 (planned) |
-| R11 | destroyed 방은 되살아나지 않음 | ARCHITECTURE §13 | `isRoomClosingOrDestroyed` 가드 (planned) |
+| R10 | 방 종료와 Host 승계 동시 실행 금지 | ARCHITECTURE §13 | `roomClosing`/`hostTransferInFlight` 상호배제 (existing, 2B) |
+| R11 | destroyed 방은 되살아나지 않음 | ARCHITECTURE §13 | `isRoomClosingOrDestroyed:4911` 가드 19곳 (existing, 2B) |
 | R12 | QA 계측은 상태 전이에 영향 없음 | ARCHITECTURE §14 | `QA.emit` 동기·읽기 전용 |

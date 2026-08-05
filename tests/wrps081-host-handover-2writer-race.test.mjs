@@ -40,6 +40,11 @@ function extractBlock(startMarker, endMarker, label) {
 }
 
 // ── REAL 추출: 공용 헬퍼 ──────────────────────────────────────────────────────
+// WRPS-083 2B: 아래 REAL 블록이 destroyed 공통 가드(isRoomClosingOrDestroyed)를 호출한다.
+// hand-copy/no-op stub 금지 — index.html 원문을 함께 추출한다.
+const ROOM_GUARD_SRC = extractBlock(
+  'function isRoomClosingOrDestroyed() {', 'function isJoinLocked(', 'roomGuard'
+);
 const PARSE_AND_SCHEDULE_SRC = extractBlock(
   'function toPositiveInt(value, fallback = 0) {', 'function $(id) {', 'parseAndSchedule'
 );
@@ -133,7 +138,7 @@ function buildHandoverImpl({ state, db }) {
     'state', 'db', 'QA', 'resetTransientRoundUi', 'stopGameOverCountdown', 'saveState',
     'showHostRoom', 'showScreen', 'scheduleFetchParticipants', 'renderAll', 'maxLoserCountFor',
     'showToast', 't',
-    `${COMBINED_FOR_HANDOVER}\n; return { beginNewGameRound, becomeNextHost, handleRoomUpdate, getGameRound, getPenaltyGameRound };`
+    `${ROOM_GUARD_SRC}\n${COMBINED_FOR_HANDOVER}\n; return { beginNewGameRound, becomeNextHost, handleRoomUpdate, getGameRound, getPenaltyGameRound };`
   );
   const impl = factory(
     state, db, QA, resetTransientRoundUi, stopGameOverCountdown, saveState,

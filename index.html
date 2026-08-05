@@ -2867,6 +2867,20 @@
       </div>
     </div>
 
+    <!-- WRPS-083 2B: Host 나가기 3선택 팝업. 기존 nextHostPopup에 "방 종료"를 끼워 넣지 않는다
+         (그 팝업은 "그냥 나가기"=leaveRoomForce 흐름과 결합돼 있어 blast radius가 커진다). -->
+    <div id="hostLeavePopup" class="popup-overlay hidden">
+      <div class="popup-card maru-popup">
+        <div class="saekdong-v">
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <h3 class="maru-section-title" style="font-size:18px;margin:0 0 16px" data-i18n="popup.hostLeaveTitle">🚪 나가기</h3>
+        <button onclick="window.chooseHostTransferFromLeave()" class="btn-light btn-full" style="margin-bottom:8px" data-i18n="popup.hostLeaveTransfer">👑 호스트 넘기기</button>
+        <button onclick="window.chooseRoomDestroyFromLeave()" class="btn-outline btn-full" style="margin-bottom:8px;color:#b91c1c;border-color:#fecaca" data-i18n="popup.hostLeaveDestroy">🛑 방 종료</button>
+        <button onclick="window.closeHostLeavePopup()" class="btn-outline btn-full" data-i18n="common.cancel">취소</button>
+      </div>
+    </div>
+
     <!-- 다음 호스트 선택 팝업 -->
     <div id="nextHostPopup" class="popup-overlay hidden">
       <div class="popup-card maru-popup">
@@ -3293,6 +3307,15 @@
         "popup.nextHostTitle": "👑 다음 호스트 선택",
         "popup.nextHostSubtitle": "게임을 이어받을 다음 호스트를 선택해주세요.",
         "popup.nextHostRandom": "그냥 나가기",
+        "popup.hostLeaveTitle": "🚪 나가기",
+        "popup.hostLeaveTransfer": "👑 호스트 넘기기",
+        "popup.hostLeaveDestroy": "🛑 방 종료",
+        "popup.confirmDestroyTitle": "방을 종료할까요?",
+        "popup.confirmDestroyMsg": "방을 종료하면 모든 참여자가 함께 나가게 되고, 이 방에는 다시 들어올 수 없어요 🐾",
+        "popup.confirmDestroyOk": "🛑 방 종료",
+        "toast.roomDestroyedByHost": "호스트가 방을 종료했습니다.",
+        "toast.roomDestroyFailed": "⚠️ 방 종료에 실패했어요. 잠시 후 다시 시도해 주세요.",
+        "toast.roomDestroyUnauthorized": "⚠️ 더 이상 이 방의 호스트가 아니에요.",
         "popup.inviteTitle": "🎮 새 게임 초대",
         "popup.inviteSubtitle": "호스트가 같은 방에서 새 게임을 시작합니다!",
         "popup.inviteAccept": "수락하기",
@@ -3650,6 +3673,15 @@
         "popup.nextHostTitle": "👑 Pick next host",
         "popup.nextHostSubtitle": "Pick the next host to take over the room.",
         "popup.nextHostRandom": "Just leave",
+        "popup.hostLeaveTitle": "🚪 Leave",
+        "popup.hostLeaveTransfer": "👑 Transfer host",
+        "popup.hostLeaveDestroy": "🛑 Close room",
+        "popup.confirmDestroyTitle": "Close this room?",
+        "popup.confirmDestroyMsg": "Closing the room removes everyone, and no one can rejoin it 🐾",
+        "popup.confirmDestroyOk": "🛑 Close room",
+        "toast.roomDestroyedByHost": "The host closed the room.",
+        "toast.roomDestroyFailed": "⚠️ Couldn't close the room. Please try again.",
+        "toast.roomDestroyUnauthorized": "⚠️ You're no longer the host of this room.",
         "popup.inviteTitle": "🎮 New game invitation",
         "popup.inviteSubtitle": "The host is starting a new game in this room!",
         "popup.inviteAccept": "Accept",
@@ -4002,6 +4034,15 @@
         "popup.nextHostTitle": "👑 次のホスト選択",
         "popup.nextHostSubtitle": "ゲームを引き継ぐ次のホストを選んでください。",
         "popup.nextHostRandom": "そのまま出る",
+        "popup.hostLeaveTitle": "🚪 退出",
+        "popup.hostLeaveTransfer": "👑 ホストを引き継ぐ",
+        "popup.hostLeaveDestroy": "🛑 部屋を終了",
+        "popup.confirmDestroyTitle": "部屋を終了しますか？",
+        "popup.confirmDestroyMsg": "部屋を終了すると全員が退出し、この部屋には再入室できません 🐾",
+        "popup.confirmDestroyOk": "🛑 部屋を終了",
+        "toast.roomDestroyedByHost": "ホストが部屋を終了しました。",
+        "toast.roomDestroyFailed": "⚠️ 部屋の終了に失敗しました。もう一度お試しください。",
+        "toast.roomDestroyUnauthorized": "⚠️ すでにこの部屋のホストではありません。",
         "popup.inviteTitle": "🎮 新ゲーム招待",
         "popup.inviteSubtitle": "ホストが同じ部屋で新ゲームを始めます！",
         "popup.inviteAccept": "参加する",
@@ -4861,6 +4902,27 @@
       return true;
     }
 
+    // ── WRPS-083 2B: 방 종료(soft tombstone) 공통 가드 ───────────────────────────
+    // 방이 종료 중이거나 이미 종료된 상태에서는 어떤 Host writer도 실행되면 안 된다.
+    // 특히 _doLeaveRoom의 status:'waiting' write는 tombstone을 되살려 종료된 방을 부활시킨다.
+    // ⚠️ 화이트리스트(허용 status 목록)가 아니라 'destroyed' 단일 비교여야 한다 — 운영 rooms.status는
+    // 개방형 텍스트 컬럼이고 실측 9종(penalty_setting 포함)이 존재하며 코드 grep으로 완전 열거되지
+    // 않는다. 화이트리스트로 짜면 기존 값이 부수적으로 차단된다.
+    function isRoomClosingOrDestroyed() {
+      return Boolean(state.roomClosing) || state.status === 'destroyed';
+    }
+
+    // WRPS-083 2B(WRPS-084 compatibility point): "지금 라운드가 진행 중인가".
+    // 라운드 진행 중 나가기는 2B가 아니라 WRPS-084 Deferred Leave 담당이므로, 2B는 그 경계만
+    // 판정하고 예약 기능 자체는 구현하지 않는다.
+    // ⚠️ planned: WRPS-084 구현 시 이 인라인 판정을 정식 isRoundInProgress()로 교체한다
+    //    (DR-084-3 확정 정의: 의미 기반 — 결과 저장이 아직 살아 있는 구간까지 포함).
+    //    2B 범위에서는 status 2종 + 저장 진행 중 플래그 2종의 최소 판정으로 한정한다.
+    function isRoundInProgressForLeave() {
+      return state.status === "playing" || state.status === "result" ||
+        Boolean(state.publishingRoundResult) || Boolean(state.finishingRound);
+    }
+
     // WRPS-083 2A: ready 잠금 계산에서 WAITING 참가자를 제외한다.
     // 제외하지 않으면 라운드 진행 중 재입장자의 is_ready=false(joinRoom이 __waiting__과 함께 그렇게
     // 저장한다)가 ACTIVE 참가자 전원의 준비 완료를 영구히 가려, 방이 status='ready'에서 잠기지 않는다.
@@ -5218,6 +5280,8 @@
 	    }
 
 	    async function beginNewGameRound({ status = "lobby", increment = true, reason = "new_round", priorParticipants = null } = {}) {
+	      // WRPS-083 2B(Tier 1): 종료 중/종료된 방을 활성 status로 되돌리지 않는다(R11).
+	      if (isRoomClosingOrDestroyed()) return;
 	      if (state.newRoundResetting) return;
 	      state.newRoundResetting = true;
 	      try {
@@ -5521,6 +5585,10 @@
     }
 
     async function cleanupDroppedParticipants() {
+      // WRPS-083 2B(B안, HIGH): presence sync가 예약한 5.5s/13s 타이머는 teardown 후에도 깨어날 수
+      // 있다. 이 진입부 가드가 본질적 방어다 — 타이머 발화 여부와 무관하게, 그리고 폴링·realtime·
+      // 직접 호출 등 "모든" 호출 경로에서 종료된 방에 대한 write를 0으로 만든다.
+      if (isRoomClosingOrDestroyed()) return;
       if (!getOnlineMode() || state.role !== "host" || state.cleaningDropped) return;
       if (!state.presenceReady || !["waiting", "lobby", "ready"].includes(state.status)) return;
       const now = Date.now();
@@ -5596,8 +5664,13 @@
           state.onlineParticipantIds = Object.keys(presenceState);
           state.presenceReady = true;
           cleanupDroppedParticipants();
-          setTimeout(() => cleanupDroppedParticipants(), 5500);
-          setTimeout(() => cleanupDroppedParticipants(), 13000);
+          // WRPS-083 2B(A안): 종전에는 이 두 setTimeout의 핸들을 보관하지 않아 teardown 후에도
+          // 깨어나 participants.delete를 실행할 수 있었다(HIGH). 핸들을 배열에 모아
+          // teardownRoomRuntime()이 일괄 취소한다. B안(cleanupDroppedParticipants 진입부 가드)과
+          // 함께 적용해 "타이머가 살아 있어도 write가 0"인 2중 방어로 만든다.
+          if (!state.presenceCleanupTimers) state.presenceCleanupTimers = [];
+          state.presenceCleanupTimers.push(setTimeout(() => cleanupDroppedParticipants(), 5500));
+          state.presenceCleanupTimers.push(setTimeout(() => cleanupDroppedParticipants(), 13000));
           renderAll();
         })
         .subscribe(async (status) => {
@@ -5902,6 +5975,22 @@
       const oldStatus = state.status;
       state.status = room.status;
       if (state.status !== "playing") state.playingEntryKey = null;
+
+      // WRPS-083 2B: destroyed 조기 분기. realtime·2.6s 폴링·resume 재동기화 세 경로가 모두 이
+      // handleRoomUpdate 단일 진입점을 통과하므로, 여기 한 곳이 전 경로를 커버한다(신규 전파 채널 0).
+      // ⚠️ 이 분기를 stale gate "앞"에 두지 않는다 — 방 종료는 되돌릴 수 없는 terminal 동작이라,
+      // 검증되지 않은(늦게 도착한 과거) row 하나로 종료시키면 안 된다. gate를 통과한 row만 종료를
+      // 트리거한다. 대가로 로컬 gameRound가 낙관적으로 앞선 단말에서는 최대 5폴링(self-heal 임계)
+      // 만큼 종료가 지연될 수 있다 — 영구 정지가 아니라 유계 지연이며 테스트로 상한을 고정한다.
+      if (room.status === 'destroyed') {
+        try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ROOM_DESTROYED_RECEIVED', roomId: room.id || state.roomCode || null }); } catch (e) {}
+        const destroyedRoomCode = room.id || state.roomCode;
+        teardownRoomRuntime();
+        clearRoomScopedCache(destroyedRoomCode);
+        try { showToast(t("toast.roomDestroyedByHost")); } catch (e) {}
+        goHome();
+        return;
+      }
 
       if (oldStatus !== state.status) {
         // Build29(WRPS-076) [P1, R5]: "ready"+round>1 참가자 새로고침(마커 확인용)을
@@ -6379,12 +6468,14 @@
 
     async function updateRoomStatus(status) {
       if (!db) return;
+      if (isRoomClosingOrDestroyed()) return; // WRPS-083 2B(Tier 2, defense-in-depth)
       await db.from('rooms').update({ status }).eq('id', state.roomCode);
     }
     // Build19: RESULT/READY 전환 시 서버 예정 시각을 penalty에 함께 기록(countdown과 동일 패턴,
     // DB 스키마 무변경) — 모든 클라이언트가 같은 서버 시각에 화면을 표시하도록 한다.
     async function updateRoomStatusScheduled(status, phaseKind) {
       if (!db) return;
+      if (isRoomClosingOrDestroyed()) return; // WRPS-083 2B(Tier 2, defense-in-depth)
       const penalty = buildPenaltyValue({ gameRound: getGameRound(), phaseScheduledAt: getNextPhaseScheduledAt(), phaseKind });
       state.penalty = penalty;
       await db.from('rooms').update({ status, penalty }).eq('id', state.roomCode);
@@ -6542,7 +6633,9 @@
       saveNickname(nickname);
       resetRoomLocalState();
 
-      const code = Math.random().toString(36).substring(2, 6).toUpperCase();
+      // WRPS-083 2B: 코드 생성 알고리즘 자체는 무변경(4자 대문자). 아래 online 분기에서 PK 충돌
+      // (23505) 시 bounded 재생성하며, 그때 이 변수들을 새 코드로 갱신한다.
+      let code = Math.random().toString(36).substring(2, 6).toUpperCase();
       state.shareBaseUrl = getDefaultShareBaseUrl();
       state.roomUrl = buildRoomUrl(code);
       state.role = "host";
@@ -6568,11 +6661,38 @@
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
           ]);
 
-          const { error } = await withTimeout(
-            db.from('rooms').insert([{ id: code, status: 'waiting' }]),
-            5000
-          );
-          if (error) throw new Error(error.message);
+          // WRPS-083 2B: roomCode PK 충돌 시 bounded 재생성(최대 5회).
+          // 종전에는 충돌도 throw → catch → 오프라인 폴백이라, 사용자가 "온라인 방을 만들었는데
+          // 혼자만 보이는" 상태가 됐다. destroyed tombstone을 무기한 보존하면 PK 점유가 누적되어
+          // 충돌 확률이 단조 증가하므로 이 경로를 명시적으로 처리한다.
+          // 상한 5회 근거: 36^4 = 1,679,616. 운영 방 365개 기준 1회 충돌 확률 ≈ 2.2e-4,
+          // 5회 연속 ≈ 5e-19 — 실질 도달 불가이며 무한 재시도도 아니다.
+          // PK 충돌(23505)만 재시도한다. 네트워크/타임아웃 등 다른 오류는 즉시 실패시켜야
+          // 재시도 예산을 엉뚱하게 소진하지 않는다.
+          const MAX_ROOM_CODE_ATTEMPTS = 5;
+          let insertedRoom = false;
+          for (let attempt = 0; attempt < MAX_ROOM_CODE_ATTEMPTS; attempt++) {
+            const { error } = await withTimeout(
+              db.from('rooms').insert([{ id: code, status: 'waiting' }]),
+              5000
+            );
+            if (!error) { insertedRoom = true; break; }
+            const isDuplicate = error.code === '23505' ||
+              /duplicate key|already exists/i.test(error.message || '');
+            if (!isDuplicate) throw new Error(error.message);
+            try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ROOM_CODE_COLLISION', attempt, code }); } catch (e) {}
+            code = Math.random().toString(36).substring(2, 6).toUpperCase();
+            state.roomCode = code;
+            state.roomUrl = buildRoomUrl(code);
+            saveRecentRoomCode(code, nickname, "", "host");
+          }
+          if (!insertedRoom) {
+            // 5회 연속 충돌 — 명시적 실패로 끝낸다(오프라인 폴백으로 전환하지 않는다).
+            try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ROOM_CODE_EXHAUSTED', attempts: MAX_ROOM_CODE_ATTEMPTS }); } catch (e) {}
+            showToast(t("toast.roomDestroyFailed"));
+            state.roomCode = "";
+            return;
+          }
 
           const hostId = `h_${Date.now()}`;
           await withTimeout(
@@ -6811,6 +6931,9 @@
     function getJoinRoomPreview(room, participants = []) {
       const unavailable = { action: "unavailable", label: t("join.statusUnavailable") };
       if (!room) return unavailable;
+      // WRPS-083 2B: destroyed 최우선 차단. 아래 wasHost 분기가 canJoin=false일 때 replay를
+      // 열어주므로(:6825 계열), 이 검사가 그 앞에 있어야 종료된 방의 재초대 경로가 막힌다.
+      if (room.status === 'destroyed') return unavailable;
       const recent = state.joinRecentRoom || getLastJoinedRoom();
       const wasHost = recent?.role === "host" ||
         recent?.participantId === "host" ||
@@ -7167,6 +7290,14 @@
         if (getOnlineMode()) {
           const { data: room } = await db.from('rooms').select('*').eq('id', code).single();
           if (!room) { showToast("존재하지 않는 방입니다."); return; }
+          // WRPS-083 2B: soft tombstone은 row가 살아 있으므로 위의 !room 검사로는 걸러지지 않는다.
+          // 이 거부가 returningParticipant 우회(아래 locked 검사)보다 앞에 있어야 종료된 방으로의
+          // 재입장이 원천 차단된다.
+          if (room.status === 'destroyed') {
+            showToast(t("toast.roomDestroyedByHost"));
+            clearRoomScopedCache(code);
+            return;
+          }
           state.penalty = room.penalty || "";
           state.gameRound = getPenaltyGameRound(room.penalty) || 1;
           state.lastStartedGameRound = ["playing", "result", "game_over", "stats"].includes(room.status)
@@ -7255,6 +7386,14 @@
         state.roomUrl = buildRoomUrl(code);
 
         if (getOnlineMode()) {
+          // WRPS-083 2B: 종료된 방은 재초대(status='reinviting') 대상이 아니다 — 이 write는
+          // tombstone을 활성 status로 되살리는 직접 경로다(R11).
+          const { data: replayRoom } = await db.from('rooms').select('id,status').eq('id', code).single();
+          if (!replayRoom || replayRoom.status === 'destroyed') {
+            showToast(t("toast.roomDestroyedByHost"));
+            clearRoomScopedCache(code);
+            return;
+          }
           const { data: participants } = await db.from('participants')
             .select('*').eq('room_id', code).order('created_at', { ascending: true });
           const existing = (participants || []).find(p => p.id === id)
@@ -7339,6 +7478,7 @@
     }
 
     async function savePenalty() {
+      if (isRoomClosingOrDestroyed()) return; // WRPS-083 2B: destroy await 창에서 타이머/폴링으로 도달해 tombstone을 되살리는 것 차단
       const textVal = $("penaltyInput").value.trim();
       if (!textVal) { showToast("벌칙을 입력해주세요."); return; }
 
@@ -7396,6 +7536,7 @@
     }
 
     async function startGame(options = {}) {
+      if (isRoomClosingOrDestroyed()) return; // WRPS-083 2B: destroy await 창에서 타이머/폴링으로 도달해 tombstone을 되살리는 것 차단
       if (state.round <= 1 && state.role !== "host" && options.trigger !== "last-ready") return;
       if (state.gameStarting) return;
       state.gameStarting = true;
@@ -9718,6 +9859,7 @@ function summarizeGameStats(rows) {
 	    }
 
     async function autoStartDrawRematch() {
+      if (isRoomClosingOrDestroyed()) return; // WRPS-083 2B: destroy await 창에서 타이머/폴링으로 도달해 tombstone을 되살리는 것 차단
       if (state.role !== "host" || state.gameStarting) return;
       state.gameStarting = true;
       state.finishingRound = false;
@@ -9862,6 +10004,7 @@ function summarizeGameStats(rows) {
     }
 
     async function nextRound() {
+      if (isRoomClosingOrDestroyed()) return; // WRPS-083 2B: destroy await 창에서 타이머/폴링으로 도달해 tombstone을 되살리는 것 차단
       if (state.advancingRound) return; // 자동/수동 이중 호출 방지
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
@@ -9995,6 +10138,8 @@ function summarizeGameStats(rows) {
     let _inviteCountdownTimer = null;
 
     async function inviteForReplay() {
+      // WRPS-083 2B: 종료된 방을 'reinviting'으로 되살리지 않는다(R11).
+      if (isRoomClosingOrDestroyed()) return;
       if (!getOnlineMode()) {
         await resetGameKeepRoom();
         return;
@@ -10072,6 +10217,13 @@ function summarizeGameStats(rows) {
 
     async function acceptInvite() {
       const inviteRoom = state.pendingInviteRoomCode || state.roomCode;
+      // WRPS-083 2B: 종료된 방의 초대는 수락하지 않는다. checkGlobalReplayInvites는 이미
+      // status !== 'reinviting'이면 skip하므로(:10030 계열) destroyed 초대가 새로 뜨지는 않지만,
+      // 이미 화면에 떠 있던 초대 팝업을 뒤늦게 수락하는 경로가 남는다.
+      if (inviteRoom === state.roomCode && isRoomClosingOrDestroyed()) {
+        showToast(t("toast.roomDestroyedByHost"));
+        return;
+      }
       if (isBusyInAnotherActiveRoom(inviteRoom)) {
         showToast(t("join.inAnotherGame"));
         return;
@@ -10773,6 +10925,7 @@ function summarizeGameStats(rows) {
     }
 
     async function directStartGame() {
+      if (isRoomClosingOrDestroyed()) return; // WRPS-083 2B: destroy await 창에서 타이머/폴링으로 도달해 tombstone을 되살리는 것 차단
       // Feature 3: all-draw — skip ready screen, set all is_ready so auto-start fires
       if (state.role !== "host") return;
       const btn = $("nextRoundBtn");
@@ -10927,7 +11080,16 @@ function summarizeGameStats(rows) {
     }
 
     async function leaveRoom() {
+      // WRPS-083 2B: 종료/퇴장 처리가 이미 진행 중이면 어떤 나가기 경로도 새로 시작하지 않는다.
+      // leavingProcessing은 WRPS-084가 설정할 플래그다 — 2B는 읽기만 한다(지금은 항상 falsy).
+      if (state.roomClosing || state.hostTransferInFlight || state.leavingProcessing) return;
       if (state.role === "host") {
+        // WRPS-083 2B: 비진행 상태의 host에게 3선택(넘기기 / 방 종료 / 취소)을 제공한다.
+        // 라운드 진행 중 나가기는 WRPS-084 Deferred Leave 담당이므로 2B는 기존 동작을 유지한다.
+        if (!isRoundInProgressForLeave()) {
+          showHostLeavePopup();
+          return;
+        }
         const nonHosts = state.participants.filter(p => !p.is_host);
         if (nonHosts.length > 0) {
           showNextHostPopup();
@@ -10947,6 +11109,10 @@ function summarizeGameStats(rows) {
 
     async function leaveRoomForce() {
       closeNextHostPopup();
+      // WRPS-083 2B: 방 종료와 상호배타. 아래 자동 승격이 종료된 방을 되살리지 않도록 막는다.
+      if (isRoomClosingOrDestroyed() || state.hostTransferInFlight) return;
+      state.hostTransferInFlight = true;
+      try {
       // WRPS-083 1단계: 다음 호스트 자동 지명 — 무작위 금지(CEO 결정 2). created_at 최소,
       // 동률 시 id 오름차순의 결정 규칙으로 지명하고, 승격 write의 성공(대상 row 존재 +
       // is_host 반영)을 확인하기 전에는 자기(기존 host) row 삭제(_doLeaveRoom)를 진행하지
@@ -10972,6 +11138,9 @@ function summarizeGameStats(rows) {
       if (promotedHostId && roomCodeAtLeave) {
         await verifyExactlyOneHost(roomCodeAtLeave, promotedHostId);
       }
+      } finally {
+        state.hostTransferInFlight = false;
+      }
     }
 
     async function _doLeaveRoom() {
@@ -10990,7 +11159,9 @@ function summarizeGameStats(rows) {
         } else {
           await db.from('participants').delete().eq('id', state.currentUserId);
         }
-        if (state.role === "host") {
+        // WRPS-083 2B(Tier 1, CRITICAL): 종료된 방을 'waiting'으로 되돌리면 tombstone이 부활한다.
+        // 종료 직후 다른 host 단말의 이탈 write가 늦게 도착하는 경합에서 실제로 발생 가능하다.
+        if (state.role === "host" && !isRoomClosingOrDestroyed()) {
           await db.from('rooms').update({ status: 'waiting' }).eq('id', state.roomCode);
         }
         if (shouldResetAfterHostLeave) {
@@ -11005,20 +11176,228 @@ function summarizeGameStats(rows) {
     }
 
     // WRPS-056(DR-14): 마지막 1인만 남은 방을 폭파하고 홈으로. 남은 참가자(fetchParticipants)가 호출.
+    // WRPS-083 2B: hard DELETE → soft tombstone으로 통일한다. 종전의 rooms.delete()는 남은 단말의
+    // rooms.select().single()을 null로 만들어 handleRoomUpdate의 `if (room)` 가드에서 아무 것도
+    // 하지 않게 했다 — 즉 "방이 사라졌다"가 전파되지 않았다. tombstone은 row를 남겨 기존 2경로
+    // (realtime + 2.6s 폴링)로 자연 전파된다. 순서도 rooms 먼저 → participants 나중으로 뒤집는다.
     async function destroyRoomAndGoHome(reason = "room_destroyed") {
+      const roomCode = state.roomCode;
       try {
-        if (getOnlineMode() && db && state.roomCode) {
-          try { await db.from('participants').delete().eq('room_id', state.roomCode); } catch (e) {}
-          try { await db.from('rooms').delete().eq('id', state.roomCode); } catch (e) {}
+        if (getOnlineMode() && db && roomCode) {
+          state.roomClosing = true;
+          try { await db.from('rooms').update({ status: 'destroyed' }).eq('id', roomCode); } catch (e) {}
+          try { await db.from('participants').delete().eq('room_id', roomCode); } catch (e) {}
         }
       } finally {
         try { QA.emit('lobby', { wrps: 'WRPS-056', eventType: 'ROOM_DESTROYED', reason }); } catch (e) {}
         try { showToast(t("toast.roomClosedAlone")); } catch (e) {}
-        clearRealtime();
+        teardownRoomRuntime();
+        clearRoomScopedCache(roomCode);
         state.confirmedSafeIds = [];
         state.confirmedLoserIds = [];
         state.gameStarting = false;
+        state.roomClosing = false;
         goHome();
+      }
+    }
+
+    // ── WRPS-083 2B: runtime teardown / room-scoped cache / Host 방 종료 ──────────
+    // 멱등 함수. 각 정리는 독립 try/catch이며, 이미 null인 상태에서 몇 번 호출해도 안전하다.
+    // visibility/pagehide 전역 리스너는 제거하지 않는다(앱 전역 1회 등록) — 대신
+    // resyncRoomOnResume이 destroyed 문맥으로 재동기화하지 않도록 별도 가드를 둔다.
+    function teardownRoomRuntime() {
+      // 1~4: 폴링 / fetch 디바운스 / realtime room channel / presence(같은 채널)
+      try { clearRealtime(); } catch (e) {}
+      // 5: presence sync가 예약한 5.5s/13s 익명 타이머(A안 — 핸들 일괄 취소)
+      try {
+        (state.presenceCleanupTimers || []).forEach(id => { try { clearTimeout(id); } catch (e) {} });
+        state.presenceCleanupTimers = [];
+      } catch (e) {}
+      // 6~7: 라운드 타이머 / 애니메이션 타이머
+      try { stopRoundTimers(); } catch (e) {}
+      // 8~9: gameOver 카운트다운 / 자동 복귀 타임아웃
+      try { stopGameOverCountdown(); } catch (e) {}
+      try { if (state.gameOverTimeout) { clearTimeout(state.gameOverTimeout); state.gameOverTimeout = null; } } catch (e) {}
+      // 10~11: 재대결 자동진행 재시도 / 판정 defer 재시도
+      try { if (state.rematchAdvanceTimer) { clearTimeout(state.rematchAdvanceTimer); state.rematchAdvanceTimer = null; } } catch (e) {}
+      try { if (state.roundJudgeDeferTimer) { clearTimeout(state.roundJudgeDeferTimer); state.roundJudgeDeferTimer = null; } } catch (e) {}
+      // 12~13: 전역 초대 모니터 / 초대 카운트다운
+      try { if (state.globalInviteTimer) { clearInterval(state.globalInviteTimer); state.globalInviteTimer = null; } } catch (e) {}
+      try { if (_inviteCountdownTimer) { clearInterval(_inviteCountdownTimer); _inviteCountdownTimer = null; } } catch (e) {}
+      // 14: QR 스캐너
+      try { stopQrScanner(); } catch (e) {}
+      // 15~16: countdown / phase render / valid-start 코루틴 세대 무효화.
+      // isCountdownGenerationCurrent()가 세대 불일치를 stale로 판정해 진행 중 코루틴이 커밋하지 못한다.
+      try { state.countdownGeneration = (state.countdownGeneration || 0) + 1; } catch (e) {}
+      try { state.renderedPhaseKeys = {}; } catch (e) {}
+      // 17: 음성/효과음
+      try { SoundManager.stopAll(); } catch (e) {}
+      // room-scoped in-flight 플래그 초기화(다음 방 진입이 이전 방 플래그에 막히지 않도록)
+      state.gameStarting = false;
+      state.finishingRound = false;
+      state.publishingRoundResult = false;
+      state.advancingRound = false;
+      state.autoStartInFlight = false;
+      state.newRoundResetting = false;
+      state.cleaningDropped = false;
+      state.becomingNextHost = false;
+      state.ensuringHostExists = false;
+      state.recoveringAllWaiting = false;
+      state.hostTransferInFlight = false;
+      state.hostZeroObservationStreak = 0;
+      state.allWaitingObservationStreak = 0;
+    }
+
+    // 종료된 방에 속한 로컬 값만 제거한다. 닉네임·로케일·음소거·전적·QA 리포트는 방과 무관하므로
+    // 유지한다. 제거는 반드시 기존 scoped storage helper를 경유한다(무스코프 레거시 폴백 때문에
+    // localStorage.removeItem 직접 호출 금지).
+    function clearRoomScopedCache(roomCode) {
+      if (!roomCode) return;
+      try {
+        const saved = JSON.parse(getScopedLocalStorageItem("rpsPartyState") || "null");
+        if (saved && saved.roomCode === roomCode) {
+          setScopedLocalStorageItem("rpsPartyState", JSON.stringify({}));
+        }
+      } catch (e) {}
+      try {
+        const recent = getRecentRoomCodes().filter(r => r.code !== roomCode);
+        setScopedLocalStorageItem("rpsRecentRoomCodes", JSON.stringify(recent.slice(0, 20)));
+      } catch (e) {}
+      try {
+        if (state.joinRecentRoom && state.joinRecentRoom.code === roomCode) state.joinRecentRoom = null;
+      } catch (e) {}
+      try {
+        if (state.roomCode === roomCode) discardInProgressRoomSession();
+      } catch (e) {}
+    }
+
+    function showHostLeavePopup() {
+      const el = $("hostLeavePopup");
+      if (el) el.classList.remove("hidden");
+    }
+
+    function closeHostLeavePopup() {
+      const el = $("hostLeavePopup");
+      if (el) el.classList.add("hidden");
+    }
+
+    function chooseHostTransferFromLeave() {
+      closeHostLeavePopup();
+      const nonHosts = state.participants.filter(p => !p.is_host);
+      if (nonHosts.length > 0) { showNextHostPopup(); return; }
+      // 넘길 대상이 없으면 기존 단독 퇴장 경로를 그대로 쓴다(방 종료가 아니다).
+      void leaveRoomAloneWithConfirm();
+    }
+
+    async function leaveRoomAloneWithConfirm() {
+      const ok = await showConfirmPopup({
+        title: t("popup.confirmLeaveTitle"),
+        message: t("popup.confirmLeaveMsg"),
+        okText: t("popup.confirmLeaveOk"),
+        cancelText: t("common.cancel"),
+        img: "cat-draw-confused.png"
+      });
+      if (!ok) return;
+      await _doLeaveRoom();
+    }
+
+    async function chooseRoomDestroyFromLeave() {
+      closeHostLeavePopup();
+      const ok = await showConfirmPopup({
+        title: t("popup.confirmDestroyTitle"),
+        message: t("popup.confirmDestroyMsg"),
+        okText: t("popup.confirmDestroyOk"),
+        cancelText: t("common.cancel"),
+        img: "cat-draw-confused.png"
+      });
+      if (!ok) return; // 취소: 상태 변경 0, DB write 0
+      await destroyRoomByHost();
+    }
+
+    // 방 종료(soft tombstone). write 순서와 실패 처리가 이 함수의 전부다.
+    //   ① 동기 진입 가드  ② roomClosing=true(첫 await 이전)  ③ DB에서 내 is_host 재확인
+    //   ④ rooms 현재 status 확인  ⑤ rooms.status='destroyed'  ⑥ error 검사  ⑦ SELECT 재조회
+    //   ⑧ status==='destroyed' 검증  ⑨ 전적 스냅샷  ⑩ participants 정리  ⑪ teardown
+    //   ⑫ cache 제거  ⑬ 안내  ⑭ goHome  ⑮ finally에서 roomClosing 해제
+    // ①~⑧ 중 어느 단계가 실패해도 participants를 절대 삭제하지 않는다(Invariant F).
+    async function destroyRoomByHost() {
+      // ── ① 동기 진입 가드 ──────────────────────────────────────────────
+      if (state.role !== "host") return;
+      if (state.roomClosing || state.hostTransferInFlight || state.leavingProcessing) return;
+      const roomCode = state.roomCode;
+      if (!getOnlineMode() || !db || !roomCode) return;
+      // ── ② 첫 await 이전 동기 대입 ────────────────────────────────────
+      // await 뒤에 두면 더블탭의 두 번째 클릭이 첫 await 동안 통과한다(mutation N12).
+      state.roomClosing = true;
+      try {
+        // ── ③ DB에서 내 Host 권한 재확인 ───────────────────────────────
+        // 로컬 state.role만 믿지 않는다. 이미 권한을 넘겼거나 stale UI를 들고 있는 단말의
+        // 방 종료 시도는 여기서 반드시 실패해야 한다(과거 Host 권한 부활 금지).
+        const { data: meRow, error: eMe } = await db.from('participants')
+          .select('id,is_host').eq('id', state.currentUserId).single();
+        if (eMe || !meRow || meRow.is_host !== true) {
+          try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ROOM_DESTROY_UNAUTHORIZED', roomId: roomCode, found: !!meRow }); } catch (e) {}
+          try { showToast(t("toast.roomDestroyUnauthorized")); } catch (e) {}
+          // 로컬 role을 DB 사실에 맞게 정정한다 — stale Host UI를 계속 들고 있지 않도록.
+          if (meRow && meRow.is_host !== true) state.role = "participant";
+          return; // rooms write 0 / participants delete 0 / teardown 0
+        }
+        // ── ④ rooms 현재 status 확인 ───────────────────────────────────
+        const { data: preRow, error: ePre } = await db.from('rooms')
+          .select('id,status').eq('id', roomCode).single();
+        if (ePre || !preRow) {
+          try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ROOM_DESTROY_WRITE_FAILED', stage: 'preSelect', roomId: roomCode }); } catch (e) {}
+          try { showToast(t("toast.roomDestroyFailed")); } catch (e) {}
+          return;
+        }
+        if (preRow.status !== 'destroyed') {
+          // ── ⑤⑥ tombstone write + error 검사 ─────────────────────────
+          const { error: eDestroy } = await db.from('rooms')
+            .update({ status: 'destroyed' }).eq('id', roomCode);
+          if (eDestroy) {
+            try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ROOM_DESTROY_WRITE_FAILED', stage: 'update', roomId: roomCode, message: eDestroy.message || String(eDestroy) }); } catch (e) {}
+            try { showToast(t("toast.roomDestroyFailed")); } catch (e) {}
+            return; // participants 무손상
+          }
+        }
+        // ── ⑦⑧ SELECT 재조회 + 검증 ──────────────────────────────────
+        // update가 error 없이 0-row no-op으로 끝나는 경우를 성공으로 오인하지 않는다
+        // (1단계 promoteParticipantToHost와 동일 원칙).
+        const { data: verifyRow, error: eVerify } = await db.from('rooms')
+          .select('id,status').eq('id', roomCode).single();
+        if (eVerify || !verifyRow || verifyRow.status !== 'destroyed') {
+          try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ROOM_DESTROY_VERIFY_FAILED', roomId: roomCode, found: !!verifyRow, status: verifyRow ? verifyRow.status : null }); } catch (e) {}
+          try { showToast(t("toast.roomDestroyFailed")); } catch (e) {}
+          return; // participants 무손상
+        }
+        // ── ⑨ 전적 스냅샷 ─────────────────────────────────────────────
+        // 진행 중이던 게임의 wins/losses/draws는 아직 room archive에 들어가지 않았다
+        // (archiveCurrentRoundStats는 beginNewGameRound에서만 호출된다). participants를
+        // 지우기 전에 기존 경로로 1회 스냅샷한다. 미완료 라운드를 완료 결과로 위조하지 않고,
+        // gameNo도 증가시키지 않는다(localStorage 스냅샷일 뿐 DB write가 아니다).
+        // 실패해도 tombstone을 되돌리지 않는다 — 관측만 남긴다.
+        try {
+          if (hasCurrentGameRoundActivity()) archiveCurrentRoundStats('room_destroyed');
+        } catch (e) {
+          try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ROOM_DESTROY_ARCHIVE_FAILED', roomId: roomCode, message: String((e && e.message) || e) }); } catch (e2) {}
+        }
+        // ── ⑩ participants 정리 ───────────────────────────────────────
+        const { error: eClean } = await db.from('participants').delete().eq('room_id', roomCode);
+        if (eClean) {
+          // tombstone은 이미 확정됐다. 다른 단말은 destroyed를 수신해 스스로 teardown하고,
+          // ensureHostExists는 destroyed 가드로 승격하지 않으므로 방이 부활하지 않는다.
+          // 잔존 row는 무해한 고아 데이터이므로 로컬 종료를 계속 진행한다.
+          try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ROOM_DESTROY_CLEANUP_FAILED', roomId: roomCode, message: eClean.message || String(eClean) }); } catch (e) {}
+        }
+        try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ROOM_DESTROYED_BY_HOST', roomId: roomCode, participantsCleaned: !eClean }); } catch (e) {}
+        // ── ⑪⑫⑬⑭ 로컬 종료 ─────────────────────────────────────────
+        teardownRoomRuntime();
+        clearRoomScopedCache(roomCode);
+        try { showToast(t("toast.roomDestroyedByHost")); } catch (e) {}
+        goHome();
+      } finally {
+        // ── ⑮ 다음 방 진입이 이 플래그에 막히지 않도록 반드시 해제한다.
+        state.roomClosing = false;
       }
     }
 
@@ -11042,6 +11421,11 @@ function summarizeGameStats(rows) {
 
     async function transferHostAndLeave(newHostId) {
       closeNextHostPopup();
+      // WRPS-083 2B: 방 종료와 Host 승계는 상호배타다(R10). 두 플래그 모두 첫 await 이전에
+      // 동기 설정/검사해 더블탭과 경쟁을 차단한다.
+      if (isRoomClosingOrDestroyed() || state.hostTransferInFlight) return;
+      state.hostTransferInFlight = true;
+      try {
       if (getOnlineMode()) {
         const shouldIncrement = hasCurrentGameRoundActivity();
         // WRPS-083 1단계: 새 host 승격 write의 성공(대상 row 존재 + is_host 반영)을 확인하기
@@ -11075,10 +11459,16 @@ function summarizeGameStats(rows) {
       state.confirmedLoserIds = [];
       state.gameStarting = false;
       goHome();
+      } finally {
+        state.hostTransferInFlight = false;
+      }
     }
 
     async function becomeNextHost() {
       if (!getOnlineMode()) return;
+      // WRPS-083 2B: 종료 중/종료된 방에서는 승계하지 않는다(R10/R11).
+      if (isRoomClosingOrDestroyed() || state.hostTransferInFlight) return;
+      state.hostTransferInFlight = true;
       // Build29(WRPS-076) [P4, F6]: in-flight 가드 — 연타 시 is_host 승계 write가 중복 실행되는 것
       // 방지(중복 beginNewGameRound 호출 포함).
       if (state.becomingNextHost) return;
@@ -11121,6 +11511,7 @@ function summarizeGameStats(rows) {
         showHostRoom();
       } finally {
         state.becomingNextHost = false;
+        state.hostTransferInFlight = false; // WRPS-083 2B: 실패 경로 포함 반드시 해제
       }
     }
 
@@ -12280,6 +12671,9 @@ function summarizeGameStats(rows) {
 
     async function resyncRoomOnResume() {
       if (!getOnlineMode() || !ensureDb() || !state.roomCode) return;
+      // WRPS-083 2B: 종료 중/종료된 방으로는 재동기화하지 않는다. visibility/pagehide 전역
+      // 리스너 자체는 앱 전역 1회 등록이라 제거하지 않고, 여기서 방 문맥만 차단한다.
+      if (isRoomClosingOrDestroyed()) return;
       // Build 4(항목 7): 실제 방 화면에 있을 때만 재동기화한다.
       // 홈/입장/QR 화면에서 stale roomCode로 옛 게임 화면이 복원되는 먹통 버그를 막는다.
       if (!isInRoomScreenActive()) return;
@@ -12768,6 +13162,15 @@ function summarizeGameStats(rows) {
     window.leaveRoomForce = leaveRoomForce;
     window.showNextHostPopup = showNextHostPopup;
     window.closeNextHostPopup = closeNextHostPopup;
+    // WRPS-083 2B: 방 종료 경로는 기존 QA 래퍼(leaveRoom/leaveRoomForce/endGame) 목록에
+    // 추가하지 않는다 — 래퍼는 snapshot→flush(동기 localStorage I/O)를 수행하므로, 얹으면
+    // QA ON/OFF에서 종료 경로의 호출 경로와 타이밍이 달라진다(R12).
+    window.showHostLeavePopup = showHostLeavePopup;
+    window.closeHostLeavePopup = closeHostLeavePopup;
+    window.chooseHostTransferFromLeave = chooseHostTransferFromLeave;
+    window.chooseRoomDestroyFromLeave = chooseRoomDestroyFromLeave;
+    window.destroyRoomByHost = destroyRoomByHost;
+    window.teardownRoomRuntime = teardownRoomRuntime;
     window.transferHostAndLeave = transferHostAndLeave;
     window.becomeNextHost = becomeNextHost;
     window.showStatsPopup = showStatsPopup;
@@ -12978,6 +13381,9 @@ function summarizeGameStats(rows) {
     //     스냅샷을 한 번 볼 가능성은 남는다 — 연속 2회(폴링 기준 ≈2.6s 간격) 관측될 때만
     //     개입해 진짜 고착(host 0명)만 회복한다.
     async function ensureHostExists() {
+      // WRPS-083 2B(Tier 1): 종료된 방에 host를 부활시키지 않는다(R11). 방 종료는 host 0명을
+      // 정당한 종착으로 만들므로, 이 자동 복구가 그 상태를 되돌리면 안 된다.
+      if (isRoomClosingOrDestroyed()) { state.hostZeroObservationStreak = 0; return; }
       if (!getOnlineMode() || !db || !state.roomCode) return;
       const rows = state.participants || [];
       if (!rows.length || rows.some(p => p.is_host)) {
@@ -13019,7 +13425,9 @@ function summarizeGameStats(rows) {
       // (1) host  (5) !roomClosing  (6) !gameStarting  (7) !advancingRound
       // roomClosing은 2B(방 종료 tombstone)가 도입할 플래그다. 지금은 항상 falsy이므로 현재
       // 동작에 영향이 없고, 2B가 붙는 즉시 종료 중인 방에서 이 writer가 자동으로 멈춘다.
-      if (state.role !== "host" || state.roomClosing || state.gameStarting || state.advancingRound) {
+      // WRPS-083 2B(Tier 1): roomClosing 단독 검사를 공통 helper로 교체한다 — 2A 시점에는
+      // destroyed status 자체가 없어 roomClosing만 봤지만, 이제 종료된 방도 함께 막아야 한다(R11).
+      if (state.role !== "host" || isRoomClosingOrDestroyed() || state.gameStarting || state.advancingRound) {
         state.allWaitingObservationStreak = 0;
         return;
       }

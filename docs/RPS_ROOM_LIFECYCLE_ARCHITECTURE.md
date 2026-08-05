@@ -1,9 +1,9 @@
 # RPS Room Lifecycle Architecture
 
-> **STATUS: Draft — Implementation Pending**
-> 기준 HEAD `f6f7eb759fbe99ea0c8d983bbd82f67271115f75`
-> **코드와 DB에 아직 미적용.** `existing`은 기준 HEAD에 실재하는 코드, `planned`는 설계만 존재한다.
-> CEO 판정(2026-08-05): 문서 품질 PASS / 구현 착수 HOLD.
+> **STATUS: Living — WRPS-083 2B 구현 반영됨**
+> 기준 HEAD `281cb715af466825118d08ccbfe5ae31db3775fb` + WRPS-083 2B 작업본(커밋 대기)
+> `existing`은 코드에 실재, `planned`는 설계만. WRPS-084 관련 항목은 여전히 planned다.
+> 라인 번호는 2B 반영 후 기준이다.
 
 방 생성부터 종료까지 Room·Game·Host·Participant lifecycle의 기준 문서다.
 
@@ -19,7 +19,7 @@ RPS의 상태는 하나의 축이 아니라 **서로 독립적인 4개 축**의 
 
 | 축 | 권위 데이터 | 값 | 독립성 |
 |---|---|---|---|
-| **Room** | `rooms.status` | waiting / lobby / ready / playing / result / game_over / stats / reinviting / penalty_setting / **destroyed**(planned) | Game·Host·Leave와 독립 |
+| **Room** | `rooms.status` | waiting / lobby / ready / playing / result / game_over / stats / reinviting / penalty_setting / **destroyed**(existing, 2B) | Game·Host·Leave와 독립 |
 | **Game/Round** | `rooms.round`, `rooms.penalty`의 gameRound | round 1..N, gameNo 1..M | Host 교체와 독립 |
 | **Host authority** | `participants.is_host` | CURRENT_HOST / PARTICIPANT | 라운드 참여와 독립 (**R2**) |
 | **Round participation** | `participants.choice` → `computePlayerStatuses` | ACTIVE / WAITING / WINNER_CONFIRMED / LOSER_CONFIRMED | Host 권한과 독립 (**R2**) |
@@ -65,13 +65,13 @@ stateDiagram-v2
     WAITING --> DESTROYED: destroyRoomAndGoHome() 마지막 1인
     LOBBY --> DESTROYED
     READY --> DESTROYED
-    PLAYING --> DESTROYED: destroyRoomByHost() (planned)
+    PLAYING --> DESTROYED: destroyRoomByHost()
     RESULT --> DESTROYED
     GAME_OVER --> DESTROYED
     DESTROYED --> [*]
 
     note right of DESTROYED
-        planned(2B): soft tombstone
+        2B(existing): soft tombstone
         rooms.status='destroyed'
         hard DELETE 금지
         재입장/replay/invite 차단
@@ -93,7 +93,7 @@ stateDiagram-v2
 | GAME_OVER | `status='game_over'` | `finishRoundLocal:8233` (3곳, 조건부 write) | existing |
 | STATS | `status='stats'` | `endGame:9969 근방` | existing |
 | REINVITING | `status='reinviting'` | `requestReplayFromJoinedRoom:7242` | existing |
-| DESTROYED | `status='destroyed'` | `destroyRoomByHost` | **planned (2B)** |
+| DESTROYED | `status='destroyed'` | `destroyRoomByHost:11323`, `destroyRoomAndGoHome:11183` | **existing (2B)** |
 
 ---
 
@@ -108,8 +108,8 @@ stateDiagram-v2
 | → game_over | host | `.eq('status','result')` 조건부 | WRPS-081 2-writer 레이스 방어 |
 | → ready (round+1) | host | `advancingRound` 뮤텍스 | `nextRound:9864` |
 | → ready (round 유지) | host | C-2 8조건 + 2회 관측 | `recoverRoundWhenAllPlayersWaiting:13017` |
-| → waiting | 이탈하는 host | `_doLeaveRoom:10994` | **2B에서 destroyed 가드 필요** |
-| → destroyed | host | `roomClosing` 상호배제 | planned |
+| → waiting | 이탈하는 host | `_doLeaveRoom:11160` + `!isRoomClosingOrDestroyed()` | **2B 적용됨(CRITICAL 해소)** |
+| → destroyed | host | `roomClosing`/`hostTransferInFlight` 상호배제 + DB is_host 재확인 | `destroyRoomByHost:11323` (existing) |
 
 ---
 
@@ -157,7 +157,7 @@ stateDiagram-v2
     HOST_TRANSFERRED --> NO_AUTHORITY: 기존 Host row 삭제
 
     PARTICIPANT --> CURRENT_HOST: becomeNextHost / ensureHostExists 자동 승격
-    CURRENT_HOST --> ROOM_CLOSING: destroyRoomByHost (planned, R10 상호배제)
+    CURRENT_HOST --> ROOM_CLOSING: destroyRoomByHost (R10 상호배제)
     ROOM_CLOSING --> NO_AUTHORITY: tombstone 확정
     NO_AUTHORITY --> PARTICIPANT: 같은 roomCode 재입장 (권한 복원 없음, R3/R4)
     NO_AUTHORITY --> [*]
@@ -273,7 +273,7 @@ stateDiagram-v2
 
 ---
 
-## 9. Level 2 — WRPS-083 2B Room Destroy **(planned)**
+## 9. Level 2 — WRPS-083 2B Room Destroy **(existing)**
 
 ```mermaid
 sequenceDiagram
@@ -304,7 +304,7 @@ sequenceDiagram
 **destroyed 가드가 필요한 writer** (2B 필수):
 `ensureHostExists`(HIGH) / `recoverRoundWhenAllPlayersWaiting`(HIGH) / `_doLeaveRoom`의 `status:'waiting'` write(**CRITICAL** — tombstone 부활) / `beginNewGameRound`(HIGH) / `transferHostAndLeave` / `becomeNextHost` / `leaveRoomForce` 자동 승격 / `requestReplayFromJoinedRoom` / `acceptInvite` / `resyncRoomOnResume` / `cleanupDroppedParticipants`.
 
-공통 helper `isRoomClosingOrDestroyed()` (planned) 1개로 처리한다. **화이트리스트가 아니라 `status === 'destroyed'` 단일 비교**여야 한다(§1의 개방형 status 이유).
+공통 helper `isRoomClosingOrDestroyed():4911`(existing) 1개로 처리한다. 실제 적용은 **19지점**이다(설계 13 + 전수 재확인에서 추가된 5: `startGame`·`nextRound`·`autoStartDrawRematch`·`directStartGame`·`savePenalty`). **화이트리스트가 아니라 `status === 'destroyed'` 단일 비교**여야 한다(§1의 개방형 status 이유).
 
 ---
 
@@ -340,7 +340,7 @@ sequenceDiagram
 | `cleanupMyUnavailableRoomProfiles` | participants | DELETE | 6855 | 본인 |
 | `savePenalty` / `onLoserCountChange` / `republishCountdownStartAsHost` / `publishChoiceWindowEnd` | rooms | UPDATE | 6723, 7367, 7490, 7724 | host |
 | `inviteForReplay` | rooms | UPDATE | 10005 | host |
-| `destroyRoomByHost` | rooms/participants | UPDATE/DELETE | — | host | **planned (2B)** |
+| `destroyRoomByHost` | rooms/participants | UPDATE/DELETE | 11323 | host | **existing (2B)** |
 | `setLeaveAfterRound` | participants | UPDATE | — | 본인 | **planned (084)** |
 | `processDeferredLeaves` | participants | DELETE | — | 예약 본인 | **planned (084)** |
 
@@ -375,7 +375,7 @@ sequenceDiagram
 
 ---
 
-## 12. Level 3 — Timer / Channel teardown **(planned 2B)**
+## 12. Level 3 — Timer / Channel teardown **(existing, `teardownRoomRuntime:11208`)**
 
 `teardownRoomRuntime()` 멱등 함수 1개로 통합한다. 대상 17종:
 
@@ -416,8 +416,8 @@ sequenceDiagram
 | R7 | 처리 시작 전까지 취소 가능 | `leavingProcessing` 게이트 | L7/L19 / Q5 | **planned** |
 | R8 | 저장 전 삭제 금지 | `processDeferredLeaves` 순서 | L11 / Q4·Q13 | **planned** |
 | R9 | 새 Host 검증 전 기존 Host 제거 금지 | `promoteParticipantToHost` SELECT 재검증 | T2b, W28 | existing |
-| R10 | 방 종료 ⊥ Host 승계 | `roomClosing` 동기 설정 + 상호배제 | 2B D25 / N13 | **planned** |
-| R11 | destroyed 부활 금지 | `isRoomClosingOrDestroyed` 가드 11곳 | 2B D21~D24 / N4~N7 | **planned** |
+| R10 | 방 종료 ⊥ Host 승계 | `roomClosing`/`hostTransferInFlight` 동기 설정 + 상호배제 | 2B D25/D32 / N13 | **existing** |
+| R11 | destroyed 부활 금지 | `isRoomClosingOrDestroyed:4911` 가드 **19곳** | 2B D21~D24 / N4~N7 | **existing** |
 | R12 | QA 계측 무간섭 | `QA.emit`(`index.html:9073`) 동기·state 읽기 전용 | 2A QA 비간섭 테스트 | existing |
 
 ---

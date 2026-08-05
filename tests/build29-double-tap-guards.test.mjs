@@ -20,6 +20,11 @@ function extractBlock(startMarker, endMarker, includeEndFirstChar = false) {
   return html.slice(start, end);
 }
 
+// WRPS-083 2B: 아래 REAL 블록이 destroyed 공통 가드(isRoomClosingOrDestroyed)를 호출한다.
+// hand-copy/no-op stub 금지 — index.html 원문을 함께 추출한다.
+const ROOM_GUARD_SRC = extractBlock(
+  'function isRoomClosingOrDestroyed() {', 'function isJoinLocked('
+);
 const CHOICE_HELPERS_BLOCK = extractBlock(
   'function isNonPlayingChoice(choice) {',
   'function getParticipantSignature('
@@ -179,7 +184,7 @@ describe('Build29 [P4, F3] inviteForReplay — 연타 방어', () => {
     const calls = { popup: 0, reset: 0 };
     const factory = new Function(
       'state', 'getOnlineMode', 'resetGameKeepRoom', 'db', '_showInviteHostPopup',
-      INVITE_SRC + '\n; return inviteForReplay;'
+      ROOM_GUARD_SRC + '\n' + INVITE_SRC + '\n; return inviteForReplay;'
     );
     const inviteForReplay = factory(
       state, () => true,
@@ -219,7 +224,7 @@ describe('Build29 [P4, F4] nextRound(온라인 분기) — catch에서만 advanc
       'state', 'getOnlineMode', 'getTargetLoserCount', 'showToast', 't', 'renderRoundResult', 'showScreen',
       'buildPenaltyValue', 'getGameRound', 'getNextPhaseScheduledAt', 'db', 'saveState', 'showReadyScreen',
       'scheduleRematchAdvanceRetryAfterFailure',
-      NEXT_ROUND_SRC + '\n; return nextRound;'
+      ROOM_GUARD_SRC + '\n' + NEXT_ROUND_SRC + '\n; return nextRound;'
     );
     const nextRound = factory(
       state, () => true, getTargetLoserCount || (() => 1),
@@ -349,7 +354,7 @@ describe('Build29 [P4, F6] becomeNextHost — 연타 방어', () => {
     const factory = new Function(
       'state', 'getOnlineMode', 'stopGameOverCountdown', 'db', 'beginNewGameRound', 'showHostRoom',
       'showToast', 't', 'QA',
-      HOST_SAFETY_HELPERS_SRC + '\n' + BECOME_NEXT_HOST_SRC + '\n; return becomeNextHost;'
+      ROOM_GUARD_SRC + '\n' + HOST_SAFETY_HELPERS_SRC + '\n' + BECOME_NEXT_HOST_SRC + '\n; return becomeNextHost;'
     );
     const becomeNextHost = factory(
       state, () => true, () => { calls.stopGameOverCountdown++; }, db,

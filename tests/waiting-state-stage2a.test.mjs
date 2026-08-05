@@ -25,6 +25,11 @@ function extractBlock(startMarker, endMarker, label) {
 
 // ── REAL 소스 추출 ────────────────────────────────────────────────────────────
 // 벌칙/라운드 파생값(parsePenalty·getTargetLoserCount·getGameRound) — build23/28과 동일 마커.
+// WRPS-083 2B: 아래 REAL 블록이 destroyed 공통 가드(isRoomClosingOrDestroyed)를 호출한다.
+// hand-copy/no-op stub 금지 — index.html 원문을 함께 추출한다.
+const ROOM_GUARD_SRC = extractBlock(
+  'function isRoomClosingOrDestroyed() {', 'function isJoinLocked(', 'roomGuard'
+);
 const PENALTY_BLOCK = extractBlock(
   'function toPositiveInt(value, fallback = 0) {', 'function getCountdownStartAt(raw) {', 'penalty'
 );
@@ -193,7 +198,7 @@ function loadJoinRoom({
     joinName: { ...fakeEl(), value: name },
     joinBtn: fakeEl(),
   };
-  const src = `${joinRoomSrcOverride ?? JOIN_ROOM_BLOCK}\n${JOIN_LOCK_BLOCK}`;
+  const src = `${ROOM_GUARD_SRC}\n${joinRoomSrcOverride ?? JOIN_ROOM_BLOCK}\n${JOIN_LOCK_BLOCK}`;
   const factory = new Function(
     'state', 'db', '$', 'showToast', 't', 'setBtnText', 'loadNickname', 'saveNickname',
     'getLastJoinedRoomCode', 'saveLastJoinedRoomCode', 'subscribeToRoom', 'showScreen',
@@ -236,7 +241,7 @@ function loadHostCluster({ db, currentUserId, role, participants, roomCode = 'R1
     gameStarting: false, becomingNextHost: false, gameOverTimeout: null,
   };
   const calls = { toast: [], beginNewGameRound: [], goHome: 0, clearRealtime: 0, qa: [] };
-  const combined = `${HOST_HELPERS_BLOCK}\n${LEAVE_CLUSTER_BLOCK}`;
+  const combined = `${ROOM_GUARD_SRC}\n${HOST_HELPERS_BLOCK}\n${LEAVE_CLUSTER_BLOCK}`;
   const factory = new Function(
     'state', 'db', 'QA', 'getOnlineMode', 'showToast', 't', 'clearRealtime', 'goHome',
     'beginNewGameRound', 'hasCurrentGameRoundActivity', 'loadNickname', 'stopGameOverCountdown',
@@ -276,7 +281,7 @@ function loadRecovery({
     roomClosing, gameStarting, advancingRound,
   };
   const calls = { qa: [] };
-  const combined = `${PENALTY_BLOCK}\n${GUARD_BLOCK}\n${HOST_HELPERS_BLOCK}\n` +
+  const combined = `${ROOM_GUARD_SRC}\n${PENALTY_BLOCK}\n${GUARD_BLOCK}\n${HOST_HELPERS_BLOCK}\n` +
     `${recoverySrcOverride ?? ENSURE_AND_RECOVERY_BLOCK}`;
   const factory = new Function(
     'state', 'db', 'QA', 'getOnlineMode', 'computePlayerStatuses', 'PLAYER_STATUS',
@@ -309,7 +314,7 @@ function loadFetchTerminal({ db, currentUserId = 'H', status = 'result', fetchSr
     newRoundResetting: false,
   };
   const calls = { qa: [] };
-  const combined = `${PENALTY_BLOCK}\n${GUARD_BLOCK}\n${HOST_HELPERS_BLOCK}\n` +
+  const combined = `${ROOM_GUARD_SRC}\n${PENALTY_BLOCK}\n${GUARD_BLOCK}\n${HOST_HELPERS_BLOCK}\n` +
     `${ENSURE_AND_RECOVERY_BLOCK}\n${fetchSrcOverride ?? FETCH_CLUSTER_BLOCK}`;
   const factory = new Function(
     'state', 'db', 'QA', 'getOnlineMode', 'computePlayerStatuses', 'PLAYER_STATUS',
@@ -1001,7 +1006,7 @@ describe('W21~W24 + M6/M7 — C-2 자동 복구 writer(REAL)', () => {
     // QA 계측을 "완전 실패"로 대체해도 상태 전이가 같아야 한다.
     const factoryState = off.term.state;
     const dbOff = off.db;
-    const combined = `${PENALTY_BLOCK}\n${GUARD_BLOCK}\n${HOST_HELPERS_BLOCK}\n${ENSURE_AND_RECOVERY_BLOCK}`;
+    const combined = `${ROOM_GUARD_SRC}\n${PENALTY_BLOCK}\n${GUARD_BLOCK}\n${HOST_HELPERS_BLOCK}\n${ENSURE_AND_RECOVERY_BLOCK}`;
     const implOff = new Function(
       'state', 'db', 'QA', 'getOnlineMode', 'computePlayerStatuses', 'PLAYER_STATUS',
       'buildPenaltyValue', 'getNextPhaseScheduledAt',

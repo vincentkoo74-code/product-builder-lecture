@@ -23,6 +23,11 @@ function extractBlock(startMarker, endMarker, includeEndFirstChar = false) {
 // ── 실제 소스 블록 추출 ──────────────────────────────────────────────
 // buildPenaltyValue/getTargetLoserCount/getGameRound/getNextPhaseScheduledAt/clampLoserCount 등
 // 스케줄링 관련 순수 함수 묶음(외부 의존: state, maxLoserCountFor만).
+// WRPS-083 2B: 아래 REAL 블록이 destroyed 공통 가드(isRoomClosingOrDestroyed)를 호출한다.
+// hand-copy/no-op stub 금지 — index.html 원문을 함께 추출한다.
+const ROOM_GUARD_SRC = extractBlock(
+  'function isRoomClosingOrDestroyed() {', 'function isJoinLocked('
+);
 const SCHEDULING_BLOCK = extractBlock(
   'function toPositiveInt(value, fallback = 0) {',
   'function isLoserCountEditable() {'
@@ -83,7 +88,7 @@ function loadBeginNewGameRound(state, scheduling) {
     'state', 'db', 'hasCurrentGameRoundActivity', 'archiveCurrentRoundStats', 'resetTransientRoundUi',
     'getTargetLoserCount', 'getGameRound', 'getNextCountdownStartAt', 'buildPenaltyValue', 'getNextPhaseScheduledAt',
     'resetLocalParticipantsForNewGameRound', 'getOnlineMode', 'getNewGameRoundParticipantPatch', 'saveState',
-    BEGIN_NEW_GAME_ROUND_SRC + '\n; return beginNewGameRound;'
+    ROOM_GUARD_SRC + '\n' + BEGIN_NEW_GAME_ROUND_SRC + '\n; return beginNewGameRound;'
   );
   const beginNewGameRound = factory(
     state, db, hasCurrentGameRoundActivity, archiveCurrentRoundStats, resetTransientRoundUi,

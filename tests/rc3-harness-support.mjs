@@ -73,6 +73,11 @@ const M = {
   recentRoomsStart: 'function getRecentRoomCodes() {',
   roomPlayersStart: 'function getRoomPlayers() {',
   taggerCompleteStart: 'function isTaggerSelectionComplete() {',
+  // WRPS-083 2B: destroyed 공통 가드. 이 하니스가 추출하는 REAL 블록(startGame/nextRound/
+  // updateRoomStatus/beginNewGameRound/cleanupDroppedParticipants 등)이 이 helper를 호출한다.
+  // 손으로 재작성하거나 no-op stub을 주입하지 않고 index.html 원문을 함께 추출한다.
+  roomGuardStart: 'function isRoomClosingOrDestroyed() {',
+  joinLockedStart: 'function isJoinLocked(',
   safeParticipantStart: 'function isSafeParticipant(id = state.currentUserId) {',
   currentParticipantStart: 'function getCurrentParticipant() {',
   hasConfirmedResultStart: 'function hasConfirmedRoundResult(choice) {',
@@ -118,6 +123,7 @@ const BLOCKS = {
   parseAndSchedule: extractBlock(M.parseStart, M.domHelperStart, { label: 'parseAndSchedule' }),
   onlineMode: extractBlock(M.onlineModeStart, M.recentRoomsStart, { label: 'onlineMode' }),
   activePlayers: extractBlock(M.roomPlayersStart, M.taggerCompleteStart, { label: 'activePlayers' }),
+  roomGuard: extractBlock(M.roomGuardStart, M.joinLockedStart, { label: 'roomGuard' }),
   choiceHelpers: extractBlock(M.safeParticipantStart, M.currentParticipantStart, { label: 'choiceHelpers' }),
   confirmedResultHelpers: extractBlock(M.hasConfirmedResultStart, M.shouldResetStart, { label: 'confirmedResultHelpers' }),
   waitPhaseRenderAndRoundState: extractBlock(M.waitPhaseRenderStart, M.enterPlayingStart, { label: 'waitPhaseRenderAndRoundState' }),
