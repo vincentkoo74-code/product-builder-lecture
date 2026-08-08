@@ -769,11 +769,19 @@ describe('D13/D14 + N8/N9 — 재입장·replay 차단', () => {
   it('D13 — joinRoom 소스가 destroyed를 명시 거부한다(계약)', () => {
     expect(JOIN_ROOM_SRC).toContain("if (room.status === 'destroyed') {");
     expect(JOIN_ROOM_SRC).toContain('clearRoomScopedCache(code)');
-    // 거부가 returningParticipant 우회(locked 검사)보다 앞에 있어야 한다
+    // WRPS-085(계약 갱신): locked 진입 게이트가 폐기돼 비교 기준이 사라졌다. destroyed 거부가
+    // "참가자 row를 만들거나 되살리는 어떤 write보다도 앞"인지로 기준을 바꾼다 — 종료된 방에
+    // row가 생기지 않는다는 원래 계약은 그대로다.
     const destroyedIdx = JOIN_ROOM_SRC.indexOf("room.status === 'destroyed'");
-    const lockedIdx = JOIN_ROOM_SRC.indexOf('locked && !existing && !returningParticipant');
+    const capacityIdx = JOIN_ROOM_SRC.indexOf('MAX_ROOM_PARTICIPANTS');
+    const insertIdx = JOIN_ROOM_SRC.indexOf("db.from('participants').insert(");
+    const updateIdx = JOIN_ROOM_SRC.indexOf("db.from('participants').update(");
     expect(destroyedIdx).toBeGreaterThan(0);
-    expect(destroyedIdx).toBeLessThan(lockedIdx);
+    expect(capacityIdx).toBeGreaterThan(destroyedIdx);   // 정원 검사보다 앞
+    expect(insertIdx).toBeGreaterThan(destroyedIdx);     // insert보다 앞
+    expect(updateIdx).toBeGreaterThan(destroyedIdx);     // update보다 앞
+    // 폐기된 게이트가 되살아나지 않았는지도 고정한다.
+    expect(JOIN_ROOM_SRC).not.toContain('locked && !existing && !returningParticipant');
   });
 });
 

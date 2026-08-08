@@ -2455,8 +2455,8 @@
         <div class="code-text" id="roomCodeText">----</div>
       </div>
       <div id="roomLockedBox" class="maru-notice hidden" style="text-align:center">
-        <strong data-i18n="hostRoom.locked">참가 마감</strong><br>
-        <span data-i18n="hostRoom.lockedDesc">모든 참여자가 준비를 완료해서 QR 참여를 닫았습니다.</span>
+        <strong data-i18n="hostRoom.locked">정원 마감</strong><br>
+        <span data-i18n="hostRoom.lockedDesc">방 정원이 가득 차서 더 이상 참여할 수 없습니다.</span>
       </div>
 
       <div style="height: 4px"></div>
@@ -3107,8 +3107,8 @@
         "hostRoom.cap": "방장 모드!",
         "hostRoom.subtitle": "QR이나 방 코드를 친구한테 보여주세요.<br/>마루가 입장을 기다리고 있어요 🐾",
         "hostRoom.penaltyBoxLabel": "이번 게임 벌칙",
-        "hostRoom.locked": "참가 마감",
-        "hostRoom.lockedDesc": "모든 참여자가 준비를 완료해서 QR 참여를 닫았습니다.",
+        "hostRoom.locked": "정원 마감",
+        "hostRoom.lockedDesc": "방 정원이 가득 차서 더 이상 참여할 수 없습니다.",
         "hostRoom.participants": "참가자 목록",
         "hostRoom.loserCount": "🎯 술래 숫자",
         "hostRoom.loserCountOption": "{n}명",
@@ -3314,6 +3314,7 @@
         "popup.confirmDestroyMsg": "방을 종료하면 모든 참여자가 함께 나가게 되고, 이 방에는 다시 들어올 수 없어요 🐾",
         "popup.confirmDestroyOk": "🛑 방 종료",
         "toast.roomDestroyedByHost": "호스트가 방을 종료했습니다.",
+        "toast.roomFull": "⚠️ 방이 가득 찼어요. (최대 {n}명)",
         "toast.roomDestroyFailed": "⚠️ 방 종료에 실패했어요. 잠시 후 다시 시도해 주세요.",
         "toast.roomDestroyUnauthorized": "⚠️ 더 이상 이 방의 호스트가 아니에요.",
         "popup.inviteTitle": "🎮 새 게임 초대",
@@ -3485,8 +3486,8 @@
         "hostRoom.cap": "Host mode!",
         "hostRoom.subtitle": "Show the QR or room code to your friends.<br/>Maru's waiting for them 🐾",
         "hostRoom.penaltyBoxLabel": "This game's penalty",
-        "hostRoom.locked": "Closed for new joiners",
-        "hostRoom.lockedDesc": "All players are ready — QR joining is closed.",
+        "hostRoom.locked": "Room full",
+        "hostRoom.lockedDesc": "This room is full — no one else can join.",
         "hostRoom.participants": "Players",
         "hostRoom.loserCount": "🎯 Number of losers",
         "hostRoom.loserCountOption": "{n}",
@@ -3680,6 +3681,7 @@
         "popup.confirmDestroyMsg": "Closing the room removes everyone, and no one can rejoin it 🐾",
         "popup.confirmDestroyOk": "🛑 Close room",
         "toast.roomDestroyedByHost": "The host closed the room.",
+        "toast.roomFull": "⚠️ This room is full. (max {n})",
         "toast.roomDestroyFailed": "⚠️ Couldn't close the room. Please try again.",
         "toast.roomDestroyUnauthorized": "⚠️ You're no longer the host of this room.",
         "popup.inviteTitle": "🎮 New game invitation",
@@ -3846,8 +3848,8 @@
         "hostRoom.cap": "ホストモード！",
         "hostRoom.subtitle": "QRまたは部屋コードを友達に見せてください。<br/>マルが入室を待ってるよ 🐾",
         "hostRoom.penaltyBoxLabel": "今回の罰ゲーム",
-        "hostRoom.locked": "参加締切",
-        "hostRoom.lockedDesc": "全員が準備完了したのでQR参加は閉じられました。",
+        "hostRoom.locked": "満員",
+        "hostRoom.lockedDesc": "部屋が満員のため、これ以上参加できません。",
         "hostRoom.participants": "参加者一覧",
         "hostRoom.loserCount": "🎯 鬼の人数",
         "hostRoom.loserCountOption": "{n}人",
@@ -4041,6 +4043,7 @@
         "popup.confirmDestroyMsg": "部屋を終了すると全員が退出し、この部屋には再入室できません 🐾",
         "popup.confirmDestroyOk": "🛑 部屋を終了",
         "toast.roomDestroyedByHost": "ホストが部屋を終了しました。",
+        "toast.roomFull": "⚠️ 部屋が満員です。(最大{n}人)",
         "toast.roomDestroyFailed": "⚠️ 部屋の終了に失敗しました。もう一度お試しください。",
         "toast.roomDestroyUnauthorized": "⚠️ すでにこの部屋のホストではありません。",
         "popup.inviteTitle": "🎮 新ゲーム招待",
@@ -4938,6 +4941,14 @@
         (status === "ready" && players.length > 0 && players.every(p => p.is_ready));
     }
 
+    // WRPS-085: 방 정원 상한. 라운드 진행 중 신규 입장을 허용하게 되면서 인원이 무제한으로
+    // 늘 수 있게 됐으므로 명시적 상한을 둔다. 20은 RC-3 다중참가자 시뮬레이션이 correctness를
+    // 검증한 구간(N=3~20)의 상한이다 — 그 밖은 미검증 영역이라 상한으로 삼는다.
+    // ⚠️ 선언 위치 주의: 기존 테스트 하니스가 getActivePlayers~isJoinLocked / isRoomClosing
+    // OrDestroyed~isJoinLocked 두 구간을 각각 추출해 조합하므로, 그 사이에 두면 const가
+    // 중복 선언되어 SyntaxError가 난다. 어떤 추출 구간에도 걸치지 않는 이 위치에 둔다.
+    const MAX_ROOM_PARTICIPANTS = 20;
+
     function isBusyInAnotherActiveRoom(inviteRoomCode = "") {
       if (!state.roomCode || state.roomCode === inviteRoomCode) return false;
       return ["waiting", "ready", "playing", "result", "lobby", "reinviting"].includes(state.status);
@@ -5056,6 +5067,57 @@
 	      if (!prevParticipants.length || !nextParticipants.length) return false;
 	      if (getParticipantSignature(prevParticipants) === getParticipantSignature(nextParticipants)) return false;
 	      return hasCurrentGameRoundActivity(prevParticipants) || hasCurrentGameRoundActivity(nextParticipants);
+	    }
+
+	    // ── WRPS-085: "순수 WAITING 추가" 판정 ─────────────────────────────────────
+	    // shouldResetForParticipantChange 본체와 일반 호출 계약은 무변경이다(WRPS-056 공유 함수).
+	    // 이 helper는 그 결과를 progression reset에 적용할지 말지를 "호출부에서만" 좁게 가른다.
+	    //
+	    // 예외를 적용하는 유일한 경우 — 아래를 모두 만족하는 delta:
+	    //   (1) 추가된 참가자가 1명 이상이고, 전원 choice='__waiting__' 이며 비host다
+	    //   (2) 이탈한 참가자가 0명이다
+	    //   (3) host가 바뀌지 않았다(id 기준)
+	    //   (4) 기존 참가자의 권위 상태(is_host, lifecycle 마커)가 그대로다
+	    //
+	    // 하나라도 어긋나면 false를 반환해 "기존 정책"이 그대로 적용된다 — 이탈/Host 변경/
+	    // ACTIVE 추가/미분류 추가/WAITING 외 lifecycle 변경/mixed delta는 전부 여기서 걸러진다.
+	    // unknown 입력도 안전하게 false로 떨어진다(rule 5).
+	    //
+	    // ⚠️ 판정은 로컬 임시 플래그가 아니라 실제 participant delta와 DB의 choice 값만 본다(rule 3/4).
+	    // 기존 참가자의 "권위" 비교에 raw choice를 쓰지 않는 이유: 라운드 진행 중 참가자의 choice는
+	    // 매 폴링마다 rock/paper/scissors로 정상 변동한다. 그건 게임 플레이지 권위 변경이 아니다.
+	    // 권위에 해당하는 것은 lifecycle 마커(__safe__/__loser__/__waiting__)와 is_host뿐이다.
+	    function getLifecycleMarker(choice) {
+	      return (choice === '__safe__' || choice === '__loser__' || choice === '__waiting__') ? choice : null;
+	    }
+
+	    function isPureWaitingJoinDelta(prevParticipants = [], nextParticipants = []) {
+	      const prev = Array.isArray(prevParticipants) ? prevParticipants : [];
+	      const next = Array.isArray(nextParticipants) ? nextParticipants : [];
+	      if (!prev.length || !next.length) return false;
+	      const prevById = new Map(prev.filter(p => p && p.id).map(p => [p.id, p]));
+	      const nextById = new Map(next.filter(p => p && p.id).map(p => [p.id, p]));
+	      if (prevById.size !== prev.length || nextById.size !== next.length) return false; // 미분류/중복 id
+	      // (2) 이탈 0명
+	      for (const id of prevById.keys()) if (!nextById.has(id)) return false;
+	      // (1) 추가분은 전원 WAITING 비host
+	      const added = [...nextById.values()].filter(p => !prevById.has(p.id));
+	      if (!added.length) return false;
+	      for (const p of added) {
+	        if (p.choice !== '__waiting__') return false; // ACTIVE/미분류/기타 lifecycle 추가
+	        if (p.is_host) return false;
+	      }
+	      // (4) 기존 참가자의 권위 상태 무변경
+	      for (const [id, before] of prevById) {
+	        const after = nextById.get(id);
+	        if (Boolean(after.is_host) !== Boolean(before.is_host)) return false;
+	        if (getLifecycleMarker(after.choice) !== getLifecycleMarker(before.choice)) return false;
+	      }
+	      // (3) host 동일(id 기준). 0명↔1명 전이도 변경으로 본다.
+	      const prevHost = prev.find(p => p && p.is_host) || null;
+	      const nextHost = next.find(p => p && p.is_host) || null;
+	      if ((prevHost && prevHost.id) !== (nextHost && nextHost.id)) return false;
+	      return true;
 	    }
 
 	    function getNewGameRoundParticipantPatch(extra = {}) {
@@ -6352,7 +6414,14 @@
 	          return;
 	        }
 
-	        if (state.role === "host" && !state.newRoundResetting && shouldResetForParticipantChange(oldParticipants, data)) {
+	        // WRPS-085: shouldResetForParticipantChange의 판정은 그대로 쓰되, 그 결과를 progression
+	        // reset에 "적용할지"만 여기서 가른다. 순수 WAITING 추가(신규 입장자가 라운드 진행 중
+	        // 들어온 경우)는 현재 라운드의 판정 집합 밖이므로 게임을 초기화할 사유가 아니다 —
+	        // gameNo/round/참가자 snapshot을 유지하고 기존 라운드를 그대로 계속한다.
+	        // 그 밖의 모든 delta(이탈·Host 변경·ACTIVE 추가·권위 변경·mixed)는 기존 정책 그대로다.
+	        if (state.role === "host" && !state.newRoundResetting
+	            && shouldResetForParticipantChange(oldParticipants, data)
+	            && !isPureWaitingJoinDelta(oldParticipants, data)) {
 	          state.participants = data;
 	          await beginNewGameRound({ status: "lobby", increment: true, reason: "participant_or_host_changed", priorParticipants: oldParticipants });
 	          renderAll();
@@ -7291,8 +7360,8 @@
           const { data: room } = await db.from('rooms').select('*').eq('id', code).single();
           if (!room) { showToast("존재하지 않는 방입니다."); return; }
           // WRPS-083 2B: soft tombstone은 row가 살아 있으므로 위의 !room 검사로는 걸러지지 않는다.
-          // 이 거부가 returningParticipant 우회(아래 locked 검사)보다 앞에 있어야 종료된 방으로의
-          // 재입장이 원천 차단된다.
+          // 이 거부는 아래 정원 검사와 participants insert/update 어느 것보다도 앞에 있어야
+          // 종료된 방에 row가 생기거나 되살아나지 않는다.
           if (room.status === 'destroyed') {
             showToast(t("toast.roomDestroyedByHost"));
             clearRoomScopedCache(code);
@@ -7314,16 +7383,21 @@
             (!p.is_host || state.joinScreenMode === "recent")
           );
           const existing = recentExisting || (roomParticipants || []).find(p => p.name === name && !p.is_host);
-          const returningParticipant = getLastJoinedRoomCode() === code && loadNickname() === name;
           const locked = isJoinLocked(roomParticipants || [], room.status);
-          if (locked && !existing && !returningParticipant) {
-            showToast("모든 참여자가 준비를 완료해서 새로 참가할 수 없습니다.");
+          // WRPS-085: 라운드 진행 중 "완전 신규 참가자 거부" 정책을 폐기한다. 유효한 roomCode/QR로
+          // 들어오는 사람은 과거 참가 이력과 무관하게 입장할 수 있고, 라운드가 진행 중이면 아래
+          // waitingChoice가 WAITING으로 분류해 현재 라운드 판정/Ready/술래 계산에서 제외한다.
+          // 즉 신규와 재입장자가 완전히 같은 규칙을 따른다 — 입장 가부를 가르던
+          // returningParticipant 판정은 폐기됐고, existing 여부는 row 재사용/신규 insert만 가른다.
+          // 계속 거부하는 것은 destroyed(위에서 처리) / 존재하지 않는 방(위 !room) / 정원 초과다.
+          if (!existing && (roomParticipants || []).length >= MAX_ROOM_PARTICIPANTS) {
+            showToast(t("toast.roomFull", { n: MAX_ROOM_PARTICIPANTS }));
             return;
           }
 
           // WRPS-083 2A(GAP-1): waitingChoice 계산을 existing/insert 분기 "밖"으로 끌어올린다.
           // 종전에는 existing(기존 row 재사용) 분기에만 있어서, row가 없는 재입장자
-          // (returningParticipant=true → 위 입장 차단을 통과)가 insert 분기로 가면 choice가 누락돼
+          // (당시엔 returningParticipant만 입장 차단을 통과했다)가 insert 분기로 가면 choice가 누락돼
           // NULL → 즉시 ACTIVE가 됐다. 1단계 transferHostAndLeave가 양도한 호스트의 row를 delete
           // 하므로, 그 사용자가 라운드 진행 중 재입장하면 정확히 이 경로다(Build31 실기기 클래스).
           // locked는 이 분기 진입 전에 같은 인자로 이미 계산돼 있다 — 재계산하지 않는다.
@@ -10467,11 +10541,17 @@ function summarizeGameStats(rows) {
     }
 
     function renderAll() {
-      const joinLocked = isJoinLocked();
+      // WRPS-085: 초대 UI 노출 조건을 isJoinLocked()에서 분리한다. 라운드 진행 중에도 신규
+      // 참가자의 입장이 허용되므로(WAITING으로 편입), 그 시점에 QR을 숨기고 "참가 마감"을
+      // 띄우면 호스트가 초대할 방법 자체가 사라져 정책이 UI에서 무력화된다.
+      // isJoinLocked() 함수 자체는 무변경이다 — WAITING 부여(joinRoom)·대기화면 라우팅 등
+      // 다른 3개 호출부가 그 의미를 그대로 쓴다. 여기서만 판정 기준을 바꾼다.
+      // 이제 초대를 닫는 유일한 사유는 "정원이 찼다"이다.
+      const inviteClosed = (state.participants || []).length >= MAX_ROOM_PARTICIPANTS;
       const qrInviteBox = $("qrInviteBox");
       const roomLockedBox = $("roomLockedBox");
-      if (qrInviteBox) qrInviteBox.classList.toggle("hidden", joinLocked);
-      if (roomLockedBox) roomLockedBox.classList.toggle("hidden", !joinLocked);
+      if (qrInviteBox) qrInviteBox.classList.toggle("hidden", inviteClosed);
+      if (roomLockedBox) roomLockedBox.classList.toggle("hidden", !inviteClosed);
       renderParticipants("hostParticipantList");
       renderParticipants("waitParticipantList");
       renderReadyList();

@@ -612,17 +612,27 @@ describe('W13/W14/W15 + M3 — joinRoom 입장 정책과 GAP-1', () => {
     { id: 'C', room_id: 'R1', name: 'C', is_host: false, is_ready: true, created_at: T5 },
   ];
 
-  it('W13 — 완전 신규 참가자는 진행 중 방 입장이 거부된다(row 생성 0건)', async () => {
+  // WRPS-085(계약 반전): "라운드 중 완전 신규 참가자 거부" 정책은 폐기됐다. 이제 신규·재입장자가
+  // 동일하게 WAITING으로 입장한다. 2A가 만든 WAITING 부여 로직(waitingChoice)은 무변경이며,
+  // 적용 대상만 넓어졌다 — 그 로직이 신규 참가자에게도 그대로 동작하는지가 이 테스트의 요지다.
+  it('W13 — 완전 신규 참가자도 진행 중 방에 WAITING으로 입장한다(WRPS-085)', async () => {
     const db = seedRoom({ participants: IN_ROUND_ROSTER });
-    const { impl, calls, state } = loadJoinRoom({
+    const { impl, state } = loadJoinRoom({
       db, code: 'R1', name: 'NEW', lastJoinedRoomCode: '', savedNickname: '',
     });
     await impl.joinRoom();
-    expect(db.tables.participants.map((p) => p.id)).toEqual(['B', 'C']); // insert 0건
-    expect(db.writeLog.filter((w) => w.op === 'insert')).toEqual([]);
-    expect(calls.toast.some((m) => String(m).includes('새로 참가할 수 없습니다'))).toBe(true);
-    expect(state.currentUserId).not.toBe('');  // 로컬 id는 만들어지지만 DB row는 없다
+    const inserts = db.writeLog.filter((w) => w.op === 'insert');
+    expect(inserts.length).toBe(1);
+    expect(inserts[0].rows[0]).toMatchObject({
+      room_id: 'R1', name: 'NEW', is_host: false, choice: '__waiting__', is_ready: false,
+    });
+    expect(state.role).toBe('participant');
+    // 현재 Host는 그대로다 — 신규 입장이 Host 권한에 영향을 주지 않는다.
     expect(db.hostRows().map((p) => p.id)).toEqual(['B']);
+    // 그리고 그 신규 참가자는 현재 라운드 판정 집합에 들어가지 않는다.
+    const row = db.tables.participants.find((p) => p.name === 'NEW');
+    expect(computePlayerStatuses([{ id: row.id, choice: row.choice }], [], [])[row.id])
+      .toBe(PLAYER_STATUS.WAITING);
   });
 
   it('W14/W15 — returning participant는 입장이 허용되고 insert payload에 __waiting__이 실린다', async () => {
