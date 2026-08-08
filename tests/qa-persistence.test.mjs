@@ -48,6 +48,12 @@ function loadQA(shared) {
   return { QA, store, ssStore, localStorage, sessionStorage, localWrites, sessionWrites, clipboard, win, state };
 }
 
+
+// WRPS-083 Build32: 리포트 라벨 계약은 특정 빌드 번호가 아니라 소스의 QA_BUILD_LABEL을
+// 진실 소스로 삼는다. 여기서 원문을 직접 읽어 두 값이 어긋나지 않는지 고정한다.
+const SOURCE_BUILD_LABEL = (html.match(/QA_BUILD_LABEL = '([^']+)'/) || [])[1];
+if (!SOURCE_BUILD_LABEL) throw new Error('[qa-persistence] QA_BUILD_LABEL not found in index.html');
+
 describe('Build17 QA persistence (Layer 1) — 실코드', () => {
   let ctx;
   beforeEach(() => { ctx = loadQA(); });
@@ -57,7 +63,11 @@ describe('Build17 QA persistence (Layer 1) — 실코드', () => {
     expect(r.schemaVersion).toBe('qa-report.v1');
     expect(r.app).toBe('WoorimaruRPS');
     expect(r.build).toBe('30');
-    expect(r.buildLabel).toBe('build30');
+    // WRPS-083 Build32(계약 갱신): buildLabel은 QA_BUILD_LABEL의 현재 값을 그대로 반영한다.
+    // 특정 빌드 번호를 고정하면 빌드마다 이 테스트가 깨지고, 실제로 build30에 고정돼 있어
+    // Build31 필드 QA에서 리포트 파일명이 build30으로 나오는 metadata 불일치를 놓쳤다.
+    // 이제 '소스의 QA_BUILD_LABEL과 리포트가 일치하는가'를 계약으로 삼는다.
+    expect(r.buildLabel).toBe(SOURCE_BUILD_LABEL);
     expect(r.exportReason).toBe('manual');
     expect(typeof r.createdAt).toBe('string');
     expect(r.session && typeof r.session.sessionId).toBe('string');
@@ -195,8 +205,9 @@ describe('Build17 QA file export (Layer 2) — 실코드', () => {
     expect(out.saved).toBe(false);
     expect(out.clipboard).toBe(true);
     expect(ctx.clipboard.last).toContain('"schemaVersion": "qa-report.v1"');
-    // 파일명: 금지문자(: 등) 없음, build30 스탬프.
-    expect(out.filename).toMatch(/^qa-report-build30-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.json$/);
+    // 파일명: 금지문자(: 등) 없음, 소스의 QA_BUILD_LABEL 스탬프.
+    expect(out.filename).toMatch(
+      new RegExp(`^qa-report-${SOURCE_BUILD_LABEL}-\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}\\.json$`));
     expect(out.filename).not.toContain(':');
   });
 
@@ -216,12 +227,12 @@ describe('Build17 QA file export (Layer 2) — 실코드', () => {
     expect(out.clipboard).toBe(false);
     expect(calls.write.directory).toBe('DOCUMENTS');
     expect(calls.write.encoding).toBe('utf8');
-    expect(calls.write.path).toMatch(/^qa-report-build30-.*\.json$/);
+    expect(calls.write.path).toMatch(new RegExp(`^qa-report-${SOURCE_BUILD_LABEL}-.*\\.json$`));
     expect(out.uri).toContain('file:///Documents/');
     expect(calls.share.url).toBe(out.uri);
     // Build23: Share 다이얼로그 title도 하드코딩('build21') 대신 QA_BUILD_LABEL을 쓰도록 고쳤다 —
     // 파일명과 동일한 클래스의 불일치 재발 방지 회귀 테스트.
-    expect(calls.share.title).toBe('QA Report build30');
+    expect(calls.share.title).toBe(`QA Report ${SOURCE_BUILD_LABEL}`);
   });
 });
 
