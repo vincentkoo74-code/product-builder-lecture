@@ -2,7 +2,43 @@
 
 This project should be maintained through GitHub as the source of truth.
 
-## Production URLs
+## Regional Backend Separation — KR (Seoul) vs JP (Tokyo)
+
+As of the KR V1.0_KR launch, this app ships against **two independent
+Supabase projects**, selected by which values are hardcoded in
+`index.html`'s `SUPABASE_URL`/`SUPABASE_ANON_KEY` constants:
+
+| | KR V1.0_KR | JP (future) |
+|---|---|---|
+| Supabase project ref | `sannrfmhevebqgfdqcps` | `cmfxhehpreanijwanwrr` |
+| Region | AWS `ap-northeast-2` (Seoul) | AWS `ap-northeast-1` (Tokyo) |
+| Current `index.html` source of truth | ✅ this is what's live | not referenced in KR runtime source at all |
+| Edge Functions deployed | `kakao-auth`, `delete-account` only | `kakao-auth`, `delete-account`, `line-auth` |
+| LINE login | disabled in client (`ENABLE_LINE_LOGIN = false`), `line-auth` not deployed | preserved, deployable when JP ships |
+| Apple Sign In provider | configured (Client ID `com.maru.rps.web`) | configured (pre-existing) |
+| Google Sign In provider | disabled | enabled (pre-existing, unrelated to KR V1 scope) |
+| Data | fresh KR V1 data only, no Tokyo data migrated | existing Tokyo data, untouched by KR work |
+
+**Important — the JP/Tokyo values are intentionally not present anywhere in
+`index.html` or other KR runtime source files**, per the KR V1 regional
+separation decision. Anyone reintroducing a JP/Tokyo build should read the
+`cmfxhehpreanijwanwrr` ref back in from this document (or a future
+JP-specific build config), not from KR source history.
+
+**CI/CD gap (known, not yet addressed)**: the `supabase-deploy.yml` workflow
+below is hardcoded to the Tokyo (`cmfxhehpreanijwanwrr`) project ref and
+only triggers on `supabase/**` changes on `main`. It does **not** deploy to
+Seoul. Seoul's schema/functions were deployed manually via Supabase CLI
+(see `docs/SEOUL_KR_V1_SECURITY_RISK_REGISTER.md` for the schema/RLS
+decisions that shipped). Wiring Seoul into CI is a future task, not done as
+part of this phase.
+
+Known accepted V1 security risks for the Seoul backend (allow-all RLS on
+`rooms`/`participants`, host authority not server-verified, etc.) are
+tracked separately in `docs/SEOUL_KR_V1_SECURITY_RISK_REGISTER.md` — that
+document also lists the required V2 security architecture backlog.
+
+## Production URLs (JP / Tokyo — existing runbook below, unchanged)
 
 - App: https://product-builder-lecture-phi.vercel.app
 - Supabase project ref: `cmfxhehpreanijwanwrr`

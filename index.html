@@ -2329,7 +2329,7 @@
           <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3C6.48 3 2 6.72 2 11.28c0 2.94 1.75 5.52 4.38 7.03L5.3 21.5a.5.5 0 0 0 .72.54l3.88-2.52A11.3 11.3 0 0 0 12 19.56c5.52 0 10-3.72 10-8.28C22 6.72 17.52 3 12 3z"/></svg>
           <span data-i18n="auth.snsKakao">카카오톡으로 로그인</span>
         </button>
-        <button class="sns-btn sns-btn-line" onclick="window.loginWithSns('line')">
+        <button id="snsBtnLine" class="sns-btn sns-btn-line" onclick="window.loginWithSns('line')">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63h2.386c.349 0 .63.285.63.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.105.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63.349 0 .631.285.631.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.281.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/></svg>
           <span data-i18n="auth.snsLine">라인으로 로그인</span>
         </button>
@@ -4245,8 +4245,8 @@
     document.documentElement.lang = currentLocale;
     if (document.body) document.body.setAttribute("data-locale", currentLocale);
 
-    const SUPABASE_URL = "https://cmfxhehpreanijwanwrr.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNtZnhoZWhwcmVhbmlqd2Fud3JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5Mjg5MDIsImV4cCI6MjA5NDUwNDkwMn0.v5HUgGyy4ZRhmIdCfx1K4_VtVafgK8L2uBe_3ah3xzI";
+    const SUPABASE_URL = "https://sannrfmhevebqgfdqcps.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhbm5yZm1oZXZlYnFnZmRxY3BzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYzMzI4NTEsImV4cCI6MjEwMTkwODg1MX0.ssgs7cpRSA6X-y6Jbk6jcMADHknC1guVrunnv_m6vaY";
     // PKCE 흐름을 명시한다. supabase-js 기본값은 implicit이며, 이 경우 OAuth가 토큰을 URL 해시
     // (#access_token=...)로 돌려준다. 그런데 네이티브 복귀용 OAuth 브릿지는 쿼리스트링만 앱으로
     // 전달하므로 해시에 담긴 세션이 유실되어 "로그인했는데 앱에 반영 안 됨" 증상이 발생한다.
@@ -12582,6 +12582,8 @@ function summarizeGameStats(rows) {
     const KAKAO_REST_API_KEY = "bce3cbf5a9fcdb2a300ce741bca3486a";
     // LINE OAuth Channel ID (공개 가능)
     const LINE_CHANNEL_ID = "2010213585";
+    // V1.0_KR: LINE 로그인은 한국 빌드에서 비활성화. JP 빌드 전환 시 true로 변경.
+    const ENABLE_LINE_LOGIN = false;
     const OAUTH_BRIDGE_URL = "https://product-builder-lecture-phi.vercel.app/oauth-bridge.html";
 
     function isNativeCapacitorApp() {
@@ -12687,7 +12689,7 @@ function summarizeGameStats(rows) {
       window.__maruPendingSnsLogin = false;
       await closeNativeOAuthBrowser();
       if (provider === "kakao") return handleKakaoCallback(parsed.searchParams);
-      if (provider === "line") return handleLineCallback(parsed.searchParams);
+      if (provider === "line") return ENABLE_LINE_LOGIN ? handleLineCallback(parsed.searchParams) : false;
       if (provider === "google" || provider === "apple") return handleSupabaseNativeOAuthUrl(url, provider);
       return false;
     }
@@ -12869,8 +12871,8 @@ function summarizeGameStats(rows) {
           + `&state=${state}`);
         return;
       }
-      // LINE — Custom OAuth flow (Edge Function 'line-auth')
-      if (provider === "line") {
+      // LINE — Custom OAuth flow (Edge Function 'line-auth'). V1.0_KR: 비활성 (ENABLE_LINE_LOGIN=false).
+      if (ENABLE_LINE_LOGIN && provider === "line") {
         const redirectUri = getOAuthRedirectUri("line");
         const state = crypto.randomUUID();
         localStorage.setItem("lineOAuthState", state);
@@ -12986,6 +12988,7 @@ function summarizeGameStats(rows) {
 
     // LINE OAuth 콜백 처리 — initFromUrl 에서 호출됨
     async function handleLineCallback(sourceParams = new URLSearchParams(location.search)) {
+      if (!ENABLE_LINE_LOGIN) return false;
       const params = sourceParams instanceof URLSearchParams
         ? sourceParams
         : new URLSearchParams(sourceParams);
@@ -13098,6 +13101,7 @@ function summarizeGameStats(rows) {
         // Mute 버튼 상태 동기화
         const muteBtn = $("muteToggleBtn");
         if (muteBtn) muteBtn.textContent = isMuted() ? "🔇" : "🔊";
+        if (!ENABLE_LINE_LOGIN) $("snsBtnLine")?.classList.add("hidden");
 
         // Kakao OAuth callback 처리 (?provider=kakao&code=... 일 때만 동작)
         if (db?.auth && params.get("provider") === "kakao") {
@@ -13109,7 +13113,7 @@ function summarizeGameStats(rows) {
           }
         }
         // LINE OAuth callback 처리
-        if (db?.auth && params.get("provider") === "line") {
+        if (ENABLE_LINE_LOGIN && db?.auth && params.get("provider") === "line") {
           const handled = await handleLineCallback();
           if (handled) {
             updateAuthTopbar();
