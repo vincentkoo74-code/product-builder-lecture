@@ -12675,19 +12675,22 @@ function summarizeGameStats(rows) {
         if (error) throw new Error(error);
 
         if (code && typeof db.auth.exchangeCodeForSession === "function") {
-          const { error: exchangeError } = await withTimeout(
+          const { data: exchangeData, error: exchangeError } = await withTimeout(
             db.auth.exchangeCodeForSession(code),
             15000,
             `${provider} 로그인`
           );
           if (exchangeError) throw exchangeError;
+          // 세션 실체 확인 전에는 성공 처리하지 않는다(Kakao 경로와 동일 기준).
+          await requireActiveSession(exchangeData?.session, `${provider} 로그인`);
         } else if (accessToken && refreshToken) {
-          const { error: sessionError } = await withTimeout(
+          const { data: sessionData, error: sessionError } = await withTimeout(
             db.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }),
             15000,
             `${provider} 로그인`
           );
           if (sessionError) throw sessionError;
+          await requireActiveSession(sessionData?.session, `${provider} 로그인`);
         } else {
           throw new Error("로그인 callback에 세션 정보가 없습니다");
         }
@@ -12948,6 +12951,34 @@ function summarizeGameStats(rows) {
       return withTimeout(promise, ms, label);
     }
 
+    // KR V1.0 Auth(실기기 P0 — false-positive auth state): OAuth 성공 판정 엄격화.
+    // 종전 Kakao/Apple 경로는 verifyOtp/exchangeCodeForSession의 error만 검사하고
+    // data.session은 보지 않았다. 두 API 모두 error:null 이면서 session:null 을 돌려줄 수
+    // 있으므로, 실제 세션이 없는데도 setAuthState("authed") + "로그인 완료" 토스트가 나가
+    // "로그인된 것처럼 보이지만 세션은 없는" 상태가 만들어졌다(전적 저장·계정삭제 불가).
+    // 반환된 세션과 getSession() 재조회가 모두 존재하고 같은 user.id 를 가리킬 때만
+    // 성공으로 인정한다. 실패는 throw — 호출부의 기존 catch 가 로그인 실패 UI로 처리한다.
+    async function requireActiveSession(returnedSession, label) {
+      const returnedUid = returnedSession?.user?.id;
+      if (!returnedSession || !returnedUid) {
+        throw new Error(`${label} 세션이 생성되지 않았습니다`);
+      }
+      const { data: current, error: getErr } = await withAuthTimeout(
+        db.auth.getSession(),
+        15000,
+        `${label} 세션 확인`
+      );
+      if (getErr) throw getErr;
+      const currentUid = current?.session?.user?.id;
+      if (!currentUid) {
+        throw new Error(`${label} 세션이 저장되지 않았습니다`);
+      }
+      if (currentUid !== returnedUid) {
+        throw new Error(`${label} 세션 사용자가 일치하지 않습니다`);
+      }
+      return current.session;
+    }
+
     // Kakao OAuth 콜백 처리 — initFromUrl 에서 호출됨
     async function handleKakaoCallback(sourceParams = new URLSearchParams(location.search)) {
       const params = sourceParams instanceof URLSearchParams
@@ -12957,6 +12988,17 @@ function summarizeGameStats(rows) {
       const code = params.get("code");
       const state = params.get("state");
       const err = params.get("error");
+      // [KAKAO-TRACE] 실기기 진단용 관찰 로그 — 흐름/동작은 일절 바꾸지 않는다.
+      // 값 자체(code/state/token)는 절대 남기지 않고 존재 여부·길이만 기록한다.
+      console.log("[KAKAO-TRACE] 1 callback params", {
+        hasProvider: params.has("provider"),
+        hasCode: Boolean(code),
+        codeLen: code ? String(code).length : 0,
+        hasState: Boolean(state),
+        hasError: Boolean(err),
+        errorValue: err || null,
+        native: isNativeCapacitorApp(),
+      });
       if (err) {
         showToast(t("toast.error", { msg: err }));
         history.replaceState({}, "", location.pathname);
@@ -12977,6 +13019,7 @@ function summarizeGameStats(rows) {
         if (!ensureDb()) throw new Error(t("toast.authUnavailable"));
         showToast("카카오 로그인 확인 중...", 8000);
         const redirectUri = getOAuthRedirectUri("kakao");
+        console.log("[KAKAO-TRACE] 2 invoking kakao-auth", { redirectUri, supabaseUrl: SUPABASE_URL });
         const { data, error } = await withAuthTimeout(
           db.functions.invoke("kakao-auth", {
             body: { code, redirect_uri: redirectUri }
@@ -12984,12 +13027,21 @@ function summarizeGameStats(rows) {
           15000,
           "카카오 로그인 서버"
         );
+        console.log("[KAKAO-TRACE] 3 kakao-auth response", {
+          hasError: Boolean(error),
+          errorMessage: error?.message || null,
+          errorStatus: error?.context?.status ?? error?.status ?? null,
+          hasData: Boolean(data),
+          dataSuccess: data?.success ?? null,
+          hasTokenHash: Boolean(data?.token_hash),
+          dataError: data?.error || null,
+        });
         if (error) throw new Error(await getFunctionErrorMessage(error, "kakao auth failed"));
         if (!data?.success || !data?.token_hash) {
           throw new Error(data?.error || "kakao auth failed");
         }
         // Supabase 세션 활성화
-        const { error: verifyErr } = await withAuthTimeout(
+        const { data: verifyData, error: verifyErr } = await withAuthTimeout(
           db.auth.verifyOtp({
             type: "magiclink",
             token_hash: data.token_hash,
@@ -12997,9 +13049,31 @@ function summarizeGameStats(rows) {
           15000,
           "Supabase 세션 활성화"
         );
+        console.log("[KAKAO-TRACE] 4 verifyOtp result", {
+          hasError: Boolean(verifyErr),
+          errorMessage: verifyErr?.message || null,
+          hasSession: Boolean(verifyData?.session),
+          hasSessionUserId: Boolean(verifyData?.session?.user?.id),
+          hasUser: Boolean(verifyData?.user),
+        });
         if (verifyErr) throw verifyErr;
+        // 세션이 실제로 생성·저장됐는지 확인하기 전에는 성공 처리하지 않는다.
+        try {
+          const { data: peek } = await db.auth.getSession();
+          console.log("[KAKAO-TRACE] 5 getSession after verifyOtp", {
+            hasSession: Boolean(peek?.session),
+            hasUserId: Boolean(peek?.session?.user?.id),
+            matchesVerify: Boolean(peek?.session?.user?.id) &&
+              peek?.session?.user?.id === verifyData?.session?.user?.id,
+          });
+        } catch (traceErr) {
+          console.log("[KAKAO-TRACE] 5 getSession threw", { message: traceErr?.message || String(traceErr) });
+        }
+        await requireActiveSession(verifyData?.session, "카카오 로그인");
 
+        console.log("[KAKAO-TRACE] 6a before setAuthState('authed')");
         setAuthState("authed");
+        console.log("[KAKAO-TRACE] 6b after setAuthState('authed')", { authState: getAuthState() });
         if (data.nickname) saveNickname(data.nickname);
         showToast(`✨ ${data.nickname || "Kakao"} 로그인 완료`);
         history.replaceState({}, "", location.pathname);
@@ -13009,6 +13083,7 @@ function summarizeGameStats(rows) {
         if (homeNick && data.nickname) homeNick.value = data.nickname;
         setTimeout(showFirstGameGuideAfterLogin, 350);
       } catch (e) {
+        console.log("[KAKAO-TRACE] X failed", { message: e?.message || String(e) });
         showToast(t("toast.error", { msg: e.message || String(e) }));
         history.replaceState({}, "", location.pathname);
         showAuthScreen();
