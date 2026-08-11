@@ -2333,7 +2333,7 @@
           <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63h2.386c.349 0 .63.285.63.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.105.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63.349 0 .631.285.631.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.281.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/></svg>
           <span data-i18n="auth.snsLine">라인으로 로그인</span>
         </button>
-        <button class="sns-btn sns-btn-google" onclick="window.loginWithSns('google')">
+        <button id="snsBtnGoogle" class="sns-btn sns-btn-google" onclick="window.loginWithSns('google')">
           <svg width="22" height="22" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571.001-.001.002-.001.003-.002l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>
           <span data-i18n="auth.snsGoogle">Google로 로그인</span>
         </button>
@@ -12584,6 +12584,10 @@ function summarizeGameStats(rows) {
     const LINE_CHANNEL_ID = "2010213585";
     // V1.0_KR: LINE 로그인은 한국 빌드에서 비활성화. JP 빌드 전환 시 true로 변경.
     const ENABLE_LINE_LOGIN = false;
+    // V1.0_KR: Google 로그인은 Seoul Supabase provider가 비활성 상태라 한국 빌드에서도 비활성화.
+    // 서버(Supabase Auth provider) 비활성만으로는 버튼 클릭 시 "Unsupported provider" 에러가
+    // 그대로 노출되므로, LINE과 동일하게 클라이언트에서도 UI/실행 경로를 함께 차단한다.
+    const ENABLE_GOOGLE_LOGIN = false;
     const OAUTH_BRIDGE_URL = "https://product-builder-lecture-phi.vercel.app/oauth-bridge.html";
 
     function isNativeCapacitorApp() {
@@ -12690,7 +12694,8 @@ function summarizeGameStats(rows) {
       await closeNativeOAuthBrowser();
       if (provider === "kakao") return handleKakaoCallback(parsed.searchParams);
       if (provider === "line") return ENABLE_LINE_LOGIN ? handleLineCallback(parsed.searchParams) : false;
-      if (provider === "google" || provider === "apple") return handleSupabaseNativeOAuthUrl(url, provider);
+      if (provider === "google") return ENABLE_GOOGLE_LOGIN ? handleSupabaseNativeOAuthUrl(url, provider) : false;
+      if (provider === "apple") return handleSupabaseNativeOAuthUrl(url, provider);
       return false;
     }
 
@@ -12829,8 +12834,10 @@ function summarizeGameStats(rows) {
         return;
       }
       ensureDb();
-      // Google / Apple은 Supabase 네이티브 지원
-      if (provider === "google" || provider === "apple") {
+      // Google / Apple은 Supabase 네이티브 지원. V1.0_KR: Google은 ENABLE_GOOGLE_LOGIN=false로 비활성
+      // (Seoul provider 비활성 + 클라이언트 게이트 이중 차단) — 비활성 시 아래 블록을 건너뛰어
+      // 기존 "coming soon" 폴백(파일 하단)으로 자연스럽게 떨어진다.
+      if (provider === "apple" || (provider === "google" && ENABLE_GOOGLE_LOGIN)) {
         if (!db?.auth) {
           // db(Supabase 클라이언트)가 없으면 "준비중"이 아니라 실제 원인을 명확히 안내한다.
           showToast(t("toast.authUnavailable"), 5000);
@@ -13102,6 +13109,7 @@ function summarizeGameStats(rows) {
         const muteBtn = $("muteToggleBtn");
         if (muteBtn) muteBtn.textContent = isMuted() ? "🔇" : "🔊";
         if (!ENABLE_LINE_LOGIN) $("snsBtnLine")?.classList.add("hidden");
+        if (!ENABLE_GOOGLE_LOGIN) $("snsBtnGoogle")?.classList.add("hidden");
 
         // Kakao OAuth callback 처리 (?provider=kakao&code=... 일 때만 동작)
         if (db?.auth && params.get("provider") === "kakao") {
