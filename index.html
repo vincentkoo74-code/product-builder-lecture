@@ -2351,6 +2351,16 @@
       <p style="text-align:center;font-size:12px;color:var(--muted);margin:0" data-i18n="auth.guestHint">
         게스트 모드에서는 게임 기록이 저장되지 않습니다
       </p>
+      <!-- C-1(배선 전용): 앱 번들에 포함돼 있으면서도 여는 경로가 한 곳도 없던 법적 고지 문서로의
+           링크. 여기에는 **문서 제목만** 둔다 — 동의 문구/수집 고지 등 법적 서술은 최종 법무본이
+           확정되기 전까지 임의로 작성하지 않는다(C-2/C-4/C-6 대기).
+           상대 경로를 쓴다: 웹(vercel rewrite 예외 경로)과 네이티브(Capacitor 번들 내 동일 파일)
+           양쪽에서 동일하게 열리고, 각 문서의 "앱으로 돌아가기"가 다시 앱으로 복귀시킨다. -->
+      <p class="auth-legal-links" style="text-align:center;font-size:12px;margin:10px 0 0">
+        <a href="privacy.html" style="color:var(--muted);text-decoration:underline" data-i18n="auth.legalPrivacy">개인정보 처리방침</a>
+        <span aria-hidden="true" style="color:var(--muted);margin:0 6px">·</span>
+        <a href="terms.html" style="color:var(--muted);text-decoration:underline" data-i18n="auth.legalTerms">이용약관</a>
+      </p>
     </section>
 
     <section class="card maru-card" id="screenHome">
@@ -3074,6 +3084,8 @@
         "auth.dividerOr": "또는",
         "auth.guestPlay": "🐱 로그인 없이 마루랑 놀기",
         "auth.guestHint": "게스트 모드에서는 게임 기록이 저장되지 않습니다",
+        "auth.legalPrivacy": "개인정보 처리방침",
+        "auth.legalTerms": "이용약관",
         // home
         "home.kcultureTag": "K-CULTURE × PARTY GAME",
         "home.title": "<em>가위바위보!</em>",
@@ -3456,6 +3468,8 @@
         "auth.dividerOr": "or",
         "auth.guestPlay": "🐱 Play as guest with Maru",
         "auth.guestHint": "Guest mode doesn't save game history",
+        "auth.legalPrivacy": "Privacy Policy",
+        "auth.legalTerms": "Terms of Service",
         "home.kcultureTag": "K-CULTURE × PARTY GAME",
         "home.title": "<em>Rock Paper Scissors!</em>",
         "home.subtitle": "Gather by QR, one round with Maru 🐾<br/>Loser takes the penalty!",
@@ -3818,6 +3832,8 @@
         "auth.dividerOr": "または",
         "auth.guestPlay": "🐱 ゲストでマルと遊ぶ",
         "auth.guestHint": "ゲストモードでは履歴は保存されません",
+        "auth.legalPrivacy": "プライバシーポリシー",
+        "auth.legalTerms": "利用規約",
         "home.kcultureTag": "Kカルチャー・パーティーゲーム",
         "home.title": "<em>じゃんけん！</em>",
         "home.subtitle": "QRで集まってマルと一勝負 🐾<br/>負けたら罰ゲーム！",
@@ -5375,6 +5391,7 @@
 	        state.round = 1;
 	        state.status = status;
 	        state.playingEntryKey = null;
+	        state.countdownRenderedKey = null; // Build33 후속(P0-1): 새 방/새 게임 episode 진입 시 카운트다운 원장도 함께 초기화
 	        state.gameStarting = false;
 	        state.finishingRound = false;
 	        state.resultVoiceKey = null; state.resultMetricKey = null; state.lastRoundResolution = null; state.gameOverVoiceKey = null; state.autoSavedGameResultKey = null; // WRPS-046/072/072-B19/Build21/Build30-P2: 새 게임 회차에서 결과 음성/메트릭/판정캐시/게임종료음성/자동저장 가드 초기화
@@ -5630,10 +5647,24 @@
       if (state.rematchAdvanceTimer) { clearTimeout(state.rematchAdvanceTimer); state.rematchAdvanceTimer = null; }
 
       const entryKey = getPlayingEntryKey();
+      // Build33 후속(실기기 BLOCKER, 호스트 멀티 카운트다운): 이 가드는 "이번 라운드에 이미
+      // 진입했는가"를 화면 가시성으로 판정한다 — 아래 5개 화면 중 하나라도 떠 있어야 재진입을
+      // 막는다. 그런데 runCountdownThenShowGame()의 비참가자 early-return에는 safe도 loser도
+      // 아닌 세 번째 경우(__waiting__ 중도참가자, currentUserId 미확정)가 있어 **아무 화면도
+      // 띄우지 않고** 곧바로 releaseActiveKey()까지 해버린다. 그 상태에서는
+      //   ① 이 화면 가시성 가드 → 해당 화면이 없으므로 항상 false(재진입 허용)
+      //   ② runCountdownThenShowGame()의 countdownCoroutineActiveKey 중복 가드 → 이미 반납됨
+      // 두 가드가 동시에 무력화되어, realtime 에코 + 2.6초 폴링이 같은 'playing' row를 다시
+      // 배달할 때마다 같은 라운드에 계속 재진입한다. 근본 수정은 두 갈래다:
+      //   (A) 세 번째 경우도 반드시 화면을 띄운다(아래 runCountdownThenShowGame 2곳 — 호스트는
+      //       이미 구현돼 있으나 어디서도 호출되지 않던 screenHostPlaying으로).
+      //   (B) 그 화면(screenHostPlaying)을 이 가드 목록에 추가한다 — 그렇지 않으면 (A)를 해도
+      //       가드가 여전히 false가 되어 재진입이 열린 채로 남는다.
       const alreadyEntering =
         state.playingEntryKey === entryKey &&
         (isCountdownActive() ||
           isScreenActive("screenGame") ||
+          isScreenActive("screenHostPlaying") ||
           isScreenActive("screenWinnerWait") ||
           isScreenActive("screenLoserWait") ||
           isScreenActive("screenParticipantWait"));
@@ -6044,7 +6075,13 @@
 
       const oldStatus = state.status;
       state.status = room.status;
-      if (state.status !== "playing") state.playingEntryKey = null;
+      // Build33 후속(P0-1): 카운트다운 원장도 playingEntryKey와 **같은 조건에서만** 초기화한다.
+      // ⚠️ 이 대입을 조건 밖으로 빼면 handleRoomUpdate가 호출될 때마다(2.6초 폴링 포함) 원장이
+      // 지워져 idempotent 가드가 통째로 무력화된다.
+      if (state.status !== "playing") {
+        state.playingEntryKey = null;
+        state.countdownRenderedKey = null;
+      }
 
       // WRPS-083 2B: destroyed 조기 분기. realtime·2.6s 폴링·resume 재동기화 세 경로가 모두 이
       // handleRoomUpdate 단일 진입점을 통과하므로, 여기 한 곳이 전 경로를 커버한다(신규 전파 채널 0).
@@ -6293,6 +6330,34 @@
       } else {
 	        $("loserWaitMessage").textContent = t("loserWait.messageDone");
 	      }
+	    }
+
+	    // Build33 후속(실기기 BLOCKER, 호스트 멀티 카운트다운): "이번 라운드에 참여하지 않는 기기"가
+	    // 가야 할 화면을 한 곳에서 결정한다. 종전에는 runCountdownThenShowGame()의 두 비참가자
+	    // 분기가 각각 `if(safe) … else if(loser) …`만 갖고 있어, 둘 다 아닌 세 번째 경우
+	    // (isWaitingForNextGame — WRPS-085 중도참가자의 '__waiting__', 또는 currentUserId가 아직
+	    // 확정되지 않은 순간)에는 **아무 화면도 띄우지 않고** 직전 화면에 머물렀다. 그 결과
+	    // enterPlayingStateFromRoomUpdate()의 화면 가시성 재진입 가드가 영구히 false가 되어
+	    // (그리고 이 경로는 releaseActiveKey()도 즉시 하므로 coroutine 중복 가드까지 함께 무력화)
+	    // 같은 라운드에 realtime 에코와 2.6초 폴링마다 계속 재진입했다.
+	    //
+	    // 화면 선택 근거:
+	    //   - safe/loser는 기존 화면을 그대로 유지한다(회귀 없음).
+	    //   - 호스트는 screenHostPlaying — 이미 renderHostPlayingScreen()으로 완전히 구현돼
+	    //     있으면서도 showScreen() 호출부가 0곳이라 한 번도 표시된 적이 없던 화면이다
+	    //     (hideAllScreens/renderAll의 목록에는 이미 등록돼 있다). 판정 버튼·참가자 선택
+	    //     현황을 보여주는, 비참가 호스트를 위해 만들어진 화면이므로 의미상으로도 맞다.
+	    //   - 그 외(참가자 신분의 '__waiting__' 중도참가자)는 screenParticipantWait — 다음
+	    //     라운드를 기다리는 상태를 그대로 표현하는 기존 화면이다.
+	    function showNonPlayingRoundScreen() {
+	      if (isSafeParticipant()) { showScreen("screenWinnerWait"); return; }
+	      if (isConfirmedLoser()) { showLoserWaitScreen(); return; }
+	      if (state.role === "host") {
+	        showScreen("screenHostPlaying");
+	        try { renderHostPlayingScreen(); } catch (e) { console.warn("renderHostPlayingScreen failed:", e?.message || e); }
+	        return;
+	      }
+	      showScreen("screenParticipantWait");
 	    }
 
 	    function renderInlinePenaltyBox(el) {
@@ -6641,6 +6706,7 @@
       state.countdownStartAt = 0;
       state.choiceEndAt = 0; // Build30-R2 Phase A(WRPS-078): 새 세션에서 이전 방의 choice window 앵커가 새지 않도록 초기화
       state.playingEntryKey = null;
+	        state.countdownRenderedKey = null; // Build33 후속(P0-1): 새 방/새 게임 episode 진입 시 카운트다운 원장도 함께 초기화
       state.advancingRound = false;
       state.resultVoiceKey = null; state.resultMetricKey = null; state.lastRoundResolution = null; state.gameOverVoiceKey = null; state.autoSavedGameResultKey = null; // WRPS-046/072/072-B19/Build21/Build30-P2: 새 세션에서 결과 음성/메트릭/판정캐시/게임종료음성/자동저장 가드 초기화
       state.resultSfxKey = null;   // 결과 효과음 가드 초기화
@@ -6665,6 +6731,7 @@
       state.round = 1;
       state.status = "waiting";
       state.playingEntryKey = null;
+	        state.countdownRenderedKey = null; // Build33 후속(P0-1): 새 방/새 게임 episode 진입 시 카운트다운 원장도 함께 초기화
       state.gameStarting = false;
       state.finishingRound = false;
       state.newRoundResetting = false;
@@ -6738,6 +6805,7 @@
       state.gameStarting = false;
       state.finishingRound = false;
       state.playingEntryKey = null;
+	        state.countdownRenderedKey = null; // Build33 후속(P0-1): 새 방/새 게임 episode 진입 시 카운트다운 원장도 함께 초기화
 
       if (getOnlineMode()) {
         try {
@@ -7077,8 +7145,9 @@
 
     function showGameScreen() {
       if (!isCurrentRoundParticipant()) {
-        if (isSafeParticipant()) showScreen("screenWinnerWait");
-        else if (isConfirmedLoser()) showLoserWaitScreen();
+        // Build33 후속: runCountdownThenShowGame()의 두 비참가자 분기와 동일한 결함이 여기에도
+        // 있었다(safe도 loser도 아니면 화면 미표시) — 같은 헬퍼로 통일한다.
+        showNonPlayingRoundScreen();
         startHostJudgeBackstop();
         return;
       }
@@ -8013,6 +8082,26 @@
       // 서로 다른 라운드에 대한 호출(예: host 강제 시작이 정체된 이전 실행을 대체)은 막지 않고
       // 그대로 진행시켜, 새 세대가 이전 실행을 checkpoint에서 stale로 판정하게 한다.
       const entryKey = `${state.roomCode || "offline"}:${getGameRound()}:${state.round || 1}`;
+      // Build33 후속(P0-1) idempotent 원장: "이 라운드의 카운트다운은 이 기기에서 이미 끝까지
+      // 렌더됐다"는 사실을 라운드가 끝난 뒤에도 기억한다. 아래 countdownCoroutineActiveKey는
+      // **진행 중**일 때만 막으므로, 카운트다운이 완주해 키를 반납한 뒤 같은 라운드의 'playing'
+      // row가 다시 배달되면(2.6초 폴링은 매 주기 같은 row를 다시 준다) 아무것도 막지 못한다 —
+      // 화면 가시성 가드(enterPlayingStateFromRoomUpdate)가 유일한 방어였는데, 그건 이 기기가
+      // 어떤 화면에 있느냐에 의존해 쉽게 깨진다(같은 커밋의 showNonPlayingRoundScreen 주석 참고).
+      // 성공적으로 완주한 경우에만 기록하므로, 동기화 실패로 중단된 카운트다운의 정당한 재시도
+      // (showCountdownSyncError → runCountdownThenShowGame)는 막지 않는다.
+      if (state.countdownRenderedKey === entryKey) {
+        try {
+          QA.emit('metric', {
+            wrps: 'WRPS-078', eventType: 'COUNTDOWN_ALREADY_RENDERED_BLOCKED',
+            generation: state.countdownGeneration, currentGeneration: state.countdownGeneration,
+            roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round,
+            eventId: `${entryKey}:rendered`, checkpoint: 'entry',
+          });
+        } catch (e) {}
+        state.gameStarting = false;
+        return;
+      }
       if (state.countdownCoroutineActiveKey === entryKey) {
         try {
           QA.emit('metric', {
@@ -8031,6 +8120,14 @@
       // 0을 기본값으로 둬 이 경우에도 안전하게 1부터 단조증가한다.
       const myGen = (state.countdownGeneration = (state.countdownGeneration || 0) + 1);
       state.countdownCoroutineActiveKey = entryKey;
+      // Build33 후속(P0-1, 사용자 피해 직결): 새 세대를 발급하는 순간 이전 세대가 걸어둔 선택
+      // 타이머를 반드시 끈다. 실기기 증상 "카운트다운 2회 실행 후 그 라운드가 사용자 선택 없이
+      // 자동 진행"의 직접 원인이 이것이다 — 이전 카운트다운(세대 N)이 이미 beginRoundTimer()로
+      // 5초 선택 타이머를 걸어둔 상태에서 세대 N+1의 카운트다운이 화면을 덮으면, 그 5초는
+      // 카운트다운 애니메이션이 도는 동안 그대로 흘러 0에 도달하고 host의 autoFillChoices()가
+      // 발화한다. 사용자는 선택 화면을 보지도 못한 채 라운드가 자동 확정된다.
+      // 세대 N+1이 정상 완주하면 자기 시점 기준으로 beginRoundTimer()를 새로 걸므로 정체는 없다.
+      stopRoundTimers();
       try {
         QA.emit('metric', {
           wrps: 'WRPS-078', eventType: 'COUNTDOWN_GENERATION_STARTED',
@@ -8048,8 +8145,10 @@
 
       // 호스트도 가위바위보에 참여하는 일반 플레이어이므로 동일한 게임 화면 사용
       if (!isCurrentRoundParticipant()) {
-        if (isSafeParticipant()) showScreen("screenWinnerWait");
-        else if (isConfirmedLoser()) showLoserWaitScreen();
+        // Build33 후속: safe/loser 외 세 번째 경우도 반드시 화면을 띄운다(showNonPlayingRoundScreen
+        // 주석 참고) — 화면이 없으면 이 early-return 직후의 releaseActiveKey()와 맞물려
+        // enterPlayingStateFromRoomUpdate()의 재진입 가드가 영구히 열린다.
+        showNonPlayingRoundScreen();
         // Build30-R2 Phase A(WRPS-078): 이 기기(host일 수 있음)는 카운트다운을 아예 실행하지
         // 않으므로, 아직 플레이 중인 다른 참가자를 위한 choiceEndAt을 안전 추정치로 발행한다.
         publishChoiceWindowEstimateIfHost();
@@ -8078,9 +8177,13 @@
         releaseActiveKey();
         return;
       }
+      // Build33 후속(P0-1): 여기까지 왔다는 것은 이 라운드의 카운트다운이 이 기기에서 실제로
+      // 끝까지 렌더됐다는 뜻이다(하드블록/stale 세대는 위에서 전부 걸러졌다). 원장에 기록해
+      // 같은 라운드의 재진입이 두 번째 카운트다운을 그리지 못하게 한다.
+      state.countdownRenderedKey = entryKey;
       if (!isCurrentRoundParticipant()) {
-        if (isSafeParticipant()) showScreen("screenWinnerWait");
-        else if (isConfirmedLoser()) showLoserWaitScreen();
+        // Build33 후속: 위 early-return과 동일한 이유로 세 번째 경우도 화면을 띄운다.
+        showNonPlayingRoundScreen();
         // Build30-R2 Phase A(WRPS-078): 이 지점은 이미 실제 카운트다운을 다 마친 뒤이므로(위의
         // 첫 early-return과 달리) "지금"이 정확한 실제 애니메이션 종료 시각이다 — 추정치가 아니라
         // captureAndPublishChoiceWindowNow()의 정확한 캡처를 그대로 재사용한다.
@@ -10141,6 +10244,16 @@ function summarizeGameStats(rows) {
           // 어느 await라도 throw하면 catch로 빠져 이 줄에 도달하지 않는다(부분 실패는 절대
           // clear로 오인되지 않음).
           if (state.rematchAdvanceRetryAttempts) delete state.rematchAdvanceRetryAttempts[getRematchAdvanceRetryKey()];
+          // Build33 후속(P0-1) 기록: 여기서 로컬 state.round를 낙관적으로 올리는 수정을 한 번
+          // 시도했다가 **되돌렸다**. 근거:
+          //   (1) 그 수정의 동기였던 "host가 stale round로 카운트다운에 진입하는" 시나리오는
+          //       실제로 발생하지 않는다 — 자동시작(fetchParticipants)은 state.status==='ready'를
+          //       요구하고, state.status와 state.round는 handleRoomUpdate에서 **같은 room row로
+          //       함께** 갱신되므로 둘이 어긋난 채 startGame()에 도달할 수 없다.
+          //   (2) 실측 결과 이 낙관적 갱신은 rc3 멀티참가자 시뮬의 correctnessPass를 ~100%에서
+          //       0으로 붕괴시켰다(라운드 회계가 status와 어긋남). 순이익이 음수다.
+          // 카운트다운 중복은 아래 countdownRenderedKey 원장 + 세대 발급 시 stopRoundTimers()로
+          // 막는다 — 라운드 번호 회계에는 손대지 않는다.
         } catch (e) {
           state.advancingRound = false;
           console.warn("nextRound (online) failed:", e?.message || e);
@@ -11228,6 +11341,10 @@ function summarizeGameStats(rows) {
           promotedHostId = candidate.id;
         }
       }
+      // Build33 후속(P0-2): 승격에 성공했으면 그 사실을 넘겨, 떠나는 호스트가 방을 초기화하지
+      // 않고 진행 중이던 게임을 새 host에게 그대로 넘기게 한다(_doLeaveRoom 시그니처는 테스트
+      // 마커라 바꿀 수 없으므로 state로 전달한다).
+      state.pendingSuccessorHostId = promotedHostId;
       await _doLeaveRoom();
       // host exactly-one 사후 검증(행위 단말 책임) — _doLeaveRoom이 state를 정리하므로
       // 위에서 캡처해 둔 roomCode로 검증한다. rooms 테이블은 건드리지 않는다.
@@ -11239,8 +11356,33 @@ function summarizeGameStats(rows) {
       }
     }
 
+    // Build33 후속(P0-2, 실기기 BLOCKER: "호스트가 퇴장하면 진행 중 게임 및 게임방이 멈춤").
+    //
+    // 근본원인은 host 승계 실패가 **아니었다** — 승계(promoteParticipantToHost)는 정상 동작하고,
+    // 승격된 단말은 fetchParticipants()의 역할 전환 감지(약 6448)가 is_host를 보고 자동으로
+    // state.role="host"로 올라와 진행 권한(판정/자동시작/nextRound)을 이어받는다.
+    // 진짜 원인은 **떠나는 호스트가 방을 스스로 초기화**한다는 것이다:
+    //   ① rooms.status를 'waiting'으로 되돌리고
+    //   ② beginNewGameRound({status:"waiting", increment:true})로 게임 회차를 올려 판을 새로 깐다.
+    // 그래서 새 host는 "진행 중이던 게임"이 아니라 "대기 상태로 리셋된 방"을 물려받는다.
+    //
+    // 수정: **승계자가 있고 게임이 진행 중이면 초기화하지 않는다.** round/status/참가자 상태를
+    // 그대로 두고 권한만 넘긴다. 초기화는 승계자가 없을 때(마지막 참가자 이탈 → destroyRoomAndGoHome
+    // 경로가 담당)로 한정한다.
+    // ⚠️ 시그니처를 바꾸지 않는다. 여러 테스트가 `async function _doLeaveRoom() {` 문자열을
+    // 마커로 이 블록을 추출한다(tests/room-destroy-stage2b.test.mjs 등) — 인자를 추가하면
+    // 그 추출이 통째로 깨진다. 승계자 정보는 호출부가 state.pendingSuccessorHostId로 넘긴다.
     async function _doLeaveRoom() {
-      const shouldResetAfterHostLeave = getOnlineMode() && state.role === "host" && hasCurrentGameRoundActivity();
+      const successorHostId = state.pendingSuccessorHostId || null;
+      state.pendingSuccessorHostId = null;
+      // ⚠️ "이 게임 회차에 활동이 있었나"(hasCurrentGameRoundActivity — 게임 번호 증가 여부 판단용)와
+      // "지금 게임이 진행 중인가"(보존 여부 판단용)는 다른 질문이다. 둘을 혼동하면 game_over처럼
+      // 이미 끝난 판에서도 방을 보존해 대기 상태 복귀가 사라진다(실제로 그렇게 만들었다가
+      // host-transfer-stage1 T1이 잡아냈다). 보존은 "정말 진행 중"일 때로만 한정한다.
+      const gameInProgress = isRoundInProgressForLeave() || state.status === "ready";
+      const preserveRoomForSuccessor = Boolean(successorHostId) && gameInProgress;
+      const shouldResetAfterHostLeave =
+        getOnlineMode() && state.role === "host" && hasCurrentGameRoundActivity() && !preserveRoomForSuccessor;
       if (getOnlineMode() && state.currentUserId) {
         const leaveName = state.nickname || loadNickname();
         if (leaveName && state.roomCode) {
@@ -11257,7 +11399,9 @@ function summarizeGameStats(rows) {
         }
         // WRPS-083 2B(Tier 1, CRITICAL): 종료된 방을 'waiting'으로 되돌리면 tombstone이 부활한다.
         // 종료 직후 다른 host 단말의 이탈 write가 늦게 도착하는 경합에서 실제로 발생 가능하다.
-        if (state.role === "host" && !isRoomClosingOrDestroyed()) {
+        // Build33 후속(P0-2): 승계자가 이어받아 게임을 계속하는 경우에는 rooms.status를
+        // 'waiting'으로 되돌리지 않는다 — 이 write 하나가 진행 중이던 라운드를 즉시 무너뜨린다.
+        if (state.role === "host" && !isRoomClosingOrDestroyed() && !preserveRoomForSuccessor) {
           await db.from('rooms').update({ status: 'waiting' }).eq('id', state.roomCode);
         }
         if (shouldResetAfterHostLeave) {
@@ -11539,12 +11683,29 @@ function summarizeGameStats(rows) {
         state.participants = state.participants
           .filter(p => p.id !== state.currentUserId)
           .map(p => ({ ...p, is_host: p.id === newHostId ? true : p.is_host }));
-        await beginNewGameRound({
-          status: "waiting",
-          increment: shouldIncrement,
-          reason: "host_transferred_after_round_activity",
-          priorParticipants: beforeTransfer
-        });
+        // Build33 후속(P0-2): 게임이 진행 중이면 방을 초기화하지 않는다. 종전에는 승계 직후
+        // 무조건 beginNewGameRound({status:"waiting"})를 호출해, 새 host가 물려받는 순간
+        // 진행 중이던 라운드가 사라지고 방이 대기 상태로 되돌아갔다(실기기 P0-2의 직접 원인).
+        // 승계자는 fetchParticipants()의 역할 전환 감지로 곧 host 권한을 얻어 그대로 이어간다.
+        // ⚠️ shouldIncrement(=hasCurrentGameRoundActivity)는 "게임 번호를 올릴지" 판단용이지
+        // "지금 진행 중인지"가 아니다 — game_over에서도 true라, 이걸 보존 조건에 쓰면 이미 끝난
+        // 판까지 보존해버린다. 보존은 진행 중(playing/result/ready)일 때로만 한정한다.
+        if (!(isRoundInProgressForLeave() || state.status === "ready")) {
+          await beginNewGameRound({
+            status: "waiting",
+            increment: shouldIncrement,
+            reason: "host_transferred_idle_room",
+            priorParticipants: beforeTransfer
+          });
+        } else {
+          try {
+            QA.emit('lobby', {
+              wrps: 'WRPS-083', eventType: 'HOST_TRANSFER_PRESERVED_GAME',
+              newHostId, roomCode: state.roomCode || null,
+              gameNo: getGameRound(), round: state.round || 1, status: state.status || null,
+            });
+          } catch (e) {}
+        }
         // WRPS-083 1단계: host exactly-one 사후 검증(행위 단말 책임). 이번 인계의 의도된
         // 새 host(newHostId)를 preferred로 넘겨, 혹시 남은 이중 host가 있으면 인계 완성
         // 방향으로 수렴시킨다.

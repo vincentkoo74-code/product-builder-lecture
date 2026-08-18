@@ -114,7 +114,8 @@ function buildEnv({
   const factory = new Function(
     'state', '$', 'serverNow', 'toPositiveInt', 'clampLoserCount', 't', 'db', 'QA',
     'getOnlineMode', 'isCurrentRoundParticipant', 'isSafeParticipant', 'isConfirmedLoser',
-    'showScreen', 'showLoserWaitScreen', 'runCountdown', 'stopRoundTimers', 'autoFillChoices',
+    'showScreen', 'showLoserWaitScreen', 'showNonPlayingRoundScreen',
+    'runCountdown', 'stopRoundTimers', 'autoFillChoices',
     'updateSelectedCount', 'updateHostSelectedCount', 'isScreenActive',
     PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + GENERATION_HELPER_BLOCK_SRC + '\n' + RUNCOUNTDOWN_BLOCK_SRC + '\n' + TIMER_BLOCK_SRC +
     '\nreturn { getChoiceEndAt, buildPenaltyValue, getGameRound, getCountdownStartAt, ' +
@@ -132,6 +133,16 @@ function buildEnv({
     isCurrentRoundParticipantFn, isSafeParticipantFn, isConfirmedLoserFn,
     (id) => { calls.showScreen.push(id); },
     () => { calls.showLoserWaitScreen++; },
+    // Build33 후속: REAL runCountdownThenShowGame()의 두 비참가자 분기가 이제
+    // showNonPlayingRoundScreen()으로 통일됐다(index.html — safe/loser 외 세 번째 경우에
+    // 아무 화면도 띄우지 않아 재진입 가드가 무력화되던 결함 수정). 여기서는 REAL과 동일한
+    // 관측 가능 효과(어느 화면이 표시되는가)를 그대로 재현하는 스텁을 주입한다.
+    () => {
+      if (isSafeParticipantFn()) { calls.showScreen.push('screenWinnerWait'); return; }
+      if (isConfirmedLoserFn()) { calls.showLoserWaitScreen++; return; }
+      if (state.role === 'host') { calls.showScreen.push('screenHostPlaying'); return; }
+      calls.showScreen.push('screenParticipantWait');
+    },
     state.__runCountdown || (async () => true),
     () => { calls.stopRoundTimers++; state.timer = null; },
     () => { calls.autoFillChoices++; },

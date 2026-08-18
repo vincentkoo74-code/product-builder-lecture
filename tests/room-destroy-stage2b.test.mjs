@@ -944,9 +944,15 @@ describe('D21~D25, D32, D44 + N4~N7/N13 — destroyed 공통 가드', () => {
 
   it('D23/N6 — _doLeaveRoom의 waiting write가 destroyed에서 차단된다(소스 계약)', () => {
     const leaveSrc = extractBlock('async function _doLeaveRoom() {', 'async function destroyRoomAndGoHome(', 'doLeave');
-    expect(leaveSrc).toContain('if (state.role === "host" && !isRoomClosingOrDestroyed()) {');
+    expect(leaveSrc).toContain(// Build33 후속(P0-2): 승계자가 게임을 이어받는 경우 waiting write를 건너뛰는 조건이
+    // 추가됐다. WRPS-083 2B의 계약(destroyed 방에는 절대 waiting write를 하지 않는다)은
+    // !isRoomClosingOrDestroyed()로 그대로 유지된다 — 아래 mutation 검사도 동일하게 성립한다.
+    'if (state.role === "host" && !isRoomClosingOrDestroyed() && !preserveRoomForSuccessor) {');
     const mutated = leaveSrc.replace(
-      'if (state.role === "host" && !isRoomClosingOrDestroyed()) {',
+      // Build33 후속(P0-2): 승계자가 게임을 이어받는 경우 waiting write를 건너뛰는 조건이
+    // 추가됐다. WRPS-083 2B의 계약(destroyed 방에는 절대 waiting write를 하지 않는다)은
+    // !isRoomClosingOrDestroyed()로 그대로 유지된다 — 아래 mutation 검사도 동일하게 성립한다.
+    'if (state.role === "host" && !isRoomClosingOrDestroyed() && !preserveRoomForSuccessor) {',
       'if (state.role === "host") {'
     );
     expect(mutated).not.toBe(leaveSrc);
