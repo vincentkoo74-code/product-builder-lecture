@@ -2281,6 +2281,187 @@
       font-size:clamp(16px, 4.2vw, 20px);
     }
   </style>
+
+  <!-- Build35 — 공통 레이아웃 계약(c-head 고정 / c-body 스크롤 / c-foot 고정) + Settings/Game Menu.
+       기존 규칙을 덮어써야 하므로 head의 마지막 style 블록으로 둔다. 게임 로직 무관 — 표현 전용. -->
+  <style id="build35-layout">
+    /* --- 레이아웃 계약: 화면 전체가 아니라 카드 내부 c-body만 스크롤한다 --- */
+    .app{
+      overflow-y:hidden !important;
+      display:flex;
+      flex-direction:column;
+    }
+    .app > .card{ margin-bottom:0 }
+    .card:not(.hidden){
+      display:flex;
+      flex-direction:column;
+      flex:1 1 auto;
+      min-height:0;
+    }
+    .c-head{flex:0 0 auto}
+    .c-body{
+      flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
+      scrollbar-width:none;
+      -webkit-mask-image:linear-gradient(to bottom,#000 0,#000 calc(100% - 14px),transparent 100%);
+      mask-image:linear-gradient(to bottom,#000 0,#000 calc(100% - 14px),transparent 100%);
+    }
+    .c-body::-webkit-scrollbar{display:none}
+    /* c-foot: Primary CTA는 어떤 기기 높이에서도 잘리지 않는다 */
+    .c-foot{flex:0 0 auto;padding-top:10px}
+    .c-foot > .action-grid,
+    .c-foot > .footer-actions,
+    .c-foot > .compact-action-grid{margin-top:0}
+    /* 기존 sticky footer-actions는 c-foot이 대체한다 */
+    .c-foot .footer-actions{position:static;background:none}
+    .c-foot .btn-kparty:last-child,
+    .c-foot .stack > .btn-kparty:last-child{margin-bottom:0}
+
+    /* --- topbar: 브랜드 + 설정 진입점 1개 --- */
+    .settings-entry{
+      position:relative;width:36px;height:36px;min-width:36px;border-radius:999px;
+      background:rgba(255,255,255,.9);border:1px solid var(--line);
+      display:grid;place-items:center;color:var(--muted);padding:0;flex:0 0 auto;
+    }
+    .settings-entry .dot{
+      position:absolute;right:1px;bottom:1px;width:10px;height:10px;border-radius:50%;
+      border:2px solid var(--bg);background:#C9B79F;
+    }
+    .settings-entry.is-authed .dot{background:var(--success)}
+    .topbar-controls{display:flex;align-items:center;gap:6px}
+
+    /* --- Settings 화면 --- */
+    .set-head{font-size:11.5px;font-weight:800;color:var(--muted);letter-spacing:.4px;margin:11px 0 5px 4px}
+    .set-group{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden}
+    .set-row{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      padding:0 13px;border-bottom:1px solid var(--line);min-height:48px;
+      font-size:13.5px;font-weight:700;color:var(--text);
+      background:none;border-radius:0;text-align:left;width:100%;
+    }
+    .set-row:last-child{border-bottom:none}
+    .set-row .v{font-size:13px;color:var(--muted);font-weight:700;display:flex;align-items:center;gap:6px;min-width:0}
+    .set-row.danger{color:#b91c1c}
+    .set-row.stacked{display:block;padding-top:12px;padding-bottom:12px}
+    .set-row .lbl{display:flex;align-items:center;gap:8px;min-width:0}
+    .set-hint{font-size:11.5px;color:var(--muted);font-weight:600;margin:6px 0 0 5px;line-height:1.45}
+    .lang-seg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;
+      background:#FFFAF1;border:1.5px solid var(--line);border-radius:14px;padding:4px}
+    .lang-seg button{
+      border-radius:11px;min-height:44px;display:flex;align-items:center;justify-content:center;
+      padding:6px 4px;font-size:12.5px;font-weight:800;color:var(--muted);background:none;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    }
+    .lang-seg button[aria-pressed="true"]{
+      background:linear-gradient(135deg,var(--orange),var(--orange-deep));color:#fff;
+      box-shadow:0 4px 10px rgba(245,163,86,.3);
+    }
+    /* mute 버튼을 스위치 형태로 (텍스트는 JS가 넣는 🔊/🔇 — 시각적으로는 숨긴다) */
+    .set-group .mute-btn{
+      width:50px;min-width:50px;height:30px;border-radius:999px;padding:0;border:none;
+      background:var(--orange-deep);position:relative;font-size:0;flex:0 0 auto;
+    }
+    .set-group .mute-btn::after{
+      content:"";position:absolute;top:3px;left:23px;width:24px;height:24px;border-radius:50%;
+      background:#fff;box-shadow:0 2px 4px rgba(0,0,0,.2);transition:left .16s ease;
+    }
+    .set-group .mute-btn.is-muted{background:#E2D8C8}
+    .set-group .mute-btn.is-muted::after{left:3px}
+    .set-avatar{width:36px;height:36px;border-radius:999px;flex:0 0 auto;
+      background:linear-gradient(135deg,var(--orange),var(--gold));display:grid;place-items:center;color:#fff}
+    .set-group .guest-login-btn,
+    .set-group .signout-btn{
+      width:auto;min-width:0;height:auto;aspect-ratio:auto;border:none;background:none;
+      border-radius:0;padding:0;font-size:13.5px;font-weight:700;color:var(--text);
+      justify-content:flex-start;
+    }
+    .set-group .guest-login-btn::before{display:none}
+    .set-row-btn{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
+      padding:0 13px;min-height:48px;background:none;border-radius:0;
+      border-bottom:1px solid var(--line);font-size:13.5px;font-weight:700;color:var(--text);text-align:left;
+    }
+    .set-row-btn:last-child{border-bottom:none}
+    .set-row-btn.danger{color:#b91c1c}
+    .settings-legal-link{color:inherit;text-decoration:none;display:flex;
+      align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:48px;
+      padding:0 13px;border-bottom:1px solid var(--line);font-size:13.5px;font-weight:700}
+    .settings-legal-link:last-child{border-bottom:none}
+    #settingsNickname{text-align:right;border:none;background:none;padding:0;
+      font-size:13.5px;font-weight:700;width:auto;max-width:150px}
+
+    /* --- Game Menu Sheet --- */
+    .sheet-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center}
+    .sheet-overlay.hidden{display:none}
+    .sheet-scrim{position:absolute;inset:0;background:rgba(46,32,22,.5)}
+    .sheet-card{
+      position:relative;width:min(100%,430px);background:#fff;border-radius:26px 26px 0 0;
+      padding:10px 18px calc(14px + env(safe-area-inset-bottom, 0px));
+      box-shadow:0 -18px 40px rgba(46,32,22,.25);
+      max-height:80dvh;overflow-y:auto;
+    }
+    .sheet-grab{width:40px;height:4px;border-radius:2px;background:#E2D8C8;margin:0 auto 10px}
+    .saekdong-under{height:4px;width:120px;display:flex;border-radius:2px;overflow:hidden;margin:0 auto 12px}
+    .saekdong-under span{flex:1}
+    .sheet-note{font-size:11.5px;color:var(--muted);line-height:1.5;margin:11px 0 0;text-align:center}
+
+    /* --- Dynamic Action Slot: 위치 고정, 내부 버튼만 교체 --- */
+    /* 슬롯 높이 = 최대 상태(버튼 2행 + gap). 내용은 위쪽 정렬이라 첫 행 위치가 고정된다. */
+    #verdictActionSlot{position:relative;min-height:104px}
+    #verdictActionSlot > #roundResultActions,
+    #verdictActionSlot > #finalResultBtns{margin-top:0 !important}
+
+    /* --- Login: 법적 고지는 고정 푸터 --- */
+    #screenAuth .c-foot .auth-legal-links{margin:0}
+
+    /* --- 히트 타깃 44px 하한 (Apple HIG) --- */
+    .btn-quiet{
+      background:none;border:1px solid #ddd;color:#999;border-radius:12px;
+      font-size:13px;font-weight:700;min-height:44px;padding:10px 16px;width:100%;
+    }
+    .screen-close-btn,
+    .popup-close-btn{width:44px !important;height:44px !important}
+    .loser-count-select{min-height:44px}
+    /* mute 스위치: 실제 트랙은 50x30이지만 탭 영역은 44px를 확보한다 */
+    .set-group .mute-btn{
+      height:44px;min-height:44px;background:none !important;border-radius:0;
+      display:flex;align-items:center;justify-content:flex-end;width:50px;min-width:50px;
+    }
+    .set-group .mute-btn::before{
+      content:"";width:50px;height:30px;border-radius:999px;background:var(--orange-deep);
+      transition:background .16s ease;
+    }
+    .set-group .mute-btn::after{top:50%;transform:translateY(-50%)}
+    .set-group .mute-btn.is-muted::before{background:#E2D8C8}
+    .set-group .mute-btn.is-muted{background:none !important}
+
+    /* --- 짧은 화면(iPhone SE 1세대 320x568 등): head 장식을 줄여 CTA를 예산 안에 유지 --- */
+    @media (max-height: 700px){
+      #screenAuth .maru-hero img{width:118px !important;height:118px !important}
+      #screenHome .maru-hero img{width:112px !important;height:112px !important}
+      #screenHome .maru-hero-bg,
+      #screenAuth .maru-hero-bg{height:130px}
+      #screenHome .maru-title{font-size:30px !important;margin:2px 0 4px !important}
+      #screenStats .maru-hero img{width:86px;height:86px}
+      .result-maru{width:104px;height:104px;margin-bottom:4px}
+      .result-title{font-size:28px;margin-bottom:6px}
+      .result-hero{padding:4px 0 4px}
+      .qr-code, .fake-qr{max-width:104px;max-height:104px}
+      .qr-box{padding:8px;margin:8px 0}
+      .code-text{font-size:24px;margin-top:4px}
+      .maru-corner.maru-corner-lg{width:84px;height:84px}
+      .maru-corner.maru-corner-md{width:72px;height:72px}
+      .penalty-box{padding:10px;margin:8px 0}
+      .penalty-box strong{font-size:17px}
+      .c-foot{padding-top:8px}
+    }
+    @media (max-height: 600px){
+      #screenAuth .maru-hero img{width:92px !important;height:92px !important}
+      #screenHome .maru-hero img{width:88px !important;height:88px !important}
+      #screenHome .maru-title{font-size:26px !important}
+      .maru-subtitle{margin-bottom:10px}
+      #verdictActionSlot{min-height:96px}
+    }
+  </style>
 </head>
 <body>
   <main class="app">
@@ -2289,18 +2470,13 @@
         <div class="brand-icon" style="background:linear-gradient(135deg,var(--orange),var(--gold));color:#fff">🐾</div>
         <div data-i18n="app.brand" style="font-family:var(--font-display);font-weight:400;letter-spacing:.5px">마루의 가위바위보</div>
       </div>
-      <div style="display:flex;align-items:center;gap:6px">
-        <select id="langSelect" onchange="window.setLocale(this.value)" class="lang-select" title="Language">
-          <option value="ko">🇰🇷 한</option>
-          <option value="en">🇺🇸 EN</option>
-          <option value="ja">🇯🇵 JP</option>
-        </select>
-        <button id="muteToggleBtn" class="mute-btn" onclick="window.toggleMute()" title="Mute / Unmute">🔊</button>
-        <button id="guestLoginTopBtn" class="guest-login-btn hidden" onclick="window.showAuthScreen()" data-i18n="topbar.snsLogin">
-          👤 SNS 로그인
-        </button>
-        <button id="signOutTopBtn" class="signout-btn hidden" onclick="window.signOutWithConfirm()" title="Sign out">
-          🚪
+      <!-- Build35(B): 언어·음소거·로그인·로그아웃 컨트롤은 Settings 화면으로 이동했다.
+           topbar에는 진입점 하나만 남는다. 진입점의 상태 점(dot)이 게스트/로그인을 표현한다.
+           게임 진행 중(playing/result/game_over/countdown)에는 Settings 대신 Game Menu Sheet가 열린다. -->
+      <div class="topbar-controls">
+        <button id="settingsEntryBtn" class="settings-entry" onclick="window.openSettingsEntry()"
+                data-i18n-aria-label="settings.entryLabel" aria-label="설정 열기">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.4"/><path d="M4.8 20c0-3.6 3.2-5.6 7.2-5.6s7.2 2 7.2 5.6"/></svg><span class="dot"></span>
         </button>
       </div>
     </div>
@@ -2316,6 +2492,7 @@
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
+      <div class="c-head">
       <div class="maru-hero">
         <div class="maru-hero-bg"></div>
         <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
@@ -2323,8 +2500,9 @@
 
       <h1 class="maru-title" data-i18n-html="auth.title">친구들과 <em>한 판?</em></h1>
       <p class="maru-subtitle" data-i18n-html="auth.subtitle">QR로 모이고, 마루랑 같이 가위바위보!<br/>로그인하면 <b>승률·벌칙 기록</b>이 저장돼요 🏆</p>
-
-      <div class="grid" style="gap:10px;margin-bottom:4px">
+      </div>
+      <div class="c-body">
+        <div class="grid" style="gap:10px;margin-bottom:4px">
         <button class="sns-btn sns-btn-kakao" onclick="window.loginWithSns('kakao')">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3C6.48 3 2 6.72 2 11.28c0 2.94 1.75 5.52 4.38 7.03L5.3 21.5a.5.5 0 0 0 .72.54l3.88-2.52A11.3 11.3 0 0 0 12 19.56c5.52 0 10-3.72 10-8.28C22 6.72 17.52 3 12 3z"/></svg>
           <span data-i18n="auth.snsKakao">카카오톡으로 로그인</span>
@@ -2351,7 +2529,9 @@
       <p style="text-align:center;font-size:12px;color:var(--muted);margin:0" data-i18n="auth.guestHint">
         게스트 모드에서는 게임 기록이 저장되지 않습니다
       </p>
-      <!-- C-1(배선 전용): 앱 번들에 포함돼 있으면서도 여는 경로가 한 곳도 없던 법적 고지 문서로의
+      </div>
+      <div class="c-foot">
+        <!-- C-1(배선 전용): 앱 번들에 포함돼 있으면서도 여는 경로가 한 곳도 없던 법적 고지 문서로의
            링크. 여기에는 **문서 제목만** 둔다 — 동의 문구/수집 고지 등 법적 서술은 최종 법무본이
            확정되기 전까지 임의로 작성하지 않는다(C-2/C-4/C-6 대기).
            상대 경로를 쓴다: 웹(vercel rewrite 예외 경로)과 네이티브(Capacitor 번들 내 동일 파일)
@@ -2361,12 +2541,15 @@
         <span aria-hidden="true" style="color:var(--muted);margin:0 6px">·</span>
         <a href="terms.html" style="color:var(--muted);text-decoration:underline" data-i18n="auth.legalTerms">이용약관</a>
       </p>
+      </div>
+
     </section>
 
     <section class="card maru-card" id="screenHome">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
+      <div class="c-head">
       <div class="maru-hero lg">
         <div class="maru-hero-bg"></div>
         <img src="ASSETS/rps/scenes/cat-decision-waiting.png" alt="마루" />
@@ -2378,18 +2561,17 @@
       </div>
       <h1 class="maru-title" style="font-size:46px;line-height:1.1;margin:10px 0 6px" data-i18n-html="home.title"><em>가위바위보!</em></h1>
       <p class="maru-subtitle" data-i18n-html="home.subtitle">QR로 모이고 마루랑 한 판 🐾<br/>진 사람이 벌칙!</p>
-
-      <div class="field">
-        <label data-i18n="home.nicknameLabel">내 닉네임</label>
-        <input id="homeNickname" placeholder="예: 민수" data-i18n-placeholder="home.nicknamePlaceholder" maxlength="10" />
       </div>
-
-      <button class="btn-kparty" onclick="window.createRoom()">
-        <span data-i18n="home.createBtn">🏠 방 만들기 / 호스트 시작</span>
-        <span class="go-pill">GO</span>
-      </button>
-      <button class="btn-light btn-full" onclick="window.showQrScanner()" style="margin-bottom:10px" data-i18n="home.scanBtn">
-        📷 QR 스캔해서 입장
+      <div class="c-body">
+        <!-- Build35(B): 닉네임 입력 필드는 Settings로 이동했다. Home에는 현재 값을 보여주고
+           Settings로 보내는 행만 남긴다 — 세로 예산 확보 + 설정의 단일 출처화. -->
+      <button type="button" class="compact-info-row" id="homeNicknameChip" onclick="window.showSettings()"
+              style="width:100%;cursor:pointer;text-align:left;font-size:13px;font-weight:700">
+        <span data-i18n="home.nicknameLabel">내 닉네임</span>
+        <span style="display:flex;align-items:center;gap:6px;min-width:0">
+          <strong id="homeNicknameChipValue" style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">-</strong>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B8A48C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+        </span>
       </button>
 
       <div class="quick-row">
@@ -2408,12 +2590,116 @@
       </div>
 
       <div class="maru-footer" data-i18n-html="home.footer"><b>K놀이 #001</b> · 한국 파티 문화의 새 챕터 🇰🇷</div>
+      </div>
+      <div class="c-foot">
+        <button class="btn-kparty" onclick="window.createRoom()">
+        <span data-i18n="home.createBtn">🏠 방 만들기 / 호스트 시작</span>
+        <span class="go-pill">GO</span>
+      </button>
+      <button class="btn-light btn-full" onclick="window.showQrScanner()" style="margin-bottom:10px" data-i18n="home.scanBtn">
+        📷 QR 스캔해서 입장
+      </button>
+      </div>
+
+    </section>
+
+
+    <!-- Build35(A): Settings — 게임 세션 밖에서만 진입한다.
+         langSelect / muteToggleBtn / guestLoginTopBtn / signOutTopBtn / homeNickname 은
+         topbar·Home에서 여기로 "이동"한 것이다(삭제 아님) — 기존 JS 참조가 그대로 살아 있다. -->
+    <section class="card maru-card hidden" id="screenSettings">
+      <button type="button" class="screen-close-btn" onclick="window.goHome()" aria-label="Close">×</button>
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="c-head">
+        <h2 class="maru-section-title" style="margin:2px 0 4px" data-i18n="settings.title">설정</h2>
+      </div>
+      <div class="c-body">
+        <div class="set-head" data-i18n="settings.groupGeneral">일반</div>
+        <div class="set-group">
+          <div class="set-row stacked">
+            <div style="margin-bottom:7px" data-i18n="settings.language">언어</div>
+            <div class="lang-seg" id="langSeg" role="group">
+              <button type="button" data-loc="ko" onclick="window.setLocaleFromSettings('ko')" aria-pressed="true">한국어</button>
+              <button type="button" data-loc="en" onclick="window.setLocaleFromSettings('en')" aria-pressed="false">English</button>
+              <button type="button" data-loc="ja" onclick="window.setLocaleFromSettings('ja')" aria-pressed="false">日本語</button>
+            </div>
+            <!-- setLocale()이 값을 동기화하는 기존 컨트롤. 시각적으로는 위 세그먼트가 대신한다. -->
+            <select id="langSelect" onchange="window.setLocale(this.value)" class="lang-select hidden" title="Language" aria-hidden="true" tabindex="-1">
+              <option value="ko">🇰🇷 한</option>
+              <option value="en">🇺🇸 EN</option>
+              <option value="ja">🇯🇵 JP</option>
+            </select>
+          </div>
+          <div class="set-row">
+            <span class="lbl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8C7563" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h3.5L12 19V5L7.5 9H4z"/><path d="M16 8.5a5 5 0 0 1 0 7"/></svg><span data-i18n="settings.sound">소리</span></span>
+            <button id="muteToggleBtn" class="mute-btn" onclick="window.toggleMute()" title="Mute / Unmute">🔊</button>
+          </div>
+          <div class="set-row">
+            <span class="lbl" data-i18n="settings.nickname">닉네임</span>
+            <input id="homeNickname" placeholder="예: 민수" data-i18n-placeholder="home.nicknamePlaceholder" maxlength="10" />
+          </div>
+        </div>
+        <p class="set-hint" data-i18n="settings.nicknameHint">방을 만들거나 참가할 때 사용됩니다</p>
+
+        <div class="set-head" data-i18n="settings.groupAccount">계정</div>
+        <div class="set-group">
+          <div class="set-row">
+            <span class="lbl">
+              <span class="set-avatar"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.4"/><path d="M4.8 20c0-3.6 3.2-5.6 7.2-5.6s7.2 2 7.2 5.6"/></svg></span>
+              <span id="settingsAccountName" data-i18n="settings.accountGuest">게스트로 이용 중</span>
+            </span>
+          </div>
+          <button id="guestLoginTopBtn" class="set-row-btn guest-login-btn hidden" onclick="window.showAuthScreen()">
+            <span data-i18n="topbar.snsLogin">👤 SNS 로그인</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B8A48C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+          </button>
+          <button class="set-row-btn" onclick="window.showAccountStatsPopup()">
+            <span data-i18n="settings.myRecord">내 누적 기록</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B8A48C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+          </button>
+          <button id="signOutTopBtn" class="set-row-btn signout-btn hidden" onclick="window.signOutWithConfirm()">
+            <span data-i18n="common.signOut">로그아웃</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B8A48C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+          </button>
+          <button id="settingsDeleteAccountBtn" class="set-row-btn danger hidden" onclick="window.deleteAccountWithConfirm()">
+            <span class="lbl"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#b91c1c" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6.5 7l.8 12.1a1 1 0 0 0 1 .9h7.4a1 1 0 0 0 1-.9L18.5 7"/></svg><span data-i18n="account.deleteBtn">계정 삭제</span></span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B8A48C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+
+        <!-- C-1: 로그인 이후에도 법적 고지에 도달할 수 있는 유일한 경로. 문서 제목만 둔다. -->
+        <div class="set-head" data-i18n="settings.groupLegal">법적 고지</div>
+        <div class="set-group">
+          <a class="settings-legal-link" href="privacy.html">
+            <span class="lbl"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8C7563" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg><span data-i18n="auth.legalPrivacy">개인정보 처리방침</span></span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B8A48C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+          </a>
+          <a class="settings-legal-link" href="terms.html">
+            <span class="lbl"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8C7563" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg><span data-i18n="auth.legalTerms">이용약관</span></span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B8A48C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+          </a>
+        </div>
+
+        <div class="set-head" data-i18n="settings.groupAbout">정보</div>
+        <div class="set-group">
+          <div class="set-row">
+            <span class="lbl" data-i18n="settings.version">버전</span>
+            <span class="v" id="settingsVersion">-</span>
+          </div>
+        </div>
+      </div>
+      <div class="c-foot">
+        <button class="btn-outline btn-full" onclick="window.goHome()" data-i18n="common.home">처음으로</button>
+      </div>
     </section>
 
     <section class="card maru-card hidden" id="screenQrScanner">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
+      <div class="c-head">
       <div class="maru-hero sm">
         <div class="maru-hero-bg"></div>
         <img src="ASSETS/rps/scenes/cat-waiting.png" alt="마루" />
@@ -2422,7 +2708,9 @@
       <p class="maru-section-sub" style="margin-top:6px" data-i18n-html="qrScanner.subtitle">호스트 화면의 QR코드를 카메라로 비춰주세요.<br/>지원 안 되면 방코드를 직접 입력할 수 있어요.</p>
 
       <!-- 웹 카메라 미리보기: 네이티브 풀스크린 스캐너 사용 시에는 표시하지 않음 (기본 숨김) -->
-      <video id="qrScanVideo" class="hidden" playsinline muted style="width:100%;border-radius:18px;background:#111827;aspect-ratio:1/1;object-fit:cover;margin-top:16px"></video>
+      </div>
+      <div class="c-body">
+        <video id="qrScanVideo" class="hidden" playsinline muted style="width:100%;border-radius:18px;background:#111827;aspect-ratio:1/1;object-fit:cover;margin-top:16px"></video>
       <div id="qrScanStatus" class="maru-notice qr-scan-status" data-i18n="qrScanner.tapToScan">📷 아래 버튼을 눌러 QR을 스캔하세요</div>
 
       <div class="qr-entry-actions">
@@ -2439,14 +2727,19 @@
             </button>
           </div>
         </div>
+      </div>
+      </div>
+      <div class="c-foot">
         <button class="btn-outline btn-full" onclick="window.stopQrScanner(); window.goHome()" data-i18n="common.home">처음으로</button>
       </div>
+
     </section>
 
     <section class="card maru-card hidden" id="screenHostRoom">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
+      <div class="c-head">
       <div class="maru-corner maru-corner-lg">
         <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
       </div>
@@ -2468,8 +2761,9 @@
         <strong data-i18n="hostRoom.locked">정원 마감</strong><br>
         <span data-i18n="hostRoom.lockedDesc">방 정원이 가득 차서 더 이상 참여할 수 없습니다.</span>
       </div>
-
-      <div style="height: 4px"></div>
+      </div>
+      <div class="c-body">
+        <div style="height: 4px"></div>
       <h3 data-i18n="hostRoom.participants">참가자 목록</h3>
       <div class="participant-list" id="hostParticipantList"></div>
 
@@ -2479,7 +2773,9 @@
           <option value="1">1명</option>
         </select>
       </div>
-      <div class="footer-actions" style="margin-top:12px">
+      </div>
+      <div class="c-foot">
+        <div class="footer-actions" style="margin-top:12px">
         <button id="startGameBtn" class="btn-kparty hidden" onclick="window.goToReadyScreen()">
           <span data-i18n="hostRoom.prepareGameLabel">🎮 게임 시작</span>
           <span class="go-pill">GO</span>
@@ -2487,6 +2783,8 @@
         <button id="penaltySetBtn" class="btn-primary btn-full" onclick="window.showPenaltyScreen()" data-i18n="hostRoom.penaltySetBtn">벌칙 설정하기</button>
         <button class="btn-outline btn-full" onclick="window.goHome()" data-i18n="common.home">처음으로</button>
       </div>
+      </div>
+
     </section>
 
     <section class="card maru-card hidden" id="screenJoin">
@@ -2494,6 +2792,7 @@
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
+      <div class="c-head">
       <div class="maru-hero sm">
         <div class="maru-hero-bg"></div>
         <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
@@ -2501,7 +2800,9 @@
       <div class="vrshow-cap vrshow-cap-lg" data-i18n="join.cap">참가!</div>
       <h2 class="maru-section-title" style="margin-top:6px" data-i18n="join.title">게임방 참여</h2>
       <p class="maru-section-sub" data-i18n-html="join.subtitle">방 코드랑 닉네임 알려줘! <br/>마루가 자리 잡아둘게 🐾</p>
-      <div class="join-room-row">
+      </div>
+      <div class="c-body">
+        <div class="join-room-row">
         <div class="field">
           <label data-i18n="join.codeLabel">방 코드</label>
           <input id="joinRoomCode" placeholder="예: A7K2" data-i18n-placeholder="join.codePlaceholder" list="recentRoomCodes" autocomplete="off" />
@@ -2520,19 +2821,24 @@
         <span data-i18n="join.fixedNicknameLabel">닉네임</span>
         <strong id="joinFixedNameText"></strong>
       </div>
-      <div class="grid action-grid">
+      </div>
+      <div class="c-foot">
+        <div class="grid action-grid">
         <button id="joinBtn" class="btn-kparty" onclick="window.joinRoom()">
           <span data-i18n="join.joinBtn">🎉 참가하기</span>
           <span class="go-pill">GO</span>
         </button>
         <button class="btn-outline btn-full" onclick="window.goHome()" data-i18n="common.home">처음으로</button>
       </div>
+      </div>
+
     </section>
 
     <section class="card maru-card hidden" id="screenParticipantWait">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
+      <div class="c-head">
       <div class="maru-corner maru-corner-lg">
         <img src="ASSETS/rps/scenes/cat-waiting.png" alt="마루" />
       </div>
@@ -2544,17 +2850,24 @@
         <strong id="waitPenaltyText" data-i18n="participantWait.penaltyEmpty">아직 벌칙이 설정되지 않았습니다.</strong>
       </div>
       <div class="game-progress-card" data-round-progress></div>
-      <h3 data-i18n="participantWait.participants">참가자 목록</h3>
+      </div>
+      <div class="c-body">
+        <h3 data-i18n="participantWait.participants">참가자 목록</h3>
       <div class="participant-list" id="waitParticipantList"></div>
-      <div class="action-grid">
+      </div>
+      <div class="c-foot">
+        <div class="action-grid">
         <button class="btn-outline" onclick="window.leaveRoom()" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
       </div>
+      </div>
+
     </section>
 
     <section class="card maru-card hidden" id="screenPenalty">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
+      <div class="c-head">
       <div class="maru-hero sm">
         <div class="maru-hero-bg"></div>
         <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
@@ -2562,7 +2875,9 @@
       <div class="vrshow-cap vrshow-cap-lg" data-i18n="penalty.cap">벌칙 갓!</div>
       <h2 class="maru-section-title" style="margin-top:6px" data-i18n="penalty.title">벌칙 설정</h2>
       <p class="maru-section-sub" data-i18n-html="penalty.subtitle">진 사람이 뭘 할까? <b>마루가 적어둔다 📝</b></p>
-      <div class="field">
+      </div>
+      <div class="c-body">
+        <div class="field">
         <div class="penalty-label-row">
           <label data-i18n="penalty.inputLabel">이번 게임 벌칙</label>
           <span class="penalty-label-hint" data-i18n="penalty.inputHint">여기에 벌칙을 입력하세요</span>
@@ -2571,13 +2886,17 @@
       </div>
       <h3 data-i18n="penalty.frequentTitle">자주 사용한 벌칙</h3>
       <div class="penalty-chip-wrap" id="penaltyChips" style="margin-bottom:18px"></div>
-      <div class="grid action-grid">
+      </div>
+      <div class="c-foot">
+        <div class="grid action-grid">
 	        <button id="savePenaltyBtn" class="btn-kparty" onclick="window.savePenalty()">
 	          <span data-i18n="penalty.saveBtn">💾 벌칙 저장하기</span>
 	        </button>
         <button class="btn-outline btn-full" onclick="window.showHostRoom()" data-i18n="penalty.returnBtn">방 화면으로 돌아가기</button>
       </div>
       <p id="penaltySaveStatus" role="status" aria-live="polite"></p>
+      </div>
+
     </section>
 
     <!-- Phase 2: 로비 화면 (게임 완료 후) -->
@@ -2585,6 +2904,7 @@
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
+      <div class="c-head">
       <div class="maru-corner maru-corner-lg">
         <img src="ASSETS/rps/scenes/cat-decision-waiting.png" alt="마루" />
       </div>
@@ -2606,9 +2926,13 @@
         </select>
       </div>
       <div class="game-progress-card" data-round-progress></div>
-      <h3 id="lobbyParticipantHeading">참여자 목록 (<span id="lobbyParticipantCount">0</span>명)</h3>
+      </div>
+      <div class="c-body">
+        <h3 id="lobbyParticipantHeading">참여자 목록 (<span id="lobbyParticipantCount">0</span>명)</h3>
       <div class="participant-list" id="lobbyParticipantList"></div>
-      <div class="compact-action-grid">
+      </div>
+      <div class="c-foot">
+        <div class="compact-action-grid">
         <button id="lobbyReadyBtn" class="btn-kparty" onclick="window.markReadyFromLobby()">
           <span data-i18n="lobby.readyBtn">🎮 게임 준비</span>
           <span class="go-pill">READY</span>
@@ -2617,12 +2941,15 @@
         <button id="lobbyEditPenaltyBtn" class="btn-light btn-full hidden" onclick="window.showPenaltyScreen()" data-i18n="lobby.editPenaltyBtn">✏️ 벌칙 수정</button>
         <button class="btn-outline btn-full" onclick="window.leaveRoom()" data-i18n="common.leaveRoom">🚪 방 나가기</button>
       </div>
+      </div>
+
     </section>
 
     <section class="card maru-card hidden" id="screenReady">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
+      <div class="c-head">
       <div class="maru-corner maru-corner-lg">
         <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
       </div>
@@ -2631,9 +2958,13 @@
       <div class="maru-guide" id="readyGuide"></div>
       <div class="maru-notice" id="readyPenaltyBox" style="margin-bottom:14px"></div>
       <div class="game-progress-card" data-round-progress></div>
-      <h3 data-i18n="ready.participantsStatus">참가자 준비 현황</h3>
+      </div>
+      <div class="c-body">
+        <h3 data-i18n="ready.participantsStatus">참가자 준비 현황</h3>
       <div id="readyParticipantList" style="margin-bottom:16px"></div>
-      <div class="grid action-grid">
+      </div>
+      <div class="c-foot">
+        <div class="grid action-grid">
         <button id="myReadyBtn" class="btn-kparty" onclick="window.markReady()">
           <span data-i18n="ready.myReady">✋ 게임 준비</span>
           <span class="go-pill">READY</span>
@@ -2646,26 +2977,33 @@
         <button class="btn-outline btn-full" onclick="window.goHome()" data-i18n="ready.exit">나가기</button>
       </div>
       <div style="text-align:center;margin-top:8px">
-        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
+        <button class="btn-quiet" onclick="window.leaveRoom()" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
       </div>
+      </div>
+
     </section>
 
     <section class="card maru-card hidden" id="screenGame">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
+      <div class="c-head">
       <div class="vrshow-cap vrshow-cap-lg" data-i18n="game.cap">자, 가위바위보!</div>
       <h2 class="maru-section-title" id="roundTitle" style="margin-top:6px">라운드 <span id="roundNumber">1</span></h2>
       <p class="maru-section-sub" data-i18n="game.subtitle">마루를 따라 하나만 선택해 ✊✌️🖐</p>
       <div class="maru-guide" id="gameGuide"></div>
       <div class="game-progress-card" data-round-progress></div>
       <div class="choice-anim" id="choiceAnim"></div>
-      <div class="summary-row">
+      </div>
+      <div class="c-body">
+        <div class="summary-row">
         <div class="summary-item"><strong id="timerText">5</strong><span data-i18n="game.summaryTimer">남은 시간</span></div>
         <div class="summary-item"><strong id="selectedCount">0</strong><span data-i18n="game.summarySelected">선택 완료</span></div>
         <div class="summary-item"><strong id="totalCount">0</strong><span data-i18n="game.summaryTotal">참가자</span></div>
       </div>
-      <div class="choice-buttons">
+      </div>
+      <div class="c-foot">
+        <div class="choice-buttons">
         <button class="choice-button" onclick="window.selectChoice('scissors', event)">
           <img class="maru-hand" data-locale-img="scissors" src="ASSETS/rps/scenes/cat-scissors-ko.png" alt="가위" />
           <span data-i18n="game.choiceScissors">가위</span>
@@ -2681,6 +3019,8 @@
       </div>
       <div style="height: 12px"></div>
       <button class="btn-light btn-full dev-only" onclick="window.autoFillChoices()" data-i18n="game.devAuto">테스트용: 모든 참가자 랜덤 선택</button>
+      </div>
+
     </section>
 
     <!-- Phase 1: 호스트 playing 화면 -->
@@ -2688,6 +3028,7 @@
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
+      <div class="c-head">
       <div class="maru-corner maru-corner-md">
         <img src="ASSETS/rps/scenes/cat-waiting.png" alt="마루" />
       </div>
@@ -2700,21 +3041,28 @@
         <div class="summary-item"><strong id="hostSelectedCount">0</strong><span data-i18n="game.summarySelected">선택 완료</span></div>
         <div class="summary-item"><strong id="hostTotalCount">0</strong><span data-i18n="game.summaryTotal">참가자</span></div>
       </div>
-      <h3 data-i18n="hostPlaying.statusH3">참가자 선택 현황</h3>
+      </div>
+      <div class="c-body">
+        <h3 data-i18n="hostPlaying.statusH3">참가자 선택 현황</h3>
       <div class="participant-list" id="hostPlayingParticipantList"></div>
-      <div class="footer-actions">
+      </div>
+      <div class="c-foot">
+        <div class="footer-actions">
         <button id="hostJudgeBtn" class="btn-kparty hidden" onclick="window.hostJudgeRound()">
           <span data-i18n="hostPlaying.judgeBtn">🎯 판정 내리기</span>
           <span class="go-pill">JUDGE</span>
         </button>
         <button class="btn-light btn-full dev-only" onclick="window.autoFillChoices()" data-i18n="hostPlaying.devAuto">테스트용: 미선택자 자동 선택</button>
       </div>
+      </div>
+
     </section>
 
     <section class="card maru-card hidden" id="screenRoundResult">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
+      <div class="c-head">
       <div class="result-hero">
         <img class="result-maru" id="resultMaru" src="ASSETS/rps/scenes/cat-win-happy.png" alt="결과" />
         <div class="vrshow-cap vrshow-cap-lg" id="resultCap" style="margin-bottom:6px">결과 발표!</div>
@@ -2727,30 +3075,41 @@
         <small data-i18n="result.penaltyBoxLabel">이번 벌칙</small>
         <strong id="resultPenaltyText"></strong>
       </div>
-
-      <h3 data-i18n="result.roundResultsH3">라운드 결과</h3>
+      </div>
+      <div class="c-body">
+        <h3 data-i18n="result.roundResultsH3">라운드 결과</h3>
       <div class="game-progress-card" data-round-progress></div>
       <div class="participant-list" id="roundResultList"></div>
-
-      <div class="footer-actions" id="roundResultActions">
-        <button class="btn-kparty" id="nextRoundBtn" onclick="window.nextRound()">
-          <span data-i18n="result.nextRoundBtn">다시해!</span>
-        </button>
-        <button class="btn-danger btn-full" onclick="window.endGame()" data-i18n="result.endGameBtn">게임 종료 및 통계 보기</button>
       </div>
-
-      <!-- 최종 결과(술래 확정)일 때만 표시되는 버튼 영역 -->
-      <div id="finalResultBtns" class="hidden" style="margin-top:12px"></div>
+      <div class="c-foot">
+        <!-- Build35(3): Dynamic Action Slot.
+             roundResultActions(라운드 진행 중)와 finalResultBtns(술래 확정)는 같은 슬롯 안에서
+             교체된다. 슬롯은 최대 상태(버튼 2행)만큼 높이를 미리 잡고 내용은 위쪽 정렬 —
+             두 상태가 오가도 첫 버튼 행의 위치가 움직이지 않는다(layout jump 방지).
+             ⚠️ 두 컨테이너의 표시/숨김 규칙과 finalResultBtns.innerHTML 생성 로직은 무변경. -->
+        <div id="verdictActionSlot">
+          <div class="footer-actions" id="roundResultActions">
+            <button class="btn-kparty" id="nextRoundBtn" onclick="window.nextRound()">
+              <span data-i18n="result.nextRoundBtn">다시해!</span>
+            </button>
+            <button class="btn-danger btn-full" onclick="window.endGame()" data-i18n="result.endGameBtn">게임 종료 및 통계 보기</button>
+          </div>
+          <!-- 최종 결과(술래 확정)일 때만 표시되는 버튼 영역 -->
+          <div id="finalResultBtns" class="hidden"></div>
+        </div>
 
       <div class="action-grid">
         <button class="btn-outline" onclick="window.leaveRoom()" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
       </div>
+      </div>
+
     </section>
 
     <section class="card maru-card hidden" id="screenWinnerWait">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
+      <div class="c-head">
       <div class="result-hero">
         <img id="winnerWaitMaru" class="result-maru" src="ASSETS/rps/scenes/cat-win-happy.png" alt="우선안전!" style="animation:winnerBounce 0.7s ease-in-out infinite alternate" />
         <div class="vrshow-cap vrshow-cap-lg" style="margin-bottom:6px" data-i18n="winnerWait.cap">세이프!</div>
@@ -2758,15 +3117,21 @@
         <p class="lead" data-i18n="winnerWait.message">이번 재게임에서는 빠지고 최종 술래가 나올 때까지 기다려주세요.</p>
         <p style="color:#888;font-size:14px" data-i18n="winnerWait.hint">남은 참여자들만 재게임을 진행 중입니다 🍵</p>
       </div>
-      <div class="game-progress-card" data-round-progress></div>
-      <!-- Build27(WRPS-074): 호스트가 이미 안전 확정이어도 부분 재경기를 강제 시작할 수 있어야 한다.
+      </div>
+      <div class="c-body">
+        <div class="game-progress-card" data-round-progress></div>
+      </div>
+      <div class="c-foot">
+        <!-- Build27(WRPS-074): 호스트가 이미 안전 확정이어도 부분 재경기를 강제 시작할 수 있어야 한다.
            남은 활성 참가자들이 재게임 대기(ready)로 들어오면 아래 버튼이 활성화된다. -->
       <div class="action-grid" style="margin-top:12px">
         <button id="forceStartReplayBtnWinnerWait" class="btn-success btn-full hidden force-start-replay-btn" onclick="window.forceStartReplay()" data-i18n="ready.forceStartReplay">⚡ 다시한번! 강제 시작</button>
       </div>
       <div style="text-align:center;margin-top:12px">
-        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
+        <button class="btn-quiet" onclick="window.leaveRoom()" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
       </div>
+      </div>
+
     </section>
 
     <section class="card maru-card hidden" id="screenStats">
@@ -2774,6 +3139,7 @@
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
+      <div class="c-head">
       <div class="maru-hero sm">
         <div class="maru-hero-bg"></div>
         <img src="ASSETS/rps/scenes/cat-win-happy.png" alt="마루" />
@@ -2781,7 +3147,9 @@
       <div class="vrshow-cap vrshow-cap-lg" data-i18n="stats.cap">개인전적</div>
       <h2 class="maru-section-title" style="margin-top:6px" data-i18n="stats.title">최종 결과</h2>
       <p class="maru-section-sub" data-i18n-html="stats.subtitle">참가자별 승률·벌칙 횟수를<br/>마루가 정리했어 📊</p>
-      <table>
+      </div>
+      <div class="c-body">
+        <table>
         <thead>
           <tr>
             <th data-i18n="stats.thParticipant">참가자</th>
@@ -2794,38 +3162,49 @@
         </thead>
         <tbody id="statsTableBody"></tbody>
       </table>
-      <div class="footer-actions">
+      </div>
+      <div class="c-foot">
+        <div class="footer-actions">
         <button id="statsReplayBtn" class="btn-kparty" onclick="window.inviteForReplay()">
           <span data-i18n="stats.replayBtn">같은 방에서 다시 하기</span>
           <span class="go-pill">AGAIN</span>
         </button>
         <button class="btn-outline btn-full" onclick="window.goHome()" data-i18n="common.home">처음으로</button>
       </div>
+      </div>
+
     </section>
 
     <section class="card maru-card hidden" id="screenLoserWait">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
+      <div class="c-head">
       <div class="result-hero">
         <img class="result-maru lose" src="ASSETS/rps/scenes/cat-lost-tired.png" alt="술래 확정!" />
         <div class="vrshow-cap vrshow-cap-lg" style="margin-bottom:6px" data-i18n="loserWait.cap">아이고~</div>
         <div class="result-title lose" data-i18n="loserWait.title">술래 확정!</div>
         <p class="lead" id="loserWaitMessage" data-i18n="loserWait.messageDefault">벌칙을 준비하세요. 게임이 계속 진행 중입니다...</p>
       </div>
-      <div class="penalty-box" id="loserWaitPenaltyBox">
+      </div>
+      <div class="c-body">
+        <div class="penalty-box" id="loserWaitPenaltyBox">
         <small data-i18n="result.penaltyBoxLabel">이번 벌칙</small>
         <strong id="loserWaitPenaltyText"></strong>
       </div>
       <div class="game-progress-card" data-round-progress></div>
-      <!-- Build27(WRPS-074): 호스트가 이미 술래 확정이어도 부분 재경기를 강제 시작할 수 있어야 한다.
+      </div>
+      <div class="c-foot">
+        <!-- Build27(WRPS-074): 호스트가 이미 술래 확정이어도 부분 재경기를 강제 시작할 수 있어야 한다.
            남은 활성 참가자들이 재게임 대기(ready)로 들어오면 아래 버튼이 활성화된다. -->
       <div class="action-grid" style="margin-top:12px">
         <button id="forceStartReplayBtnLoserWait" class="btn-success btn-full hidden force-start-replay-btn" onclick="window.forceStartReplay()" data-i18n="ready.forceStartReplay">⚡ 다시한번! 강제 시작</button>
       </div>
       <div style="text-align:center;margin-top:12px">
-        <button onclick="window.leaveRoom()" style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
+        <button class="btn-quiet" onclick="window.leaveRoom()" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
       </div>
+      </div>
+
     </section>
 
     <!-- 게임 승률 팝업 -->
@@ -2961,6 +3340,33 @@
           <span data-i18n="popup.inAppCopyUrl">📋 URL 복사하기</span>
         </button>
         <button id="inAppDismissBtn" class="btn-outline btn-full" data-i18n="popup.inAppDismiss">닫기</button>
+      </div>
+    </div>
+
+
+    <!-- Build35(2): Game Menu Sheet — 게임 진행 중 Settings 대신 열리는 유일한 메뉴.
+         Resume / Sound / 나가기 + 차단 사유 안내. 게임 로직에는 전혀 손대지 않는다:
+         나가기는 기존 leaveRoom() 확인 흐름을 그대로 호출한다. -->
+    <div id="gameMenuSheet" class="sheet-overlay hidden" role="dialog" aria-modal="true">
+      <div class="sheet-scrim" onclick="window.closeGameMenu()"></div>
+      <div class="sheet-card">
+        <div class="sheet-grab"></div>
+        <div class="saekdong-under"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        <h3 class="maru-section-title" style="text-align:center;font-size:19px;margin:0 0 12px" data-i18n="gameMenu.title">게임 메뉴</h3>
+        <button class="btn-kparty" onclick="window.closeGameMenu()">
+          <span style="display:flex;align-items:center;gap:8px"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5l12 7.5-12 7.5z"/></svg><span data-i18n="gameMenu.resume">게임으로 돌아가기</span></span>
+        </button>
+        <div class="set-group" style="margin-bottom:8px">
+          <div class="set-row">
+            <span class="lbl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8C7563" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h3.5L12 19V5L7.5 9H4z"/><path d="M16 8.5a5 5 0 0 1 0 7"/></svg><span data-i18n="settings.sound">소리</span></span>
+            <button id="gameMenuMuteBtn" class="mute-btn" onclick="window.toggleMute()" title="Mute / Unmute">🔊</button>
+          </div>
+        </div>
+        <button class="btn-outline btn-full" onclick="window.leaveRoomFromGameMenu()"
+                style="display:flex;align-items:center;justify-content:center;gap:8px">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8C7563" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h9"/></svg><span data-i18n="common.leaveRoomShort">게임방에서 나가기</span>
+        </button>
+        <p class="sheet-note" data-i18n="gameMenu.blockedNotice">게임 진행 중에는 언어·계정·법적 고지 설정을 열 수 없습니다. 게임이 끝나면 설정에서 이용하세요.</p>
       </div>
     </div>
 
@@ -3406,6 +3812,23 @@
         "sns.google": "Google",
         "sns.apple": "Apple",
         // choice labels
+        // Build35 — Settings / Game Menu
+        "settings.title": "설정",
+        "settings.groupGeneral": "일반",
+        "settings.groupAccount": "계정",
+        "settings.groupLegal": "법적 고지",
+        "settings.groupAbout": "정보",
+        "settings.language": "언어",
+        "settings.sound": "소리",
+        "settings.nickname": "닉네임",
+        "settings.nicknameHint": "방을 만들거나 참가할 때 사용됩니다",
+        "settings.myRecord": "내 누적 기록",
+        "settings.accountGuest": "게스트로 이용 중",
+        "settings.version": "버전",
+        "settings.entryLabel": "설정 열기",
+        "gameMenu.title": "게임 메뉴",
+        "gameMenu.resume": "게임으로 돌아가기",
+        "gameMenu.blockedNotice": "게임 진행 중에는 언어·계정·법적 고지 설정을 열 수 없습니다. 게임이 끝나면 설정에서 이용하세요.",
         "choice.scissors": "가위",
         "choice.rock": "바위",
         "choice.paper": "보",
@@ -3770,6 +4193,23 @@
         "sns.line": "LINE",
         "sns.google": "Google",
         "sns.apple": "Apple",
+        // Build35 — Settings / Game Menu
+        "settings.title": "Settings",
+        "settings.groupGeneral": "GENERAL",
+        "settings.groupAccount": "ACCOUNT",
+        "settings.groupLegal": "LEGAL",
+        "settings.groupAbout": "ABOUT",
+        "settings.language": "Language",
+        "settings.sound": "Sound",
+        "settings.nickname": "Nickname",
+        "settings.nicknameHint": "Used when you create or join a room",
+        "settings.myRecord": "My record",
+        "settings.accountGuest": "Playing as guest",
+        "settings.version": "Version",
+        "settings.entryLabel": "Open settings",
+        "gameMenu.title": "Game menu",
+        "gameMenu.resume": "Resume game",
+        "gameMenu.blockedNotice": "Language, account and legal settings are unavailable during a round. Open Settings after the game.",
         "choice.scissors": "Scissors",
         "choice.rock": "Rock",
         "choice.paper": "Paper",
@@ -4135,6 +4575,23 @@
         "sns.google": "Google",
         "sns.apple": "Apple",
         "choice.scissors": "チョキ",
+        // Build35 — Settings / Game Menu
+        "settings.title": "設定",
+        "settings.groupGeneral": "一般",
+        "settings.groupAccount": "アカウント",
+        "settings.groupLegal": "法的なお知らせ",
+        "settings.groupAbout": "情報",
+        "settings.language": "言語",
+        "settings.sound": "サウンド",
+        "settings.nickname": "ニックネーム",
+        "settings.nicknameHint": "部屋を作成・参加するときに使われます",
+        "settings.myRecord": "自分の記録",
+        "settings.accountGuest": "ゲストとして利用中",
+        "settings.version": "バージョン",
+        "settings.entryLabel": "設定を開く",
+        "gameMenu.title": "ゲームメニュー",
+        "gameMenu.resume": "ゲームに戻る",
+        "gameMenu.blockedNotice": "進行中は言語・アカウント・法的なお知らせの設定を開けません。ゲーム終了後に設定からご利用ください。",
         "choice.rock": "グー",
         "choice.paper": "パー",
       },
@@ -4202,6 +4659,16 @@
         const key = el.getAttribute("data-i18n-placeholder");
         el.setAttribute("placeholder", t(key));
       });
+      // Build35(D): 접근성 문자열도 로케일을 따른다.
+      scope.querySelectorAll("[data-i18n-aria-label]").forEach(el => {
+        el.setAttribute("aria-label", t(el.getAttribute("data-i18n-aria-label")));
+      });
+      scope.querySelectorAll("[data-i18n-title]").forEach(el => {
+        el.setAttribute("title", t(el.getAttribute("data-i18n-title")));
+      });
+      scope.querySelectorAll("[data-i18n-alt]").forEach(el => {
+        el.setAttribute("alt", t(el.getAttribute("data-i18n-alt")));
+      });
     }
 
     function setLocale(loc) {
@@ -4220,12 +4687,128 @@
         img.src = `ASSETS/rps/scenes/cat-${choice}-${loc}.png`;
       });
       applyNativeAppIconForLocale(loc);
+      // Build35: 언어 세그먼트/설정 표시값 동기화
+      if (typeof syncSettingsUi === "function") try { syncSettingsUi(); } catch {}
       // 동적 텍스트가 변하는 화면 다시 렌더
       if (typeof renderAll === "function") try { renderAll(); } catch {}
       if (typeof updateRoomBadge === "function") try { updateRoomBadge(); } catch {}
     }
     window.setLocale = setLocale;
     window.t = t;
+
+    // ===================== Build35 — Settings / Game Menu (UI 전용) =====================
+    // 이 블록은 표현 계층만 다룬다. 방/라운드/판정/호스트 이양 등 게임 로직에는 접근하지 않고,
+    // 기존 함수(setLocale / toggleMute / leaveRoom / showAuthScreen / signOutWithConfirm /
+    // showAccountStatsPopup / deleteAccountWithConfirm)를 호출만 한다.
+
+    // "지금 게임 세션이 진행 중인가" — 읽기 전용 판정. 여기서 상태를 바꾸지 않는다.
+    // 결정 1: playing / result / game_over / 카운트다운 노출 중에는 Settings 진입을 막고
+    //         Game Menu Sheet만 연다.
+    function isGameSessionActive() {
+      try {
+        if (typeof isCountdownActive === "function" && isCountdownActive()) return true;
+      } catch (e) {}
+      const st = state && state.status;
+      return st === "playing" || st === "result" || st === "game_over";
+    }
+    window.isGameSessionActive = isGameSessionActive;
+
+    function syncSettingsUi() {
+      // 언어 세그먼트
+      document.querySelectorAll("#langSeg button[data-loc]").forEach(btn => {
+        btn.setAttribute("aria-pressed", btn.getAttribute("data-loc") === currentLocale ? "true" : "false");
+      });
+      // 음소거 스위치(설정 + 게임 메뉴 양쪽)
+      let muted = false;
+      try { muted = isMuted(); } catch (e) {}
+      ["muteToggleBtn", "gameMenuMuteBtn"].forEach(id => {
+        const b = $(id);
+        if (!b) return;
+        b.textContent = muted ? "🔇" : "🔊";
+        b.classList.toggle("is-muted", muted);
+        b.setAttribute("aria-pressed", muted ? "true" : "false");
+      });
+      // 닉네임: 설정 입력값이 단일 출처, Home 칩은 그 값을 비추기만 한다
+      const nickInput = $("homeNickname");
+      const chip = $("homeNicknameChipValue");
+      if (chip) {
+        const v = (nickInput && nickInput.value.trim()) || (typeof loadNickname === "function" ? loadNickname() : "");
+        chip.textContent = v || "—";
+      }
+      // 계정 표시 + 계정 삭제 노출(로그인 상태에서만)
+      let auth = "guest";
+      try { auth = getAuthState(); } catch (e) {}
+      const nameEl = $("settingsAccountName");
+      if (nameEl) {
+        if (auth === "authed") {
+          const n = (nickInput && nickInput.value.trim()) || (typeof loadNickname === "function" ? loadNickname() : "");
+          nameEl.textContent = n ? t("topbar.signedInAs", { name: n }) : t("settings.title");
+          nameEl.removeAttribute("data-i18n");
+        } else {
+          nameEl.setAttribute("data-i18n", "settings.accountGuest");
+          nameEl.textContent = t("settings.accountGuest");
+        }
+      }
+      $("settingsDeleteAccountBtn")?.classList.toggle("hidden", auth !== "authed");
+      $("settingsEntryBtn")?.classList.toggle("is-authed", auth === "authed");
+    }
+    window.syncSettingsUi = syncSettingsUi;
+
+    // 버전 표기 — dist/BUILD_MANIFEST.json 을 읽는다(웹·네이티브 번들 모두 동일 상대 경로).
+    async function loadSettingsVersion() {
+      const el = $("settingsVersion");
+      if (!el) return;
+      el.textContent = "1.0";
+      try {
+        const res = await fetch("BUILD_MANIFEST.json", { cache: "no-store" });
+        if (!res.ok) return;
+        const m = await res.json();
+        if (m && m.build) el.textContent = `1.0 (${m.build})`;
+      } catch (e) { /* 번들에 매니페스트가 없으면 1.0 유지 */ }
+    }
+
+    function showSettings() {
+      showScreen("screenSettings");
+      const nick = $("homeNickname");
+      if (nick && !nick.value && typeof loadNickname === "function") nick.value = loadNickname();
+      syncSettingsUi();
+      loadSettingsVersion();
+    }
+    window.showSettings = showSettings;
+
+    // topbar 진입점: 게임 중이면 Game Menu, 아니면 Settings (결정 1)
+    function openSettingsEntry() {
+      if (isGameSessionActive()) { openGameMenu(); return; }
+      showSettings();
+    }
+    window.openSettingsEntry = openSettingsEntry;
+
+    function openGameMenu() {
+      const el = $("gameMenuSheet");
+      if (!el) return;
+      syncSettingsUi();
+      el.classList.remove("hidden");
+    }
+    window.openGameMenu = openGameMenu;
+
+    function closeGameMenu() {
+      $("gameMenuSheet")?.classList.add("hidden");
+    }
+    window.closeGameMenu = closeGameMenu;
+
+    // 나가기: 기존 확인/이양 흐름(leaveRoom)을 그대로 쓴다 — 새 퇴장 로직을 만들지 않는다.
+    function leaveRoomFromGameMenu() {
+      closeGameMenu();
+      if (typeof window.leaveRoom === "function") window.leaveRoom();
+    }
+    window.leaveRoomFromGameMenu = leaveRoomFromGameMenu;
+
+    function setLocaleFromSettings(loc) {
+      setLocale(loc);
+      syncSettingsUi();
+    }
+    window.setLocaleFromSettings = setLocaleFromSettings;
+
 
     // button 안에 <span data-i18n> 자식이 있으면 그 텍스트만 변경 (go-pill 등 보존),
     // 없으면 button.textContent 직접 설정. 진행 상태 라벨 갱신용 유틸.
@@ -6655,7 +7238,8 @@
         "screenWinnerWait",
         "screenLoserWait",
         "screenStats",
-        "screenLobby"
+        "screenLobby",
+        "screenSettings"
       ].forEach(id => $(id).classList.add("hidden"));
     }
 
@@ -12473,6 +13057,7 @@ function summarizeGameStats(rows) {
     }
     window.toggleMute = function() {
       setMuted(!isMuted());
+      if (typeof syncSettingsUi === "function") try { syncSettingsUi(); } catch (e) {}
     };
 
     function triggerButtonHaptic() {
@@ -12594,6 +13179,8 @@ function summarizeGameStats(rows) {
       if (btn) btn.classList.toggle("hidden", auth !== "guest");
       // SNS 인증된 상태(authed)일 때만 로그아웃 버튼 표시
       if (signOutBtn) signOutBtn.classList.toggle("hidden", auth !== "authed");
+      // Build35: topbar 진입점의 상태 점 + Settings 계정 행을 같은 소스로 갱신
+      if (typeof syncSettingsUi === "function") try { syncSettingsUi(); } catch (e) {}
     }
 
     function showFirstGameGuideAfterLogin() {
@@ -13367,6 +13954,8 @@ function summarizeGameStats(rows) {
         // Mute 버튼 상태 동기화
         const muteBtn = $("muteToggleBtn");
         if (muteBtn) muteBtn.textContent = isMuted() ? "🔇" : "🔊";
+        syncSettingsUi();
+        loadSettingsVersion();
         if (!ENABLE_LINE_LOGIN) $("snsBtnLine")?.classList.add("hidden");
         if (!ENABLE_GOOGLE_LOGIN) $("snsBtnGoogle")?.classList.add("hidden");
 
