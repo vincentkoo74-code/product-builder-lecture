@@ -190,7 +190,11 @@ describe('P0-1 [RED 재현] stale reset-family row가 카운트다운 원장을 
   });
 
   it('전제: 원장 소거는 playing을 벗어날 때 일어나되, 뒤처진 reset row는 예외다', () => {
-    expect(HRU_PROLOG_SRC).toContain('if (state.status !== "playing" && !room.__behindRoundReset) {');
+    // Build37(A1)에서 조건이 한 항 늘었다: 회차 미확인 row(gameRound 미인코딩)도 소거 금지.
+    // Build36의 계약(뒤처진 reset row 예외)은 그대로 유지된다.
+    expect(HRU_PROLOG_SRC).toContain('!room.__behindRoundReset');
+    expect(HRU_PROLOG_SRC).toContain('!room.__unidentifiedGameRoundRow');
+    expect(HRU_PROLOG_SRC).toMatch(/if \(state\.status !== "playing" && !room\.__behindRoundReset && !room\.__unidentifiedGameRoundRow\) \{/);
     expect(HRU_PROLOG_SRC).toContain('state.playingEntryKey = null;');
     expect(HRU_PROLOG_SRC).toContain('state.countdownRenderedKey = null;');
     // 판정은 "같은 게임 + 뒤처진 round + 진행 5단계 밖"일 때만 참이다.
