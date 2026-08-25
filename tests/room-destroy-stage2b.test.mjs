@@ -1020,11 +1020,26 @@ describe('D1~D3 — Host 나가기 UX와 WRPS-084 경계', () => {
   it('D3/§13 — 라운드 진행 중에는 2B가 3선택을 띄우지 않는다(084 경계)', () => {
     expect(LEAVE_SRC).toContain('if (!isRoundInProgressForLeave()) {');
     expect(LEAVE_SRC).toContain('showHostLeavePopup();');
-    // 084 금지 항목이 2B에 섞이지 않았다
-    expect(html).not.toContain('leave_after_round');
-    expect(html).not.toContain('processDeferredLeaves');
-    expect(html).not.toContain('setLeaveAfterRound');
-    expect(html).not.toContain('deferred_leave');
+    // ── 경계 갱신 (Build37 Phase B) ───────────────────────────────────────────
+    // 종전 이 테스트는 "html에 leave_after_round / processDeferredLeaves 가 존재하지 않는다"로
+    // 084 미구현을 단언했다. 084가 정식 구현된 지금 그 단언은 수명을 다했다 —
+    // 하지만 지키려던 경계 자체는 그대로 유효하다: **2B의 3선택 UX와 084의 퇴장 예약은
+    // 서로 다른 분기이며 섞이지 않는다.**
+    //   · 라운드 미진행 → 2B 소관: showHostLeavePopup() 3선택
+    //   · 라운드 진행 중 → 084 소관: successor 지정 팝업으로 넘긴다
+    // leaveRoom() 자신은 예약을 수행하지 않는다(위임만 한다) — 그래야 두 경로가 안 섞인다.
+    // ⚠️ LEAVE_SRC는 leaveRoom~destroyRoomAndGoHome 구간 전체라 084 헬퍼들까지 포함한다.
+    //    경계를 보려면 leaveRoom() 본문만 따로 잘라야 한다.
+    const leaveRoomBody = extractBlock(
+      'async function leaveRoom() {', 'async function leaveRoomForce() {', 'leaveRoomBody');
+    expect(leaveRoomBody).toContain('showNextHostPopup();');
+    expect(leaveRoomBody, 'leaveRoom이 직접 예약하면 2B/084 경계가 무너진다')
+      .not.toContain('leave_after_round');
+    expect(leaveRoomBody, 'leaveRoom이 직접 정리하면 안 된다')
+      .not.toContain('processDeferredLeaves');
+    // 084는 다른 곳에 실재해야 한다(경계 테스트가 기능 부재로 통과하는 공허함 방지)
+    expect(html, '084가 어디에도 없으면 이 경계 테스트는 공허하다').toContain('reserveDeferredLeave');
+    expect(html).toContain('processDeferredLeaves');
   });
 
   it('취소는 상태 변경과 DB write가 0이다', async () => {

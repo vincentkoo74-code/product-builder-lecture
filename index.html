@@ -3773,6 +3773,7 @@
         "toast.roomNotFound": "존재하지 않는 방입니다.",
         "toast.roomClosedAlone": "혼자 남아 방이 종료되었어요. 홈으로 이동합니다.",
         "toast.hostTransferFailed": "⚠️ 호스트 넘기기에 실패했어요. 잠시 후 다시 시도해 주세요.",
+        "toast.leaveAfterRound": "🚪 이번 판이 끝나면 나갈게요. 지금 라운드는 끝까지 함께해요!",
         "toast.joinLocked": "모든 참여자가 준비를 완료해서 새로 참가할 수 없습니다.",
         "toast.penaltyRequired": "벌칙을 입력해주세요.",
         "toast.penaltyNotSet": "먼저 벌칙을 설정해주세요.",
@@ -4157,6 +4158,7 @@
         "toast.roomNotFound": "Room not found.",
         "toast.roomClosedAlone": "You're the only one left — the room was closed. Returning home.",
         "toast.hostTransferFailed": "⚠️ Couldn't transfer the host role. Please try again.",
+        "toast.leaveAfterRound": "🚪 You'll leave after this round. Finish this one first!",
         "toast.joinLocked": "All players are ready — you can't join now.",
         "toast.penaltyRequired": "Please enter a penalty.",
         "toast.penaltyNotSet": "Please set a penalty first.",
@@ -4538,6 +4540,7 @@
         "toast.roomNotFound": "存在しない部屋です。",
         "toast.roomClosedAlone": "一人になったため部屋を終了しました。ホームに戻ります。",
         "toast.hostTransferFailed": "⚠️ ホストの引き継ぎに失敗しました。もう一度お試しください。",
+        "toast.leaveAfterRound": "🚪 このラウンドが終わったら退出します。最後まで一緒に！",
         "toast.joinLocked": "全員準備完了で新規参加できません。",
         "toast.penaltyRequired": "罰ゲームを入力してください。",
         "toast.penaltyNotSet": "先に罰ゲームを設定してください。",
@@ -7079,6 +7082,14 @@
           if (me.is_host && state.role !== "host") {
             state.role = "host";
             justBecameHostThisSnapshot = true;
+            // Build37 A4: 승계는 "선언"으로 끝나면 안 된다. 진행 중인 라운드의 host-only 경로 중
+            // **라운드 시작 시점에 한 번만 세워지는 것들**(판정 백스톱, choice window 발행)은
+            // 승계자가 자동으로 물려받지 못한다 — 그때 host가 아니었기 때문이다.
+            // per-call/per-tick 경로(hostJudgeRound / publishHostRoundResult / beginRoundTimer의
+            // autoFillChoices)는 매번 역할을 다시 보므로 손댈 필요가 없다. 차이는 그것뿐이다.
+            // ⚠️ typeof 가드 근거는 6710 부근 관례와 동일하다 — build36-p0-repro 등이
+            // fetchParticipants의 이 분기만 좁게 추출해 독립 실행한다. 실제 앱에서는 항상 참이다.
+            if (typeof rearmHostProgressionAuthority === "function") rearmHostProgressionAuthority();
           } else if (!me.is_host && state.role === "host") {
             state.role = "participant";
           }
@@ -8624,6 +8635,28 @@
     // 호스트가 이번 라운드에 참여하지 않을 때(우선안전/술래 확정)에는 선택 타이머가 없어
     // 남은 참가자 선택이 끝나도 자동 판정이 트리거되지 않아 멈추는 문제(P1.5)가 있었다.
     // 호스트만 판정할 수 있으므로, 빠진 호스트에게도 판정 백스톱 타이머를 둔다.
+    // Build37 A4: host 승계 직후, 이미 진행 중인 라운드의 setup-time host-only 경로를 다시 세운다.
+    // 호출 지점은 fetchParticipants의 역할 전환 감지 한 곳뿐이다(승계가 관측되는 유일한 지점).
+    function rearmHostProgressionAuthority() {
+      if (!getOnlineMode() || state.role !== "host") return;
+      if (state.status !== "playing") return;   // 진행 중인 라운드가 없으면 인수할 authority도 없다
+      const hadRoundTimer = Boolean(state.timer);
+      // ① 이번 라운드 choiceEndAt은 라운드당 1회, 그 시점의 host만 발행한다. 승계 전 host가
+      //    발행하지 못했으면 전원이 로컬 5초 폴백으로 흩어진다 — 승계자가 다시 발행한다.
+      //    (이미 발행됐다면 같은 값으로 덮어써도 무해하다: countdownStartAt 기반 결정적 계산이다.)
+      publishChoiceWindowEstimateIfHost();
+      // ② 판정 백스톱.
+      // ⚠️ state.timer는 beginRoundTimer(선택 카운트다운)와 **같은 슬롯**이다. 이미 타이머가
+      //    돌고 있다면 이 단말은 이번 라운드 플레이어이고, 그 tick은 `state.role === "host"`를
+      //    매번 다시 보므로 autoFillChoices를 이미 인수한 상태다. 여기서 백스톱을 세우면
+      //    stopRoundTimers()가 그 선택 카운트다운을 죽인다. 타이머가 없는 경우
+      //    (= 이번 라운드 비참가자: 확정 안전/술래라 카운트다운을 건너뛴 단말)만 세운다.
+      if (!hadRoundTimer) startHostJudgeBackstop();
+      try { QA.emit('lobby', { wrps: 'WRPS-084-A4', eventType: 'HOST_AUTHORITY_REARMED',
+        roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round || 1,
+        hadRoundTimer, armedBackstop: !hadRoundTimer }); } catch (e) {}
+    }
+
     function startHostJudgeBackstop() {
       if (state.role !== "host" || !getOnlineMode()) return;
       stopRoundTimers();
@@ -9559,6 +9592,16 @@
           return;
         }
         state.lastRoundResolution = payload;
+        // Build37 A2/A3(WRPS-084): 여기가 "결과 확정" 시점이다 — 이 줄 위에서 이번 라운드의
+        // 판정이 끝났고, 아래로는 어떤 분기도 판정을 다시 바꾸지 않는다. 예약된 퇴장을
+        // 처리하기에 정확히 맞는 지점이며, 이보다 이른 어떤 곳에서 처리해도 판정 입력을 흔든다.
+        // await하지 않는다 — 결과 렌더링을 DB 왕복만큼 지연시키지 않기 위해서다(fail-soft).
+        // ⚠️ typeof 가드는 이 파일 6710 부근에 이미 문서화된 관례를 따른 것이다: 여러 기존
+        // 테스트가 finishRoundLocal만 좁게 추출해 new Function으로 독립 실행하는데, 그
+        // 추출본에는 이 파일의 다른 함수 선언이 보이지 않아 ReferenceError로 통째로 깨진다.
+        // 실제 앱에서는 같은 스코프의 함수 선언이므로 이 가드는 항상 참이다(동작 무변경).
+        // 오타로 배선이 끊기는 것은 A2/A3의 호출 사슬 테스트가 잡는다.
+        if (typeof processDeferredLeaves === "function") void processDeferredLeaves();
       };
 
       // WRPS-049 섀도우: 분기 전에 엔진 결과를 병렬 계산(flag OFF면 no-op). 비교는 각 종료지점에서.
@@ -12012,6 +12055,21 @@ function summarizeGameStats(rows) {
     async function _doLeaveRoom() {
       const successorHostId = state.pendingSuccessorHostId || null;
       state.pendingSuccessorHostId = null;
+      // Build37 A2/A3(WRPS-084 Deferred Leave): 라운드가 진행 중이면 **지금 나가지 않는다**.
+      // 참가자 row를 즉시 지우면 이번 라운드의 판정 입력에서 그 사람이 통째로 사라져,
+      // 이미 낸 선택이 무효가 되고 남은 사람들의 승패까지 바뀐다(확정 규칙 E 위반).
+      // 대신 leave_after_round=true 만 예약하고 현재 라운드는 정상 참가자로 끝까지 남는다.
+      // 실제 퇴장은 결과가 확정된 뒤 processDeferredLeaves()가 수행한다.
+      // ⚠️ successorHostId는 여기서 소비하지 않고 되돌려 놓는다 — host 승계 자체는 호출부가
+      //    이미 DB에 반영했고, 실제 퇴장 시점에는 이 단말이 더 이상 host가 아니므로
+      //    (fetchParticipants가 is_host=false를 읽어 state.role을 내린다) 방 초기화 분기는
+      //    자연히 타지 않는다.
+      if (isRoundInProgressForLeave() && !state.deferredLeaveResolved) {
+        state.pendingSuccessorHostId = successorHostId;
+        await reserveDeferredLeave();
+        return;
+      }
+      state.deferredLeaveResolved = false;
       // ⚠️ "이 게임 회차에 활동이 있었나"(hasCurrentGameRoundActivity — 게임 번호 증가 여부 판단용)와
       // "지금 게임이 진행 중인가"(보존 여부 판단용)는 다른 질문이다. 둘을 혼동하면 game_over처럼
       // 이미 끝난 판에서도 방을 보존해 대기 상태 복귀가 사라진다(실제로 그렇게 만들었다가
@@ -12050,6 +12108,71 @@ function summarizeGameStats(rows) {
       state.confirmedLoserIds = [];
       state.gameStarting = false;
       goHome();
+    }
+
+    // Build37 A2/A3(WRPS-084): 퇴장 "예약" write. 이 단말은 방에 그대로 남아 이번 라운드를
+    // 끝까지 수행한다 — 화면 전환도, realtime 해제도 하지 않는다.
+    // participants.leave_after_round 컬럼은 20260806013625 마이그레이션으로 이미 적용돼 있다.
+    async function reserveDeferredLeave() {
+      if (!getOnlineMode() || !db || !state.roomCode || !state.currentUserId) return false;
+      try {
+        const { error } = await db.from('participants')
+          .update({ leave_after_round: true })
+          .eq('room_id', state.roomCode)
+          .eq('id', state.currentUserId);
+        if (error) throw new Error(error.message || String(error));
+        state.leaveAfterRoundPending = true;
+        state.leavingProcessing = true;   // 중복 탭으로 예약이 두 번 나가지 않게 한다
+        try { showToast(t("toast.leaveAfterRound")); } catch (e) {}
+        try { QA.emit('lobby', { wrps: 'WRPS-084', eventType: 'DEFERRED_LEAVE_RESERVED',
+          roomCode: state.roomCode || null, round: state.round || 1, wasHost: state.role === "host" }); } catch (e) {}
+        return true;
+      } catch (e) {
+        // 예약 실패는 fail-soft: 방에 그대로 남는다. 즉시 삭제로 폴백하지 않는다 —
+        // 그 폴백이야말로 이 수정이 없애려는 correctness 파괴다.
+        try { showToast(t("common.syncError")); } catch (e2) {}
+        try { QA.emit('lobby', { wrps: 'WRPS-084', eventType: 'DEFERRED_LEAVE_RESERVE_FAILED',
+          message: String(e && e.message || e) }); } catch (e2) {}
+        return false;
+      }
+    }
+
+    // Build37 A2/A3(WRPS-084): 라운드 결과가 확정된 뒤에만 실행된다. 판정에는 절대 관여하지 않는다.
+    // 두 가지 책임:
+    //   ① 이 단말이 예약자면 — 결과를 확정한 지금 실제로 방을 떠난다.
+    //   ② 이 단말이 host면 — 예약된 다른 참가자 row를 정리해 다음 라운드가 그들 없이 시작되게 한다.
+    // ②를 host가 맡는 이유: 예약자 본인이 자기 row만 지우면, 예약자가 결과 화면 전에 앱을 죽인
+    // 경우 row가 영원히 남아 다음 라운드가 유령 참가자를 기다린다.
+    async function processDeferredLeaves() {
+      if (state.processingDeferredLeaves) return;
+      state.processingDeferredLeaves = true;
+      try {
+        if (getOnlineMode() && db && state.roomCode && state.role === "host") {
+          try {
+            const { error } = await db.from('participants')
+              .delete()
+              .eq('room_id', state.roomCode)
+              .eq('leave_after_round', true);
+            if (error) throw new Error(error.message || String(error));
+            try { QA.emit('lobby', { wrps: 'WRPS-084', eventType: 'DEFERRED_LEAVE_SWEPT',
+              roomCode: state.roomCode || null, round: state.round || 1 }); } catch (e) {}
+          } catch (e) {
+            // 정리 실패는 게임 진행을 막지 않는다. 다음 라운드 확정 때 다시 시도된다.
+            try { QA.emit('lobby', { wrps: 'WRPS-084', eventType: 'DEFERRED_LEAVE_SWEEP_FAILED',
+              message: String(e && e.message || e) }); } catch (e2) {}
+          }
+        }
+        if (state.leaveAfterRoundPending) {
+          state.leaveAfterRoundPending = false;
+          state.leavingProcessing = false;
+          state.deferredLeaveResolved = true;   // _doLeaveRoom이 다시 예약하지 않도록
+          try { QA.emit('lobby', { wrps: 'WRPS-084', eventType: 'DEFERRED_LEAVE_EXECUTED',
+            roomCode: state.roomCode || null, round: state.round || 1 }); } catch (e) {}
+          await _doLeaveRoom();
+        }
+      } finally {
+        state.processingDeferredLeaves = false;
+      }
     }
 
     // WRPS-056(DR-14): 마지막 1인만 남은 방을 폭파하고 홈으로. 남은 참가자(fetchParticipants)가 호출.
@@ -12315,11 +12438,21 @@ function summarizeGameStats(rows) {
           try { showToast(t("toast.hostTransferFailed")); } catch (e) {}
           return; // 방에 남는다 — 사용자는 갱신된 목록에서 다른 대상을 골라 재시도할 수 있다.
         }
-        await db.from('participants').delete().eq('id', state.currentUserId);
+        // Build37 A3(WRPS-084 Deferred Leave): 라운드 진행 중이면 자기 row를 지우지 않는다.
+        // 권한(is_host)만 넘기고, 기존 host는 is_host=false인 **일반 참가자**로 이번 라운드를
+        // 끝까지 수행한다 — 그의 선택은 이번 라운드 판정에 그대로 포함되어야 한다.
+        const deferLeave = isRoundInProgressForLeave() || state.status === "ready";
+        if (deferLeave) {
+          await reserveDeferredLeave();
+        } else {
+          await db.from('participants').delete().eq('id', state.currentUserId);
+        }
         const beforeTransfer = [...state.participants]; // WRPS-056: 직전 세션 구성 캡처(멤버십 변경 전)
-        state.participants = state.participants
-          .filter(p => p.id !== state.currentUserId)
-          .map(p => ({ ...p, is_host: p.id === newHostId ? true : p.is_host }));
+        state.participants = (deferLeave
+            ? state.participants
+            : state.participants.filter(p => p.id !== state.currentUserId))
+          .map(p => ({ ...p,
+            is_host: p.id === newHostId ? true : (p.id === state.currentUserId ? false : p.is_host) }));
         // Build33 후속(P0-2): 게임이 진행 중이면 방을 초기화하지 않는다. 종전에는 승계 직후
         // 무조건 beginNewGameRound({status:"waiting"})를 호출해, 새 host가 물려받는 순간
         // 진행 중이던 라운드가 사라지고 방이 대기 상태로 되돌아갔다(실기기 P0-2의 직접 원인).
@@ -12347,6 +12480,9 @@ function summarizeGameStats(rows) {
         // 새 host(newHostId)를 preferred로 넘겨, 혹시 남은 이중 host가 있으면 인계 완성
         // 방향으로 수렴시킨다.
         await verifyExactlyOneHost(state.roomCode, newHostId);
+        // Build37 A3: 예약한 경우 여기서 방을 떠나지 않는다. 결과 확정 후
+        // processDeferredLeaves()가 실제 퇴장을 수행한다.
+        if (deferLeave) return;
       }
       clearRealtime();
       state.confirmedSafeIds = [];
