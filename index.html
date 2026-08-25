@@ -132,11 +132,19 @@
       overflow-y: auto;
       overflow-x: hidden;
       padding: 14px;
-      /* 모바일 노치/다이내믹 아일랜드/펀치홀 안전영역 패딩 (iOS PWA standalone, 안드 fullscreen 대응) */
-      padding-top: max(20px, calc(env(safe-area-inset-top, 0px) + 8px));
+      /* 모바일 노치/다이내믹 아일랜드/펀치홀 안전영역 패딩 (iOS PWA standalone, 안드 fullscreen 대응)
+         Build37 B5(A5): env() 를 여러 곳에서 각자 다시 읽지 않는다. 여기서 한 번만 해석해
+         --safe-top / --safe-bottom 으로 내려보내고, 세로 예산을 계산하는 쪽(Home hero)은
+         이 변수만 읽는다. env() 는 오버라이드가 불가능해서 각자 읽으면 계측기가 실기기
+         조건을 재현할 수 없다 — 실제로 A5 계측이 이 이유로 hero를 304px(실기기 223px)로
+         잘못 쟀다. 단일 출처면 계측기도 이 변수 하나만 주입하면 된다. */
+      --safe-top: max(20px, calc(env(safe-area-inset-top, 0px) + 8px));
+      --safe-bottom: max(24px, env(safe-area-inset-bottom, 0px));
+      --device-ui-bottom-fade-start: calc(100% - max(38px, calc(var(--safe-bottom) + 4px)));
+      padding-top: var(--safe-top);
       padding-left: max(10px, env(safe-area-inset-left, 0px));
       padding-right: max(10px, env(safe-area-inset-right, 0px));
-      padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
+      padding-bottom: var(--safe-bottom);
       box-sizing: border-box;
       scrollbar-width: none;
       /* Build 4(항목 1): 상단 fade out 제거 — 상단을 0부터 불투명 처리. 하단 safe-area fade는 유지. */
@@ -266,7 +274,10 @@
       --section-gap: 18px;
       --device-ui-fade-mid: max(58px, calc(env(safe-area-inset-top, 0px) + 34px));
       --device-ui-fade-end: max(96px, calc(env(safe-area-inset-top, 0px) + 64px));
-      --device-ui-bottom-fade-start: calc(100% - max(62px, env(safe-area-inset-bottom, 0px) + 34px));
+      /* Build37 B5(A5): 기존 max(62px, safeBottom+34px)는 .app 하단 62~68px를 흐리게 만들어
+         c-foot 마지막 CTA(QR 스캔 입장)를 항상 덮었다 — 실측 alpha 0.69(SE) / 0.87(notch).
+         CTA 하단은 appBottom에서 max(18px,safeBottom)+24px 위에 있으므로 fade를 그보다 짧게
+         잡는다. 홈 인디케이터(34px) 위로 스크롤되는 내용을 흐리게 하는 원래 목적은 유지된다. */
     }
 
     .action-grid,
@@ -1281,6 +1292,31 @@
       height:260px;
       top:-20px;
     }
+
+    /* ── Build37 B5(A5): Home hero를 viewport에 연속 연동한다 ──────────────────
+       기존: h>700 이면 320px, h<=700 이면 112px, h<=600 이면 88px.
+       h=700/701 경계에서 208px 절벽이 생겨 844~852 대역(320px hero를 받는 가장 짧은
+       viewport)의 c-body 예산이 88~96px까지 무너졌다. required 158px이므로
+       quick action 3종이 30~38px 잘렸다 — SE보다 중간 대역이 더 나빴다.
+       safe-area를 빼고 계산한다: 같은 852px라도 Dynamic Island(59px)와 notch(44px)의
+       실제 여유가 15px 다르다. 100dvh만 보면 그 차이를 놓친다.
+       비율은 1:1로 유지하고(왜곡 금지) 배경 glow도 같은 비율로 따라간다. */
+    #screenHome .maru-hero{
+      /* 520px = topbar + 카드 패딩 + c-head 장식(tag/title/subtitle) + c-foot + c-body 최소 예산.
+         실측으로 역산했다: 844/852/896 세 기기가 동일하게 K>=514.2를 요구했고 여유 6px을 얹었다.
+         .maru-hero.lg 의 margin-bottom:-40px 은 그대로 둔다 — 짧은 화면일수록 상대 압축이
+         커지는 기존 동작이 세로 예산 확보에 유리하다. */
+      --home-hero: clamp(88px, calc(100dvh - var(--safe-top, 20px) - var(--safe-bottom, 24px) - 520px), 320px);
+    }
+    #screenHome .maru-hero img{
+      width: var(--home-hero);
+      height: var(--home-hero);
+    }
+    #screenHome .maru-hero .maru-hero-bg{
+      width: calc(var(--home-hero) * 1.1875);
+      height: calc(var(--home-hero) * 0.8125);
+      top: calc(var(--home-hero) * -0.0625);
+    }
     /* 작은 헤로 (보조 화면용) */
     .maru-hero.md img{width:150px;height:150px}
     .maru-hero.md .maru-hero-bg{width:240px;height:150px;top:-10px}
@@ -1988,10 +2024,12 @@
         width:calc(100vw - 8px);
         min-height:100dvh;
         max-width:none;
-        padding-top:max(18px, calc(env(safe-area-inset-top, 0px) + 8px));
+        --safe-top: max(18px, calc(env(safe-area-inset-top, 0px) + 8px));
+        --safe-bottom: max(18px, env(safe-area-inset-bottom, 0px));
+        padding-top: var(--safe-top);
         padding-left:0;
         padding-right:0;
-        padding-bottom:max(18px, env(safe-area-inset-bottom, 0px));
+        padding-bottom: var(--safe-bottom);
       }
       .topbar{
         gap:6px;
@@ -2437,8 +2475,7 @@
     /* --- 짧은 화면(iPhone SE 1세대 320x568 등): head 장식을 줄여 CTA를 예산 안에 유지 --- */
     @media (max-height: 700px){
       #screenAuth .maru-hero img{width:118px !important;height:118px !important}
-      #screenHome .maru-hero img{width:112px !important;height:112px !important}
-      #screenHome .maru-hero-bg,
+      /* Build37 B5(A5): #screenHome hero 고정값 override 제거 — 위 연속 clamp가 대신한다. */
       #screenAuth .maru-hero-bg{height:130px}
       #screenHome .maru-title{font-size:30px !important;margin:2px 0 4px !important}
       #screenStats .maru-hero img{width:86px;height:86px}
@@ -2453,13 +2490,20 @@
       .penalty-box{padding:10px;margin:8px 0}
       .penalty-box strong{font-size:17px}
       .c-foot{padding-top:8px}
+      /* Build37 B5(A5): c-body 예산이 모자라면 기능이 아니라 장식을 내린다.
+         maru-footer("K놀이 #001 · …")는 핵심 기능 7종에 속하지 않으면서 c-body
+         required 158px 중 32px(마진 포함)을 차지한다. 이걸 내려야 quick action 3종이
+         첫 화면에 남는다. hero/타이틀/색동 등 정체성 요소는 그대로 유지한다. */
+      #screenHome .maru-footer{display:none}
     }
     @media (max-height: 600px){
       #screenAuth .maru-hero img{width:92px !important;height:92px !important}
-      #screenHome .maru-hero img{width:88px !important;height:88px !important}
       #screenHome .maru-title{font-size:26px !important}
       .maru-subtitle{margin-bottom:10px}
       #verdictActionSlot{min-height:96px}
+      /* SE1(320×568)은 폭까지 좁아 CTA 문구가 2줄로 접히며 c-foot이 130.8→149.5px가 된다
+         (en 기준). hero는 이미 하한 88px이라 더 줄일 수 없으므로 장식 한 겹을 더 내린다. */
+      #screenHome .kculture-tag{display:none}
     }
   </style>
 </head>
