@@ -11291,7 +11291,9 @@ function summarizeGameStats(rows) {
         const { error: statsErr } = await db
           .from("user_game_stats")
           .upsert(nextStats, { onConflict: "user_id" });
-        if (statsErr) throw statsErr;
+        // Build37 A6: 어느 단계에서 실패했는지 catch가 구분할 수 있게 태그만 붙인다.
+        // 값 자체는 건드리지 않으므로 기존 throw 동작·fail-soft 계약은 그대로다.
+        if (statsErr) throw Object.assign(statsErr, { __statsTable: "user_game_stats", __statsAction: "upsert" });
 
         const { error: historyErr } = await db.from("user_game_history").insert([{
           user_id: user.id,
@@ -11300,12 +11302,27 @@ function summarizeGameStats(rows) {
           result,
           penalty_text: getPenaltyText() || null,
         }]);
-        if (historyErr) throw historyErr;
+        if (historyErr) throw Object.assign(historyErr, { __statsTable: "user_game_history", __statsAction: "insert" });
 
         state.accountStatsSaved[dedupeKey] = true;
         localStorage.setItem(`rpsAccountStat:${dedupeKey}`, "1");
       } catch (e) {
-        console.warn("account stats save failed:", e?.message || e);
+        // Build37 A6: fail-soft 유지 — 전적 저장 실패가 게임 진행을 막지 않는다.
+        // 다만 조용히 사라지지도 않게 한다. 이 결함(권한 누락 42501)이 배포까지 살아남은
+        // 이유가 "삼키고 아무 데도 안 남긴다"였다.
+        // PII/토큰 금지: user_id·닉네임·이메일·JWT·penalty_text는 남기지 않는다.
+        // 남기는 것은 pg error code / 대상 테이블 / 동작 뿐이다.
+        try {
+          QA.emit("metric", {
+            wrps: "WRPS-084-A6", eventType: "ACCOUNT_STATS_SAVE_FAILED",
+            statsTable: e?.__statsTable || null,
+            statsAction: e?.__statsAction || null,
+            statsErrorCode: e?.code || null,
+            statsHttpStatus: e?.status || null,
+          });
+        } catch (qaErr) {}
+        console.warn("account stats save failed:",
+          e?.__statsTable || "?", e?.__statsAction || "?", e?.code || "", e?.message || e);
       }
     }
 
