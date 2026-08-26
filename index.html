@@ -7160,7 +7160,39 @@
 
 	        // WRPS-056(DR-14): 다인 방에서 나 혼자 남으면(others 전원 이탈) 방 폭파 + 홈 복귀.
 	        // 전이 가드(oldParticipants>1 → data===1): 방 생성 직후 1인 대기 상태는 제외.
+	        //
+	        // Build37 A7: 이 전이는 **1회성**이다. 여기서 처리하지 않고 흘려보내면 아래에서
+	        // state.participants = data(length 1)가 대입되어 다음 폴링부터 oldParticipants가 1이 되고
+	        // 조건이 영원히 거짓이 된다. 이 앱에는 서버측 방 정리(cron/TTL)가 전혀 없으므로
+	        // (마이그레이션 전수 확인) 그 방은 정리 주체를 잃는다. 그래서 "지금 정리한다"가 아니라
+	        // **"정리해야 한다"를 래치로 남긴다** — 전이를 잃지 않으면서 시점만 미룰 수 있다.
 	        if (oldParticipants.length > 1 && data.length === 1 && data[0] && data[0].id === state.currentUserId) {
+	          state.pendingLastParticipantCleanup = true;
+	        }
+	        // 누군가 다시 들어왔으면 정리 사유가 사라진다 — 래치를 반드시 해제한다.
+	        if (data.length > 1) state.pendingLastParticipantCleanup = false;
+	        // Build37 A7: 방금 확정된 결과를 보여주는 구간(result/game_over)에서만 정리를 미룬다.
+	        // 2인 방 deferred leave에서 sweep이 끝나는 순간이 곧 결과 확정 직후라, 즉시 정리하면
+	        // host가 라운드 결과(마지막 라운드면 최종 결과 + 술래 팝업)를 볼 틈도 없이 goHome()으로
+	        // 끌려나간다. status가 result/game_over를 벗어나는 **실제 상태 전이**(nextRound → ready,
+	        // 한번더 → lobby) 이후 기존 2.6s 폴링이 이 래치를 소비한다 — 새 타이머/고정 delay 없음.
+	        //
+	        // ⚠️ playing은 **일부러 보호하지 않는다.** deferred leave의 정상 sweep은 결과 확정
+	        // 시점(result)에만 돌므로 A7이 지켜야 할 "예약자의 현재 라운드 결과 표시"는
+	        // result/game_over로 충분하다. playing 중 2→1이 실제로 발생하는 경로는 dropped
+	        // participant 정리(45초 이상 offline + !is_ready, 약 6327)뿐인데, 그 경우 1인 방으로
+	        // 게임을 계속 진행시켜 finishRoundLocal의 deadlock 분기가 host를 자동으로 술래로
+	        // 확정해버리는 것보다, 기존 WRPS-056 정리를 즉시 수행하는 편이 옳다.
+	        // 일반 참가자의 정상 나가기는 A2 deferred leave가 이미 즉시 삭제를 금지하므로
+	        // playing 즉시 정리와 충돌하지 않는다.
+	        // 래치가 서 있지 않은 평시(비진행 상태에서 마지막 1인이 된 경우)에는 위 래치 설정과
+	        // 이 소비가 같은 tick에 일어나므로 수정 전과 동일하게 즉시 정리된다(회귀 없음).
+	        if (state.pendingLastParticipantCleanup && data.length === 1
+	            && data[0] && data[0].id === state.currentUserId
+	            && !["result", "game_over"].includes(state.status)
+	            && !isRoomClosingOrDestroyed()) {
+	          // 소비는 1회다 — 중복 폴링이 겹쳐도 destroy는 정확히 한 번만 발화한다.
+	          state.pendingLastParticipantCleanup = false;
 	          state.participants = data;
 	          await destroyRoomAndGoHome("last_participant");
 	          return;
