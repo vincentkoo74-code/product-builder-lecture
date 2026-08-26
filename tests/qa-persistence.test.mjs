@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { readBuildNumber } from '../scripts/build-manifest.mjs';
 
 // Build17 — QA 자동저장/파일 export 회귀 방지.
 // 실기기 필드테스트 시 앱 종료/새로고침에도 QA JSON을 자동 확보하는 계층을 검증한다.
@@ -49,10 +50,16 @@ function loadQA(shared) {
 }
 
 
-// WRPS-083 Build32: 리포트 라벨 계약은 특정 빌드 번호가 아니라 소스의 QA_BUILD_LABEL을
-// 진실 소스로 삼는다. 여기서 원문을 직접 읽어 두 값이 어긋나지 않는지 고정한다.
-const SOURCE_BUILD_LABEL = (html.match(/QA_BUILD_LABEL = '([^']+)'/) || [])[1];
-if (!SOURCE_BUILD_LABEL) throw new Error('[qa-persistence] QA_BUILD_LABEL not found in index.html');
+// Build37(계약 교정): 종전에는 기대값을 index.html의 QA_BUILD_LABEL에서 **되읽어** 썼다.
+// 그러면 소스가 어떤 값이든 통과하는 자기참조 테스트가 되어, 실제로 Build 33~36 내내
+// buildLabel='build32' / build='30' 드리프트를 통과시켰다(증적의 빌드 귀속이 어긋남).
+// 이제 진실 소스인 iOS project.pbxproj의 CURRENT_PROJECT_VERSION에서 기대값을 만든다.
+// 교차 파일 대조 자체는 tests/build-metadata-drift.test.mjs가 전담하고, 여기서는
+// "리포트가 그 canonical 값을 싣는가"만 본다.
+const pbxproj = readFileSync(new URL('../ios/App/App.xcodeproj/project.pbxproj', import.meta.url), 'utf8');
+const CANONICAL_BUILD = readBuildNumber(pbxproj);
+if (!CANONICAL_BUILD) throw new Error('[qa-persistence] CURRENT_PROJECT_VERSION not found in project.pbxproj');
+const SOURCE_BUILD_LABEL = 'build' + CANONICAL_BUILD;
 
 describe('Build17 QA persistence (Layer 1) — 실코드', () => {
   let ctx;
@@ -62,11 +69,8 @@ describe('Build17 QA persistence (Layer 1) — 실코드', () => {
     const r = ctx.QA.buildReport('manual');
     expect(r.schemaVersion).toBe('qa-report.v1');
     expect(r.app).toBe('WoorimaruRPS');
-    expect(r.build).toBe('30');
-    // WRPS-083 Build32(계약 갱신): buildLabel은 QA_BUILD_LABEL의 현재 값을 그대로 반영한다.
-    // 특정 빌드 번호를 고정하면 빌드마다 이 테스트가 깨지고, 실제로 build30에 고정돼 있어
-    // Build31 필드 QA에서 리포트 파일명이 build30으로 나오는 metadata 불일치를 놓쳤다.
-    // 이제 '소스의 QA_BUILD_LABEL과 리포트가 일치하는가'를 계약으로 삼는다.
+    // Build37: pbxproj의 canonical build number에서 파생된 기대값이다(하드코딩·자기참조 아님).
+    expect(r.build).toBe(String(CANONICAL_BUILD));
     expect(r.buildLabel).toBe(SOURCE_BUILD_LABEL);
     expect(r.exportReason).toBe('manual');
     expect(typeof r.createdAt).toBe('string');

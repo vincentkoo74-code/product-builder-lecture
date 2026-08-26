@@ -10236,7 +10236,15 @@ function summarizeGameStats(rows) {
         // ── Build17: QA 자동저장/파일 export (게임 로직 무변경, 관찰·기록만) ──────
         // 실기기 필드테스트 시 앱 종료/새로고침에도 QA JSON을 자동 확보하기 위한 계층.
         const QA_STORAGE_KEY = 'rpsQAReport.v1';
-        const QA_BUILD_LABEL = 'build32';
+        // Build37: 빌드 번호의 **단일 진실 소스는 iOS project.pbxproj의 CURRENT_PROJECT_VERSION**이다.
+        // 여기 값은 그것의 미러이며, tests/build-metadata-drift.test.mjs가 두 파일을 교차 대조해
+        // 어긋나면 실패시킨다(자기참조 금지 — 소스 값을 기대값으로 되읽지 않는다).
+        // 종전에는 QA_BUILD_LABEL='build32', build:'30'이 각각 하드코딩돼 있었고 테스트가 그 값을
+        // 소스에서 역으로 읽거나('30') 못박아 둬서 드리프트를 잡지 못했다 — Build 33~36의 QA 리포트가
+        // 전부 build32/'30'으로 기록돼 증적의 빌드 귀속이 어긋났다. 이제 라벨과 build 필드는
+        // 이 상수 하나에서 파생된다.
+        const BUILD_NUMBER = 37;
+        const QA_BUILD_LABEL = 'build' + BUILD_NUMBER;
         function deviceInfo() {
           let platform = 'web', model = 'Web', osVersion = '';
           try {
@@ -10254,7 +10262,7 @@ function summarizeGameStats(rows) {
           return {
             schemaVersion: 'qa-report.v1',
             app: 'WoorimaruRPS',
-            build: '30',
+            build: String(BUILD_NUMBER),
             buildLabel: QA_BUILD_LABEL,
             createdAt: new Date().toISOString(),
             device: deviceInfo(),
