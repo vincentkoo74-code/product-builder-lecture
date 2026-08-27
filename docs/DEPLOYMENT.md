@@ -19,9 +19,10 @@ Supabase projects**, selected by which values are hardcoded in
 | Google Sign In provider | disabled | enabled (pre-existing, unrelated to KR V1 scope) |
 | Data | fresh KR V1 data only, no Tokyo data migrated | existing Tokyo data, untouched by KR work |
 
-> ⛔ **2026-08-27: Tokyo Supabase 프로젝트(`cmfxhehpreanijwanwrr`)는 존재하지 않는다.**
-> 3개 공용 DNS 리졸버 모두 NXDOMAIN. 위 표의 "JP (future)" 열 중 project ref /
-> Edge Functions / Auth provider 항목은 **더 이상 사실이 아니다.**
+> ⚠️ **2026-08-27: Tokyo Supabase 프로젝트(`cmfxhehpreanijwanwrr`)는 `INACTIVE`(일시정지)다.**
+> 삭제된 것이 아니라 free plan 의 미사용 자동 일시정지이며, 일시정지 시 DNS 가 내려가
+> NXDOMAIN 이 관측된다. 위 표의 "JP (future)" 열 중 Edge Functions / Auth provider 항목은
+> 현재 검증 불가 상태다.
 > [JP_V1_BASELINE.md](JP_V1_BASELINE.md) 0절과 [JP_RELEASE_BACKLOG.md](JP_RELEASE_BACKLOG.md)
 > `JP-BL-013` 을 먼저 읽을 것.
 
@@ -48,8 +49,10 @@ Tokyo 프로젝트에 마이그레이션과 Edge Function 을 **자동 배포**�
 - 배포 대상 국가를 입력으로 받고 project ref 는 `config/regions.json` 에서 도출
 - 대상 project ref 를 그대로 타이핑해야 진행
 - 브랜치의 `active-region.json` 과 배포 대상이 다르면 중단
-- `environment: supabase-<REGION>` — **단, GitHub Settings > Environments 에서
-  required reviewers 를 걸어야 실제 승인 게이트가 생긴다 (JP-BL-004, 미완료)**
+- `environment: supabase-<REGION>` — GitHub Environment `supabase-KR` / `supabase-JP` 에
+  required reviewer(vincentkoo74-code) 와 배포 허용 브랜치 정책이 **구성 완료**되었다
+  (`supabase-JP` ← `feature/rps-jp-*`, `supabase-KR` ← `feature/rps-kr-*`,
+  `fix/replay-force-start-and-confirmed-ids`). 저장소가 PUBLIC 이라 이 보호 규칙이 무료로 동작한다.
 
 Seoul 은 여전히 CI 에 연결되어 있지 않고 Supabase CLI 로 수동 배포한다. 위 워크플로에
 `region: KR` 로 실행하면 Seoul 에도 배포할 수 있으나, 아직 실사용 검증은 하지 않았다.

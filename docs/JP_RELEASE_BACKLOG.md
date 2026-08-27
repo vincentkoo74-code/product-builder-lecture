@@ -7,20 +7,24 @@
 
 | ID | 상태 | 심각도 | 항목 | 출시 차단 |
 |---|---|---|---|---|
-| JP-BL-013 | OPEN | **Blocker** | **JP 백엔드 확보 — Tokyo 프로젝트가 존재하지 않음** | **예** |
+| JP-BL-013 | OPEN | **Blocker** | **JP 백엔드 확보 — 구 Tokyo 프로젝트는 일시정지(INACTIVE) 상태** | **예** |
 | JP-BL-001 | OPEN | High | region-guard 메커니즘을 KR 브랜치로 백포트 | 아니오 (KR 측 위험) |
 | JP-BL-002 | OPEN | High | JP 빌드에서 Kakao 로그인 경로 제거 (JPX-001 해소) | **예** |
-| JP-BL-003 | OPEN | High | JP 브랜치를 origin 에 push (현재 로컬 전용) | 아니오 |
-| JP-BL-004 | OPEN | High | GitHub Environments 에 required reviewers 설정 | 아니오 |
+| JP-BL-003 | DONE | High | JP 브랜치를 origin 에 push → 539e0de | — |
+| JP-BL-004 | DONE | High | GitHub Environments `supabase-KR`/`supabase-JP` 구성 | — |
 | JP-BL-005 | OPEN | High | 서버측 매치메이킹 리전 검증 (KR↔JP 크로스매칭 차단) | **예** |
 | JP-BL-006 | OPEN | Medium | 네이티브 산출물(ios/android public) JP 재생성 | **예** |
-| JP-BL-007 | DONE | Medium | Tokyo 백엔드 실물 상태 점검 → **프로젝트 부재 확인** | — |
+| JP-BL-007 | DONE | Medium | Tokyo 백엔드 실물 점검 → **삭제 아님, INACTIVE(일시정지)** | — |
 | JP-BL-008 | OPEN | Medium | LINE MINI App / LIFF 요구사항 조사 및 설계 | **예** |
 | JP-BL-009 | OPEN | Medium | `ENABLE_LINE_LOGIN` 활성화 + 관련 테스트 잠금 해제 | **예** |
 | JP-BL-010 | OPEN | Medium | region-guard 를 release gate 에 연결 | 아니오 |
 | JP-BL-011 | OPEN | Low | `~/.rps_seoul_env` 파일명/내용 불일치 정리 | 아니오 |
 | JP-BL-012 | OPEN | Low | JP 앱 식별자·딥링크 스킴 분리 검토 | 미정 |
 | JP-BL-014 | OPEN | Medium | A5 device-matrix 테스트 타임아웃 (JP-BL-013 의 증상) | **예** |
+| JP-BL-015 | OPEN | **High** | JP 통합 마이그레이션 3종 작성 (현 4종은 신규 프로젝트에 적용 불가) | **예** |
+| JP-BL-016 | OPEN | High | free plan 자동 일시정지 대책 — JP 프로덕션 유료 플랜 검토 | **예** |
+| JP-BL-017 | OPEN | Medium | `SUPABASE_DB_PASSWORD` 리전별 분리 | 아니오 |
+| JP-BL-018 | OPEN | Medium | allow-all RLS 를 JP 가 승계할지 결정 | 미정 |
 
 ---
 
@@ -32,9 +36,13 @@
 
 **CEO 결정 사항 — 엔지니어링이 아니라 사업 판단이다.**
 
+⚠️ **CEO 의 Option A 승인은 "구 프로젝트가 삭제되었다"는 전제 위에서 내려졌다.
+그 전제가 틀렸으므로 재확인이 필요하다.** 이제 A′ 선택지가 존재한다.
+
 | 선택지 | 내용 | 고려사항 |
 |---|---|---|
-| A | Tokyo(`ap-northeast-1`)에 **새 Supabase 프로젝트 신규 생성** | 기존 기준(일본 데이터는 일본 리전)에 부합. 스키마는 `supabase/migrations/` 로 재구축 가능. 기존 일본 사용자 데이터는 복구 불가 |
+| **A′** | 일시정지된 기존 Tokyo 프로젝트를 **복원(restore)** | 기존 일본 사용자 데이터가 살아 있을 가능성. 새 ref 발급 불필요(문서/설정 변경 최소). 단 복원 가능 여부·데이터 잔존은 **미확인**. 프로젝트명이 `vincentkoo74-code's Project` 로 방치되어 있어 정리 필요 |
+| A | Tokyo(`ap-northeast-1`)에 **새 Supabase 프로젝트 신규 생성** | 깨끗한 출발, 명명 규칙 확립. 기존 일본 데이터 포기. free plan org 에 프로젝트가 늘어나 과금 영향 **미확인** |
 | B | 다른 리전에 JP 프로젝트 생성 | 일본 개인정보 취급 방침·법적 문구와 충돌 가능. 권장하지 않음 |
 | C | Seoul 프로젝트에 리전 분리 스키마로 통합 | **KR↔JP 크로스매칭 금지 hard requirement 와 정면 충돌.** 권장하지 않음 |
 
@@ -94,7 +102,18 @@ region-guard 는 빌드 산출물의 정적 검사일 뿐 런타임을 막지 �
 
 ## JP-BL-007 — Tokyo 백엔드 실물 상태 점검 — **DONE (2026-08-27)**
 
-**결과: Tokyo Supabase 프로젝트 `cmfxhehpreanijwanwrr` 는 존재하지 않는다.**
+**결과 정정: 프로젝트는 존재한다. 상태가 `INACTIVE`(일시정지)다.**
+
+최초에 DNS/HTTP 관측만으로 "삭제"로 판단했으나, Supabase Management API 조회 결과
+프로젝트가 남아 있음이 확인됐다. free plan 은 미사용 프로젝트를 자동 일시정지하며
+일시정지 시 DNS 가 내려간다 — NXDOMAIN 은 삭제가 아니라 일시정지의 증상이었다.
+
+```text
+cmfxhehpreanijwanwrr | ap-northeast-1 | INACTIVE | created 2026-05-16
+org wlhfocgtfvkewjxlyzmj (plan=free) / owner vincentkoo74-code
+```
+
+아래는 최초 관측 기록(사실 자체는 정확했고, 원인 추론만 틀렸다).
 
 증적(읽기 전용 조회만 수행):
 
@@ -159,3 +178,35 @@ JP 브랜치에서는 600.46초 타임아웃. 차이는 `SUPABASE_URL` 뿐이다
 
 **해소.** JP-BL-013 으로 실제 JP 백엔드가 생기면 자동 해소될 것으로 예상한다.
 **테스트를 수정해 green 을 만들지 않는다** — 죽은 백엔드를 가리게 된다.
+
+
+## JP-BL-015 — JP 통합 마이그레이션 3종 작성
+
+**왜.** 현 JP 브랜치의 마이그레이션 4종은 **증분 세트**라 신규 프로젝트에 적용하면 실패한다.
+`rooms`/`participants` 의 CREATE TABLE 이 어디에도 없다(대시보드에서 out-of-band 생성됨).
+상세와 부품 출처는 `docs/JP_BACKEND_REBUILD_INVENTORY.md`.
+
+**주의.** Seoul 의 `20260811010100_kr_v1_account_game_stats.sql` 에는 GRANT 가 없다.
+그대로 베끼면 Seoul 이 3개월간 겪은 42501 버그("내 기록이 항상 비어 있음")를 JP 가 반복한다.
+
+## JP-BL-016 — free plan 자동 일시정지 대책
+
+**왜.** 이번 사고의 근본 원인이다. 인프라 장애가 아니라 요금제 정책이다.
+새 JP 프로젝트를 만들어도 출시 전 미사용 기간이 길면 **똑같이 다시 일시정지된다.**
+KR(`maru-rps-production-kr`)은 현재 활성이지만 동일 org·동일 free plan 이므로 같은 위험에 있다.
+
+**확인할 것.** JP 프로덕션 경계에 유료 플랜이 필요한 시점, org 분리 필요 여부,
+free plan 에서 활성 프로젝트 2개 초과 시 과금 발생 조건.
+
+## JP-BL-017 — `SUPABASE_DB_PASSWORD` 리전별 분리
+
+**왜.** `supabase-deploy.yml` 이 `region` 입력으로 대상을 고르지만 DB 비밀번호는 단일
+repository secret 을 쓴다. KR/JP 비밀번호가 다르면 한쪽 배포가 실패한다.
+**어떻게.** GitHub Environment secret(`supabase-KR`/`supabase-JP` 별로 각각) 로 옮긴다.
+
+## JP-BL-018 — allow-all RLS 승계 여부 결정
+
+**왜.** `rooms`/`participants` 의 `USING(true) WITH CHECK(true)` 정책은 필터 없는 REST
+DELETE/UPDATE 로 테이블 전체 파괴가 가능한 상태를 막지 못한다. Tokyo/Seoul 양쪽에
+동일하게 존재하던 기존 노출이며 V1 KR 은 CEO 승인 하에 임시 유지로 결정됐다.
+**JP 는 백지에서 시작하므로 같은 부채를 승계할지 다시 선택할 수 있다.** JP-BL-005 와 함께 판단.

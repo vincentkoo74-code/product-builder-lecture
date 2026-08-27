@@ -4,49 +4,48 @@
 일본 작업을 시작하는 사람은 이 문서를 먼저 읽고, 여기 적힌 브랜치·SHA·리전 외의
 값을 추측으로 사용하지 않는다.
 
-## 0. ⛔ 최우선 발견 — Tokyo Supabase 프로젝트가 존재하지 않는다
+## 0. ⚠️ Tokyo Supabase 프로젝트 상태 — 삭제 아님, **INACTIVE(일시정지)**
 
-**2026-08-27 확인. 이 발견이 일본 전략의 전제를 바꾼다.**
+**2026-08-27 최초 관측 → 같은 날 Management API 로 정정된 항목이다. 정정본이 정확하다.**
+
+| | 최초 관측 (DNS/HTTP) | 정정 (Supabase Management API) |
+|---|---|---|
+| 관측 사실 | 3개 공용 리졸버 NXDOMAIN, TLS 연결 실패 | `GET /v1/projects` → 프로젝트 **존재** |
+| 상태 | — | `status: INACTIVE`, region `ap-northeast-1`, created 2026-05-16 |
+| 결론 | ~~삭제됨~~ (**틀린 추론**) | **일시정지(paused)** |
+
+DNS/TLS 관측 자체는 정확했다. 원인 추론이 틀렸다. Supabase 는 **free plan 프로젝트를
+미사용 시 자동 일시정지**하며, 일시정지되면 DNS 레코드가 내려간다. NXDOMAIN 은
+삭제가 아니라 일시정지의 증상이었다.
 
 ```text
-cmfxhehpreanijwanwrr.supabase.co
-  → 1.1.1.1 / 8.8.8.8 / 9.9.9.9 3개 공용 리졸버 모두 NXDOMAIN
-  → TLS 연결 실패 (SSL_ERROR_SYSCALL), 존재하지 않는 임의 ref 와 동일한 거동
-대조군 sannrfmhevebqgfdqcps.supabase.co (Seoul)
-  → 3개 리졸버 모두 NOERROR, /auth/v1/health 401, functions OPTIONS 200 정상
+org  : wlhfocgtfvkewjxlyzmj ("vincentkoo74-code's Org")  plan = free
+  ├─ sannrfmhevebqgfdqcps  maru-rps-production-kr        ap-northeast-2  ACTIVE_HEALTHY
+  └─ cmfxhehpreanijwanwrr  vincentkoo74-code's Project   ap-northeast-1  INACTIVE  ← JP
+org  : eyyzcftidrdgpubwfber ("Fitflow-app")
+  └─ resmnqnqslnftgcdhliu  fitflow-APP                   ap-northeast-1  INACTIVE  (무관 — 손대지 말 것)
 ```
 
-Supabase 는 프로젝트마다 실제 DNS 레코드를 발급하며 wildcard 를 쓰지 않는다.
-NXDOMAIN 은 **해당 프로젝트가 삭제·해지되었음**을 뜻한다.
+### 이것이 바꾸는 것
 
-### 무엇이 무효가 되었나
+- **기존 일본 데이터가 남아 있을 수 있다.** 일시정지 프로젝트는 복원(restore) 경로가 존재한다.
+  삭제되었다면 불가능했을 선택지다. 다만 복원 가능 여부·데이터 잔존 여부는 **미확인**이며
+  대시보드 확인이 필요하다.
+- **근본 원인은 인프라가 아니라 요금제다.** free plan 은 미사용 프로젝트를 자동 일시정지한다.
+  새 JP 프로젝트를 만들어도 출시 전 미사용 기간이 길면 **똑같이 다시 일시정지된다.**
+  JP 프로덕션 경계를 실제로 유지하려면 유료 플랜 검토가 필요하다.
+- CEO 의 Option A(신규 Tokyo 프로젝트 생성) 승인은 "구 프로젝트는 사라졌다"는 전제 위에서
+  내려졌다. 전제가 바뀌었으므로 **재확인이 필요하다** — JP_RELEASE_BACKLOG.md `JP-BL-013`.
 
-- "기존 Tokyo 리전을 일본 서비스용으로 유지한다"는 기준은 **현재 성립하지 않는다.**
-  유지할 대상이 존재하지 않는다.
-- Tokyo 에 배포되어 있다고 기록된 Edge Function 3종(`kakao-auth`, `line-auth`,
-  `delete-account`)과 Auth provider 설정(Apple/Google/LINE)은 프로젝트와 함께 사라졌다.
-  **저장소 안의 소스 코드(`supabase/functions/line-auth/`)만 남아 있다.**
-- Tokyo 에 있던 기존 일본 사용자 데이터의 현황은 이 조사로는 알 수 없다.
-- `config/regions.json` 의 JP anon key 지문은 죽은 프로젝트의 키에서 생성된 값이다.
-  새 JP 백엔드를 만들면 반드시 갱신해야 한다.
-
-### 관측 가능한 증상
+### 관측 가능한 증상 (변함 없음)
 
 `npm test` 에서 `tests/build37-a5-home-device-matrix.test.mjs` 가 **600초 타임아웃으로
-FAIL** 한다. headless Chrome 이 `index.html` 을 렌더할 때 Supabase 클라이언트가 죽은
-Tokyo 엔드포인트로 연결을 시도하며 페이지가 idle 상태에 도달하지 못하기 때문이다.
+FAIL** 한다. headless Chrome 이 `index.html` 을 렌더할 때 Supabase 클라이언트가 일시정지된
+Tokyo 엔드포인트로 연결을 시도해 페이지가 idle 에 도달하지 못하기 때문이다.
 
 동일 커밋(262ef5d)의 KR HEAD 워크트리에서 같은 테스트는 **73초에 16/16 PASS** 한다.
-즉 이 실패는 코드 회귀가 아니라 **백엔드 부재의 증상**이다.
-
-이 FAIL 은 의도적으로 그대로 둔다. 죽은 백엔드를 가린 채 green 을 만들지 않는다.
-
-### CEO 결정이 필요한 사항
-
-일본판 백엔드를 어떻게 확보할 것인가. 최소 3가지 선택지가 있고, 이는 엔지니어링이
-아니라 사업 결정이다 — [JP_RELEASE_BACKLOG.md](JP_RELEASE_BACKLOG.md) `JP-BL-013` 참조.
-
-**이 결정 전까지 JP 브랜치는 빌드는 되지만 실행되지 않는다.**
+이 실패는 코드 회귀가 아니라 **백엔드 부재의 증상**이며, 유효한 엔드포인트가 복구되면
+해소된다. 테스트를 약화시켜 우회하지 않는다.
 
 ---
 
