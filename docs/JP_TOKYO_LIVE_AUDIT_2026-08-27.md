@@ -33,6 +33,10 @@ JP 통합 마이그레이션은 저장소 마이그레이션이 아니라 **이 
 
 `user_game_stats` 집계: 계정 6개, 누적 991게임 (승 358 / 패 374 / 무 259), 최종 플레이 2026-08-06.
 
+무결성 실측: `room_id` NULL 0 / orphan participant 0 / 빈 이름 0 / 이름 최대 12자 /
+음수 카운터 0 / `round < 1` 0 / **`created_at` NULL 0 (rooms·participants 양쪽)** /
+`rooms.id` 최대 4자. `public` 스키마 테이블은 **정확히 4개**이며 전부 RLS 활성.
+
 데이터가 2026-08-07 에서 끊긴다. KR Seoul 전환(`92ae7af`, 2026-08-11) 직전이며,
 그 이후 트래픽이 Seoul 로 넘어가 Tokyo 가 미사용 → free plan 자동 일시정지로 이어진 흐름과 일치한다.
 

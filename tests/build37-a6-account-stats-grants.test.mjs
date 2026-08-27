@@ -42,7 +42,13 @@ const execSql = stripComments(allSql);
 
 // Phase B 수정본 / Phase A 시점의 원본을 이름으로 분리한다.
 const ORIGINAL = migs.find(m => m.f === '20260528205753_account_game_stats.sql');
-const GRANTS = migs.filter(m => /grant/i.test(m.f) && /account_game_stats/i.test(m.f));
+// V1.0_JP: KR 전용 20260824021500_account_game_stats_grants 는 JP 브랜치에서 제거됐다
+// (Tokyo 에서 anon 권한 단언에 걸려 중단된다 — docs/JP_TOKYO_LIVE_AUDIT_2026-08-27.md 8절).
+// 계정 전적 테이블의 권한 부여는 20260827003000_jp_v1_grants_least_privilege 가 4개 테이블
+// 전체 범위로 흡수했다. 이 테스트가 지키려던 계약(권한은 별도 파일 / 원본 무편집 /
+// anon 무권한 / DELETE·service_role 무부여)은 그대로 유효하므로 선택자만 넓힌다.
+const GRANTS = migs.filter(m => /grant/i.test(m.f)
+  && (/account_game_stats/i.test(m.f) || /jp_v1_grants/i.test(m.f)));
 
 // 2026-08-23 실측(배포 DB, anon key). 코드는 이 값을 "정상"으로 승인하지 않는다 — RED의 근거다.
 const FROZEN_PROBE = {
@@ -266,10 +272,21 @@ describe('A6 — Phase B 마이그레이션 소스 계약', () => {
     expect(g.toLowerCase()).toContain("notify pgrst, 'reload schema'");
   });
 
-  it('[GREEN] 적용 대상이 Seoul 전용임을 파일이 명시한다', () => {
-    const g = GRANTS[0].sql;
-    expect(g, 'Seoul 프로젝트 ref 명시 없음').toContain('sannrfmhevebqgfdqcps');
-    expect(g, 'Tokyo 제외 명시 없음').toContain('cmfxhehpreanijwanwrr');
+  // V1.0_JP 로 대체된 계약. 예전 KR 파일은 "Seoul 전용"을 project ref 로 명시했지만,
+  // 리전 분리 이후 마이그레이션은 **어느 국가에도 하드코딩되지 않아야** 한다.
+  // 대상 선택은 config/regions.json + supabase-deploy.yml 의 region 입력이 담당한다.
+  it('[GREEN] 마이그레이션이 특정 국가 project ref 를 하드코딩하지 않는다', () => {
+    const registry = JSON.parse(readFileSync(join(ROOT, 'config/regions.json'), 'utf8'));
+    const refs = Object.values(registry.regions).map(r => r.supabase_project_ref);
+    expect(refs.length).toBeGreaterThan(1);
+    for (const m of migs) {
+      // 실행되는 SQL 만 본다. 주석의 출처 표기(예: "라이브 Tokyo(<ref>) introspection") 는
+      // 증적이지 배포 대상 지정이 아니다.
+      const code = m.sql.split('\n').filter(l => !l.trim().startsWith('--')).join('\n');
+      for (const ref of refs) {
+        expect(code.includes(ref), `${m.f} 의 실행 SQL 에 project ref ${ref} 가 하드코딩됐다`).toBe(false);
+      }
+    }
   });
 });
 

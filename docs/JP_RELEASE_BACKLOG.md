@@ -13,21 +13,25 @@
 | JP-BL-003 | DONE | High | JP 브랜치를 origin 에 push → 539e0de | — |
 | JP-BL-004 | DONE | High | GitHub Environments `supabase-KR`/`supabase-JP` 구성 | — |
 | JP-BL-005 | OPEN | High | 서버측 매치메이킹 리전 검증 (KR↔JP 크로스매칭 차단) | **예** |
-| JP-BL-006 | OPEN | Medium | 네이티브 산출물(ios/android public) JP 재생성 | **예** |
+| JP-BL-006 | OPEN | Medium | 네이티브 산출물(ios/android public) JP 재생성 — CEO 지시로 보류 중 | **예** |
 | JP-BL-007 | DONE | Medium | Tokyo 백엔드 실물 점검 → **삭제 아님, INACTIVE(일시정지)** | — |
 | JP-BL-008 | OPEN | Medium | LINE MINI App / LIFF 요구사항 조사 및 설계 | **예** |
 | JP-BL-009 | OPEN | Medium | `ENABLE_LINE_LOGIN` 활성화 + 관련 테스트 잠금 해제 | **예** |
 | JP-BL-010 | DONE | Medium | region-guard 를 release gate 에 연결 (출시 모드) | — |
 | JP-BL-011 | OPEN | Low | `~/.rps_seoul_env` 파일명/내용 불일치 정리 | 아니오 |
 | JP-BL-012 | OPEN | Low | JP 앱 식별자·딥링크 스킴 분리 검토 | 미정 |
-| JP-BL-014 | OPEN | Medium | A5 device-matrix 테스트 타임아웃 (JP-BL-013 의 증상) | **예** |
+| JP-BL-014 | DONE | Medium | A5 device-matrix 타임아웃 → **Tokyo 복원으로 해소, 통과 확인** | — |
 | JP-BL-015 | OPEN | **High** | JP 통합 마이그레이션 3종 작성 (현 4종은 신규 프로젝트에 적용 불가) | **예** |
-| JP-BL-016 | OPEN | High | free plan 자동 일시정지 대책 — JP 프로덕션 유료 플랜 검토 | **예** |
+| JP-BL-016 | DECIDED | High | free plan 은 엔지니어링 기간 유지, 외부 베타 전 Pro 승격 (JP-PROD-GATE) | **예** |
 | JP-BL-017 | OPEN | Medium | `SUPABASE_DB_PASSWORD` 리전별 분리 | 아니오 |
-| JP-BL-018 | OPEN | **High** | allow-all RLS 를 JP 가 승계할지 결정 (라이브 캡처 완료) | **예** |
-| JP-BL-020 | OPEN | **High** | Tokyo 의 과도한 GRANT 정리 — anon 이 4개 테이블 전 권한(TRUNCATE 포함) 보유 | **예** |
-| JP-BL-021 | OPEN | Medium | Tokyo 마이그레이션 원장 불일치 복구(적용 4건 중 1건만 기록) | **예** |
-| JP-BL-022 | OPEN | Medium | `participants.room_id` 인덱스 부재 | 아니오 |
+| JP-BL-018 | DESIGNED | **High** | 목표 RLS 설계 완료 — 배포 미승인 | **예** |
+| JP-BL-025 | OPEN | Medium | `rooms.status` enum 제약 — 전수 증명 방법 확정 후 적용 | 아니오 |
+| JP-BL-026 | OPEN | Low | `created_at` NOT NULL 제약 추가 여부 | 아니오 |
+| JP-BL-027 | OPEN | Medium | RLS 무음 거부 방어 — 핵심 write 에 0-row 판별 추가 | 미정 |
+| JP-PROD-GATE | OPEN | **Blocker** | 외부 베타/출시 전 JP 백엔드가 미사용 자동 일시정지 대상이면 안 됨 | **예** |
+| JP-BL-020 | DESIGNED | **High** | GRANT 최소 권한 정규화 설계 완료 — 배포 미승인 | **예** |
+| JP-BL-021 | DESIGNED | Medium | 원장 복구 전략 확정(멱등 재실행) — 배포 미승인 | **예** |
+| JP-BL-022 | DESIGNED | Medium | `participants.room_id` 인덱스 마이그레이션 작성 완료 | 아니오 |
 | JP-BL-023 | OPEN | Low | Storage 버킷 `rps-app`(public, 미사용) 처리 결정 | 아니오 |
 | JP-BL-024 | OPEN | Medium | Tokyo 의 Kakao 네이티브 provider 비활성화 검토 (일본은 Kakao 미사용) | 미정 |
 | JP-BL-019 | WONTFIX | Low | `linked-project.json` 히스토리 잔존 — 실제 자격증명 아님, 재작성 불필요 | — |
@@ -315,3 +319,61 @@ JP 통합 마이그레이션은 이 원장 상태를 전제로 설계해야 한�
 **왜.** Tokyo 에 Supabase **네이티브 Kakao provider** 가 활성화되어 있고 자격증명도 설정돼 있다
 (`kakao-auth` Edge Function 과 별개). 일본판은 Kakao 를 쓰지 않으므로 비활성 검토 대상이다.
 JP-BL-002(클라이언트 Kakao 경로 제거)와 함께 판단.
+
+
+## JP-BL-025 — `rooms.status` enum 제약
+
+**왜 지금 넣지 않았나.** 라이브 9종(waiting/ready/result/game_over/lobby/penalty_setting/
+playing/stats/destroyed) + 클라이언트 리터럴 `reinviting` 이 확인되지만, 정적 grep 으로
+전수를 증명할 수 없다. 불완전한 enum 은 게임을 조용히 깨뜨린다.
+**어떻게.** 상태 전이를 코드에서 단일 상수 집합으로 뽑아낸 뒤 그 집합을 근거로 제약을 건다.
+
+## JP-BL-026 — `created_at` NOT NULL
+
+**왜.** 컬럼이 nullable 이라 RLS 부등호가 3값 논리에 노출된다. 라이브 NULL 은 0건이고,
+`20260827003500` 트리거가 INSERT 시 항상 채우므로 신규 NULL 은 구조적으로 발생하지 않는다.
+남은 것은 "과거 데이터에 NULL 이 없음을 근거로 제약을 마저 걸 것인가"이며, baseline 을
+라이브 정확 재현에서 벗어나게 하므로 CEO 판단으로 남긴다.
+
+## JP-BL-027 — RLS 무음 거부 방어
+
+**왜.** PostgREST 는 RLS `USING` 이 행을 걸러 UPDATE 가 0-row 로 끝나도 에러를 내지 않는다
+(200 + 빈 결과). `updateRoomStatus`·`updateParticipantChoice`·`_doLeaveRoom` 등 대부분의
+write 는 `error` 조차 검사하지 않아, 24시간 창을 넘긴 세션에서 write 가 "성공한 척" 하고
+반영되지 않을 수 있다(codex-critic M-1).
+**어떻게.** 핵심 상태 전이(status 전이, round 증가)에 `.select()` 를 붙여 반환 row 수로
+0-row no-op 을 판별한다. 클라이언트 변경이므로 별도 슬라이스로 다룬다.
+
+---
+
+# codex-critic 검증 이력 (2)
+
+## 2026-08-27 — 백엔드 현대화 마이그레이션/RLS 설계 검증
+
+| 심각도 | ID | 내용 | 처리 |
+|---|---|---|---|
+| HIGH | H-1 | 시간 창에 상한이 없어 `created_at` 을 미래로 쓰면 "불멸 행" 생성 — 설계의 핵심 방어가 무력화 | **수정 완료** — `20260827003500` 트리거로 `created_at` 을 서버 통제 불변화 + 정책 상·하한 추가 |
+| MEDIUM | M-1 | RLS 거부가 PostgREST 에서 무음(0-row, 200) | **JP-BL-027 등록** + 하위 호환 위험/QA 체크리스트 반영 |
+| MEDIUM | M-2 | 원장 복구에 `repair` 보다 멱등 재실행이 안전 | **전략 교체** — `db push` 로 실제 실행 |
+| MEDIUM | M-3 | 테스트의 호출 지점 추출이 문장 경계를 인식하지 못함 | **수정 완료** — 다음 `.from(`/`;` 경계로 제한 + 주석 제거 |
+| MEDIUM | M-4 | 라이브 `created_at` NULL 여부 미확인 | **확인 완료 — 0건** (양 테이블). 감사 문서에 기록 |
+| LOW | L-1 | 호출 지점 수치 불일치 | **재정정** — 정확한 값은 **95**(97 → 리터럴 매치 96 → 주석 1건 제외). 첫 정정에서 두 단계 차감을 혼동해 96 으로 잘못 착지했고, 재검토에서 바로잡았다 |
+| LOW | L-2 | 테스트의 `m.group ?? m[1]` 데드 코드 | **수정 완료** |
+| LOW | L-3 | RLS 전수 검사가 미지의 테이블에서 중단 가능 | **확인 완료** — public 테이블 정확히 4개, 전부 RLS 활성. 배포 순서 0단계로 사전 조회 명시 |
+
+BLOCKER 0건. HIGH 1건은 조직 규율에 따라 수정 후 재검토 대상이다.
+
+## 2026-08-27 — 현대화 설계 재검토 (H-1 수정본)
+
+**H-1 재검토 통과.** 트리거가 우회 경로 없이 닫혔음을 확인했다
+(BEFORE ROW 트리거가 NEW 를 확정한 뒤 RLS WITH CHECK 가 그 값을 검사 / upsert·RETURNING·
+service_role 모두 면제 없음 / `disable trigger` 는 소유자 권한이라 클라이언트 도달 불가).
+M-1·M-3·M-4·L-2·L-3 및 A6 테스트 개작도 통과.
+
+재검토에서 **신규 2건**이 추가 발견되어 같은 세션에서 처리했다.
+
+| 신규 | 내용 | 처리 |
+|---|---|---|
+| MEDIUM | M-2 전략 교체가 §5 에만 반영되고 **§11 배포 체크리스트에는 옛 `migration repair` 커맨드가 남아 있었다** — 운영자가 §11 만 보면 폐기된 방식을 그대로 실행하게 된다 | **수정 완료** — §11 3·4·6단계를 `db push` 단일 절차로 정합 |
+| LOW | 호출 지점 수 96 → 실제 **95** | **수정 완료** — 산출 근거를 문서에 명시 |
+| LOW | 원장 전략 테스트가 `/migration repair/` 만 단언해 전략 회귀를 잡지 못함 | **수정 완료** — `db push --linked` 적극 단언 추가 |
