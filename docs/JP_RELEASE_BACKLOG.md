@@ -27,7 +27,7 @@
 | JP-BL-018 | DESIGNED | **High** | 목표 RLS 설계 완료 — 배포 미승인 | **예** |
 | JP-BL-025 | OPEN | Medium | `rooms.status` enum 제약 — 전수 증명 방법 확정 후 적용 | 아니오 |
 | JP-BL-026 | OPEN | Low | `created_at` NOT NULL 제약 추가 여부 | 아니오 |
-| JP-BL-027 | OPEN | Medium | RLS 무음 거부 방어 — 핵심 write 에 0-row 판별 추가 | 미정 |
+| JP-BL-027 | OPEN | **High** | RLS 무음 거부 — 실제 PostgREST 로 실증 완료, 클라이언트 미탐지 확인 | **예** |
 | JP-PROD-GATE | OPEN | **Blocker** | 외부 베타/출시 전 JP 백엔드가 미사용 자동 일시정지 대상이면 안 됨 | **예** |
 | JP-BL-020 | DESIGNED | **High** | GRANT 최소 권한 정규화 설계 완료 — 배포 미승인 | **예** |
 | JP-BL-021 | DESIGNED | Medium | 원장 복구 전략 확정(멱등 재실행) — 배포 미승인 | **예** |
@@ -335,7 +335,82 @@ playing/stats/destroyed) + 클라이언트 리터럴 `reinviting` 이 확인되�
 남은 것은 "과거 데이터에 NULL 이 없음을 근거로 제약을 마저 걸 것인가"이며, baseline 을
 라이브 정확 재현에서 벗어나게 하므로 CEO 판단으로 남긴다.
 
-## JP-BL-027 — RLS 무음 거부 방어
+## JP-BL-027 — RLS 무음 거부 방어 — **실증 완료 (2026-08-28)**
+
+### 실측 증거 (로컬 PostgREST 16.2 + Postgres 17, 저장소 마이그레이션 9종 적용)
+
+| 요청 | 응답 |
+|---|---|
+| 정상 행 `PATCH /rooms?id=eq.X` (supabase-js 기본, Prefer 없음) | **HTTP 204, 0바이트, error=null** |
+| RLS 로 가려진 행 동일 요청 | **HTTP 204, 0바이트, error=null** |
+| GRANT 자체가 없는 경우 | HTTP 401 `{"code":"42501"}` — 탐지 가능 |
+| `Prefer: return=representation` | 1행 vs **0행** — 탐지 가능 |
+| `Prefer: count=exact` | `Content-Range: 0-0/1` vs **`*/0`** — 탐지 가능 |
+
+**즉 RLS 거부는 성공과 HTTP 수준에서 완전히 동일하다.** GRANT 거부만 오류로 드러난다.
+
+### 클라이언트 탐지 실태 (코드 직접 확인)
+
+| write | error 검사 | 행수 검사 | 판정 |
+|---|---|---|---|
+| `updateRoomStatus` | ❌ | ❌ | **무음 실패** (맨몸 await) |
+| `updateRoomStatusScheduled` | ❌ | ❌ | **무음 실패** |
+| `updateParticipantChoice` | ❌ | ❌ | **무음 실패** |
+| `_doLeaveRoom` 의 delete/update | ❌ | ❌ | **무음 실패** |
+| `markReady` | ❌ | ❌ | **무음 실패** + 이후 `me.is_ready = true` 낙관적 갱신 → **UI/DB desync** |
+| `reserveDeferredLeave` | ✅ | ❌ | error 만 검사 → 무음 실패 미탐지 |
+| `nextRound` | ✅ (throw 승격 + 재시도 안전망) | ❌ | 오류는 견고, 0행은 미탐지 |
+| `promoteParticipantToHost` | ✅ + **검증 재조회** | — | **이미 보호됨** |
+
+가장 위험한 것은 `markReady` 다 — write 가 반영되지 않았는데 로컬 상태를 ready 로 바꾸고 렌더한다.
+
+### 수정 시도와 그 결과 (이번 세션)
+
+`writeWithRowCheck(query, context)` 헬퍼(`.select('id')` 로 행 수 판정 + `QA.emit` 메트릭)를
+6개 write 에 적용했으나, **기존 회귀 테스트 37건이 깨졌다**(build19 / build37-a2 / build37-a3 등).
+원인은 그 테스트들의 supabase 대역(test double)이 update/delete 체인의 `.select()` 를
+현재 구현과 다르게 다루기 때문이다. 방어적 폴백을 넣어 재시도했으나 여전히 실패했다.
+
+**5개 테스트 파일의 대역을 내 변경에 맞춰 고치는 것은 "테스트를 약화시켜 GREEN 을 만드는 것"에
+해당하므로 하지 않았고, 클라이언트 변경을 전부 되돌렸다.** `nextRound` 에 적용했을 때도
+Build29 HIGH-1 계약 5건이 깨져 원복했다.
+
+### 37건 실패의 근본 원인 — **독립 검증 완료** (codex-critic HIGH-3 요구)
+
+되돌린 근거를 검증 없이 두지 않기 위해 로그와 하니스를 직접 확인했다.
+
+실패 분포: `rc3-multiparticipant-sim` 21 / `build37-a7-…race` 10 / `build37-a3` 4 /
+`build37-a2` 1 / `build19` 1. 대표 assert: `correctnessPassRate 0 (>=0.99 기대)`,
+`예약 write가 없다: expected 0 to be 1`.
+
+**원인은 테스트 대역이 아니라 하니스의 소스 슬라이싱이다.**
+이 테스트들은 `extractBlock('async function _doLeaveRoom() {…', …)` 처럼 `index.html` 에서
+**개별 함수 소스만 정규식으로 잘라내** `new Function(...)` 샌드박스에서 평가한다.
+공유 헬퍼 `writeWithRowCheck` 는 다른 위치에 정의되므로 그 슬라이스 밖이고,
+샌드박스 안에서 `ReferenceError` 가 되어 **write 자체가 실행되지 않는다** → 0-row 로 관측된다.
+
+참고로 대역의 update 체인은 `{ eq, then }` 만 제공하고 `.select()` 가 없다
+(`chain.then = (res) => res({ error: null })`). 두 번째 시도에서 `typeof query.select !== 'function'`
+폴백을 넣었는데도 실패한 것이 이 진단을 뒷받침한다 — 폴백 코드에 도달하기 전에
+헬퍼 이름 자체가 해석되지 않았다.
+
+**판정: 프로덕션 회귀 아님. 테스트 하니스 구조상 공유 헬퍼를 쓸 수 없는 것이 원인.**
+
+### 남은 작업 (별도 슬라이스, 설계 필요)
+0. **하니스 선결 과제** — `extractBlock` 슬라이스에 공유 헬퍼를 포함시키거나, 헬퍼 없이
+   각 write 지점에서 인라인으로 행 수를 검사하도록 설계할 것. 이것을 먼저 정하지 않으면
+   같은 실패가 반복된다.
+1. 테스트 대역이 `.select()` 체인을 실제 PostgREST 와 동일하게 다루도록 정비
+2. 그 위에서 탐지 계층 도입
+3. 0행 탐지 시의 **대응**(재시도/토스트/상태 롤백)은 제품 결정 — 특히 `markReady` 의 낙관적 갱신
+4. `promoteParticipantToHost` 의 검증 재조회 패턴이 좋은 선례다 — 공유 헬퍼가 아니라
+   **호출부 인라인 재조회**라 슬라이싱 문제를 겪지 않는다. 이 패턴을 따르는 것이 안전하다.
+5. codex-critic 추가 지적: `_doLeaveRoom` 의 **참가자 self-delete** 도 대상에 포함해야 한다
+   (`jp_participants_delete` 도 동일한 24시간 창을 쓰므로 유령 참가자가 남을 수 있다).
+6. codex-critic 추가 지적: `reserveDeferredLeave` 는 0-row 도 실패로 승격해야 한다 —
+   현재는 반영되지 않았는데 성공 토스트가 뜬다.
+7. codex-critic 추가 지적: `markReady` 는 **탐지만으로 불충분**하다. 낙관적 갱신을 되돌리거나
+   재시도해야 CEO 요구("correctly detect backend success/failure")를 실질 충족한다.
 
 **왜.** PostgREST 는 RLS `USING` 이 행을 걸러 UPDATE 가 0-row 로 끝나도 에러를 내지 않는다
 (200 + 빈 결과). `updateRoomStatus`·`updateParticipantChoice`·`_doLeaveRoom` 등 대부분의
