@@ -30,7 +30,7 @@
 | JP-BL-022 | OPEN | Medium | `participants.room_id` 인덱스 부재 | 아니오 |
 | JP-BL-023 | OPEN | Low | Storage 버킷 `rps-app`(public, 미사용) 처리 결정 | 아니오 |
 | JP-BL-024 | OPEN | Medium | Tokyo 의 Kakao 네이티브 provider 비활성화 검토 (일본은 Kakao 미사용) | 미정 |
-| JP-BL-019 | OPEN | Low | `supabase/.temp/linked-project.json` 이 과거 커밋에 잔존 | 아니오 |
+| JP-BL-019 | WONTFIX | Low | `linked-project.json` 히스토리 잔존 — 실제 자격증명 아님, 재작성 불필요 | — |
 
 ---
 
@@ -223,7 +223,17 @@ DELETE/UPDATE 로 테이블 전체 파괴가 가능한 상태를 막지 못한�
 **왜.** `539e0de` 는 추적을 해제했을 뿐 과거 커밋(`465587c`)에 남은 내용은 그대로다.
 내용은 조직 slug / 프로젝트명 수준이며 access token·DB 비밀번호 같은 자격증명은 아니다.
 저장소가 PUBLIC 이므로 이미 노출된 상태다.
-**어떻게.** 필요 시 `git filter-repo`. 실효성이 낮아 우선순위 Low. **CEO 판단 사항.**
+**판정: WONTFIX (2026-08-27, CEO 정책 §16).**
+히스토리 전수 스캔 결과 실제 자격증명은 없다.
+
+```text
+sbp_ PAT            : 0건
+service_role JWT    : 0건 (고유 JWT 2개 전부 role=anon)
+DB 비밀번호 리터럴  : 0건 (매치 2건은 ${{ secrets.SUPABASE_DB_PASSWORD }} 표현식)
+.p8 / private key   : 0건
+```
+
+project ref 와 공개 URL 만으로는 히스토리 재작성을 정당화하지 않는다는 CEO 정책에 따라 종결한다.
 
 ---
 
