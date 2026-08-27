@@ -6,7 +6,7 @@ import { execSync } from 'node:child_process';
 import path from 'node:path';
 import {
   auditLayer, auditManifest, fingerprint, jwtRole, readConst, findConst,
-  stripLineComments, classify, runGuard, loadConfig,
+  stripComments, classify, runGuard, loadConfig,
 } from '../scripts/region-guard.mjs';
 
 // V1.0_JP — KR/JP 리전 및 자격증명 혼입 방지 계약.
@@ -262,7 +262,7 @@ describe('[JP-ISO-7] codex-critic 지적 사항 회귀 잠금', () => {
   it('M1: 주석 처리된 상수 선언을 값으로 읽지 않는다', () => {
     const html = `// const SUPABASE_URL = "https://commented.supabase.co";\n` +
                  `const SUPABASE_URL = "https://real.supabase.co";`;
-    expect(stripLineComments(html)).not.toContain('commented');
+    expect(stripComments(html)).not.toContain('commented');
     expect(readConst(html, 'SUPABASE_URL')).toBe('https://real.supabase.co');
   });
 
@@ -325,5 +325,41 @@ describe('[JP-ISO-7] codex-critic 지적 사항 회귀 잠금', () => {
   // M5 — LINE 플래그의 의도가 주석과 일치한다.
   it('M5: LINE 활성화를 지시하는 낡은 KR 주석이 남아 있지 않다', () => {
     expect(read('index.html')).not.toContain('JP 빌드 전환 시 true로 변경');
+  });
+});
+
+describe('[JP-ISO-8] 재검토 잔존 갭 회귀 잠금', () => {
+  // M1 잔존 — 블록 주석 안에 "유일하게 하나" 남은 선언을 실값으로 오인하면 안 된다.
+  it('M1: 블록 주석 안의 단독 선언은 선언 없음으로 취급한다', () => {
+    const dead = '/* 삭제 예정\nconst SUPABASE_URL = "https://stale.supabase.co";\n*/\n';
+    expect(findConst(dead, 'SUPABASE_URL').count, '죽은 값을 유일한 정답으로 받아들이면 안 된다').toBe(0);
+  });
+
+  it('M1: 블록 주석 제거가 살아 있는 선언을 훼손하지 않는다', () => {
+    const html = read('index.html');
+    const { regions, activeRegion } = loadConfig(ROOT);
+    const u = findConst(html, 'SUPABASE_URL');
+    expect(u.count).toBe(1);
+    expect(u.value).toContain(regions[activeRegion].supabase_project_ref);
+  });
+
+  it('M1: 선언이 전혀 없으면 R1/R2 위반으로 잡는다', () => {
+    const { regions, activeRegion } = loadConfig(ROOT);
+    const v = auditLayer({ activeRegion, regions, exceptions: [], layer: 'source',
+      content: '/* const SUPABASE_URL = "https://x.supabase.co"; */' });
+    expect(v.filter(x => x.rule === 'R1' && x.severity === 'error').length).toBeGreaterThan(0);
+  });
+
+  // M4 잔존 — 출시 모드 가드가 실제 릴리즈 파이프라인에 연결돼 있어야 한다.
+  it('M4: release-gate 워크플로가 출시 모드 리전 가드를 실행한다', () => {
+    const gate = read('.github/workflows/release-gate.yml');
+    expect(gate, 'blocks_release 가 사람의 기억에만 의존하면 장식과 같다')
+      .toMatch(/region-guard\.mjs --release/);
+  });
+
+  it('M4: 출시 절차 문서가 출시 모드 실행을 명시한다', () => {
+    const dep = read('docs/DEPLOYMENT.md');
+    expect(dep).toMatch(/MARU_RELEASE_BUILD=1/);
+    expect(dep).toMatch(/region-guard\.mjs --release/);
   });
 });

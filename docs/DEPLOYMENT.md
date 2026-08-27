@@ -57,6 +57,20 @@ Tokyo 프로젝트에 마이그레이션과 Edge Function 을 **자동 배포**�
 Seoul 은 여전히 CI 에 연결되어 있지 않고 Supabase CLI 로 수동 배포한다. 위 워크플로에
 `region: KR` 로 실행하면 Seoul 에도 배포할 수 있으나, 아직 실사용 검증은 하지 않았다.
 
+### 출시 빌드 필수 절차 (리전 가드)
+
+일반 빌드는 `known_exceptions` 의 유예를 통과시키지만, **출시 빌드는 출시 모드로 검사해야 한다.**
+
+```bash
+npm run build:web && npx cap sync          # 네이티브 산출물을 현재 리전으로 재생성
+MARU_RELEASE_BUILD=1 npm run build:web     # 출시 모드 빌드(유예 승격 → 차단)
+node scripts/region-guard.mjs --release    # 전 계층 출시 모드 검사
+```
+
+`.github/workflows/release-gate.yml` 의 `Region guard (release mode)` 단계가 CI 에서
+같은 검사를 수행한다. 로컬에서 이 절차를 건너뛰면 `blocks_release: true` 인 예외
+(현재 `JPX-001` — JP 빌드에 남은 KR Kakao 키)가 출시 산출물에 그대로 실린다.
+
 미해결 항목은 [JP_RELEASE_BACKLOG.md](JP_RELEASE_BACKLOG.md) 에서 추적한다.
 
 Known accepted V1 security risks for the Seoul backend (allow-all RLS on

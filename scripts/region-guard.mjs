@@ -55,21 +55,28 @@ export const MANIFEST_LAYERS = [
 export const fingerprint = (s) =>
   "sha256:" + createHash("sha256").update(String(s), "utf8").digest("hex").slice(0, 16);
 
-// 행 전체가 주석인 줄을 제거한다. `"https://…"` 안의 `//` 는 건드리지 않도록
-// 줄 단위로 첫 비공백이 `//` 인 경우만 제거한다.
-// (한계: /* */ 블록 주석은 처리하지 않는다 — 아래 findConst 의 중복 검출로 보완한다.)
-export function stripLineComments(text) {
+// 주석을 제거한다. 상수 탐색 전에만 쓰인다(R3/R4/R5 스캔은 원문을 본다).
+//  - 블록 주석 `/* … */` 전체를 제거한다. URL 의 `//` 는 `/*` 가 아니므로 영향 없다.
+//  - 이어서 행 전체가 `//` 로 시작하는 줄을 제거한다. `"https://…"` 안의 `//` 는
+//    줄 첫 비공백이 아니므로 보존된다.
+// 블록 주석을 함께 걷어내야 "살아 있는 선언이 사라지고 블록 주석 안의 옛 선언 하나만
+// 남은" 경우에 죽은 값을 유일한 정답으로 오인하지 않는다.
+export function stripComments(text) {
   return String(text)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
     .split("\n")
     .filter((line) => !/^\s*\/\//.test(line))
     .join("\n");
 }
 
+// 이전 이름 호환.
+export const stripLineComments = stripComments;
+
 // 상수 선언을 전부 찾는다. 주석 처리된 옛 선언이 먼저 매치되어 엉뚱한 값을
 // 검사하던 문제(M1)를 막기 위해 주석 줄을 먼저 걷어내고, 남은 선언이 2개
 // 이상이면 모호한 상태로 보고 fail-closed 로 처리한다.
 export function findConst(html, name) {
-  const cleaned = stripLineComments(html);
+  const cleaned = stripComments(html);
   const re = new RegExp(`const\\s+${name}\\s*=\\s*"([^"]*)"`, "g");
   const values = [...cleaned.matchAll(re)].map((m) => m[1]);
   return { values, value: values.length === 1 ? values[0] : null, count: values.length };

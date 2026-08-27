@@ -17,7 +17,7 @@
 | JP-BL-007 | DONE | Medium | Tokyo 백엔드 실물 점검 → **삭제 아님, INACTIVE(일시정지)** | — |
 | JP-BL-008 | OPEN | Medium | LINE MINI App / LIFF 요구사항 조사 및 설계 | **예** |
 | JP-BL-009 | OPEN | Medium | `ENABLE_LINE_LOGIN` 활성화 + 관련 테스트 잠금 해제 | **예** |
-| JP-BL-010 | OPEN | Medium | region-guard 를 release gate 에 연결 | 아니오 |
+| JP-BL-010 | DONE | Medium | region-guard 를 release gate 에 연결 (출시 모드) | — |
 | JP-BL-011 | OPEN | Low | `~/.rps_seoul_env` 파일명/내용 불일치 정리 | 아니오 |
 | JP-BL-012 | OPEN | Low | JP 앱 식별자·딥링크 스킴 분리 검토 | 미정 |
 | JP-BL-014 | OPEN | Medium | A5 device-matrix 테스트 타임아웃 (JP-BL-013 의 증상) | **예** |
@@ -230,10 +230,10 @@ DELETE/UPDATE 로 테이블 전체 파괴가 가능한 상태를 막지 못한�
 |---|---|---|---|
 | HIGH | H1 | CLI 진입점이 공백/한글/심볼릭링크 경로에서 아무 검사 없이 exit 0 (fail-open) | **수정 완료** |
 | HIGH | H2 | `index.html` 외 배포 자산(main.js, oauth-bridge.html, ASSETS/**)이 스캔 범위 밖 | **수정 완료** |
-| MEDIUM | M1 | `readConst` 가 주석 처리된 옛 선언을 값으로 오인 | **수정 완료** |
+| MEDIUM | M1 | `readConst` 가 주석 처리된 옛 선언을 값으로 오인 | **수정 완료** (행 주석 → 재검토 후 블록 주석까지 확대) |
 | MEDIUM | M2 | 스캔 0건을 통과로 취급 (fail-open) | **수정 완료 (R7)** |
 | MEDIUM | M3 | 유예가 `identifier` 만으로 매칭돼 `owner_region` 무시 | **수정 완료** |
-| MEDIUM | M4 | `blocks_release` 가 코드에서 참조되지 않는 장식 필드 | **수정 완료 (`--release`)** |
+| MEDIUM | M4 | `blocks_release` 가 코드에서 참조되지 않는 장식 필드 | **수정 완료** (`--release` + release-gate 연결) |
 | MEDIUM | M5 | `index.html` 의 낡은 V1.0_KR 주석이 LINE 활성화를 지시 | **수정 완료** |
 | LOW | L1 | `new URL(".", root).pathname` 이 공백 경로에서 빌드 크래시 | **수정 완료** |
 | LOW | L2 | `linked-project.json` 히스토리 잔존 | **JP-BL-019 등록** |
@@ -242,3 +242,22 @@ DELETE/UPDATE 로 테이블 전체 파괴가 가능한 상태를 막지 못한�
 
 수정 중 추가 발견: H1 의 최초 수정(퍼센트 인코딩만 처리)은 macOS `/var → /private/var`
 심볼릭 링크 경로에서 여전히 재현됐다. 회귀 테스트가 이를 잡아냈고 `realpathSync` 로 보강했다.
+
+
+## 2026-08-27 — 수정본(17b5673) 재검토
+
+H1·H2(HIGH) 포함 8개 항목 재현 검증 후 해소 확인. codex-critic 이 구 코드에서
+회귀 테스트가 실제로 실패함까지 별도 확인했다. 재검토 중 **새 MEDIUM 잔존 갭 2건**이
+추가로 발견되어 같은 세션에서 처리했다.
+
+| 잔존 갭 | 내용 | 처리 |
+|---|---|---|
+| M1-r | 블록 주석 `/* */` 안에 **유일하게 하나** 남은 선언은 매치 1개라 모호성 검사를 통과, 죽은 값을 정답으로 오인 | `stripComments` 가 블록 주석까지 제거. 선언 0개 → R1/R2 위반. 회귀 테스트 3건 추가 |
+| M4-r | `--release` / `MARU_RELEASE_BUILD=1` 이 저장소 어디에서도 호출되지 않아 사람이 기억해야만 동작 | `release-gate.yml` 에 `Region guard (release mode)` 단계 추가 + `DEPLOYMENT.md` 출시 절차 명시. 회귀 테스트 2건 추가 → **JP-BL-010 완료** |
+
+재검토에서 조치 불필요로 판정된 항목:
+- 심볼릭 링크 순환 시 `walkFiles` 는 OS 의 ELOOP 한도에서 자연 종료(무한루프·크래시 없음, 수십 ms). 기록만.
+- GitHub Environment 설정은 저장소 파일로 독립 검증이 불가능하다(critic 관점에서 "미확인").
+  구성 결과는 `gh api` 로 확인했고 `JP_V1_BASELINE.md` 5절에 기록했다.
+
+테스트: `tests/jp-region-isolation.test.mjs` 24 → 43 → **48개**.
