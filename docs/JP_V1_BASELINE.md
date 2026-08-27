@@ -4,7 +4,25 @@
 일본 작업을 시작하는 사람은 이 문서를 먼저 읽고, 여기 적힌 브랜치·SHA·리전 외의
 값을 추측으로 사용하지 않는다.
 
-## 0. ⚠️ Tokyo Supabase 프로젝트 상태 — 삭제 아님, **INACTIVE(일시정지)**
+## 0. ✅ Tokyo Supabase 프로젝트 — 복원 완료 (2026-08-27)
+
+CEO 승인(Option A′)으로 기존 Tokyo 프로젝트를 복원했다. **신규 프로젝트를 만들지 않았다.**
+
+```text
+cmfxhehpreanijwanwrr | ap-northeast-1 | INACTIVE → ACTIVE_HEALTHY
+db / rest / auth / realtime / storage 전부 ACTIVE_HEALTHY
+과거 데이터 보존: 계정 8, rooms 373, participants 543, history 998 (2026-05-17 ~ 08-07)
+```
+
+라이브 포렌식 캡처: **[JP_TOKYO_LIVE_AUDIT_2026-08-27.md](JP_TOKYO_LIVE_AUDIT_2026-08-27.md)**
+— JP 통합 마이그레이션은 저장소가 아니라 이 문서를 1차 기준으로 작성한다.
+
+⚠️ free plan 이므로 미사용 시 **다시 자동 일시정지된다**(JP-BL-016).
+공개 베타·프로덕션 진입 전에 요금제 조치가 필요하다.
+
+### 아래는 복원 이전 조사 기록 (경위 보존)
+
+## 0-A. Tokyo Supabase 프로젝트 상태 — 삭제 아님, **INACTIVE(일시정지)**
 
 **2026-08-27 최초 관측 → 같은 날 Management API 로 정정된 항목이다. 정정본이 정확하다.**
 

@@ -39,28 +39,34 @@
       "supabase_project_ref": "cmfxhehpreanijwanwrr",
       "supabase_url": "https://cmfxhehpreanijwanwrr.supabase.co",
       "supabase_anon_key_fingerprint": "sha256:2734c00c0cb89a4d",
-      "edge_functions_deployed": [],
+      "edge_functions_deployed": [
+        "kakao-auth",
+        "line-auth",
+        "delete-account"
+      ],
       "auth_providers": {
-        "line": "disabled-until-phase2",
         "apple": "enabled",
-        "guest": "enabled",
-        "kakao": "disabled",
-        "google": "enabled-legacy"
+        "google": "enabled",
+        "kakao": "enabled-native-legacy",
+        "email": "enabled",
+        "line": "custom-edge-function-disabled-in-client",
+        "anonymous": "disabled"
       },
       "public_client_ids": {
         "LINE_CHANNEL_ID": "2010213585"
       },
       "matchmaking_pool": "JP",
       "notes": "JP 사용자 풀. KR 과 크로스매칭 금지. 백엔드 일시정지 상태 — 실행 가능한 일본 빌드 불가.",
-      "backend_status": "INACTIVE",
-      "backend_status_detail": "2026-08-27 Supabase Management API 확인: 프로젝트는 존재하며 status=INACTIVE(일시정지). org wlhfocgtfvkewjxlyzmj (plan=free) 의 미사용 자동 일시정지이며, 일시정지 시 DNS 가 내려가 3개 공용 리졸버에서 NXDOMAIN 이 관측된다(삭제 아님). 이 ref 와 anon key 지문은 일시정지 이전 값이다. JP-BL-013 결정(복원 A' 또는 신규 생성 A)에 따라 갱신 필요. docs/JP_V1_BASELINE.md 0절 참조.",
+      "backend_status": "ACTIVE_HEALTHY",
+      "backend_status_detail": "2026-08-27 CEO 승인(Option A') 하에 일시정지 상태에서 복원됐다. region ap-northeast-1, Postgres 17.6.1.121, 전 서비스 ACTIVE_HEALTHY. 과거 프로덕션 데이터 보존 확인(계정 8, rooms 373, participants 543, history 998). 포렌식 캡처는 docs/JP_TOKYO_LIVE_AUDIT_2026-08-27.md 참조. ⚠️ free plan 이므로 미사용 시 다시 자동 일시정지된다(JP-BL-016).",
       "edge_functions_source_available": [
         "kakao-auth",
         "line-auth",
         "delete-account"
       ],
       "organization_id": "wlhfocgtfvkewjxlyzmj",
-      "edge_functions_deployed_note": "프로젝트가 INACTIVE 라 배포 현황 검증 불가. 확인 시점까지 빈 배열로 둔다(smoke 가 검증할 대상 없음)."
+      "edge_functions_deployed_note": "2026-08-27 라이브 확인: 3개 모두 ACTIVE. kakao-auth=KR 전용, line-auth=LEGACY(네이티브 OAuth), delete-account=KEEP.",
+      "supabase_project_name": "vincentkoo74-code's Project"
     }
   }
 }

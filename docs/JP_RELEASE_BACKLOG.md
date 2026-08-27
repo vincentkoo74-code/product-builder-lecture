@@ -7,7 +7,7 @@
 
 | ID | 상태 | 심각도 | 항목 | 출시 차단 |
 |---|---|---|---|---|
-| JP-BL-013 | OPEN | **Blocker** | **JP 백엔드 확보 — 구 Tokyo 프로젝트는 일시정지(INACTIVE) 상태** | **예** |
+| JP-BL-013 | DONE | **Blocker** | JP 백엔드 확보 → **기존 Tokyo 복원(Option A′), ACTIVE_HEALTHY** | — |
 | JP-BL-001 | OPEN | High | region-guard 메커니즘을 KR 브랜치로 백포트 | 아니오 (KR 측 위험) |
 | JP-BL-002 | OPEN | High | JP 빌드에서 Kakao 로그인 경로 제거 (JPX-001 해소) | **예** |
 | JP-BL-003 | DONE | High | JP 브랜치를 origin 에 push → 539e0de | — |
@@ -24,7 +24,12 @@
 | JP-BL-015 | OPEN | **High** | JP 통합 마이그레이션 3종 작성 (현 4종은 신규 프로젝트에 적용 불가) | **예** |
 | JP-BL-016 | OPEN | High | free plan 자동 일시정지 대책 — JP 프로덕션 유료 플랜 검토 | **예** |
 | JP-BL-017 | OPEN | Medium | `SUPABASE_DB_PASSWORD` 리전별 분리 | 아니오 |
-| JP-BL-018 | OPEN | Medium | allow-all RLS 를 JP 가 승계할지 결정 | 미정 |
+| JP-BL-018 | OPEN | **High** | allow-all RLS 를 JP 가 승계할지 결정 (라이브 캡처 완료) | **예** |
+| JP-BL-020 | OPEN | **High** | Tokyo 의 과도한 GRANT 정리 — anon 이 4개 테이블 전 권한(TRUNCATE 포함) 보유 | **예** |
+| JP-BL-021 | OPEN | Medium | Tokyo 마이그레이션 원장 불일치 복구(적용 4건 중 1건만 기록) | **예** |
+| JP-BL-022 | OPEN | Medium | `participants.room_id` 인덱스 부재 | 아니오 |
+| JP-BL-023 | OPEN | Low | Storage 버킷 `rps-app`(public, 미사용) 처리 결정 | 아니오 |
+| JP-BL-024 | OPEN | Medium | Tokyo 의 Kakao 네이티브 provider 비활성화 검토 (일본은 Kakao 미사용) | 미정 |
 | JP-BL-019 | OPEN | Low | `supabase/.temp/linked-project.json` 이 과거 커밋에 잔존 | 아니오 |
 
 ---
@@ -261,3 +266,42 @@ H1·H2(HIGH) 포함 8개 항목 재현 검증 후 해소 확인. codex-critic �
   구성 결과는 `gh api` 로 확인했고 `JP_V1_BASELINE.md` 5절에 기록했다.
 
 테스트: `tests/jp-region-isolation.test.mjs` 24 → 43 → **48개**.
+
+
+## JP-BL-020 — Tokyo GRANT 정리
+
+**왜.** 라이브 캡처 결과 `anon`·`authenticated`·`service_role` 이 `rooms`/`participants`/
+`user_game_stats`/`user_game_history` **네 테이블 모두**에 대해
+`DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE` 를 갖는다.
+대시보드 생성 기본 권한이 그대로 남은 것으로 보인다.
+
+**TRUNCATE 는 RLS 를 우회한다.** PostgREST 가 TRUNCATE 를 노출하지 않아 현재 실질 공격
+경로는 없지만, Seoul 마이그레이션이 의도적으로 회수한 바로 그 권한이다.
+JP-BL-018(RLS 설계)과 함께 다뤄야 한다. 증적: `docs/JP_TOKYO_LIVE_AUDIT_2026-08-27.md` 3절.
+
+## JP-BL-021 — 마이그레이션 원장 불일치 복구
+
+**왜.** `supabase_migrations.schema_migrations` 에는 `20260528205753` 하나만 기록돼 있는데
+`server_now()` 와 `participants.leave_after_round` 는 라이브에 존재한다. 두 마이그레이션이
+대시보드에서 out-of-band 로 적용됐다는 뜻이다. `rooms`/`participants` 는 아예 CREATE 기록이 없다.
+
+**영향.** 지금 `supabase db push --linked` 를 Tokyo 에 실행하면
+`20260824021500_account_game_stats_grants` 가 anon 권한 단언에서 **예외로 중단된다**
+(라이브 확인: `has_table_privilege('anon','public.user_game_stats','select') = true`).
+JP 통합 마이그레이션은 이 원장 상태를 전제로 설계해야 한다.
+
+## JP-BL-022 — `participants.room_id` 인덱스
+
+**왜.** 라이브 인덱스는 PK 4개가 전부다. 모든 방 조회가 `participants.room_id` 로 조인하는데
+인덱스가 없다. 현재 규모(543행)에서는 무해하나 확장 시 병목이 된다.
+
+## JP-BL-023 — Storage 버킷 `rps-app`
+
+**왜.** public 버킷이 존재하지만 객체 1개(0 bytes)뿐이고 클라이언트 코드 참조가 0건이다.
+사용하지 않는 public 버킷은 정리하거나 private 으로 바꾸는 편이 낫다. 급하지 않다.
+
+## JP-BL-024 — Kakao 네이티브 provider
+
+**왜.** Tokyo 에 Supabase **네이티브 Kakao provider** 가 활성화되어 있고 자격증명도 설정돼 있다
+(`kakao-auth` Edge Function 과 별개). 일본판은 Kakao 를 쓰지 않으므로 비활성 검토 대상이다.
+JP-BL-002(클라이언트 Kakao 경로 제거)와 함께 판단.
