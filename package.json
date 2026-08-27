@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:syntax": "node scripts/check-html-syntax.mjs",
     "test:release-gate": "node scripts/run-release-gate.mjs",
-    "gate:release": "node scripts/run-release-gate.mjs"
+    "gate:release": "node scripts/run-release-gate.mjs",
+    "guard:region": "node scripts/region-guard.mjs"
   },
   "repository": {
     "type": "git",

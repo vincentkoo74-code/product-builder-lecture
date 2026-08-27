@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "region": "JP",
+  "branch_contract": "feature/rps-jp-line-miniapp",
+  "comment": [
+    "이 브랜치가 빌드하는 국가를 선언하는 단일 기준 파일이다.",
+    "scripts/region-guard.mjs 가 이 값을 읽어 config/regions.json 의 프로필과 대조하고,",
+    "선언된 리전과 다른 리전의 식별자가 산출물에 섞이면 빌드를 실패시킨다(fail-closed).",
+    "KR 브랜치로 이 메커니즘을 백포트할 때는 region 값을 \"KR\" 로 바꾼다.",
+    "이 파일을 수정하는 것은 국가 전환이므로 CEO 승인 사항이다."
+  ],
+  "known_exceptions": [
+    {
+      "id": "JPX-001",
+      "identifier": "KAKAO_REST_API_KEY",
+      "owner_region": "KR",
+      "reason": "KR HEAD(262ef5d)에서 분기하며 상속된 KR 전용 공개 REST 키. 일본판은 Kakao 로그인을 쓰지 않는다.",
+      "resolution": "Phase 2 로그인 작업에서 Kakao 경로를 JP 빌드에서 제거하고 이 예외를 삭제한다.",
+      "backlog": "docs/JP_RELEASE_BACKLOG.md JP-BL-002",
+      "blocks_release": true
+    }
+  ]
+}

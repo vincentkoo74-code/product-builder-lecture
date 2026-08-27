@@ -1,26 +1,97 @@
+# Deploy Supabase — V1.0_JP 안전화 개정
+#
+# 개정 사유 (JP 분기 baseline 작업, SESSION DISCOVERY REPORT 위험 #3):
+#   이전 버전은 `push: branches: [main]` + `paths: supabase/**` 로 동작해,
+#   supabase/ 아래 파일이 포함된 브랜치가 main 에 머지되는 순간 Tokyo 프로덕션
+#   (Tokyo) 에 마이그레이션과 Edge Function 이 자동 배포되었다.
+#   KR/JP 이원 운영에서 이는 "의도하지 않은 타국 프로덕션 변경" 사고 경로다.
+#
+# 개정 내용:
+#   1. 자동 트리거(push) 전면 삭제 — 사람이 명시적으로 실행할 때만 동작한다.
+#   2. 대상 국가를 입력으로 받고, project ref 는 하드코딩하지 않고
+#      config/regions.json 레지스트리에서 도출한다(단일 기준).
+#   3. 오배포 방지를 위해 대상 project ref 를 그대로 타이핑해야 진행된다.
+#   4. environment 로 GitHub 승인 게이트를 걸 수 있게 한다
+#      (Settings > Environments 에서 required reviewers 를 지정할 것).
+
 name: Deploy Supabase
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "supabase/**"
-      - ".github/workflows/supabase-deploy.yml"
   workflow_dispatch:
+    inputs:
+      region:
+        description: "배포 대상 국가"
+        required: true
+        type: choice
+        options: [KR, JP]
+      confirm_project_ref:
+        description: "확인용 — 대상 Supabase project ref 를 그대로 입력"
+        required: true
+        type: string
+      deploy_migrations:
+        description: "DB 마이그레이션 push"
+        required: true
+        type: boolean
+        default: false
+      deploy_functions:
+        description: "Edge Functions 배포"
+        required: true
+        type: boolean
+        default: false
 
 concurrency:
-  group: supabase-deploy-main
+  group: supabase-deploy-${{ inputs.region }}
   cancel-in-progress: false
 
 jobs:
+  resolve:
+    name: Resolve target from region registry
+    runs-on: ubuntu-latest
+    environment: supabase-${{ inputs.region }}
+    outputs:
+      project_ref: ${{ steps.resolve.outputs.project_ref }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve project ref and verify typed confirmation
+        id: resolve
+        env:
+          REGION: ${{ inputs.region }}
+          CONFIRM: ${{ inputs.confirm_project_ref }}
+        run: |
+          set -euo pipefail
+          REF="$(jq -er --arg r "$REGION" '.regions[$r].supabase_project_ref' config/regions.json)"
+          LABEL="$(jq -er --arg r "$REGION" '.regions[$r].cloud_region_label' config/regions.json)"
+          echo "대상 국가: $REGION ($LABEL) / project ref: $REF"
+          if [ "$CONFIRM" != "$REF" ]; then
+            echo "::error::확인 입력이 대상 project ref 와 다르다. 오배포 방지를 위해 중단한다."
+            exit 1
+          fi
+          echo "project_ref=$REF" >> "$GITHUB_OUTPUT"
+
+      - name: Verify branch region declaration matches deploy target
+        env:
+          REGION: ${{ inputs.region }}
+        run: |
+          set -euo pipefail
+          DECLARED="$(jq -er '.region' config/active-region.json)"
+          if [ "$DECLARED" != "$REGION" ]; then
+            echo "::error::이 브랜치는 '$DECLARED' 빌드로 선언되어 있는데 '$REGION' 에 배포하려 한다. 중단한다."
+            exit 1
+          fi
+          echo "브랜치 선언 리전($DECLARED)과 배포 대상이 일치한다."
+
   migrate:
     name: Push database migrations
+    needs: resolve
+    if: ${{ inputs.deploy_migrations }}
     runs-on: ubuntu-latest
+    environment: supabase-${{ inputs.region }}
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      SUPABASE_PROJECT_REF: cmfxhehpreanijwanwrr
+      SUPABASE_PROJECT_REF: ${{ needs.resolve.outputs.project_ref }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -35,6 +106,7 @@ jobs:
           set -euo pipefail
           test -n "$SUPABASE_ACCESS_TOKEN"
           test -n "$SUPABASE_DB_PASSWORD"
+          test -n "$SUPABASE_PROJECT_REF"
           case "$SUPABASE_ACCESS_TOKEN" in
             sbp_*) ;;
             *) echo "SUPABASE_ACCESS_TOKEN must start with sbp_"; exit 1 ;;
@@ -52,6 +124,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           JOB_STATUS: ${{ job.status }}
+          REGION: ${{ inputs.region }}
           COMMIT_SHA: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -60,22 +133,21 @@ jobs:
             echo "Telegram secrets are not configured. Skipping notification."
             exit 0
           fi
-          if [ "$JOB_STATUS" = "success" ]; then
-            STATUS_TEXT="성공"
-          else
-            STATUS_TEXT="실패"
-          fi
-          MESSAGE="$(printf '윈도우-덱스: Supabase 마이그레이션 %s\n커밋: %s\n%s' "$STATUS_TEXT" "${COMMIT_SHA:0:7}" "$RUN_URL")"
+          if [ "$JOB_STATUS" = "success" ]; then STATUS_TEXT="성공"; else STATUS_TEXT="실패"; fi
+          MESSAGE="$(printf '윈도우-덱스: [%s] Supabase 마이그레이션 %s\n커밋: %s\n%s' "$REGION" "$STATUS_TEXT" "${COMMIT_SHA:0:7}" "$RUN_URL")"
           curl -fsS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=${MESSAGE}"
 
   deploy-functions:
     name: Deploy Edge Functions
+    needs: resolve
+    if: ${{ inputs.deploy_functions }}
     runs-on: ubuntu-latest
+    environment: supabase-${{ inputs.region }}
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_PROJECT_REF: cmfxhehpreanijwanwrr
+      SUPABASE_PROJECT_REF: ${{ needs.resolve.outputs.project_ref }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -89,6 +161,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$SUPABASE_ACCESS_TOKEN"
+          test -n "$SUPABASE_PROJECT_REF"
           case "$SUPABASE_ACCESS_TOKEN" in
             sbp_*) ;;
             *) echo "SUPABASE_ACCESS_TOKEN must start with sbp_"; exit 1 ;;
@@ -103,6 +176,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           JOB_STATUS: ${{ job.status }}
+          REGION: ${{ inputs.region }}
           COMMIT_SHA: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -111,12 +185,8 @@ jobs:
             echo "Telegram secrets are not configured. Skipping notification."
             exit 0
           fi
-          if [ "$JOB_STATUS" = "success" ]; then
-            STATUS_TEXT="성공"
-          else
-            STATUS_TEXT="실패"
-          fi
-          MESSAGE="$(printf '윈도우-덱스: Supabase Edge Functions 배포 %s\n커밋: %s\n%s' "$STATUS_TEXT" "${COMMIT_SHA:0:7}" "$RUN_URL")"
+          if [ "$JOB_STATUS" = "success" ]; then STATUS_TEXT="성공"; else STATUS_TEXT="실패"; fi
+          MESSAGE="$(printf '윈도우-덱스: [%s] Supabase Edge Functions 배포 %s\n커밋: %s\n%s' "$REGION" "$STATUS_TEXT" "${COMMIT_SHA:0:7}" "$RUN_URL")"
           curl -fsS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=${MESSAGE}"

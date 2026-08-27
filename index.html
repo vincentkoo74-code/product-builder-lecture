@@ -4891,8 +4891,11 @@
     document.documentElement.lang = currentLocale;
     if (document.body) document.body.setAttribute("data-locale", currentLocale);
 
-    const SUPABASE_URL = "https://sannrfmhevebqgfdqcps.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhbm5yZm1oZXZlYnFnZmRxY3BzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYzMzI4NTEsImV4cCI6MjEwMTkwODg1MX0.ssgs7cpRSA6X-y6Jbk6jcMADHknC1guVrunnv_m6vaY";
+    // V1.0_JP: 일본 빌드는 Tokyo(ap-northeast-1) Supabase 를 가리킨다.
+    // 리전 선언의 단일 기준은 config/active-region.json 이며, scripts/region-guard.mjs 가
+    // 이 상수와 선언 리전의 일치를 빌드마다 검사한다(fail-closed). 임의 변경 금지.
+    const SUPABASE_URL = "https://cmfxhehpreanijwanwrr.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNtZnhoZWhwcmVhbmlqd2Fud3JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5Mjg5MDIsImV4cCI6MjA5NDUwNDkwMn0.v5HUgGyy4ZRhmIdCfx1K4_VtVafgK8L2uBe_3ah3xzI";
     // PKCE 흐름을 명시한다. supabase-js 기본값은 implicit이며, 이 경우 OAuth가 토큰을 URL 해시
     // (#access_token=...)로 돌려준다. 그런데 네이티브 복귀용 OAuth 브릿지는 쿼리스트링만 앱으로
     // 전달하므로 해시에 담긴 세션이 유실되어 "로그인했는데 앱에 반영 안 됨" 증상이 발생한다.

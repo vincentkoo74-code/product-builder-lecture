@@ -1,3 +1,10 @@
+# Production Smoke Test — V1.0_JP 리전 인식 개정
+#
+# 읽기 전용(curl GET/OPTIONS)이므로 백엔드를 변경하지 않는다.
+# 개정 사유: Supabase project ref 가 Tokyo 로 하드코딩되어 있어 KR/JP 이원 운영에서
+# 항상 일본 백엔드만 검증했다. 이제 config/regions.json + config/active-region.json
+# 에서 대상 리전을 도출하고, 검증할 Edge Function 목록도 리전 프로필을 따른다.
+
 name: Production Smoke Test
 
 on:
@@ -15,16 +22,32 @@ jobs:
     name: Verify production app and Supabase endpoints
     runs-on: ubuntu-latest
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve region from branch declaration
+        id: region
+        run: |
+          set -euo pipefail
+          REGION="$(jq -er '.region' config/active-region.json)"
+          REF="$(jq -er --arg r "$REGION" '.regions[$r].supabase_project_ref' config/regions.json)"
+          FNS="$(jq -er --arg r "$REGION" '.regions[$r].edge_functions_deployed | join(" ")' config/regions.json)"
+          echo "region=$REGION"    >> "$GITHUB_OUTPUT"
+          echo "project_ref=$REF"  >> "$GITHUB_OUTPUT"
+          echo "functions=$FNS"    >> "$GITHUB_OUTPUT"
+          echo "smoke 대상: $REGION / ref=$REF / functions=$FNS"
+
       - name: Verify production HTML contains current app hooks
+        env:
+          PROJECT_REF: ${{ steps.region.outputs.project_ref }}
         run: |
           set -euo pipefail
           for attempt in $(seq 1 20); do
             curl -fsSL --max-time 20 --retry 3 --retry-delay 5 \
               https://product-builder-lecture-phi.vercel.app/ > /tmp/production.html
             if grep -q "loginWithSns" /tmp/production.html \
-              && grep -q "line-auth" /tmp/production.html \
-              && grep -q "kakao-auth" /tmp/production.html \
-              && grep -q "home.quickMyStats" /tmp/production.html; then
+              && grep -q "home.quickMyStats" /tmp/production.html \
+              && grep -q "$PROJECT_REF" /tmp/production.html; then
               echo "Production app contains current hooks."
               exit 0
             fi
@@ -35,11 +58,14 @@ jobs:
           exit 1
 
       - name: Verify Supabase Edge Functions are reachable
+        env:
+          PROJECT_REF: ${{ steps.region.outputs.project_ref }}
+          FUNCTIONS: ${{ steps.region.outputs.functions }}
         run: |
           set -euo pipefail
-          for fn in kakao-auth line-auth delete-account; do
+          for fn in $FUNCTIONS; do
             for attempt in $(seq 1 20); do
-              if curl -fsS --max-time 20 -X OPTIONS "https://cmfxhehpreanijwanwrr.supabase.co/functions/v1/$fn" >/dev/null; then
+              if curl -fsS --max-time 20 -X OPTIONS "https://${PROJECT_REF}.supabase.co/functions/v1/$fn" >/dev/null; then
                 echo "$fn is reachable."
                 break
               fi

@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "purpose": "Maru RPS 국가별 백엔드/자격증명 레지스트리. 값 원문(anon key)은 저장하지 않고 SHA-256 지문만 기록한다. scripts/region-guard.mjs 가 이 파일을 단일 기준으로 삼아 빌드 산출물의 리전 오염을 검사한다.",
+  "active_region_file": "config/active-region.json",
+  "regions": {
+    "KR": {
+      "code": "KR",
+      "product_version": "V1.0_KR",
+      "cloud_region": "ap-northeast-2",
+      "cloud_region_label": "Seoul",
+      "supabase_project_ref": "sannrfmhevebqgfdqcps",
+      "supabase_url": "https://sannrfmhevebqgfdqcps.supabase.co",
+      "supabase_anon_key_fingerprint": "sha256:ebb5fd49ebb36f4b",
+      "edge_functions_deployed": [
+        "kakao-auth",
+        "delete-account"
+      ],
+      "auth_providers": {
+        "kakao": "enabled",
+        "apple": "enabled",
+        "guest": "enabled",
+        "line": "disabled",
+        "google": "disabled"
+      },
+      "public_client_ids": {
+        "KAKAO_REST_API_KEY": "bce3cbf5a9fcdb2a300ce741bca3486a"
+      },
+      "matchmaking_pool": "KR",
+      "notes": "KR 사용자 풀. JP 와 크로스매칭 금지.",
+      "backend_status": "live"
+    },
+    "JP": {
+      "code": "JP",
+      "product_version": "V1.0_JP",
+      "cloud_region": "ap-northeast-1",
+      "cloud_region_label": "Tokyo",
+      "supabase_project_ref": "cmfxhehpreanijwanwrr",
+      "supabase_url": "https://cmfxhehpreanijwanwrr.supabase.co",
+      "supabase_anon_key_fingerprint": "sha256:2734c00c0cb89a4d",
+      "edge_functions_deployed": [],
+      "auth_providers": {
+        "line": "disabled-until-phase2",
+        "apple": "enabled",
+        "guest": "enabled",
+        "kakao": "disabled",
+        "google": "enabled-legacy"
+      },
+      "public_client_ids": {
+        "LINE_CHANNEL_ID": "2010213585"
+      },
+      "matchmaking_pool": "JP",
+      "notes": "JP 사용자 풀. KR 과 크로스매칭 금지. 현재 백엔드 부재 — 실행 가능한 일본 빌드 불가.",
+      "backend_status": "MISSING",
+      "backend_status_detail": "2026-08-27 확인: 이 project ref 는 1.1.1.1/8.8.8.8/9.9.9.9 3개 공용 리졸버 모두에서 NXDOMAIN 이다. Supabase 프로젝트가 존재하지 않는다. ref 와 anon key 지문은 삭제 이전 값이며 새 JP 백엔드 확보(JP-BL-013) 시 반드시 갱신해야 한다. docs/JP_V1_BASELINE.md 0절 참조.",
+      "edge_functions_source_available": [
+        "kakao-auth",
+        "line-auth",
+        "delete-account"
+      ]
+    }
+  }
+}

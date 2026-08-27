@@ -3,6 +3,7 @@ import { execSync } from "node:child_process";
 import { syncGameLogic } from "./sync-game-logic.mjs";
 import { syncEngine } from "./sync-engine.mjs";
 import { buildManifest, readBuildNumber } from "./build-manifest.mjs";
+import { runGuard } from "./region-guard.mjs";
 
 // 빌드 전 순수 로직(src/game-logic.mjs)을 index.html 인라인 블록에 동기화한다.
 const synced = await syncGameLogic();
@@ -48,14 +49,41 @@ const gitOut = (cmd) => {
 };
 let pbxproj = "";
 try { pbxproj = await readFile(new URL("ios/App/App.xcodeproj/project.pbxproj", root), "utf8"); } catch { /* keep empty */ }
+// V1.0_JP: 이 빌드가 어느 국가를 향하는지 config/active-region.json 에서 읽어 매니페스트에 스탬프한다.
+const activeRegionCfg = JSON.parse(await readFile(new URL("config/active-region.json", root), "utf8"));
+const regionRegistry = JSON.parse(await readFile(new URL("config/regions.json", root), "utf8"));
+const activeRegion = activeRegionCfg.region;
+const activeProfile = regionRegistry.regions[activeRegion];
+if (!activeProfile) {
+  throw new Error(`config/active-region.json 의 region='${activeRegion}' 이 config/regions.json 에 없다`);
+}
+
 const manifest = buildManifest({
   qa: isQA,
   build: readBuildNumber(pbxproj),
   branch: gitOut("git rev-parse --abbrev-ref HEAD"),
   commit: gitOut("git rev-parse HEAD"),
   buildTime: new Date().toISOString(),
+  region: activeRegion,
+  supabaseProjectRef: activeProfile.supabase_project_ref,
 });
 await writeFile(new URL("BUILD_MANIFEST.json", dist), JSON.stringify(manifest, null, 2) + "\n");
 console.log(`Wrote dist/BUILD_MANIFEST.json (build ${manifest.build}, qa_enabled=${manifest.qa_enabled}, mode=${manifest.release_mode})`);
+
+// V1.0_JP fail-closed 가드: 이 빌드가 만든 계층(source/dist)에 타 국가 백엔드나
+// 자격증명이 섞여 있으면 여기서 빌드를 중단한다. 네이티브 계층(ios/android)은
+// `npx cap sync` 이후 `npm run guard:region` 으로 별도 검사한다.
+{
+  const { violations } = runGuard(new URL(".", root).pathname, { layers: ["source", "dist"] });
+  const blocking = violations.filter((v) => v.severity !== "waived");
+  for (const v of violations.filter((v) => v.severity === "waived")) {
+    console.warn(`region-guard WAIVED [${v.rule}] ${v.layer}: ${v.detail}`);
+  }
+  if (blocking.length) {
+    for (const v of blocking) console.error(`region-guard ${v.severity.toUpperCase()} [${v.rule}] ${v.layer}: ${v.detail}`);
+    throw new Error(`region-guard: ${activeRegion} 빌드에 ${blocking.length}건의 리전 위반 — 빌드 중단`);
+  }
+  console.log(`region-guard: PASS (region=${activeRegion}, ref=${activeProfile.supabase_project_ref})`);
+}
 
 console.log("Built web assets into dist/");
