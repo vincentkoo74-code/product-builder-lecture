@@ -25,6 +25,7 @@
 | JP-BL-016 | OPEN | High | free plan 자동 일시정지 대책 — JP 프로덕션 유료 플랜 검토 | **예** |
 | JP-BL-017 | OPEN | Medium | `SUPABASE_DB_PASSWORD` 리전별 분리 | 아니오 |
 | JP-BL-018 | OPEN | Medium | allow-all RLS 를 JP 가 승계할지 결정 | 미정 |
+| JP-BL-019 | OPEN | Low | `supabase/.temp/linked-project.json` 이 과거 커밋에 잔존 | 아니오 |
 
 ---
 
@@ -210,3 +211,34 @@ repository secret 을 쓴다. KR/JP 비밀번호가 다르면 한쪽 배포가 �
 DELETE/UPDATE 로 테이블 전체 파괴가 가능한 상태를 막지 못한다. Tokyo/Seoul 양쪽에
 동일하게 존재하던 기존 노출이며 V1 KR 은 CEO 승인 하에 임시 유지로 결정됐다.
 **JP 는 백지에서 시작하므로 같은 부채를 승계할지 다시 선택할 수 있다.** JP-BL-005 와 함께 판단.
+
+
+## JP-BL-019 — `supabase/.temp/linked-project.json` 과거 커밋 잔존
+
+**왜.** `539e0de` 는 추적을 해제했을 뿐 과거 커밋(`465587c`)에 남은 내용은 그대로다.
+내용은 조직 slug / 프로젝트명 수준이며 access token·DB 비밀번호 같은 자격증명은 아니다.
+저장소가 PUBLIC 이므로 이미 노출된 상태다.
+**어떻게.** 필요 시 `git filter-repo`. 실효성이 낮아 우선순위 Low. **CEO 판단 사항.**
+
+---
+
+# codex-critic 검증 이력
+
+## 2026-08-27 — Baseline & Safety (539e0de) 검증
+
+| 심각도 | ID | 내용 | 처리 |
+|---|---|---|---|
+| HIGH | H1 | CLI 진입점이 공백/한글/심볼릭링크 경로에서 아무 검사 없이 exit 0 (fail-open) | **수정 완료** |
+| HIGH | H2 | `index.html` 외 배포 자산(main.js, oauth-bridge.html, ASSETS/**)이 스캔 범위 밖 | **수정 완료** |
+| MEDIUM | M1 | `readConst` 가 주석 처리된 옛 선언을 값으로 오인 | **수정 완료** |
+| MEDIUM | M2 | 스캔 0건을 통과로 취급 (fail-open) | **수정 완료 (R7)** |
+| MEDIUM | M3 | 유예가 `identifier` 만으로 매칭돼 `owner_region` 무시 | **수정 완료** |
+| MEDIUM | M4 | `blocks_release` 가 코드에서 참조되지 않는 장식 필드 | **수정 완료 (`--release`)** |
+| MEDIUM | M5 | `index.html` 의 낡은 V1.0_KR 주석이 LINE 활성화를 지시 | **수정 완료** |
+| LOW | L1 | `new URL(".", root).pathname` 이 공백 경로에서 빌드 크래시 | **수정 완료** |
+| LOW | L2 | `linked-project.json` 히스토리 잔존 | **JP-BL-019 등록** |
+| LOW | L3 | 짧은 숫자 식별자 substring 오탐 가능성 (KR 백포트 시) | **설계 문서 한계 항목에 기록** |
+| LOW | L4 | GitHub Environment 실제 설정 여부 미확인 | **구성 완료 — 검증됨** |
+
+수정 중 추가 발견: H1 의 최초 수정(퍼센트 인코딩만 처리)은 macOS `/var → /private/var`
+심볼릭 링크 경로에서 여전히 재현됐다. 회귀 테스트가 이를 잡아냈고 `realpathSync` 로 보강했다.

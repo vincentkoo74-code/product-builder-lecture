@@ -51,8 +51,29 @@ scripts/region-guard.mjs    R1~R6 검사기 (순수 함수 + CLI)
 | R4 | 타 리전의 공개 client id 가 섞여 있지 않은가 | `known_exceptions` |
 | R5 | 클라이언트 계층에 `service_role` JWT 가 없는가 | **불가** |
 | R6 | 산출물의 `BUILD_MANIFEST.json` 국가 스탬프가 선언 리전과 일치하는가 | 불가 |
+| R7 | 필수 계층(`source`)을 실제로 검사했는가 — 검사 0건을 통과로 취급하지 않는다 | 불가 |
 
-검사 계층: `source`, `dist`, `ios`, `android`, 각 계층의 `BUILD_MANIFEST.json`, `.github/workflows/*.yml`.
+검사 계층:
+
+| 계층 | 대상 | 적용 규칙 |
+|---|---|---|
+| entry | `index.html` (source/dist/ios/android) | R1–R5 |
+| asset | `dist/`, 네이티브 `public/` 아래 텍스트 자산(`.html .js .mjs .cjs .json .css .txt .map`) 전체 | R3/R4/R5 |
+| manifest | 각 산출물의 `BUILD_MANIFEST.json` | R6 |
+| ci | `.github/workflows/*.yml` | R3/R4 |
+
+`asset` 계층이 필요한 이유: `build-web.mjs` 는 `index.html` 외에 `main.js`, `oauth-bridge.html`,
+`account-delete.html`, `privacy.html`, `terms.html`, `ASSETS/**` 도 함께 배포한다.
+진입 파일만 검사하면 이 파일들에 자격증명이 인라인돼도 가드가 절대 잡지 못한다.
+
+### 유예(known_exceptions)의 의미
+
+유예는 **`(owner_region, identifier)` 쌍**으로만 성립한다. 이름만 같고 소유 리전이 다른
+식별자에는 유예가 번지지 않는다.
+
+`blocks_release: true` 인 예외는 **장식이 아니다.** `node scripts/region-guard.mjs --release`
+(또는 `MARU_RELEASE_BUILD=1 npm run build:web`) 로 실행하면 해당 유예가 차단으로 승격된다.
+출시 빌드는 이 모드로 검사해야 한다.
 
 R5 는 anon key 와 service_role key 가 육안으로 구분되지 않는다는 점(둘 다 `eyJ...` JWT)을
 겨냥한다. JWT payload 의 `role` 클레임을 디코드해 판정하므로 눈으로 놓치는 유출을 잡는다.
@@ -95,7 +116,13 @@ KR 브랜치에서 만든 자산이 JP 브랜치 체크아웃 후에도 그대�
 
 - 이 가드는 **빌드 산출물의 정적 검사**다. 런타임에 사용자를 잘못된 풀에 넣는 것은
   막지 못한다. 서버측 매치메이킹 리전 검증은 별도 과제다 (JP-BL-005).
-- 네이티브 계층 검사는 `public/index.html` 이 디스크에 존재할 때만 동작한다.
+- 네이티브 계층 검사는 `public/` 이 디스크에 존재할 때만 동작한다.
   Xcode 가 다른 경로에서 빌드하면 검사를 우회한다.
+- `stripLineComments` 는 **행 주석(`//`)만** 처리한다. `/* */` 블록 주석 안의 선언은
+  걷어내지 못한다 — 대신 유효 선언이 2개 이상이면 모호한 상태로 보고 fail-closed 처리한다.
+- R4 는 단순 부분문자열 검색이다. `LINE_CHANNEL_ID`(10자리 숫자) 같은 짧은 식별자는
+  타임스탬프·빌드번호와 우연히 겹칠 수 있다. KR 백포트(JP-BL-001) 시 설계에 반영할 것.
+- `supabase/.temp/linked-project.json` 은 추적 해제 전 커밋에 남아 있다. 히스토리
+  재작성 없이는 지워지지 않는다 (JP-BL-019, 우선순위 낮음).
 - `config/regions.json` 의 지문은 현재 두 리전의 anon key 로 생성됐다. 키가 rotate 되면
   지문을 갱신해야 하며, 갱신을 잊으면 R2 가 false positive 를 낸다 (fail-closed 이므로 안전한 방향).

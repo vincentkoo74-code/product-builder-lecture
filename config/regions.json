@@ -39,7 +39,7 @@
       "supabase_project_ref": "cmfxhehpreanijwanwrr",
       "supabase_url": "https://cmfxhehpreanijwanwrr.supabase.co",
       "supabase_anon_key_fingerprint": "sha256:2734c00c0cb89a4d",
-      "edge_functions_deployed": "unknown-project-inactive",
+      "edge_functions_deployed": [],
       "auth_providers": {
         "line": "disabled-until-phase2",
         "apple": "enabled",
@@ -59,7 +59,8 @@
         "line-auth",
         "delete-account"
       ],
-      "organization_id": "wlhfocgtfvkewjxlyzmj"
+      "organization_id": "wlhfocgtfvkewjxlyzmj",
+      "edge_functions_deployed_note": "프로젝트가 INACTIVE 라 배포 현황 검증 불가. 확인 시점까지 빈 배열로 둔다(smoke 가 검증할 대상 없음)."
     }
   }
 }

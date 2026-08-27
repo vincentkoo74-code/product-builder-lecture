@@ -3,7 +3,8 @@ import { execSync } from "node:child_process";
 import { syncGameLogic } from "./sync-game-logic.mjs";
 import { syncEngine } from "./sync-engine.mjs";
 import { buildManifest, readBuildNumber } from "./build-manifest.mjs";
-import { runGuard } from "./region-guard.mjs";
+import { runGuard, classify } from "./region-guard.mjs";
+import { fileURLToPath } from "node:url";
 
 // 빌드 전 순수 로직(src/game-logic.mjs)을 index.html 인라인 블록에 동기화한다.
 const synced = await syncGameLogic();
@@ -74,9 +75,11 @@ console.log(`Wrote dist/BUILD_MANIFEST.json (build ${manifest.build}, qa_enabled
 // 자격증명이 섞여 있으면 여기서 빌드를 중단한다. 네이티브 계층(ios/android)은
 // `npx cap sync` 이후 `npm run guard:region` 으로 별도 검사한다.
 {
-  const { violations } = runGuard(new URL(".", root).pathname, { layers: ["source", "dist"] });
-  const blocking = violations.filter((v) => v.severity !== "waived");
-  for (const v of violations.filter((v) => v.severity === "waived")) {
+  // fileURLToPath 사용: URL.pathname 은 공백/한글을 퍼센트 인코딩된 채로 돌려주어
+  // path.join 에 넘기면 존재하지 않는 경로가 된다.
+  const { violations } = runGuard(fileURLToPath(root), { layers: ["source", "dist"] });
+  const { blocking, waived } = classify(violations, { releaseMode: process.env.MARU_RELEASE_BUILD === "1" });
+  for (const v of waived) {
     console.warn(`region-guard WAIVED [${v.rule}] ${v.layer}: ${v.detail}`);
   }
   if (blocking.length) {
