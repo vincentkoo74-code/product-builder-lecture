@@ -60,6 +60,13 @@ revoke all on public.participants      from anon, authenticated;
 revoke all on public.user_game_stats   from anon, authenticated;
 revoke all on public.user_game_history from anon, authenticated;
 revoke all on sequence public.user_game_history_id_seq from anon, authenticated;
+-- service_role 도 같은 방식으로 정리한다. 라이브 Tokyo 에는 대시보드 기본 권한으로
+-- TRUNCATE/REFERENCES/TRIGGER/MAINTAIN 이 붙어 있어, 전부 회수한 뒤 DML 만 다시 준다.
+revoke all on public.rooms             from service_role;
+revoke all on public.participants      from service_role;
+revoke all on public.user_game_stats   from service_role;
+revoke all on public.user_game_history from service_role;
+revoke all on sequence public.user_game_history_id_seq from service_role;
 
 -- ── 2) 게임플레이에 실제로 필요한 권한만 부여
 --    rooms: 생성(createRoom) / 조회 / 상태 갱신. DELETE 는 호출 0건이므로 부여하지 않는다.
@@ -74,9 +81,28 @@ grant select, insert         on public.user_game_history to authenticated;
 --    id 가 bigserial 이라 테이블 INSERT 권한만으로는 nextval() 에서 42501 이 난다.
 grant usage on sequence public.user_game_history_id_seq  to authenticated;
 
--- ── 3) service_role 은 서버 사이드 전용이라 축소하지 않되, 클라이언트에 노출되는
---       파괴적 권한(TRUNCATE/REFERENCES/TRIGGER/MAINTAIN)이 anon/authenticated 에
---       남아 있지 않은지는 아래 자기검증에서 확인한다.
+-- ── 3) service_role — 서버 사이드 전용 롤. **명시적으로 부여한다.**
+--
+--    왜 명시해야 하는가(스테이징 검증에서 드러난 divergence):
+--      대시보드로 만든 테이블에는 Supabase 가 service_role 기본 권한을 붙여 준다. 그래서
+--      라이브 Tokyo 에서는 service_role 이 전 권한을 갖고 있었다. 그러나 **마이그레이션으로
+--      생성한 테이블에는 붙지 않는다** — 빈 프로젝트에 이 세트를 적용한 결과 service_role
+--      권한이 0건이었다. 두 환경이 갈라진다.
+--
+--    이것이 실제 문제인 이유: 이 마이그레이션은 클라이언트에서 rooms DELETE 를 회수하면서
+--    "서버 사이드 정리는 service_role 로 수행한다"를 전제한다. 신규 프로젝트에서는 그 경로가
+--    아예 없어 전제가 무너진다.
+--
+--    service_role 은 클라이언트에 절대 노출되지 않는 서버 전용 키이므로, 여기에 DML 을 주는
+--    것은 클라이언트 최소 권한 원칙과 무관하다. 다만 파괴적 권한(TRUNCATE/REFERENCES/
+--    TRIGGER/MAINTAIN)은 필요하지 않으므로 DML 4종만 준다.
+--    **범위는 rooms / participants 뿐이다.** 계정 전적 2테이블에는 주지 않는다 —
+--    delete-account Edge Function 은 auth.admin.deleteUser() 만 호출하고 두 테이블을 직접
+--    읽거나 쓰지 않으며, 계정 삭제는 auth.users 의 ON DELETE CASCADE 가 테이블 소유자
+--    권한으로 처리한다. 필요 없는 권한은 주지 않는다.
+grant select, insert, update, delete
+  on public.rooms, public.participants
+  to service_role;
 
 -- ── 4) 자기검증 — 하나라도 어긋나면 롤백시켜 "조용히 적용된 척" 하는 상태를 만들지 않는다.
 do $$
@@ -133,7 +159,34 @@ begin
     end if;
   end loop;
 
-  -- 4-5) 로그인 사용자의 전적 저장 경로(Seoul 이 3개월간 겪은 42501 회귀 방지)
+  -- 4-5) service_role 이 rooms/participants 정리 경로를 갖는지(rooms DELETE 회수의 전제)
+  foreach t in array array['public.rooms','public.participants'] loop
+    foreach p in array array['SELECT','INSERT','UPDATE','DELETE'] loop
+      if not has_table_privilege('service_role', t, p) then
+        raise exception 'JP grants: service_role 이 % 에 대해 % 권한이 없다 — 서버 사이드 정리 경로가 끊긴다', t, p;
+      end if;
+    end loop;
+  end loop;
+
+  -- 4-5b) service_role 에 불필요한 권한이 없어야 한다.
+  --       계정 전적 2테이블은 Edge Function 이 건드리지 않으므로 아무 권한도 주지 않는다.
+  foreach t in array array['public.user_game_stats','public.user_game_history'] loop
+    foreach p in array array['SELECT','INSERT','UPDATE','DELETE'] loop
+      if has_table_privilege('service_role', t, p) then
+        raise exception 'JP grants: service_role 에 불필요한 % 권한이 있다 (%) — 사용처가 없다', p, t;
+      end if;
+    end loop;
+  end loop;
+  foreach t in array array['public.rooms','public.participants',
+                           'public.user_game_stats','public.user_game_history'] loop
+    foreach p in array array['TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'] loop
+      if has_table_privilege('service_role', t, p) then
+        raise exception 'JP grants: service_role 에 파괴적 권한 % 가 있다 (%)', p, t;
+      end if;
+    end loop;
+  end loop;
+
+  -- 4-6) 로그인 사용자의 전적 저장 경로(Seoul 이 3개월간 겪은 42501 회귀 방지)
   if not (has_table_privilege('authenticated','public.user_game_stats','select')
       and has_table_privilege('authenticated','public.user_game_stats','insert')
       and has_table_privilege('authenticated','public.user_game_stats','update')

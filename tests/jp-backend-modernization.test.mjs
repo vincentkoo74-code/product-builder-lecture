@@ -120,8 +120,17 @@ describe('[JP-MOD-2] GRANT 마이그레이션이 호출 행렬과 정확히 일�
   });
 
   // deny
-  it('rooms 에 DELETE 를 부여하지 않는다', () => {
-    expect(execSql(sql).replace(/\s+/g, ' ')).not.toMatch(/grant[^;]*delete[^;]*on public\.rooms/);
+  // 클라이언트 롤(anon/authenticated)에만 해당한다. service_role 은 서버 전용이며
+  // rooms 정리 경로를 위해 DELETE 가 **있어야** 한다(아래 별도 단언).
+  it('rooms DELETE 를 클라이언트 롤에 부여하지 않는다', () => {
+    const e = execSql(sql).replace(/\s+/g, ' ');
+    const clientGrants = e.match(/grant[^;]*to anon, authenticated/g) || [];
+    expect(clientGrants.length).toBeGreaterThan(0);
+    for (const g of clientGrants) {
+      if (/public\.rooms/.test(g)) {
+        expect(g, `클라이언트 롤에 rooms DELETE 가 부여됐다: ${g}`).not.toMatch(/\bdelete\b/);
+      }
+    }
   });
   it('anon 에 계정 전적 권한을 부여하지 않는다', () => {
     const e = execSql(sql).replace(/\s+/g, ' ');
@@ -133,8 +142,34 @@ describe('[JP-MOD-2] GRANT 마이그레이션이 호출 행렬과 정확히 일�
       expect(execSql(sql).replace(/\s+/g, ' ').toLowerCase()).not.toMatch(new RegExp(`grant[^;]*\\b${p}\\b[^;]*to (anon|authenticated)`));
     }
   });
-  it('service_role 권한을 이 파일에서 축소하지 않는다 (서버 사이드 전용 유지)', () => {
-    expect(execSql(sql).replace(/\s+/g, ' ')).not.toMatch(/revoke[^;]*from[^;]*service_role/);
+  // 스테이징 검증에서 발견: 마이그레이션으로 만든 테이블에는 service_role 기본 권한이
+  // 붙지 않는다. 명시하지 않으면 신규 프로젝트에서 "서버 사이드 정리" 경로가 아예 없어져
+  // rooms DELETE 회수의 전제가 무너진다.
+  it('service_role 에 DML 4종을 명시적으로 부여한다 (서버 사이드 정리 경로)', () => {
+    const e = execSql(sql).replace(/\s+/g, ' ');
+    expect(e, 'service_role DML 부여 없음 — 신규 프로젝트에서 정리 경로가 끊긴다')
+      .toMatch(/grant select, insert, update, delete on public\.rooms, public\.participants to service_role/);
+    // 계정 전적 2테이블에는 주지 않는다 — Edge Function 이 건드리지 않는다(A6 계약).
+    const svc = e.match(/grant[^;]*to service_role/g) || [];
+    for (const g of svc) {
+      expect(g, 'service_role 에 계정 전적 권한이 부여됐다').not.toMatch(/user_game_(stats|history)/);
+    }
+  });
+
+  it('service_role 에도 파괴적 권한(TRUNCATE 등)은 주지 않는다', () => {
+    const e = execSql(sql).replace(/\s+/g, ' ').toLowerCase();
+    const svc = e.match(/grant[^;]*to service_role/g) || [];
+    expect(svc.length).toBeGreaterThan(0);
+    for (const g of svc) {
+      for (const p of ['truncate', 'references', 'trigger', 'maintain']) {
+        expect(g, `service_role 에 ${p} 부여됨`).not.toMatch(new RegExp(`\\b${p}\\b`));
+      }
+    }
+  });
+
+  it('자기검증이 service_role 권한 존재와 과잉을 모두 확인한다', () => {
+    expect(sql).toMatch(/서버 사이드 정리 경로가 끊긴다/);
+    expect(sql).toMatch(/service_role 에 불필요한/);
   });
 
   it('부여 후 자기검증 블록이 파괴적 권한 잔존과 과잉 회수를 모두 확인한다', () => {
@@ -334,5 +369,30 @@ describe('[JP-MOD-6] created_at 불변 고정 (codex-critic H-1 근본 수정)',
     const rls = files.findIndex((f) => f.includes('rls_target'));
     expect(pin).toBeGreaterThan(-1);
     expect(pin, 'created_at 고정이 RLS 보다 먼저 적용되어야 창이 처음부터 건전하다').toBeLessThan(rls);
+  });
+});
+
+describe('[JP-MOD-7] 마이그레이션 정렬 계약 (스테이징이 잡은 clean bootstrap 결함)', () => {
+  const files = readdirSync(path.join(ROOT, MIG)).filter((f) => f.endsWith('.sql')).sort();
+
+  // 빈 DB 적용 시 baseline 이 증분보다 뒤에 오면
+  //   ERROR: relation "public.participants" does not exist (42P01)
+  // 로 clean bootstrap 이 실패한다. 실제로 발생했던 결함이다.
+  it('baseline 이 모든 마이그레이션 중 가장 먼저 정렬된다', () => {
+    const baseIdx = files.findIndex((f) => f.includes('baseline_rooms_participants'));
+    expect(baseIdx, 'baseline 파일 없음').toBeGreaterThan(-1);
+    expect(baseIdx, `baseline 이 첫 번째가 아니다 — 앞선 파일: ${files.slice(0, baseIdx).join(', ')}`).toBe(0);
+  });
+
+  it('participants 를 ALTER 하는 증분이 baseline 보다 뒤에 온다', () => {
+    const base = files.findIndex((f) => f.includes('baseline_rooms_participants'));
+    const alt = files.findIndex((f) => f.includes('participants_leave_after_round'));
+    expect(alt).toBeGreaterThan(base);
+  });
+
+  it('baseline 이 재정렬 근거를 파일에 기록한다', () => {
+    const sql = mig('baseline_rooms_participants');
+    expect(sql).toMatch(/42P01|does not exist/);
+    expect(sql).toMatch(/include-all/);
   });
 });

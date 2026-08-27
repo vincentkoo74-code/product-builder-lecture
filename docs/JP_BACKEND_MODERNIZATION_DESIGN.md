@@ -44,14 +44,20 @@ CEO 승인(JP-BL-018 / JP-BL-016 / KEEP & MODERNIZE)에 따른 JP 백엔드 현�
 
 ## 2. 목표 GRANT 행렬
 
-| 대상 | anon | authenticated | service_role |
+| 대상 | anon | authenticated | service_role (서버 전용) |
 |---|---|---|---|
-| `rooms` | SELECT, INSERT, UPDATE | SELECT, INSERT, UPDATE | 무변경(서버 전용) |
-| `participants` | SELECT, INSERT, UPDATE, DELETE | 동일 | 무변경 |
-| `user_game_stats` | **없음** | SELECT, INSERT, UPDATE | 무변경 |
-| `user_game_history` | **없음** | SELECT, INSERT | 무변경 |
-| `user_game_history_id_seq` | **없음** | USAGE | 무변경 |
+| `rooms` | SELECT, INSERT, UPDATE | SELECT, INSERT, UPDATE | SELECT, INSERT, UPDATE, **DELETE** |
+| `participants` | SELECT, INSERT, UPDATE, DELETE | 동일 | SELECT, INSERT, UPDATE, DELETE |
+| `user_game_stats` | **없음** | SELECT, INSERT, UPDATE | **없음** |
+| `user_game_history` | **없음** | SELECT, INSERT | **없음** |
+| `user_game_history_id_seq` | **없음** | USAGE | **없음** |
 | `server_now()` | EXECUTE | EXECUTE | EXECUTE |
+
+`service_role` 을 **명시 부여**하는 이유는 스테이징 검증에서 드러났다: 대시보드로 만든
+테이블에는 Supabase 가 service_role 기본 권한을 붙여 주지만 **마이그레이션으로 만든
+테이블에는 붙지 않는다.** 명시하지 않으면 신규 프로젝트에서 service_role 권한이 0건이 되어
+"rooms 정리는 서버 사이드에서"라는 이 설계의 전제가 무너진다. service_role 에도
+TRUNCATE/REFERENCES/TRIGGER/MAINTAIN 은 주지 않는다.
 
 **제거되는 것** (라이브 대비): 모든 테이블에서 anon/authenticated 의
 `TRUNCATE`, `REFERENCES`, `TRIGGER`, `MAINTAIN` / `rooms` 의 `DELETE` /
@@ -107,7 +113,7 @@ CEO 승인(JP-BL-018 / JP-BL-016 / KEEP & MODERNIZE)에 따른 JP 백엔드 현�
 
 | 파일 | 역할 | 라이브 Tokyo 적용 시 |
 |---|---|---|
-| `20260827001000_jp_v1_baseline_rooms_participants.sql` | `rooms`/`participants` 재현 가능 baseline + 드리프트 가드 | **no-op** (이미 존재) |
+| `20260101000000_jp_v1_baseline_rooms_participants.sql` | `rooms`/`participants` 재현 가능 baseline + 드리프트 가드 | **no-op** (이미 존재) |
 | `20260827002000_jp_v1_participants_room_id_index.sql` | `participants.room_id` 인덱스 | 인덱스 1개 추가 |
 | `20260827003000_jp_v1_grants_least_privilege.sql` | GRANT 정규화 | **권한 축소** |
 | `20260827003500_jp_v1_created_at_immutable.sql` | `created_at` 을 서버 통제 불변으로 고정(트리거) | **트리거 2개 추가** |
@@ -304,6 +310,12 @@ RLS `WITH CHECK` 는 NEW 행만 보므로 `NEW.created_at = OLD.created_at` 을 
 ## 11. 제안하는 배포 순서 (승인 후)
 
 ```text
+0-A. **스테이징 재현 검증 완료** (2026-08-27) — `docs/JP_STAGING_VALIDATION_2026-08-27.md`.
+   빈 DB clean bootstrap / 스키마 라이브 완전 일치 / GRANT·RLS 행렬 / allow·deny /
+   게스트 10단계 플로우 / 로그인 소유권 격리 / 멱등성 / 롤백·전진복구 전부 통과.
+   ⚠️ 지시된 ap-northeast-1 클라우드 스테이징이 아니라 **로컬 격리 Postgres** 였다(§0).
+   PostgREST·GoTrue·Realtime 전달 계층은 미검증으로 남는다.
+
 0. 사전 조회(읽기 전용) — 예상 밖 중단 방지 (codex-critic L-3)
    - `public` 스키마 테이블 전수 확인: **2026-08-27 시점 정확히 4개, 전부 RLS 활성**
      (RLS 마이그레이션의 "RLS 꺼진 테이블 0개" 자기검증이 미지의 5번째 테이블에서 중단될 수 있다)
