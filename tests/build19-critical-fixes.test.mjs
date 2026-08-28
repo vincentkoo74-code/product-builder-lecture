@@ -103,7 +103,19 @@ describe('WRPS-SYNC-B19 — RESULT/NEXT_ROUND/GAME_OVER/COUNTDOWN scheduled-rend
   });
 
   it('updateRoomStatusScheduled는 status와 예정시각을 원자적으로 함께 기록한다', () => {
-    expect(html).toMatch(/async function updateRoomStatusScheduled\(status, phaseKind\)[\s\S]{0,300}await db\.from\('rooms'\)\.update\(\{ status, penalty \}\)/);
+    // JP-BL-027(2026-08-28) 계약 갱신 — **강화**이지 완화가 아니다.
+    //   기존 가정: `update({ status, penalty })` 한 번이면 원자적 기록이 보장된다.
+    //   실증된 실제 동작: PostgREST 는 RLS 가 대상 행을 가려도 오류 없이 성공을 반환한다
+    //     (HTTP 204 / 0바이트 / error=null). 즉 write 가 호출됐다는 것만으로는
+    //     "기록됐다"를 보장하지 못한다.
+    //   새 계약: 원자성(한 번의 update 로 status+penalty)에 더해, 대상 방 1행이 실제로
+    //     영향을 받았는지 `.select('id')` 로 확인해야 한다. eq/select 까지 고정해 더 엄격하다.
+    expect(html).toMatch(/async function updateRoomStatusScheduled\(status, phaseKind\)[\s\S]{0,1200}await db\.from\('rooms'\)\.update\(\{ status, penalty \}\)\.eq\('id', state\.roomCode\)\.select\('id'\)/);
+    // 영향 행 검증이 실제로 붙어 있는지도 함께 강제한다.
+    const usIdx = html.indexOf('async function updateRoomStatusScheduled');
+    const usBody = html.slice(usIdx, usIdx + 2000);
+    expect(usBody, '0행(무음 실패)을 성공으로 취급하면 안 된다').toMatch(/rows\.length !== 1/);
+    expect(usBody).toMatch(/eventType: 'ZERO_ROW_WRITE'/);
   });
 
   it('publishHostRoundResult의 두 커밋 지점 모두 updateRoomStatusScheduled를 사용한다', () => {

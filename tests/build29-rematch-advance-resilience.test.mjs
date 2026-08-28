@@ -66,13 +66,34 @@ const BEGIN_NEW_GAME_ROUND_SRC = extractBlock(
   '// Build19(WRPS-072-B19): result/game_over 전환 시 참가자 스냅샷 완결성 보장'
 );
 
+// JP-BL-027: 실제 PostgREST 계약 모델링.
+//   await update(...).eq(...)          → { error }                (HTTP 204, 영향 행 정보 없음)
+//   await update(...).eq(...).select() → { data: [영향 행], error }  (0행이어도 error=null)
+// 영향 행은 필터가 겨냥한 대상으로 모델링한다 — id/in 은 정확히, 범위 필터(room_id 등)는
+// "1건 이상 영향"으로 둔다(대역은 참가자 수를 알지 못한다).
+function affectedRows(col, val) {
+  if (col === 'id') return Array.isArray(val) ? val.map((v) => ({ id: v })) : [{ id: val }];
+  return [{ id: '__scoped__' }];
+}
+function mutation(col, val, run) {
+  let cached;
+  const once = () => (cached ??= Promise.resolve(run()));
+  return {
+    select: () => once().then((res) => ((res && res.error) ? { data: null, error: res.error }
+                                                          : { data: affectedRows(col, val), error: null })),
+    then: (resolve, reject) => once().then(resolve, reject),
+    catch: (reject) => once().catch(reject),
+    finally: (fn) => once().finally(fn),
+  };
+}
+
 function makeDb(overrides = {}) {
   const calls = [];
   const db = {
     from: (table) => ({
       update: (payload) => ({
-        eq: (col, val) => { calls.push({ table, payload, col, val }); return overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null }); },
-        in: (col, val) => { calls.push({ table, op: 'update-in', payload, col, val }); return overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null }); },
+        eq: (col, val) => { calls.push({ table, payload, col, val }); return mutation(col, val, () => (overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null }))); },
+        in: (col, val) => { calls.push({ table, op: 'update-in', payload, col, val }); return mutation(col, val, () => (overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null }))); },
       }),
     }),
   };
@@ -89,20 +110,32 @@ function makeDb(overrides = {}) {
 function makeResolveDb({ failIndexes = [], errorMessage = 'FetchError: failed to fetch' } = {}) {
   const calls = [];
   let callIndex = 0;
-  const respond = (table, payload) => {
+  const respond = (table, payload, col, val) => {
     callIndex += 1;
     const idx = callIndex;
     calls.push({ idx, table, payload });
     const shouldFail = failIndexes.includes(idx);
-    return Promise.resolve(shouldFail
+    const base = Promise.resolve(shouldFail
       ? { data: null, error: { message: errorMessage } }
       : { data: null, error: null });
+    // JP-BL-027: 실제 PostgREST 는 .select() 를 붙이면 영향받은 행을 돌려준다.
+    // 실패 주입은 그대로 error 로, 성공은 필터가 겨냥한 행 집합으로 모델링한다.
+    return {
+      select: () => base.then((res) => (res.error ? { data: null, error: res.error }
+        : { data: (col === 'id')
+              ? (Array.isArray(val) ? val.map((v) => ({ id: v })) : [{ id: val }])
+              : [{ id: '__scoped__' }],
+            error: null })),
+      then: (resolve, reject) => base.then(resolve, reject),
+      catch: (reject) => base.catch(reject),
+      finally: (fn) => base.finally(fn),
+    };
   };
   const db = {
     from: (table) => ({
       update: (payload) => ({
-        eq: (col, val) => respond(table, payload),
-        in: (col, val) => respond(table, payload),
+        eq: (col, val) => respond(table, payload, col, val),
+        in: (col, val) => respond(table, payload, col, val),
       }),
     }),
   };

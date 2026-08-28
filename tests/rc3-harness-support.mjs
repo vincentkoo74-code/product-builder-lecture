@@ -418,7 +418,7 @@ function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, re
       return { message: '[rc3-harness] dbErrorInjectionFn threw: ' + String(e && e.message || e) };
     }
   }
-  async function opRoomsUpdate(patch) {
+  async function opRoomsUpdate(patch, withRows = false) {
     if (!isHost) {
       // 실제 앱도 host만 rooms.update를 호출한다 — 방어적으로 하니스 버그를 조기 발견.
       throw new Error('[rc3-harness] non-host device attempted rooms.update — harness bug');
@@ -428,7 +428,7 @@ function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, re
     const roomsUpdateError = injectedError('rooms', 'update', patch, roomStore.id);
     if (roomsUpdateError) {
       await delay(ackDelayFn());
-      return { error: roomsUpdateError };
+      return withRows ? { data: null, error: roomsUpdateError } : { error: roomsUpdateError };
     }
     const ackDelay = ackDelayFn();
     Object.assign(roomStore.row, patch);
@@ -450,7 +450,8 @@ function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, re
       });
     }
     await delay(ackDelay);
-    return { error: null };
+    // rooms.update 는 항상 이 방 1행을 대상으로 한다(하니스 계약). 영향 행 1건을 돌려준다.
+    return withRows ? { data: [{ ...roomStore.row }], error: null } : { error: null };
   }
   async function opRoomsSelectSingle() {
     await delay(ackDelayFn());
@@ -463,36 +464,58 @@ function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, re
     await delay(ackDelayFn());
     return { data: getParticipantRows().map((r) => ({ ...r })), error: null };
   }
-  async function opParticipantsUpdateEq(patch, id) {
+  async function opParticipantsUpdateEq(patch, id, withRows = false) {
     const eqError = injectedError('participants', 'update-eq', patch, id);
-    if (eqError) { await delay(ackDelayFn()); return { error: eqError }; }
+    if (eqError) { await delay(ackDelayFn()); return withRows ? { data: null, error: eqError } : { error: eqError }; }
     await delay(ackDelayFn());
+    // ⚠️ 한계(기존 문서화된 사항, JP-BL-027-B 로 추적): 컬럼을 무시하고 id 1건만 매치한다.
+    // `.eq('room_id', roomCode)` 대량 업데이트는 재현되지 않는다. 이를 고치면 시뮬레이션
+    // 동역학이 바뀌어 별도 검증이 필요하다(이번 슬라이스에서 시도했다가 되돌렸다).
     const row = roomStore.participants.get(id);
     if (row) Object.assign(row, patch);
-    return { error: null };
+    // 실제 PostgREST 모델링: .select() 를 붙이면 **영향받은 행만** 돌아온다.
+    // 대상 행이 없으면 오류가 아니라 빈 배열이다(= 무음 0행, JP-BL-027 의 핵심 조건).
+    return withRows ? { data: row ? [{ ...row }] : [], error: null } : { error: null };
   }
-  async function opParticipantsUpdateIn(patch, ids) {
+  async function opParticipantsUpdateIn(patch, ids, withRows = false) {
     const inError = injectedError('participants', 'update-in', patch, ids);
-    if (inError) { await delay(ackDelayFn()); return { error: inError }; }
+    if (inError) { await delay(ackDelayFn()); return withRows ? { data: null, error: inError } : { error: inError }; }
     await delay(ackDelayFn());
+    const affected = [];
     for (const id of ids) {
       const row = roomStore.participants.get(id);
-      if (row) Object.assign(row, patch);
+      if (row) { Object.assign(row, patch); affected.push({ ...row }); }
     }
-    return { error: null };
+    return withRows ? { data: affected, error: null } : { error: null };
   }
+  // 실제 supabase-js/PostgREST 계약 모델링:
+  //   await update(...).eq(...)          → { error }            (HTTP 204, 영향 행 정보 없음)
+  //   await update(...).eq(...).select() → { data: [영향 행], error }
+  // 0행이어도 error 는 null 이다 — 이 구분이 JP-BL-027 의 전부다.
+  const mutation = (run) => {
+    // 실제 supabase 빌더는 완전한 Promise 다 — then 만 흉내내면 `.catch()` 를 쓰는
+    // 호출부에서 TypeError 가 난다. Promise 인터페이스를 온전히 제공한다.
+    const p = () => run(false);
+    return {
+      select: () => run(true),
+      then: (res, rej) => p().then(res, rej),
+      catch: (rej) => p().catch(rej),
+      finally: (fn) => p().finally(fn),
+    };
+  };
+
   function from(table) {
     if (table === 'rooms') {
       return {
-        update: (patch) => ({ eq: () => opRoomsUpdate(patch) }),
+        update: (patch) => ({ eq: () => mutation((wr) => opRoomsUpdate(patch, wr)) }),
         select: () => ({ eq: () => ({ single: () => opRoomsSelectSingle() }) }),
       };
     }
     if (table === 'participants') {
       return {
         update: (patch) => ({
-          eq: (_col, id) => opParticipantsUpdateEq(patch, id),
-          in: (_col, ids) => opParticipantsUpdateIn(patch, ids),
+          eq: (_col, id) => mutation((wr) => opParticipantsUpdateEq(patch, id, wr)),
+          in: (_col, ids) => mutation((wr) => opParticipantsUpdateIn(patch, ids, wr)),
         }),
         select: () => ({
           eq: () => ({ order: () => opParticipantsSelect(), single: () => opParticipantsSelect() }),

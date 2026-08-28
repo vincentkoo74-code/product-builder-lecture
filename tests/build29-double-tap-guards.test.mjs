@@ -30,6 +30,25 @@ const CHOICE_HELPERS_BLOCK = extractBlock(
   'function getParticipantSignature('
 );
 
+// JP-BL-027: 실제 PostgREST 계약 모델링.
+//   await update(...).eq(...)          → { error }                (HTTP 204, 영향 행 정보 없음)
+//   await update(...).eq(...).select() → { data: [영향 행], error }  (0행이어도 error=null)
+function affectedRows(col, val) {
+  if (col === 'id') return Array.isArray(val) ? val.map((v) => ({ id: v })) : [{ id: val }];
+  return [{ id: '__scoped__' }];
+}
+function mutation(col, val, run) {
+  let cached;
+  const once = () => (cached ??= Promise.resolve(run()));
+  return {
+    select: () => once().then((res) => ((res && res.error) ? { data: null, error: res.error }
+                                                          : { data: affectedRows(col, val), error: null })),
+    then: (resolve, reject) => once().then(resolve, reject),
+    catch: (reject) => once().catch(reject),
+    finally: (fn) => once().finally(fn),
+  };
+}
+
 function makeDb(overrides = {}) {
   const calls = [];
   const db = {
@@ -40,8 +59,8 @@ function makeDb(overrides = {}) {
         }),
       }),
       update: (payload) => ({
-        eq: (col, val) => { calls.push({ table, op: 'update', payload, col, val }); return overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null }); },
-        in: (col, val) => { calls.push({ table, op: 'update-in', payload, col, val }); return overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null }); },
+        eq: (col, val) => { calls.push({ table, op: 'update', payload, col, val }); return mutation(col, val, () => (overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null }))); },
+        in: (col, val) => { calls.push({ table, op: 'update-in', payload, col, val }); return mutation(col, val, () => (overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null }))); },
       }),
       delete: () => ({ eq: () => Promise.resolve({ data: null, error: null }) }),
     }),
@@ -292,7 +311,10 @@ describe('Build29 [P4, F5] selectChoice — 같은 손 재클릭 write 스킵', 
       state, () => true,
       () => { calls.updateSelectedCount++; }, () => { calls.updateGuides++; }, () => {},
       $, {}, () => true,
-      updateParticipantChoice || (async (c) => { calls.updateParticipantChoice.push(c); }),
+      // JP-BL-027: updateParticipantChoice 는 이제 성공 시 true, 무음 0행 시 false 를 돌려준다.
+      // 대역이 undefined 를 돌려주면 selectChoice 가 이를 실패로 보고 낙관적 커밋을 되돌린다 —
+      // 그것이 새 프로덕션 계약이므로 대역도 성공을 명시적으로 모델링해야 한다.
+      updateParticipantChoice || (async (c) => { calls.updateParticipantChoice.push(c); return true; }),
       () => {}, (k) => k, () => {}
     );
     // document 참조는 jsdom 환경이 아니면 querySelectorAll이 없을 수 있다 — 이 테스트 관심사(같은

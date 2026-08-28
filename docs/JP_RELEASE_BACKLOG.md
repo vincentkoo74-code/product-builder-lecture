@@ -27,7 +27,9 @@
 | JP-BL-018 | DESIGNED | **High** | 목표 RLS 설계 완료 — 배포 미승인 | **예** |
 | JP-BL-025 | OPEN | Medium | `rooms.status` enum 제약 — 전수 증명 방법 확정 후 적용 | 아니오 |
 | JP-BL-026 | OPEN | Low | `created_at` NOT NULL 제약 추가 여부 | 아니오 |
-| JP-BL-027 | OPEN | **High** | RLS 무음 거부 — 실제 PostgREST 로 실증 완료, 클라이언트 미탐지 확인 | **예** |
+| JP-BL-027 | DONE | **High** | RLS 무음 거부 — 9개 write 에 인라인 검증 적용, 행위 테스트로 실증 | — |
+| JP-BL-027-B | OPEN | **High** | `nextRound` 무음 0행 미탐지 — 하니스 한계로 이번 슬라이스 보류 | **예** |
+| JP-REALTIME-VALIDATION | OPEN | **High** | 실제 Realtime 이벤트 전달 미검증 | **예** |
 | JP-PROD-GATE | OPEN | **Blocker** | 외부 베타/출시 전 JP 백엔드가 미사용 자동 일시정지 대상이면 안 됨 | **예** |
 | JP-BL-020 | DESIGNED | **High** | GRANT 최소 권한 정규화 설계 완료 — 배포 미승인 | **예** |
 | JP-BL-021 | DESIGNED | Medium | 원장 복구 전략 확정(멱등 재실행) — 배포 미승인 | **예** |
@@ -467,3 +469,33 @@ M-1·M-3·M-4·L-2·L-3 및 A6 테스트 개작도 통과.
 **클라우드 스테이징은 생성이 차단됐다** — free plan 소유자당 활성 2개 한도를 KR+JP 프로덕션이
 사용 중. Pro 승격(과금)·KR 일시정지·Tokyo 일시정지가 모두 금지/미승인이라 로컬 격리 Postgres 로
 대체했다. PostgREST·GoTrue·Realtime 전달 계층은 **미검증**으로 남는다.
+
+## JP-BL-027-B — `nextRound` 무음 0행 (CEO 반환)
+
+**왜 남았나.** `nextRound` 의 4개 write 는 `{error}` 를 throw 로 승격하고 재시도 안전망까지
+갖췄지만(Build29 HIGH-1), **행 수는 검사하지 않는다.** RLS 무음 거부(HTTP 200/0행/error=null)는
+throw 를 만들지 않으므로 안전망이 발화하지 않는다 — codex-critic HIGH-4 지적이 정확하다.
+
+**시도와 결과.** 4개 write 에 `.select('id')` + 카디널리티 검증을 넣었다. 그러자
+`rc3-multiparticipant-sim` 이 18건 실패하고 correctnessPassRate 가 1.0 → ~0 으로 붕괴했다.
+
+원인은 프로덕션 코드가 아니라 **시뮬레이션 하니스의 문서화된 한계**다.
+`rc3-harness-support.mjs` 의 가짜 DB 는 `.eq(col, val)` 에서 **컬럼을 무시하고 항상 id 1건만**
+매치한다. 그래서 `nextRound` 1단계의 `.eq('room_id', roomCode)` 전원 리셋이 원래부터
+**무음으로 누락**되고 있었다(하니스가 §한계로 주석에 명시). 행 수 검사를 넣자 그 누락이
+0행으로 드러나 매 라운드 throw 가 됐다.
+
+하니스를 컬럼 인식으로 고쳐봤더니 `ZERO_ROW_WRITE` 는 0건이 됐지만, 이제 대량 리셋이
+**실제로 수행되면서** 시뮬레이션 동역학이 바뀌어 여전히 18건이 실패했다.
+
+**판단.** 하니스 DB 의미론 교정은 이 저장소에서 가장 정교한 정합성 하니스의 동작을 바꾸는
+일이라 별도 슬라이스가 필요하다. 클라이언트 write 무결성 슬라이스에 태울 사안이 아니다.
+CEO §16 이 허용한 대로 **되돌리고 반환한다.**
+
+**다음 단계 제안.** ① 하니스를 컬럼 인식으로 고치고 그 자체로 회귀를 안정화 →
+② 그 위에서 `nextRound` 카디널리티 검증 도입. 순서를 바꾸면 두 변화가 뒤섞여 원인 분리가 안 된다.
+
+## JP-REALTIME-VALIDATION — OPEN
+
+실제 Realtime 이벤트 전달은 여전히 미검증이다. Docker 부재(회선 ~55KB/s, 이미지 3.5GB ≈ 18시간)로
+로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.

@@ -164,11 +164,25 @@ function loadForceStart(state, { startGame } = {}) {
 // 실제 startGame()을 mock db로 로드 — rooms/participants에 실제로 어떤 write가 나가는지 기록.
 function loadRealStartGame(state) {
   const dbCalls = [];
+  // JP-BL-027: 실제 PostgREST 계약 모델링.
+  //   await update(...).eq(...)          → { error }                 (HTTP 204)
+  //   await update(...).eq(...).select() → { data: [영향 행], error }  (0행이어도 error=null)
+  const mutation = (col, val) => {
+    const rows = () => (col === 'id'
+      ? (Array.isArray(val) ? val.map((v) => ({ id: v })) : [{ id: val }])
+      : [{ id: '__scoped__' }]);
+    return {
+      select: () => Promise.resolve({ data: rows(), error: null }),
+      then: (res, rej) => Promise.resolve({ data: null, error: null }).then(res, rej),
+      catch: (rej) => Promise.resolve({ data: null, error: null }).catch(rej),
+      finally: (fn) => Promise.resolve({ data: null, error: null }).finally(fn),
+    };
+  };
   const db = {
     from: (table) => ({
       update: (payload) => ({
-        eq: (col, val) => { dbCalls.push({ table, payload, col, val }); return Promise.resolve({ data: null, error: null }); },
-        in: (col, vals) => { dbCalls.push({ table, payload, col, vals }); return Promise.resolve({ data: null, error: null }); },
+        eq: (col, val) => { dbCalls.push({ table, payload, col, val }); return mutation(col, val); },
+        in: (col, vals) => { dbCalls.push({ table, payload, col, vals }); return mutation(col, vals); },
       }),
     }),
   };

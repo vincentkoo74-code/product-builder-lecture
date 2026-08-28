@@ -58,16 +58,27 @@ function buildEnv({ status = 'playing', myChoice = 'rock' } = {}) {
     pendingSuccessorHostId: null, publishingRoundResult: false, finishingRound: false,
   };
 
+  // 실제 PostgREST 계약 모델링(JP-BL-027):
+  //   await update/delete(...)          → { error }                  (HTTP 204, 영향 행 정보 없음)
+  //   await update/delete(...).select() → { data: [영향 행], error }   (0행이어도 error=null)
+  // 영향 행은 state.participants 에 필터를 실제 적용해 계산한다 — 그래야 "대상이 없어 0행"인
+  // 무음 실패를 테스트가 재현할 수 있다.
+  const matchRows = (name, filters) => {
+    const src = name === 'participants' ? (state.participants || []) : [{ id: state.roomCode }];
+    return src.filter(r => Object.entries(filters).every(([c, v]) => r[c] === v));
+  };
   const table = (name) => ({
     delete: () => { const rec = { table: name, op: 'delete', filters: {} };
       const chain = { eq: (c, v) => { rec.filters[c] = v; return chain; },
+                      select: () => ({ then: (res) => res({ data: matchRows(name, rec.filters).map(r => ({ ...r })), error: null }) }),
                       then: undefined };
       ops.push(rec);
       // supabase 체인은 await 가능해야 한다
       chain.then = (res) => res({ error: null });
       return chain; },
     update: (patch) => { const rec = { table: name, op: 'update', patch, filters: {} };
-      const chain = { eq: (c, v) => { rec.filters[c] = v; return chain; } };
+      const chain = { eq: (c, v) => { rec.filters[c] = v; return chain; },
+                      select: () => ({ then: (res) => res({ data: matchRows(name, rec.filters).map(r => ({ ...r, ...patch })), error: null }) }) };
       ops.push(rec);
       chain.then = (res) => res({ error: null });
       return chain; },

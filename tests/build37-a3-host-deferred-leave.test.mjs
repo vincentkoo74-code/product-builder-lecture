@@ -63,9 +63,17 @@ function buildEnv({ status = 'playing', path = 'transfer' } = {}) {
     pendingSuccessorHostId: null, publishingRoundResult: false, finishingRound: false,
   };
 
+  // 실제 PostgREST 계약 모델링(JP-BL-027): .select() 를 붙이면 영향받은 행이 돌아오고,
+  // 대상이 없으면 오류가 아니라 빈 배열이다. dbRows 를 기준으로 필터를 실제 평가한다.
+  const matchDbRows = (rec) => {
+    if (rec.table !== 'participants') return [{ id: state.roomCode }];
+    return dbRows.filter(r => Object.entries(rec.filters).every(([c, v]) => r[c] === v));
+  };
   const mkChain = (rec) => {
     const chain = { eq: (c, v) => { rec.filters[c] = v; return chain; },
                     in: (c, v) => { rec.filters[c] = v; return chain; },
+                    select: () => ({ then: (res) => res({
+                      data: matchDbRows(rec).map(r => ({ ...r, ...(rec.patch || {}) })), error: null }) }),
                     then: (res) => res({ error: null, data: null }) };
     return chain;
   };

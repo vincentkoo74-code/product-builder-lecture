@@ -55,6 +55,9 @@ function createSharedDb({ participants = [], rooms = [] } = {}) {
       eq(col, val) { filters.push([col, val]); return b; },
       in(col, vals) { filters.push([col, vals, 'in']); return b; },
       order() { return b; },
+      // 실제 PostgREST: update/delete 에 .select() 를 붙이면 **영향받은 행**이 돌아온다.
+      // 0행이어도 error 는 null 이다(무음 0행) — JP-BL-027 계약을 그대로 모델링한다.
+      select() { b._returning = true; return b; },
       single() { b._single = true; return b; },
       then(resolve, reject) { return exec().then(resolve, reject); },
     };
@@ -64,12 +67,13 @@ function createSharedDb({ participants = [], rooms = [] } = {}) {
       if (op === 'update') {
         writeLog.push({ table, op, patch: { ...patch }, filters: filters.map(f => [...f]), matched: rows.length });
         rows.forEach(r => Object.assign(r, patch));
-        return { data: null, error: null };
+        return { data: b._returning ? rows.map(r => ({ ...r })) : null, error: null };
       }
       if (op === 'delete') {
         writeLog.push({ table, op, filters: filters.map(f => [...f]), matched: rows.length });
+        const removed = rows.map(r => ({ ...r }));
         for (const r of rows) tables[table].splice(tables[table].indexOf(r), 1);
-        return { data: null, error: null };
+        return { data: b._returning ? removed : null, error: null };
       }
       const copies = rows.map(r => ({ ...r }));
       if (b._single) {

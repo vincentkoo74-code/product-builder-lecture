@@ -7058,7 +7058,7 @@
 
 	        const result = judgeRound(participants);
 	        const updatedById = new Map();
-	        await Promise.all(active.map(p => {
+	        const writeResults = await Promise.all(active.map(p => {
 	          const status = result[p.id];
 	          const baseChoice = getChoiceBase(p.choice);
 	          if (!baseChoice || !status) return Promise.resolve();
@@ -7070,8 +7070,26 @@
 	            penalties: (p.penalties || 0) + (status === "lose" ? 1 : 0)
 	          };
 	          updatedById.set(p.id, { ...p, ...next, lastResult: status });
-	          return db.from('participants').update(next).eq('id', p.id);
+	          // JP-BL-027: 점수/판정 write 가 0행으로 무음 실패하면 로컬만 갱신되고 DB 는 그대로다.
+	          // 영향 행을 되돌려받아 어느 참가자가 반영되지 않았는지 식별한다.
+	          return db.from('participants').update(next).eq('id', p.id).select('id')
+	            .then((res) => ({ id: p.id, res }));
 	        }));
+
+	        // 반영되지 않은 참가자가 하나라도 있으면 로컬 낙관 상태로 덮어쓰지 않고
+	        // 권위 데이터를 다시 읽는다 — 통계·술래 판정 오염을 막는다.
+	        const roundWriteMisses = (writeResults || []).filter((r) => {
+	          if (!r || !r.res) return false;
+	          if (r.res.error) return true;
+	          const rows = Array.isArray(r.res.data) ? r.res.data : (r.res.data ? [r.res.data] : []);
+	          return rows.length !== 1 || rows[0]?.id !== r.id;
+	        });
+	        if (roundWriteMisses.length) {
+	          try { QA.emit('metric', { eventType: 'ZERO_ROW_WRITE', context: 'publishHostRoundResult',
+	            roomCode: state.roomCode || null, affectedRows: 0, missCount: roundWriteMisses.length }); } catch (mErr) {}
+	          try { await fetchParticipants(state.roomCode); } catch (fErr) {}
+	          return;
+	        }
 
 	        state.participants = participants.map(p => updatedById.get(p.id) || p);
 	        updateSelectedCount();
@@ -7342,10 +7360,23 @@
       }
     }
 
+    // JP-BL-027: 방 상태 전이는 모든 단말의 화면을 좌우한다. 반영되지 않았는데 성공으로
+    // 넘어가면 호스트만 다음 화면으로 가고 나머지는 남는다. 영향 행 1건을 확인한다.
     async function updateRoomStatus(status) {
-      if (!db) return;
-      if (isRoomClosingOrDestroyed()) return; // WRPS-083 2B(Tier 2, defense-in-depth)
-      await db.from('rooms').update({ status }).eq('id', state.roomCode);
+      if (!db) return false;
+      if (isRoomClosingOrDestroyed()) return false; // WRPS-083 2B(Tier 2, defense-in-depth)
+      const res = await db.from('rooms').update({ status }).eq('id', state.roomCode).select('id');
+      if (res && res.error) {
+        console.warn('[updateRoomStatus] error:', res.error.message || String(res.error));
+        return false;
+      }
+      const rows = Array.isArray(res?.data) ? res.data : (res?.data ? [res.data] : []);
+      if (rows.length !== 1 || rows[0]?.id !== state.roomCode) {
+        try { QA.emit('metric', { eventType: 'ZERO_ROW_WRITE', context: 'updateRoomStatus',
+          roomCode: state.roomCode || null, status, affectedRows: rows.length }); } catch (mErr) {}
+        return false;
+      }
+      return true;
     }
     // Build19: RESULT/READY 전환 시 서버 예정 시각을 penalty에 함께 기록(countdown과 동일 패턴,
     // DB 스키마 무변경) — 모든 클라이언트가 같은 서버 시각에 화면을 표시하도록 한다.
@@ -7354,12 +7385,39 @@
       if (isRoomClosingOrDestroyed()) return; // WRPS-083 2B(Tier 2, defense-in-depth)
       const penalty = buildPenaltyValue({ gameRound: getGameRound(), phaseScheduledAt: getNextPhaseScheduledAt(), phaseKind });
       state.penalty = penalty;
-      await db.from('rooms').update({ status, penalty }).eq('id', state.roomCode);
+      // JP-BL-027: status 와 예정시각(penalty)을 원자적으로 함께 기록한다(Build19 계약 유지).
+      // 반영 여부는 영향 행 1건으로 확인한다 — 모든 단말이 같은 시각에 화면을 바꾸는 근거다.
+      const res = await db.from('rooms').update({ status, penalty }).eq('id', state.roomCode).select('id');
+      if (res && res.error) {
+        console.warn('[updateRoomStatusScheduled] error:', res.error.message || String(res.error));
+        return false;
+      }
+      const rows = Array.isArray(res?.data) ? res.data : (res?.data ? [res.data] : []);
+      if (rows.length !== 1 || rows[0]?.id !== state.roomCode) {
+        try { QA.emit('metric', { eventType: 'ZERO_ROW_WRITE', context: 'updateRoomStatusScheduled',
+          roomCode: state.roomCode || null, status, affectedRows: rows.length }); } catch (mErr) {}
+        return false;
+      }
+      return true;
     }
 
+    // JP-BL-027: 선택 제출은 라운드 판정의 입력이다. 반영되지 않았는데 성공으로 넘어가면
+    // 내 선택이 없는 채로 판정이 진행된다. 영향 행 1건(= 내 행)을 확인하고, 아니면
+    // 관측 가능한 신호를 남기고 false 를 돌려준다(호출부가 판단할 수 있게 한다).
     async function updateParticipantChoice(choice) {
-      if (!db) return;
-      await db.from('participants').update({ choice }).eq('id', state.currentUserId);
+      if (!db) return false;
+      const res = await db.from('participants').update({ choice }).eq('id', state.currentUserId).select('id');
+      if (res && res.error) {
+        console.warn('[updateParticipantChoice] error:', res.error.message || String(res.error));
+        return false;
+      }
+      const rows = Array.isArray(res?.data) ? res.data : (res?.data ? [res.data] : []);
+      if (rows.length !== 1 || rows[0]?.id !== state.currentUserId) {
+        try { QA.emit('metric', { eventType: 'ZERO_ROW_WRITE', context: 'updateParticipantChoice',
+          roomCode: state.roomCode || null, affectedRows: rows.length }); } catch (mErr) {}
+        return false;
+      }
+      return true;
     }
 
     // --- 기존 UI 제어 로직 수정 ---
@@ -8458,10 +8516,19 @@
           // → Realtime이 'playing'을 감지할 때 gameStarting=false가 보장되어
           //   호스트/참가자 모두 runCountdownThenShowGame()이 정상 실행됨
           state.gameStarting = false;
-          await Promise.race([
-            db.from('rooms').update({ status: 'playing', penalty: state.penalty }).eq('id', state.roomCode),
+          // JP-BL-027: 0행(RLS 무음 거부)이면 host 만 게임을 시작하고 참가자는 신호를 못 받는다.
+          // 영향 행 1건(내 방)을 확인한 뒤에만 로컬 status 를 확정한다.
+          const startRes = await Promise.race([
+            db.from('rooms').update({ status: 'playing', penalty: state.penalty }).eq('id', state.roomCode).select('id'),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
           ]);
+          if (startRes && startRes.error) throw new Error(startRes.error.message || String(startRes.error));
+          const startRows = Array.isArray(startRes?.data) ? startRes.data : (startRes?.data ? [startRes.data] : []);
+          if (startRows.length !== 1 || startRows[0]?.id !== state.roomCode) {
+            try { QA.emit('metric', { eventType: 'ZERO_ROW_WRITE', context: 'startGame',
+              roomCode: state.roomCode || null, affectedRows: startRows.length }); } catch (mErr) {}
+            throw new Error('ZERO_ROW_WRITE');
+          }
           state.status = "playing";
           await enterPlayingStateFromRoomUpdate();
         } catch (e) {
@@ -9108,6 +9175,8 @@
       // 결과/auto 플래그가 인코딩("base|result|auto")되어 있으므로 반드시 getChoiceBase()로
       // "선택 종류"만 비교한다(원문 그대로 비교하면 자동선택 여부/결과 유무 차이로 오탐).
       if (participant && getChoiceBase(participant.choice) === choice) return;
+      // JP-BL-027: 아래 write 가 무음 실패(0행)하면 이 낙관적 커밋을 되돌려야 한다.
+      const prevChoice = participant ? participant.choice : null;
       if (participant) participant.choice = choice;
       updateSelectedCount();
       updateGuides();
@@ -9125,9 +9194,24 @@
 
       if (getOnlineMode()) {
         try {
-          await updateParticipantChoice(choice);
+          // JP-BL-027: updateParticipantChoice 는 0행(무음 거부)일 때 throw 하지 않고 false 를
+          // 돌려준다. 반환값을 검사하지 않으면 화면만 "선택됨"이고 DB 에는 내 선택이 없는 채로
+          // 라운드 판정이 진행된다. 실패하면 낙관적 커밋을 되돌리고 사용자에게 알린다.
+          const choiceOk = await updateParticipantChoice(choice);
+          if (!choiceOk) {
+            if (participant) participant.choice = prevChoice;
+            updateSelectedCount();
+            updateGuides();
+            if (state.role === "host") updateHostSelectedCount();
+            document.querySelectorAll(".choice-button").forEach(btn => btn.classList.remove("selected"));
+            showToast(t("common.syncError"));
+            return;
+          }
         } catch (e) {
+          if (participant) participant.choice = prevChoice;
+          updateSelectedCount();
           showToast(t("toast.error", { msg: e?.message || String(e) }));
+          return;
         }
       } else {
         saveState();
@@ -9171,9 +9255,16 @@
 	        for (const p of activePlayers) {
 	          if (!getChoiceBase(p.choice)) {
 	            // 일반 선택과 동일한 게임 선택값 + isAutoSelected 플래그를 함께 저장
-	            await db.from('participants').update({
+	            // JP-BL-027: 이 write 도 라운드 판정의 입력이다. 0행이면 그 참가자의 선택이
+	            // DB 에 없는 채로 아래 판정이 진행되므로 관측 가능한 신호를 남긴다.
+	            const afRes = await db.from('participants').update({
 	              choice: encodeRoundChoice(randomRoundChoice(), "", true)
-	            }).eq('id', p.id);
+	            }).eq('id', p.id).select('id');
+	            const afRows = Array.isArray(afRes?.data) ? afRes.data : (afRes?.data ? [afRes.data] : []);
+	            if ((afRes && afRes.error) || afRows.length !== 1 || afRows[0]?.id !== p.id) {
+	              try { QA.emit('metric', { eventType: 'ZERO_ROW_WRITE', context: 'autoFillChoices',
+	                roomCode: state.roomCode || null, affectedRows: afRows.length }); } catch (mErr) {}
+	            }
 	          }
 	        }
 	        // 최종 판정은 서버에 확정 저장된 선택값만 기준으로 단 한 번 수행한다.
@@ -10990,6 +11081,10 @@ function summarizeGameStats(rows) {
           // 기존 { error } 승격 패턴, 약 6026-6030 참고). 이 try/catch가 실전에서 발화하려면 각 write의
           // error를 직접 검사해 throw로 승격해야 한다 — 그렇지 않으면 아래 catch(8829 부근)와 그
           // catch가 트리거하는 안전망 A(재시도 재예약)/metric/카운터 정리가 전부 dead code가 된다.
+          // JP-BL-027-B(미해결, CEO 반환): 이 write 들은 error 만 검사하며 무음 0행은 놓친다.
+          // 행 수 검증을 시도했으나 rc3 시뮬레이션 하니스가 `.eq('room_id', …)` 대량 업데이트를
+          // 재현하지 못해(하니스가 §한계로 문서화) 18건이 실패했다. 하니스 의미론 교정은
+          // 시뮬레이션 동역학을 바꾸므로 별도 슬라이스가 필요하다.
           const { error: eResetParticipants } = await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
           if (eResetParticipants) throw new Error('nextRound participants.reset failed: ' + (eResetParticipants.message || eResetParticipants));
           // 확정 안전자/술래는 DB 마커로 기록 + 자동 준비 완료 (재연결 후에도 상태 유지됨)
@@ -11850,10 +11945,17 @@ function summarizeGameStats(rows) {
               db.from('participants').update({ is_ready: false }).eq('room_id', state.roomCode),
               new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
             ]);
-            await Promise.race([
+            // JP-BL-027: updateRoomStatus 는 0행(무음 거부)이면 false 를 돌려준다.
+            // 이 값을 버리면 host 만 ready 화면으로 넘어가고 DB·참가자는 이전 상태에 남는다.
+            const readyOk = await Promise.race([
               updateRoomStatus('ready'),
               new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
             ]);
+            if (readyOk === false) {
+              showToast(t("common.syncError"));
+              if (startBtn) startBtn.disabled = false;
+              return; // state.status 를 로컬로 확정하지 않는다.
+            }
           } catch (e) {
             showToast("오류: " + e.message);
             if (startBtn) startBtn.disabled = false;
@@ -11895,10 +11997,25 @@ function summarizeGameStats(rows) {
       SoundManager.unlock();
       if (getOnlineMode()) {
         try {
-          await Promise.race([
-            db.from('participants').update({ is_ready: true }).eq('id', state.currentUserId),
+          // JP-BL-027: PostgREST 는 RLS 가 대상 행을 가려도 **오류 없이 성공을 반환**한다
+          // (supabase-js 기본 update 는 HTTP 204/0바이트, error=null). 즉 error === null 은
+          // write 가 실제로 일어났다는 증거가 아니다. .select('id') 로 영향받은 행을 되돌려받아
+          // "내 참가자 행 정확히 1건"을 확인한 뒤에만 로컬 ready 상태를 커밋한다.
+          const readyRes = await Promise.race([
+            db.from('participants').update({ is_ready: true }).eq('id', state.currentUserId).select('id'),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
           ]);
+          if (readyRes && readyRes.error) throw new Error(readyRes.error.message || String(readyRes.error));
+          const readyRows = Array.isArray(readyRes?.data) ? readyRes.data
+                          : (readyRes?.data ? [readyRes.data] : []);
+          // 카디널리티 계약: 정확히 1행, 그리고 그 행이 내 행이어야 한다.
+          // 0행 = RLS 거부/대상 없음(무음 실패), 2행 이상 = 계약 위반. 둘 다 fail-closed.
+          if (readyRows.length !== 1 || readyRows[0]?.id !== state.currentUserId) {
+            const staleErr = new Error('ZERO_ROW_WRITE');
+            staleErr.code = 'ZERO_ROW_WRITE';
+            staleErr.affectedRows = readyRows.length;
+            throw staleErr;
+          }
           state.myReadyLocallySetAt = Date.now();
           const me = state.participants.find(p => p.id === state.currentUserId);
           if (me) { me.is_ready = true; }
@@ -11909,7 +12026,16 @@ function summarizeGameStats(rows) {
         } catch (e) {
           btn.disabled = false;
           setBtnText(btn, t("ready.myReady"));
-          showToast(t("toast.error", { msg: e.message }));
+          if (e && e.code === 'ZERO_ROW_WRITE') {
+            // 백엔드에 반영되지 않았다 — 로컬 ready 를 커밋하지 않았고 성공으로 보고하지도 않는다.
+            try { QA.emit('metric', { eventType: 'ZERO_ROW_WRITE', context: 'markReady',
+              roomCode: state.roomCode || null, affectedRows: e.affectedRows ?? 0 }); } catch (mErr) {}
+            try { await fetchParticipants(state.roomCode); } catch (fErr) {}
+            renderReadyList();
+            showToast(t("common.syncError"));
+          } else {
+            showToast(t("toast.error", { msg: e.message }));
+          }
         }
       } else {
         const me = state.participants.find(p => p.id === state.currentUserId);
@@ -12201,7 +12327,15 @@ function summarizeGameStats(rows) {
         // Build33 후속(P0-2): 승계자가 이어받아 게임을 계속하는 경우에는 rooms.status를
         // 'waiting'으로 되돌리지 않는다 — 이 write 하나가 진행 중이던 라운드를 즉시 무너뜨린다.
         if (state.role === "host" && !isRoomClosingOrDestroyed() && !preserveRoomForSuccessor) {
-          await db.from('rooms').update({ status: 'waiting' }).eq('id', state.roomCode);
+          // JP-BL-027: 인라인 검증. 공유 헬퍼(updateRoomStatus)를 부르지 않는 이유는
+          // 이 함수를 extractBlock 으로 잘라 new Function 샌드박스에서 평가하는 테스트가 있어
+          // 헬퍼가 스코프 밖이 되기 때문이다(ReferenceError). 각 호출부가 자기 계약을 들고 있다.
+          const leaveRes = await db.from('rooms').update({ status: 'waiting' }).eq('id', state.roomCode).select('id');
+          const leaveRows = Array.isArray(leaveRes?.data) ? leaveRes.data : (leaveRes?.data ? [leaveRes.data] : []);
+          if ((leaveRes && leaveRes.error) || leaveRows.length !== 1 || leaveRows[0]?.id !== state.roomCode) {
+            try { QA.emit('metric', { eventType: 'ZERO_ROW_WRITE', context: 'leaveRoomResetStatus',
+              roomCode: state.roomCode || null, affectedRows: leaveRows.length }); } catch (mErr) {}
+          }
         }
         if (shouldResetAfterHostLeave) {
           await beginNewGameRound({ status: "waiting", increment: true, reason: "host_left_after_round_activity" });
@@ -12220,11 +12354,22 @@ function summarizeGameStats(rows) {
     async function reserveDeferredLeave() {
       if (!getOnlineMode() || !db || !state.roomCode || !state.currentUserId) return false;
       try {
-        const { error } = await db.from('participants')
+        // JP-BL-027: 예약이 반영되지 않았는데 성공 토스트를 띄우면 사용자는 나갔다고 믿고
+        // 실제로는 다음 라운드에 남는다. 영향 행 1건(= 내 행)을 확인한 뒤에만 성공 처리한다.
+        const res = await db.from('participants')
           .update({ leave_after_round: true })
           .eq('room_id', state.roomCode)
-          .eq('id', state.currentUserId);
-        if (error) throw new Error(error.message || String(error));
+          .eq('id', state.currentUserId)
+          .select('id');
+        if (res && res.error) throw new Error(res.error.message || String(res.error));
+        const rows = Array.isArray(res?.data) ? res.data : (res?.data ? [res.data] : []);
+        if (rows.length !== 1 || rows[0]?.id !== state.currentUserId) {
+          try { QA.emit('metric', { eventType: 'ZERO_ROW_WRITE', context: 'reserveDeferredLeave',
+            roomCode: state.roomCode || null, affectedRows: rows.length }); } catch (mErr) {}
+          const staleErr = new Error('ZERO_ROW_WRITE');
+          staleErr.code = 'ZERO_ROW_WRITE';
+          throw staleErr;
+        }
         state.leaveAfterRoundPending = true;
         state.leavingProcessing = true;   // 중복 탭으로 예약이 두 번 나가지 않게 한다
         try { showToast(t("toast.leaveAfterRound")); } catch (e) {}
@@ -14549,7 +14694,18 @@ function summarizeGameStats(rows) {
       }
 
       try {
-        await db.from('participants').update({ is_ready: true }).eq('id', me.id);
+        // JP-BL-027: markReady 와 동일한 경로다(이전 감사에서 누락됐던 두 번째 ready 진입점).
+        // error===null 은 반영의 증거가 아니므로 영향 행이 내 행 1건인지 확인한 뒤에만 커밋한다.
+        const res = await db.from('participants').update({ is_ready: true }).eq('id', me.id).select('id');
+        if (res && res.error) throw new Error(res.error.message || String(res.error));
+        const rows = Array.isArray(res?.data) ? res.data : (res?.data ? [res.data] : []);
+        if (rows.length !== 1 || rows[0]?.id !== me.id) {
+          try { QA.emit('metric', { eventType: 'ZERO_ROW_WRITE', context: 'markReadyFromLobby',
+            roomCode: state.roomCode || null, affectedRows: rows.length }); } catch (mErr) {}
+          if (btn) { btn.disabled = false; setBtnText(btn, t("lobby.readyBtn")); }
+          try { showToast(t("common.syncError")); } catch (tErr) {}
+          return; // 로컬 ready 상태를 커밋하지 않는다.
+        }
         state.myReadyLocallySetAt = Date.now();
         me.is_ready = true;
         renderLobby();
