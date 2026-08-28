@@ -14,8 +14,10 @@ android {
         applicationId "com.maru.rps"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // KR-B37: iOS build 번호(CURRENT_PROJECT_VERSION=37)와 같은 필드를 공유하지 않는다.
+        // 3701 = Build37 의 Android 리비전 01. 공통 추적 키는 manifest 의 release_label(KR-B37).
+        versionCode 3701
+        versionName "1.0-KR-B37"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

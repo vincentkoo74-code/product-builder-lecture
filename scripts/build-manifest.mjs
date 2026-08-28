@@ -15,10 +15,22 @@ export function readBuildNumber(pbxproj) {
   return m ? Number(m[1]) : null;
 }
 
+// KR-B37(플랫폼 분리): 산출물만 보고 어느 플랫폼/리전/백엔드인지 판별할 수 있어야 한다.
+// 종전 manifest에는 platform 필드가 아예 없어 dist 하나를 ios/android가 공유해도 구분이 불가능했다.
+export const KR_BACKEND_REF = "sannrfmhevebqgfdqcps";   // Seoul (ap-northeast-2)
+export const JP_BACKEND_REF = "cmfxhehpreanijwanwrr";   // Tokyo — KR 산출물에 등장하면 위반
+export const RELEASE_LABEL = "KR-B37";                  // 플랫폼 공통 추적 키(버전 필드와 별개)
+export const VALID_PLATFORMS = ["web", "ios", "android"];
+
 // 필수 필드 스키마로 manifest 객체 생성(순수 함수).
-export function buildManifest({ qa, build, branch, commit, buildTime }) {
+export function buildManifest({ qa, build, branch, commit, buildTime,
+                                platform, region, backendRef, releaseLabel }) {
   return {
     product: PRODUCT,
+    platform: platform || "web",
+    region: region || "KR",
+    backend_ref: backendRef || KR_BACKEND_REF,
+    release_label: releaseLabel || RELEASE_LABEL,
     build,
     qa_enabled: qa === true,
     engine_version: ENGINE_VERSION,

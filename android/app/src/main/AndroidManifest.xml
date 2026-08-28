@@ -45,4 +45,10 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- KR-B37: QR 스캔은 웹 getUserMedia + jsQR 폴백으로 동작한다. Android WebView 는
+         이 권한이 없으면 카메라 요청 자체가 거부된다(iOS 는 Info.plist 로 별도 관리).
+         ⚠️ 권한 추가만으로 QR PASS 로 판단하지 않는다 — WebView 의 runtime permission
+         프롬프트 처리는 실기기 QA 대상이다. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>
