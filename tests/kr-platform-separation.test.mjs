@@ -135,9 +135,9 @@ maybe('산출물 manifest — 빌드 후에만 검사', () => {
   it('버전 필드를 플랫폼 간 공유하지 않는다', () => {
     // manifest.build 는 iOS 의 CURRENT_PROJECT_VERSION 이다. Android versionCode 는 gradle 소관.
     const gradle = readFileSync(join(ROOT, 'android/app/build.gradle'), 'utf8');
-    expect(gradle).toContain('versionCode 3701');
-    expect(gradle).toContain('versionName "1.0-KR-B37"');
-    expect(String(AND_M().build)).not.toBe('3701');   // 같은 필드로 억지 공유 금지
+    expect(gradle).toContain('versionCode 3801');
+    expect(gradle).toContain('versionName "1.0-KR-B38"');
+    expect(String(AND_M().build)).not.toBe('3801');   // 같은 필드로 억지 공유 금지
   });
 
   it('[T1] 어느 산출물에도 Tokyo ref 가 없다', () => {
