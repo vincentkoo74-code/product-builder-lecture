@@ -404,7 +404,9 @@ function scheduleReorderableDelivery({ roomStore, sub, snapshot, rng, participan
 // 그대로 재현되어야 한다는 회귀 방지 계약(§본문 H-1 요구사항 "기본 경로 rng 소비 불변").
 // 주입이 실제로 켜진 경우에도 ackDelayFn()은 정상 경로와 동일하게 1회 소비한다 — 실패한 write도
 // 네트워크 왕복 시간은 쓰이며, 이래야 주입 on/off가 rng 스트림 자체를 어긋내지 않는다.
-function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, realtimeDelayRegime = 'pessimistic', deliveryOrderMode = 'monotonic', dbErrorInjectionFn = null }) {
+export function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, realtimeDelayRegime = 'pessimistic', deliveryOrderMode = 'monotonic', dbErrorInjectionFn = null,
+  // Phase A: 컬럼 인식 필터링. 기본은 false(legacy) 다 — 자세한 근거는 아래 selectRows 주석.
+  strictFilters = false }) {
   function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.round(ms))));
   }
@@ -464,65 +466,139 @@ function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, re
     await delay(ackDelayFn());
     return { data: getParticipantRows().map((r) => ({ ...r })), error: null };
   }
-  async function opParticipantsUpdateEq(patch, id, withRows = false) {
-    const eqError = injectedError('participants', 'update-eq', patch, id);
-    if (eqError) { await delay(ackDelayFn()); return withRows ? { data: null, error: eqError } : { error: eqError }; }
-    await delay(ackDelayFn());
-    // ⚠️ 한계(기존 문서화된 사항, JP-BL-027-B 로 추적): 컬럼을 무시하고 id 1건만 매치한다.
-    // `.eq('room_id', roomCode)` 대량 업데이트는 재현되지 않는다. 이를 고치면 시뮬레이션
-    // 동역학이 바뀌어 별도 검증이 필요하다(이번 슬라이스에서 시도했다가 되돌렸다).
-    const row = roomStore.participants.get(id);
-    if (row) Object.assign(row, patch);
-    // 실제 PostgREST 모델링: .select() 를 붙이면 **영향받은 행만** 돌아온다.
-    // 대상 행이 없으면 오류가 아니라 빈 배열이다(= 무음 0행, JP-BL-027 의 핵심 조건).
-    return withRows ? { data: row ? [{ ...row }] : [], error: null } : { error: null };
-  }
-  async function opParticipantsUpdateIn(patch, ids, withRows = false) {
-    const inError = injectedError('participants', 'update-in', patch, ids);
-    if (inError) { await delay(ackDelayFn()); return withRows ? { data: null, error: inError } : { error: inError }; }
-    await delay(ackDelayFn());
-    const affected = [];
-    for (const id of ids) {
-      const row = roomStore.participants.get(id);
-      if (row) { Object.assign(row, patch); affected.push({ ...row }); }
-    }
-    return withRows ? { data: affected, error: null } : { error: null };
-  }
-  // 실제 supabase-js/PostgREST 계약 모델링:
-  //   await update(...).eq(...)          → { error }            (HTTP 204, 영향 행 정보 없음)
-  //   await update(...).eq(...).select() → { data: [영향 행], error }
-  // 0행이어도 error 는 null 이다 — 이 구분이 JP-BL-027 의 전부다.
-  const mutation = (run) => {
-    // 실제 supabase 빌더는 완전한 Promise 다 — then 만 흉내내면 `.catch()` 를 쓰는
-    // 호출부에서 TypeError 가 난다. Promise 인터페이스를 온전히 제공한다.
-    const p = () => run(false);
-    return {
-      select: () => run(true),
-      then: (res, rej) => p().then(res, rej),
-      catch: (rej) => p().catch(rej),
-      finally: (fn) => p().finally(fn),
-    };
+  // ── 범용 쿼리 계층 (Phase A) ────────────────────────────────────────────────
+  // 이전 구현은 `.eq(col, val)` 에서 **컬럼을 무시**하고 항상 id 1건만 매치했다. 그래서
+  // 프로덕션이 실제로 쓰는 다음 형태들이 재현되지 않았다:
+  //   participants.update().eq('room_id', …)          ← 전원 대상 대량 갱신이 무음 누락
+  //   participants.update().eq('room_id',…).eq('id',…) ← 체인 조건 미지원
+  //   rooms.update().eq('id',…).eq('status','result')  ← CAS 가드가 항상 통과
+  // 이제 컬럼을 존중하고 체인 조건을 AND 로 평가한다.
+  const rowsOf = (table) => (table === 'rooms' ? [roomStore.row] : getParticipantRows());
+  const matches = (row, filters) => filters.every((f) =>
+    f.op === 'in' ? f.val.includes(row[f.col]) : row[f.col] === f.val);
+  // ⚠️ strictFilters 기본값이 false 인 이유 (Phase A 검증 결과, JP-BL-027-B 로 추적)
+  //
+  // 교정본(strictFilters=true)은 프로덕션 쿼리 계약을 정확히 재현한다. 그런데 이를 rc3
+  // 시뮬레이션 기본값으로 켜면 CROSS_DEVICE_OUTCOME_MISMATCH 88건이 드러나며 하드 게이트가
+  // 깨진다. 원인 분리 실험 결과 rooms 컬럼 인식은 무해했고, **participants 대량 갱신
+  // (`.eq('room_id', …)`)이 실제로 적용되기 시작한 것**이 유일한 원인이었다.
+  //
+  // 이 발산이 실제 프로덕션 결함인지는 **아직 단정할 수 없다.** 이 하니스는 participants
+  // 변경에 realtime 전파가 없고(구독/브로드캐스트가 rooms 에만 있다) 기기들이 fetch 로만
+  // 알게 되므로, 대량 리셋이 적용되는 순간 기기 간 관측 격차를 실제보다 과대평가할 수 있다.
+  // 프로덕션은 participants 도 postgres_changes 로 전파된다.
+  //
+  // 따라서 "교정 = 즉시 켜기" 로 가지 않는다. 켜려면 participants realtime 전파까지 함께
+  // 모델링해야 하며, 그건 별도 슬라이스다. 기존 하드 게이트 단언은 **약화하지 않았다**.
+  const selectRows = (table, filters) => {
+    if (strictFilters) return rowsOf(table).filter((r) => matches(r, filters));
+    // legacy: rooms 는 단일 방 행, participants 는 마지막 필터를 id 로 간주(기존 동역학 보존).
+    if (table === 'rooms') return rowsOf(table);
+    const last = filters[filters.length - 1];
+    if (!last) return [];
+    const ids = last.op === 'in' ? last.val : [last.val];
+    return ids.map((id) => roomStore.participants.get(id)).filter(Boolean);
   };
 
+  // 오류 주입 키는 기존 계약을 유지한다(마지막 필터가 in 이면 'update-in', 아니면 'update-eq').
+  const injectionKey = (filters) => (filters.some((f) => f.op === 'in') ? 'update-in' : 'update-eq');
+  const injectionArg = (filters) => {
+    const last = filters[filters.length - 1];
+    return last ? last.val : null;
+  };
+
+  async function runMutation(table, op, patch, filters, withRows) {
+    if (table === 'rooms' && op === 'update' && !isHost) {
+      // 실제 앱도 host만 rooms.update를 호출한다 — 방어적으로 하니스 버그를 조기 발견.
+      throw new Error('[rc3-harness] non-host device attempted rooms.update — harness bug');
+    }
+    const errKey = table === 'rooms' ? 'update' : injectionKey(filters);
+    const errArg = table === 'rooms' ? roomStore.id : injectionArg(filters);
+    // H-1: 실패 주입은 커밋/브로드캐스트 "이전"에 판정한다 — 실패한 write는 row를 바꾸지도,
+    // 구독자에게 전파되지도 않는다(실제 DB 실패와 동일 의미).
+    const injected = injectedError(table, errKey, patch, errArg);
+    if (injected) {
+      await delay(ackDelayFn());
+      return withRows ? { data: null, error: injected } : { error: injected };
+    }
+
+    const ackDelay = ackDelayFn();
+    const target = selectRows(table, filters);
+
+    if (op === 'delete') {
+      for (const row of target) {
+        roomStore.participants.delete(row.id);
+        const i = roomStore.order.indexOf(row.id);
+        if (i >= 0) roomStore.order.splice(i, 1);
+      }
+      await delay(ackDelay);
+      return withRows ? { data: target.map((r) => ({ ...r })), error: null } : { error: null };
+    }
+
+    for (const row of target) Object.assign(row, patch);
+
+    // rooms 는 실제로 바뀐 경우에만 버전을 올리고 구독자에게 전파한다.
+    // 0행(예: CAS 가드 `.eq('status','result')` 불일치)은 커밋도 브로드캐스트도 아니다.
+    if (table === 'rooms' && target.length > 0) {
+      roomStore.version += 1;
+      const snapshot = { ...roomStore.row };
+      // 충실성 보정: Supabase realtime 은 구독자 1명당 단일 순서보장 스트림이다.
+      // 구독자별 도착 시각을 단조증가로 강제해 역전 도착을 만들지 않는다
+      // (deliveryOrderMode 가 'outOfOrder' 면 의도적으로 끈다 — STOP-SHIP Part A).
+      for (const sub of roomStore.subscribers) {
+        scheduleReorderableDelivery({
+          roomStore, sub, snapshot, rng, participantCount: roomStore.subscribers.length,
+          realtimeDelayRegime, deliveryOrderMode, delay,
+        });
+      }
+    }
+    await delay(ackDelay);
+    // 실제 PostgREST: .select() 를 붙이면 **영향받은 행만** 돌아온다.
+    // 대상이 없으면 오류가 아니라 빈 배열이다(= 무음 0행).
+    return withRows ? { data: target.map((r) => ({ ...r })), error: null } : { error: null };
+  }
+
+  async function opRoomsSelectSingle() {
+    await delay(ackDelayFn());
+    return { data: { ...roomStore.row }, error: null };
+  }
+  function getParticipantRows() {
+    return roomStore.order.map((id) => roomStore.participants.get(id)).filter(Boolean);
+  }
+  async function opParticipantsSelect() {
+    await delay(ackDelayFn());
+    return { data: getParticipantRows().map((r) => ({ ...r })), error: null };
+  }
+
+  // 실제 supabase-js/PostgREST 계약:
+  //   await update(...).eq(...)          → { error }              (HTTP 204, 영향 행 정보 없음)
+  //   await update(...).eq(...).select() → { data: [영향 행], error }
+  // 0행이어도 error 는 null 이다 — 이 구분이 JP-BL-027 의 전부다.
+  function mutationBuilder(table, op, patch) {
+    const filters = [];
+    const run = (withRows) => runMutation(table, op, patch, filters, withRows);
+    const b = {
+      eq: (col, val) => { filters.push({ op: 'eq', col, val }); return b; },
+      in: (col, val) => { filters.push({ op: 'in', col, val }); return b; },
+      select: () => run(true),
+      then: (res, rej) => run(false).then(res, rej),
+      catch: (rej) => run(false).catch(rej),
+      finally: (fn) => run(false).finally(fn),
+    };
+    return b;
+  }
+
   function from(table) {
-    if (table === 'rooms') {
-      return {
-        update: (patch) => ({ eq: () => mutation((wr) => opRoomsUpdate(patch, wr)) }),
-        select: () => ({ eq: () => ({ single: () => opRoomsSelectSingle() }) }),
-      };
+    if (table !== 'rooms' && table !== 'participants') {
+      throw new Error(`[rc3-harness] unsupported table: ${table}`);
     }
-    if (table === 'participants') {
-      return {
-        update: (patch) => ({
-          eq: (_col, id) => mutation((wr) => opParticipantsUpdateEq(patch, id, wr)),
-          in: (_col, ids) => mutation((wr) => opParticipantsUpdateIn(patch, ids, wr)),
-        }),
-        select: () => ({
-          eq: () => ({ order: () => opParticipantsSelect(), single: () => opParticipantsSelect() }),
-        }),
-      };
-    }
-    throw new Error(`[rc3-harness] unsupported table: ${table}`);
+    return {
+      update: (patch) => mutationBuilder(table, 'update', patch),
+      delete: () => mutationBuilder(table, 'delete', null),
+      select: () => (table === 'rooms'
+        ? { eq: () => ({ single: () => opRoomsSelectSingle() }) }
+        : { eq: () => ({ order: () => opParticipantsSelect(), single: () => opParticipantsSelect() }) }),
+    };
   }
   async function rpc(name) {
     if (name !== 'server_now') throw new Error(`[rc3-harness] unsupported rpc: ${name}`);
