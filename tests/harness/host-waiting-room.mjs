@@ -76,14 +76,8 @@ function effectiveVisible(win, el){
   //    그걸 걷지 않으면 display:none 이라 높이 0 으로 측정되고, "정보창이 얇아졌다" 류의
   //    단언이 공허하게 통과한다(실제로 한 번 그렇게 통과했다).
   if(gp){ gp.classList.remove('hidden');
-    gp.innerHTML='<div class="game-progress-top"><div class="game-progress-round">1 라운드</div>'+
-      '<div class="game-progress-rematch">첫 대결</div></div>'+
-      '<div class="game-progress-stats">'+
-      '<div class="game-progress-stat safe"><strong>0</strong><span>승</span></div>'+
-      '<div class="game-progress-stat draw"><strong>0</strong><span>무</span></div>'+
-      '<div class="game-progress-stat"><strong>0</strong><span>패</span></div>'+
-      '<div class="game-progress-stat loser"><span>술래 1명</span></div></div>'+
-      '<div class="game-progress-lock">게임 시작 전 술래 숫자를 변경할 수 있습니다.</div>'; }
+    gp.innerHTML='<div class="game-progress-compact">'+
+      '<span>방 코드 <strong>A7K2</strong></span><span>술래 1명</span></div>'; }
 
   await new Promise(r=>setTimeout(r,200));
 
@@ -107,6 +101,7 @@ function effectiveVisible(win, el){
       const r=c.getBoundingClientRect(); return {w:px(r.width),h:px(r.height)};})(),
     // at-rest 에서 "더 있다"는 단서: 목록 제목이 조금이라도 드러나는가
     heading:E('.c-body h3'),
+    infoPanel:E('[data-round-progress]'),
     // 스크롤로 실제 도달 가능한가 — c-body 를 끝까지 내린 뒤 재측정한다.
     scrolled:(()=>{
       body.scrollTop=body.scrollHeight;

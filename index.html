@@ -2179,6 +2179,25 @@
         width:min(236px, calc(100vw - 56px));
         height:min(236px, calc(100vw - 56px));
       }
+      /* P0(Build38): Host 대기방만 QR 을 조금 줄인다.
+         QR 을 c-body 로 옮겨 참가자 목록에 스크롤로 도달할 수 있게 됐지만, 최초 화면이
+         QR 로 꽉 차면 "아래에 더 있다"는 단서가 없어 실기기 신고("QR 화면만 나온다")가
+         그대로 반복된다. 236→200px 는 15% 축소로 설계 기본값(210px)에 근접하며
+         스캔 가능성을 해치지 않는다. 다른 화면의 QR 크기는 건드리지 않는다. */
+      #screenHostRoom .fake-qr{
+        width:min(170px, calc(100vw - 56px));
+        height:min(170px, calc(100vw - 56px));
+      }
+      /* 여백으로 단서 확보 — QR 을 더 줄이는 대신 박스 마진/패딩을 좁힌다. */
+      #screenHostRoom .qr-box{margin:6px 0;padding:8px}
+      #screenHostRoom .code-text{font-size:26px;margin-top:2px}
+      /* compact 정보창: 대기실 코드 + 술래 숫자 한 줄. 세로 패딩을 크게 줄인다. */
+      #screenHostRoom .game-progress-card{padding:8px 12px;margin:6px 0;border-radius:14px}
+      .game-progress-compact{
+        display:flex;align-items:center;justify-content:space-between;gap:10px;
+        font-size:13.5px;font-weight:700;line-height:1.3;
+      }
+      .game-progress-compact strong{font-size:15px;letter-spacing:.02em}
       .fake-qr canvas,
       .fake-qr img{
         width:100% !important;
@@ -11402,8 +11421,20 @@ function summarizeGameStats(rows) {
         </div>
         <div class="game-progress-lock">${lockText}</div>
       `;
+      // P0(Build38): Host 대기방 카드만 compact 변형을 쓴다.
+      // 대기방에서는 라운드/승·무·패/잠금 안내가 아직 의미가 없는데 그 높이(약 100px+)가
+      // c-head 를 밀어올려 참가자 목록 공간을 잡아먹는다. 대기실 코드와 술래 숫자
+      // 두 가지만 한 줄로 보여준다. 다른 8개 화면의 카드는 그대로 둔다(무변경).
+      // 새 i18n 키를 만들지 않고 기존 join.codeLabel / progress.targetLoserCount 를 재사용한다.
+      const compactHtml = `
+        <div class="game-progress-compact">
+          <span>${t("join.codeLabel")} <strong>${state.roomCode || "----"}</strong></span>
+          <span>${t("progress.targetLoserCount", { n: info.target })}</span>
+        </div>
+      `;
       cards.forEach(card => {
-        card.innerHTML = html;
+        const isHostRoomCard = card.closest && card.closest("#screenHostRoom");
+        card.innerHTML = isHostRoomCard ? compactHtml : html;
         card.classList.toggle("hidden", !state.roomCode && !state.penalty);
       });
     }
