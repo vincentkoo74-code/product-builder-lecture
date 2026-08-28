@@ -28,7 +28,8 @@
 | JP-BL-025 | OPEN | Medium | `rooms.status` enum 제약 — 전수 증명 방법 확정 후 적용 | 아니오 |
 | JP-BL-026 | OPEN | Low | `created_at` NOT NULL 제약 추가 여부 | 아니오 |
 | JP-BL-027 | DONE | **High** | RLS 무음 거부 — 9개 write 에 인라인 검증 적용, 행위 테스트로 실증 | — |
-| JP-BL-027-B | OPEN | **High** | `nextRound` 무음 0행 미탐지 — 하니스 한계로 이번 슬라이스 보류 | **예** |
+| JP-BL-027-B | OPEN | **High** | `nextRound` 무음 0행 미탐지 — Phase A STOP GATE 로 착수 못 함 | **예** |
+| JP-BL-027-C | OPEN | **High** | rc3 하니스에 participants realtime 전파 모델링 (Phase B 선행 조건) | 아니오 |
 | JP-REALTIME-VALIDATION | OPEN | **High** | 실제 Realtime 이벤트 전달 미검증 | **예** |
 | JP-PROD-GATE | OPEN | **Blocker** | 외부 베타/출시 전 JP 백엔드가 미사용 자동 일시정지 대상이면 안 됨 | **예** |
 | JP-BL-020 | DESIGNED | **High** | GRANT 최소 권한 정규화 설계 완료 — 배포 미승인 | **예** |
@@ -499,3 +500,25 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 
 실제 Realtime 이벤트 전달은 여전히 미검증이다. Docker 부재(회선 ~55KB/s, 이미지 3.5GB ≈ 18시간)로
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
+
+## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+**왜.** Phase A 에서 하니스의 `.eq(col,val)` 컬럼 무시 결함을 교정했다. 그러자 프로덕션
+소스를 전혀 바꾸지 않았는데도 rc3 하드 게이트에 `CROSS_DEVICE_OUTCOME_MISMATCH` 88건이
+드러났다. 원인 분리 결과 `participants` 대량 갱신(`.eq('room_id',…)`)이 실제로 적용되기
+시작한 것이 유일한 원인이었다(rooms 컬럼 인식은 무해).
+
+**왜 이것만으로 결론 낼 수 없나.** 이 하니스는 `participants` 변경에 realtime 전파가 없다 —
+구독·브로드캐스트가 `rooms` 에만 있고 기기는 fetch 로만 참가자 변화를 안다. 프로덕션은
+`participants` 도 `postgres_changes` 로 전파된다. 따라서 "리셋이 적용되는 순간"과 "다른
+기기가 인지하는 순간"의 간극을 하니스가 실제보다 크게 만든다. 88건 중 어디까지가 진짜
+레이스인지 지금 증거로는 가를 수 없다.
+
+**현재 상태.** `createDb({ strictFilters })` 로 분리했다. 기본 false(기존 동역학, 회귀 GREEN),
+계약 테스트 20건이 true 로 교정본을 검증한다. **기대치는 약화하지 않았다.**
+
+**순서.** ① participants realtime 전파 모델링 → ② `strictFilters` 기본 전환 후 회귀 안정화
+→ ③ 그다음 Phase B(`nextRound` 카디널리티 검증). 순서를 바꾸면 하니스 변화와 프로덕션
+변화가 뒤섞여 원인 분리가 불가능해진다.
+
+증적: `docs/JP_RC3_HARNESS_DISCREPANCY_2026-08-28.md`
