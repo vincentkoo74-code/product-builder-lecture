@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs';
 import { readBuildNumber, buildManifest } from '../scripts/build-manifest.mjs';
 
 // ════════════════════════════════════════════════════════════════════════════
-// Build37 — 빌드 메타데이터 드리프트 가드.
+// 빌드 메타데이터 드리프트 가드 (현재 릴리즈: Build38).
+// ⚠️ '이번 릴리즈 번호' 단언은 릴리즈마다 의도적으로 갱신한다 — 그게 이 가드의 목적이다
+//    (pbxproj 와 index.html 중 한쪽만 올리면 여기서 깨진다).
 //
 // 왜 필요한가: Build 33~36의 QA 리포트가 전부 buildLabel='build32', build='30'으로
 // 기록됐다. 값이 index.html에 하드코딩돼 있었는데
@@ -30,8 +32,8 @@ describe('빌드 메타데이터 — 진실 소스', () => {
     expect([...new Set(all)], `타깃별 build number 불일치: ${all.join(',')}`).toEqual([CANONICAL_BUILD]);
   });
 
-  it('[계약 1] 이번 릴리즈의 build number는 37이다', () => {
-    expect(CANONICAL_BUILD).toBe(37);
+  it('[계약 1] 이번 릴리즈의 build number는 38이다', () => {
+    expect(CANONICAL_BUILD).toBe(38);
   });
 });
 
@@ -68,11 +70,11 @@ describe('빌드 메타데이터 — 리포트 실제 산출값', () => {
   const QA_BUILD_LABEL = 'build' + BUILD_NUMBER;
 
   it('[계약 3] report.build == canonical의 문자열 표현', () => {
-    expect(String(BUILD_NUMBER)).toBe('37');
+    expect(String(BUILD_NUMBER)).toBe('38');
   });
 
-  it('[계약 4] report.buildLabel == "build37"', () => {
-    expect(QA_BUILD_LABEL).toBe('build37');
+  it('[계약 4] report.buildLabel == "build38"', () => {
+    expect(QA_BUILD_LABEL).toBe('build38');
   });
 
   it('[계약 5] buildLabel의 숫자 부분 == CURRENT_PROJECT_VERSION', () => {
@@ -86,7 +88,7 @@ describe('빌드 메타데이터 — BUILD_MANIFEST', () => {
     const m = buildManifest({ qa: true, build: readBuildNumber(pbxproj),
       branch: 'b', commit: 'c', buildTime: 't' });
     expect(m.build).toBe(CANONICAL_BUILD);
-    expect(m.build).toBe(37);
+    expect(m.build).toBe(38);
   });
 
   it('QA 빌드 manifest는 qa_enabled/dist_qa_flag true, source_qa_flag false', () => {
