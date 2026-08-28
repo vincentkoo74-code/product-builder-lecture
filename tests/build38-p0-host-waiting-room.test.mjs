@@ -109,6 +109,13 @@ suite('P0 — Host 대기방 접근성', () => {
     expect(bad, `도달 불가 ${bad.length}/${rows.length}건`).toEqual([]);
   });
 
+  it('[RED-2b] 최초 화면에 "더 있다"는 단서가 보여야 한다', () => {
+    // 실기기 신고의 본질은 "QR 화면만 나온다"였다. 스크롤로 도달만 가능하고 아무 단서도
+    // 없으면 같은 신고가 반복된다. 목록 제목이 최소한 일부라도 드러나야 한다.
+    const bad = rows.filter(r => r.heading.visH < 12)
+      .map(r => `${tag(r)} 제목 가시높이=${r.heading.visH} (QR박스 ${r.qr.visH})`);
+    expect(bad, `단서 없음 ${bad.length}/${rows.length}건`).toEqual([]);
+  });
 
   it('[RED-3] 술래 숫자 선택이 스크롤로 도달 가능해야 한다', () => {
     const bad = rows.filter(r => r.scrolled.loser.visH < MIN_TAP)
@@ -123,20 +130,14 @@ suite('P0 — Host 대기방 접근성', () => {
     expect(bad).toEqual([]);
   });
 
-  it('[GREEN 유지] QR 이 스크롤로 도달 가능하다', () => {
-    // 이 커밋의 계약은 "c-body 안의 내용에 도달할 수 있는가"다. QR 을 스크롤 영역으로
-    // 옮겼으므로 헤더가 아직 큰 지금은 at-rest 에서 일부가 잘릴 수 있다 —
-    // 최초 화면 가시성 계약은 헤더를 줄이는 다음 커밋이 도입한다.
-    // scrolled 스냅샷은 c-body 를 바닥까지 내린 상태라 상단의 QR 이 빠진다.
-    // QR 은 c-body 최상단에 있으므로 at-rest(scrollTop=0)에서 실질적으로 드러나야 한다.
-    const bad = rows.filter(r => r.qr.visH < 100)
-      .map(r => `${tag(r)} QR 가시높이=${r.qr.visH}`);
-    expect(bad, 'QR 도달 불가').toEqual([]);
+  it('[GREEN 유지] QR 이 최초 화면에서 가려지지 않는다', () => {
+    const clipped = rows.filter(r => r.qr.visH < 150).map(r => `${tag(r)} QR 가시높이=${r.qr.visH}`);
+    expect(clipped, 'QR 가림').toEqual([]);
   });
 
-  it('[GREEN 유지] 방 코드가 존재하고 도달 가능하다', () => {
-    const missing = rows.filter(r => r.code.natH <= 0).map(r => `${tag(r)} 방 코드 없음`);
-    expect(missing).toEqual([]);
+  it('[GREEN 유지] 방 코드가 보인다', () => {
+    const bad = rows.filter(r => r.code.visH < 16).map(r => `${tag(r)} code 가시높이=${r.code.visH}`);
+    expect(bad).toEqual([]);
   });
 
   it('[GREEN 유지] 벌칙 · 게임시작 · 처음으로 가 c-foot 에서 접근 가능하다', () => {
@@ -155,14 +156,41 @@ suite('P0 — Host 대기방 접근성', () => {
     expect(bad).toEqual([]);
   });
 
+  it('[계약] 검정 정보창은 대기실 코드와 술래 숫자만 담는다', () => {
+    const src = readFileSync(join(ROOT, 'index.html'), 'utf8');
+    // 렌더러가 대기방 카드에만 compact 변형을 쓴다 — 나머지 8개 화면은 무변경.
+    expect(src).toContain('card.closest("#screenHostRoom")');
+    expect(src).toContain('class="game-progress-compact"');
+    expect(src).toContain('t("join.codeLabel")');
+    expect(src).toContain('t("progress.targetLoserCount"');
+    // compact 안에 라운드/승무패/잠금 안내가 들어가지 않는다.
+    const compact = src.slice(src.indexOf('const compactHtml'), src.indexOf('cards.forEach'));
+    for (const k of ['progress.round', 'progress.rematch', 'progress.safe', 'progress.draw',
+                     'progress.locked', 'progress.editable']) {
+      expect(compact.includes(k), `compact 정보창에 ${k} 가 남아 있다`).toBe(false);
+    }
+  });
 
+  it('[계약] 정보창이 얇아졌다 (세로 공간 확보)', () => {
+    // 공허성 가드: 0 이면 hidden 이라 측정 자체가 안 된 것이다.
+    const notMeasured = rows.filter(r => r.infoPanel.natH <= 0).map(tag);
+    expect(notMeasured, '정보창이 측정되지 않았다 — 이 단언이 공허해진다').toEqual([]);
+    const bad = rows.filter(r => r.infoPanel.natH > 60)
+      .map(r => `${tag(r)} 정보창 높이=${r.infoPanel.natH}`);
+    expect(bad, '정보창이 여전히 두껍다').toEqual([]);
+  });
 
+  it('[계약] QR 이 160~180px 범위이고 스캔 가능하다', () => {
+    const bad = rows.filter(r => !r.qrImg || r.qrImg.w < 160 || r.qrImg.w > 180)
+      .map(r => `${tag(r)} QR=${r.qrImg ? r.qrImg.w : 'null'}px`);
+    expect(bad, 'QR 목표 범위(160~180px) 벗어남').toEqual([]);
+  });
 
   it('[증적] 뷰포트별 geometry', () => {
     console.log('\n── Host 대기방 (safe-area 주입, 벌칙 설정 후) ──\n' + rows.map(r =>
       `${tag(r).padEnd(22)} head=${String(r.head).padStart(6)} body=${String(r.body).padStart(6)}` +
       ` (필요 ${String(r.bodyReq).padStart(4)}, ovf ${String(r.bodyOverflow).padStart(4)}) foot=${String(r.foot).padStart(5)}` +
-      `\n${''.padEnd(22)} QR=${String(r.qrImg?r.qrImg.w:0).padStart(4)}px 제목가시=${String(r.heading.visH).padStart(5)}` +
+      `\n${''.padEnd(22)} 정보창=${String(r.infoPanel.natH).padStart(5)} QR=${String(r.qrImg?r.qrImg.w:0).padStart(4)}px 제목가시=${String(r.heading.visH).padStart(5)}` +
       `  [at-rest] 목록=${String(r.plist.visH).padStart(5)} 술래=${String(r.loser.visH).padStart(5)}` +
       `  [scrolled] 목록=${String(r.scrolled.plist.visH).padStart(5)} 술래=${String(r.scrolled.loser.visH).padStart(5)}`
     ).join('\n'));
