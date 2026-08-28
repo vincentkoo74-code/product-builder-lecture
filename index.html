@@ -2797,6 +2797,16 @@
       </div>
       <div class="game-progress-card" data-round-progress></div>
 
+      </div>
+      <div class="c-body">
+        <!-- P0(Build38): QR 입장 영역을 c-head 에서 c-body 로 옮긴다.
+             .c-head{flex:0 0 auto} 는 축소를 거부하고 .c-body{min-height:0} 는 0 까지 수축한다.
+             QR박스(306px)가 c-head 에 있으면 벌칙 설정 후 c-head 가 541px 까지 자라
+             c-body 가 0 으로 붕괴했다 — 참가자 목록 172px 가 높이 0 컨테이너에 갇혀
+             .app 바깥 스크롤로도 도달 불가였다(iPhone12/15·16 실측: 목록 가시높이 0).
+             QR 을 스크롤 영역 안으로 넣으면 QR·참가자목록·술래숫자가 같은 스크롤 흐름에
+             들어가고, c-foot(벌칙/시작/처음으로)은 계속 고정된다.
+             QR 기능·크기는 그대로 두고 배치만 바꾼다. -->
       <div class="qr-box" id="qrInviteBox">
         <div class="fake-qr" id="fakeQr"></div>
         <div class="code-text" id="roomCodeText">----</div>
@@ -2805,9 +2815,6 @@
         <strong data-i18n="hostRoom.locked">정원 마감</strong><br>
         <span data-i18n="hostRoom.lockedDesc">방 정원이 가득 차서 더 이상 참여할 수 없습니다.</span>
       </div>
-      </div>
-      <div class="c-body">
-        <div style="height: 4px"></div>
       <h3 data-i18n="hostRoom.participants">참가자 목록</h3>
       <div class="participant-list" id="hostParticipantList"></div>
 
