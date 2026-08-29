@@ -156,7 +156,8 @@ describe('Build22-C — TAGGER_SNAPSHOT_GAVE_UP fallback safety', () => {
     // Build30-R2 Phase B(WRPS-078): 이 사이에 팬텀 가드(컨텍스트 재확인) 분기가 추가됐다 — 재시도
     // 자체(간격/1회 제한)는 무변경이므로 "미해결이면 결국 await sleep(delayMs*2)로 이어진다"는
     // 상대 순서만 확인한다(정확한 인접 여부는 요구하지 않음).
-    expect(html).toMatch(/let stillUnresolved = unresolvedOf\(data\);\s*\n[\s\S]{0,700}await sleep\(delayMs \* 2\);/);
+    // 간격 상한은 계약이 아니다(계측 필드가 늘면 자연히 커진다) — 두 문장의 **순서**만 고정한다.
+    expect(html).toMatch(/let stillUnresolved = unresolvedOf\(data\);\s*\n[\s\S]{0,1600}await sleep\(delayMs \* 2\);/);
   });
 
   it('GAVE_UP 이후 finishRoundLocal은 어느 데이터 소스(stored/localJudge)로 판정했는지 TAGGER_FALLBACK_SOURCE로 명시한다', () => {

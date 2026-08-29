@@ -223,7 +223,10 @@ describe('Build29 [P1, 폴링 간격] 5000 → 2600ms + 순서 교환', () => {
   });
   it('폴링 콜백에서 rooms 조회가 fetchParticipants보다 먼저 실행된다(순서 교환)', () => {
     expect(html).toMatch(
-      /state\.pollInterval = setInterval\(async \(\) => \{\s*\n\s*const \{ data: room \} = await db\.from\('rooms'\)\.select\('\*'\)\.eq\('id', roomCode\)\.single\(\);\s*\n\s*await fetchParticipants\(roomCode\);/
+      // 계약은 "rooms 조회가 fetchParticipants 보다 먼저"라는 **순서**다. 콜백 첫 줄이 반드시
+      // rooms 조회여야 한다는 뜻은 아니다 — Build39 계측이 트리거 시각 기록을 앞에 넣으면서
+      // 인접 매칭이 깨졌다. 사이에 끼는 줄은 허용하되 두 호출의 순서는 그대로 고정한다.
+      /state\.pollInterval = setInterval\(async \(\) => \{[\s\S]{0,400}?const \{ data: room \} = await db\.from\('rooms'\)\.select\('\*'\)\.eq\('id', roomCode\)\.single\(\);\s*\n\s*await fetchParticipants\(roomCode/
     );
   });
 });

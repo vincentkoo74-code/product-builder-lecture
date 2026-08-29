@@ -64,7 +64,7 @@ const NEW_ROUND_PATCH_BLOCK = extractBlock(
   'function getNewGameRoundParticipantPatch(extra = {}) {', 'function archiveCurrentRoundStats(', 'newRoundPatch'
 );
 const FETCH_CLUSTER_BLOCK = extractBlock(
-  'function scheduleFetchParticipants(roomCode, delayMs = 80) {', 'async function updateRoomStatus(status) {', 'fetchCluster'
+  'function scheduleFetchParticipants(roomCode', 'async function updateRoomStatus(status) {', 'fetchCluster'
 );
 // C-2 writer 배선 line(프로덕션 원문 그대로). mutant는 이 한 줄만 제거한다.
 const RECOVERY_WIRING_CALL = 'try { await recoverRoundWhenAllPlayersWaiting(); } catch (e) {}';

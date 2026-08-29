@@ -53,7 +53,7 @@ const ENSURE_HOST_SRC = extractBlock(
 // fetchParticipants. T3/T6(b)의 행위 검증에서 이 프로덕션 소스를 그대로 new Function으로 구동한다
 // (배선 제거 mutant도 이 소스의 문자열 치환으로만 파생 — 손으로 다시 짠 fetch 루프 아님).
 const FETCH_CLUSTER_SRC = extractBlock(
-  'function scheduleFetchParticipants(roomCode, delayMs = 80) {', 'async function updateRoomStatus(status) {', 'fetchCluster'
+  'function scheduleFetchParticipants(roomCode', 'async function updateRoomStatus(status) {', 'fetchCluster'
 );
 // 배선 line(프로덕션 원문 그대로) — mutant는 이 호출 한 줄만 제거한다(주석/나머지 소스 무변경).
 const ENSURE_WIRING_CALL = 'try { await ensureHostExists(); } catch (e) {}';

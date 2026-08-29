@@ -5308,6 +5308,36 @@
     function getNextCountdownStartAt(delayMs = 3600) {
       return serverNow() + delayMs;
     }
+    // ── QA 계측 전용 헬퍼(Build39 instrumentation) ─────────────────────────
+    // 전부 QA.emit 경유이고 QA.emit 은 QA_INSTRUMENTATION 이 꺼져 있으면 즉시 return 한다
+    // (10248행). 따라서 출시 빌드에서는 아래 호출들이 인자 평가 외에 아무 비용도 만들지 않는다.
+    // ⚠️ 계측이 측정 대상 지연을 만들면 안 된다 — 로깅만을 위한 추가 네트워크 조회는 금지.
+    let __qaTraceSeq = 0;
+    function qaNextTraceId(kind) { return `${kind}:${++__qaTraceSeq}`; }
+    // 라운드 컨텍스트는 거의 모든 계측에 붙으므로 한 곳에서 만든다(직렬화 비용 최소화).
+    function qaRoundCtx() {
+      return { roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round || null,
+               roomStatus: state.status || null, role: state.role || null };
+    }
+    // countdownStartAt 최초 관측만 남긴다 — 폴링(2.6s)과 realtime 이 같은 값을 반복 배달하므로
+    // dedupe 없이 남기면 로그가 폭주한다(사양 4: "Do not flood logs").
+    function qaObserveCountdownStartAt(value, source) {
+      try {
+        const key = `${state.roomCode || ''}:${getGameRound()}:${state.round || 0}:${value || 0}`;
+        if (state.__qaCountdownObsKey === key) return;
+        state.__qaCountdownObsKey = key;
+        if (value) {
+          QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'COUNTDOWN_STARTAT_OBSERVED',
+            value, localNow: Date.now(), serverNowMs: serverNow(), driftMs: serverNow() - value,
+            clockOffsetMs: serverClockOffsetMs, source }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {})));
+        } else {
+          QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'COUNTDOWN_STARTAT_MISSING',
+            source, fetchSeq: state.fetchParticipantsSeq || 0,
+            busy: Boolean(state.fetchParticipantsBusy), pending: Boolean(state.fetchParticipantsPending) },
+            (typeof qaRoundCtx === "function" ? qaRoundCtx() : {})));
+        }
+      } catch (e) {}
+    }
     function buildPenaltyValue({ text = getPenaltyText(), loserCount = state.targetLoserCount, gameRound = state.gameRound, countdownStartAt = 0, choiceEndAt = 0, phaseScheduledAt = 0, phaseKind = "" } = {}) {
       const value = {
         text: text || "",
@@ -6087,6 +6117,13 @@
 	        const baseGameRound = getGameRound();
 	        state.gameRound = increment ? baseGameRound + 1 : baseGameRound;
 	        state.countdownStartAt = status === "playing" ? getNextCountdownStartAt() : 0;
+	        // Build39 계측: countdownStartAt 이 언제 생성됐는지 — 참가자 쪽 관측 시각과 대조해
+	        // "발행 전이라 못 읽었다" 와 "발행 후 지워졌다" 를 구분하기 위한 기준점이다.
+	        if (state.countdownStartAt) {
+	          try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'COUNTDOWN_STARTAT_GENERATED',
+	            value: state.countdownStartAt, localNow: Date.now(), serverNowMs: serverNow(),
+	            clockOffsetMs: serverClockOffsetMs, callSite: 'beginNewGameRound', reason }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+	        }
 	        // Build24-C: status==="ready"(resetGameKeepRoom의 "재대결/같은 방에서 다시 시작" 경로)로
 	        // 전환할 때도 nextRound()의 일반 라운드 전환과 동일하게 phaseScheduledAt/phaseKind="ready"를
 	        // 함께 실어야 한다 — 이 값이 없으면(기존엔 항상 누락) handleRoomUpdate의 ready 분기가
@@ -6144,9 +6181,21 @@
 	          await db.from('participants')
 	            .update(getNewGameRoundParticipantPatch())
 	            .eq('room_id', state.roomCode);
-	          await db.from('rooms')
+	          // Build39 계측: penalty(=countdownStartAt 운반체) write 의 시작/종료 시각과 결과.
+	          // 참가자가 4.4초간 null 을 읽던 창이 이 write 이전인지 이후인지를 이 두 이벤트로 가른다.
+	          const __cdTrace = (typeof qaNextTraceId === "function" ? qaNextTraceId('cdwrite') : 'cdwrite:0');
+	          try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'COUNTDOWN_STARTAT_WRITE_BEGIN',
+	            traceId: __cdTrace, value: state.countdownStartAt || 0, targetStatus: status,
+	            localNow: Date.now() }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+	          const __cdT0 = Date.now();
+	          const { error: __cdErr } = await db.from('rooms')
 	            .update({ round: 1, status, penalty: state.penalty })
 	            .eq('id', state.roomCode);
+	          try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'COUNTDOWN_STARTAT_WRITE_END',
+	            traceId: __cdTrace, success: !__cdErr, durationMs: Date.now() - __cdT0,
+	            errorCode: __cdErr ? (__cdErr.code || null) : null,
+	            errorMessage: __cdErr ? String(__cdErr.message || __cdErr).slice(0, 160) : null,
+	            value: state.countdownStartAt || 0, localNow: Date.now() }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
 	        } else {
 	          saveState();
 	        }
@@ -6228,6 +6277,17 @@
 	    async function fetchFreshParticipantsForResult(roomCode, maxRetries = 2, delayMs = 300, isContextStillValid = null) {
 	      let data = null;
 	      const unresolvedOf = getUnresolvedActiveParticipants;
+	      // Build39 계측(M1/M2 판별의 핵심): 미해결 행의 **현재 choice 문자열**을 그대로 남긴다.
+	      //   "rock"      → base 만 있음 = host 인코딩이 아직/영영 안 왔다(M2 쪽)
+	      //   "rock|lose" → 인코딩이 있는데도 미해결이면 판정 로직 문제
+	      // CHOICE_WRITE_BEGIN 의 prevHadResultEncoding 과 대조하면 M1(덮어쓰기)을 확정할 수 있다.
+	      const __snapT0 = Date.now();
+	      const qaUnresolvedDetail = rows => (rows || []).map(p => ({
+	        id: p.id, choice: p.choice,
+	        hasBase: Boolean(getChoiceBase(p.choice)),
+	        hasResult: hasConfirmedRoundResult(p.choice),
+	        isSelf: p.id === state.currentUserId,
+	      }));
 	      // Build24-B ROLLBACK(실기기 재현 회귀로 제거, room PP2C): host가 방금 publishHostRoundResult()로
 	      // 직접 쓴 데이터라도 "완전히 신선하다"고 판단해 DB 재조회를 스킵하면, 이 함수가 매 시도마다
 	      // 호출하는 syncConfirmedIdsFromParticipants(data)도 함께 건너뛰게 되어 state.confirmedSafeIds/
@@ -6277,7 +6337,11 @@
 	            return data;
 	          }
 	        } else {
-	          try { QA.emit('metric', { wrps: 'WRPS-072-B19', eventType: 'TAGGER_SNAPSHOT_STALE', attempt, unresolvedIds: unresolved.map(p => p.id) }); } catch (e) {}
+	          try { QA.emit('metric', Object.assign({ wrps: 'WRPS-072-B19', eventType: 'TAGGER_SNAPSHOT_STALE',
+	            attempt, unresolvedIds: unresolved.map(p => p.id),
+	            unresolvedDetail: qaUnresolvedDetail(unresolved),
+	            elapsedMs: Date.now() - __snapT0,
+	            fetchSeq: state.fetchParticipantsSeq || 0 }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
 	        }
 	        if (attempt < maxRetries) await sleep(delayMs);
 	      }
@@ -6290,7 +6354,11 @@
       if (stillUnresolved.length && isContextStillValid && !isContextStillValid()) {
         try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'RESULT_FETCH_CONTEXT_STALE_ABANDONED', phase: 'finalWait' }); } catch (e) {}
       } else if (stillUnresolved.length) {
-        try { QA.emit('metric', { wrps: 'WRPS-072-B22', eventType: 'TAGGER_SNAPSHOT_FINAL_WAIT', unresolvedIds: stillUnresolved.map(p => p.id), delayMs: delayMs * 2 }); } catch (e) {}
+        try { QA.emit('metric', Object.assign({ wrps: 'WRPS-072-B22', eventType: 'TAGGER_SNAPSHOT_FINAL_WAIT',
+          unresolvedIds: stillUnresolved.map(p => p.id),
+          unresolvedDetail: qaUnresolvedDetail(stillUnresolved),
+          elapsedMs: Date.now() - __snapT0, delayMs: delayMs * 2,
+          fetchSeq: state.fetchParticipantsSeq || 0 }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
         await sleep(delayMs * 2);
         const res = await db.from('participants').select('*')
           .eq('room_id', roomCode).order('created_at', { ascending: true });
@@ -6305,7 +6373,11 @@
       // 데이터로 진행한다. 이후 finishRoundLocal()이 이 스냅샷으로 hasStoredResults(서버 확정) 또는
       // judgeRound 로컬 폴백 중 어느 경로로 판정하는지는 TAGGER_FALLBACK_SOURCE 메트릭에 남는다.
 	      try {
-	        if (stillUnresolved.length) QA.emit('metric', { wrps: 'WRPS-072-B19', eventType: 'TAGGER_SNAPSHOT_GAVE_UP', unresolvedIds: stillUnresolved.map(p => p.id) });
+	        if (stillUnresolved.length) QA.emit('metric', Object.assign({ wrps: 'WRPS-072-B19',
+	          eventType: 'TAGGER_SNAPSHOT_GAVE_UP', unresolvedIds: stillUnresolved.map(p => p.id),
+	          unresolvedDetail: qaUnresolvedDetail(stillUnresolved),
+	          elapsedMs: Date.now() - __snapT0,
+	          fetchSeq: state.fetchParticipantsSeq || 0 }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {})));
 	      } catch (e) {}
 	      return data;
 	    }
@@ -6461,10 +6533,15 @@
           // WRPS-044: 호스트 승계/퇴장은 beginNewGameRound로 room을 갱신하므로 이 rooms 이벤트는 확실히 발화한다.
           // 동반되는 participants DELETE/is_host 변경은 realtime DELETE 이벤트가 room_id 필터로 전달되지
           // 않을 수 있어(REPLICA IDENTITY 기본) 누락 가능 → room 변경 시 participants도 강제 재조회해 stale 제거.
-          scheduleFetchParticipants(roomCode);
+          scheduleFetchParticipants(roomCode, 80, 'realtimeRoom');
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomCode}` }, () => {
-          scheduleFetchParticipants(roomCode);
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomCode}` }, (payload) => {
+          // Build39 계측: realtime 이벤트 → 80ms 디바운스 → fetch begin/end → 렌더 를 이어붙이기 위한 시작점.
+          try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'REALTIME_PARTICIPANTS_EVENT',
+            dbEvent: payload && payload.eventType ? payload.eventType : null,
+            participantId: (payload && ((payload.new && payload.new.id) || (payload.old && payload.old.id))) || null,
+            localNow: Date.now(), reason: 'realtimeParticipants' }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+          scheduleFetchParticipants(roomCode, 80, 'realtimeParticipants');
         })
         .on('presence', { event: 'sync' }, () => {
           const presenceState = state.channel.presenceState();
@@ -6500,8 +6577,11 @@
       // ⚠️ 폴링 빈도 증가로 staleRoomUpdateSkipStreak(자가회복 임계값 5회)에 더 빨리 도달할 수
       // 있다 — 인지된 트레이드오프(수정 불필요, CEO 승인 범위).
       state.pollInterval = setInterval(async () => {
+        // Build39 계측: 폴링 트리거도 realtime 과 같은 축에 남겨 둘의 인터리브를 재구성한다.
+        try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'POLL_ROOM_TRIGGER',
+          localNow: Date.now(), intervalMs: 2600 }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
         const { data: room } = await db.from('rooms').select('*').eq('id', roomCode).single();
-        await fetchParticipants(roomCode);
+        await fetchParticipants(roomCode, 'poll');
         if (room) await handleRoomUpdate(room);
       }, 2600);
 
@@ -6714,6 +6794,11 @@
       state.targetLoserCount = getTargetLoserCount();
       state.gameRound = getGameRound();
       state.countdownStartAt = getCountdownStartAt(room.penalty);
+      // Build39 계측: 이 단말이 room row 로부터 countdownStartAt 을 처음 본 시점(중복 dedupe).
+      // ⚠️ typeof 가드 근거는 7341행 관례와 동일 — build37-a1 / room-destroy-stage2b 등이
+      //    handleRoomUpdate 만 좁게 추출해 독립 실행하므로 이 헬퍼가 스코프에 없을 수 있다.
+      //    실제 앱에서는 항상 정의돼 있다.
+      if (typeof qaObserveCountdownStartAt === "function") qaObserveCountdownStartAt(getCountdownStartAt(room.penalty), 'roomUpdate');
       // Build30-R2 Phase A(WRPS-078): choiceEndAt도 countdownStartAt과 동일하게 이번 room row
       // 그대로(맥스 아님) 반영한다 — 이 필드가 없는 phase(result/ready 등)로 넘어가면 자연히
       // 0으로 정리되어(buildPenaltyValue가 0이면 필드를 생략) 다음 라운드 재사용 시 이전 값이
@@ -7139,10 +7224,19 @@
 
 	        const result = judgeRound(participants);
 	        const updatedById = new Map();
-	        await Promise.all(active.map(p => {
+	        // Build39 계측(M2 판별): per-row write 는 원자성이 없고 현재 error 를 검사하지 않는다.
+	        // 동작은 그대로 두고(사양 7: "do not redesign the write path"), 각 행의 성공/실패만
+	        // 관측해 "host 가 못 썼다" 와 "썼는데 나중에 덮였다" 를 구분할 수 있게 한다.
+	        const __pubTrace = (typeof qaNextTraceId === "function" ? qaNextTraceId('hostpublish') : 'hostpublish:0');
+	        const __pubT0 = Date.now();
+	        try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'HOST_RESULT_PUBLISH_BEGIN',
+	          traceId: __pubTrace, activeIds: active.map(p => p.id), activeCount: active.length,
+	          localNow: Date.now() }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+	        let __rowOk = 0, __rowFail = 0;
+	        await Promise.all(active.map(async p => {
 	          const status = result[p.id];
 	          const baseChoice = getChoiceBase(p.choice);
-	          if (!baseChoice || !status) return Promise.resolve();
+	          if (!baseChoice || !status) return;
 	          const next = {
 	            choice: encodeRoundChoice(baseChoice, status, isAutoChoice(p.choice)),
 	            wins: (p.wins || 0) + (status === "win" ? 1 : 0),
@@ -7151,8 +7245,21 @@
 	            penalties: (p.penalties || 0) + (status === "lose" ? 1 : 0)
 	          };
 	          updatedById.set(p.id, { ...p, ...next, lastResult: status });
-	          return db.from('participants').update(next).eq('id', p.id);
+	          try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'HOST_RESULT_ROW_WRITE_BEGIN',
+	            traceId: __pubTrace, participantId: p.id, prevChoice: p.choice, nextChoice: next.choice },
+	            (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+	          const __rowT0 = Date.now();
+	          const { error: rowErr } = await db.from('participants').update(next).eq('id', p.id);
+	          if (rowErr) __rowFail++; else __rowOk++;
+	          try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'HOST_RESULT_ROW_WRITE_END',
+	            traceId: __pubTrace, participantId: p.id, success: !rowErr, durationMs: Date.now() - __rowT0,
+	            errorCode: rowErr ? (rowErr.code || null) : null,
+	            errorMessage: rowErr ? String(rowErr.message || rowErr).slice(0, 160) : null },
+	            (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
 	        }));
+	        try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'HOST_RESULT_PUBLISH_END',
+	          traceId: __pubTrace, total: active.length, succeeded: __rowOk, failed: __rowFail,
+	          durationMs: Date.now() - __pubT0 }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
 
 	        state.participants = participants.map(p => updatedById.get(p.id) || p);
 	        updateSelectedCount();
@@ -7163,11 +7270,12 @@
 	      }
 	    }
 
-	    function scheduleFetchParticipants(roomCode, delayMs = 80) {
+	    // Build39 계측: qaReason 은 로깅 전용 인자다(기본값이 있어 기존 호출부는 무변경 동작).
+	    function scheduleFetchParticipants(roomCode, delayMs = 80, qaReason = 'schedule') {
 	      if (state.fetchParticipantsTimer) clearTimeout(state.fetchParticipantsTimer);
 	      state.fetchParticipantsTimer = setTimeout(() => {
 	        state.fetchParticipantsTimer = null;
-	        fetchParticipants(roomCode);
+	        fetchParticipants(roomCode, qaReason);
 	      }, delayMs);
 	    }
 
@@ -7175,21 +7283,37 @@
 	      state.fetchParticipantsBusy = false;
 	      if (state.fetchParticipantsPending) {
 	        state.fetchParticipantsPending = false;
-	        scheduleFetchParticipants(roomCode);
+	        scheduleFetchParticipants(roomCode, 80, 'pendingReplay');
 	      }
 	    }
 
-	    async function fetchParticipants(roomCode) {
+	    async function fetchParticipants(roomCode, qaReason = 'unspecified') {
       if (state.fetchParticipantsBusy) {
         state.fetchParticipantsPending = true;
+        // Build39 계측: busy 직렬화로 이번 요청이 미뤄졌다 — event→fetch 지연의 주요 후보.
+        try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'FETCH_PARTICIPANTS_DEFERRED',
+          seq: state.fetchParticipantsSeq || 0, pending: true, reason: qaReason }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
         return;
       }
       state.fetchParticipantsBusy = true;
       try {
       // 시퀀스 번호로 경쟁 조건 방지: 이전 요청의 응답이 늦게 도착해 최신 데이터를 덮어쓰는 문제 차단
       const mySeq = ++state.fetchParticipantsSeq;
+      try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'FETCH_PARTICIPANTS_BEGIN',
+        seq: mySeq, reason: qaReason, busy: true, pending: Boolean(state.fetchParticipantsPending) },
+        (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+      const __fpT0 = Date.now();
       const { data } = await db.from('participants').select('*').eq('room_id', roomCode).order('created_at', { ascending: true });
+      try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'FETCH_PARTICIPANTS_END',
+        seq: mySeq, reason: qaReason, durationMs: Date.now() - __fpT0, success: Boolean(data),
+        participantCount: data ? data.length : 0, countdownStartAt: getCountdownStartAt() || 0 },
+        (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
       if (!data || mySeq !== state.fetchParticipantsSeq) {
+        if (data && mySeq !== state.fetchParticipantsSeq) {
+          // Build39 계측: 늦게 도착한 응답을 시퀀스 가드가 버렸다.
+          try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'FETCH_PARTICIPANTS_STALE_DISCARD',
+            seq: mySeq, latestSeq: state.fetchParticipantsSeq, reason: qaReason }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+        }
         return;
       }
       // WRPS-083 후속(실기기 BLOCKER): 시퀀스 가드는 "더 새로운 요청이 있었는가"만 본다.
@@ -7440,7 +7564,26 @@
 
     async function updateParticipantChoice(choice) {
       if (!db) return;
-      await db.from('participants').update({ choice }).eq('id', state.currentUserId);
+      // Build39 계측(M1 판별): 이 write 직전에 **로컬이 이미 알고 있는** 기존 row 값을 남긴다.
+      // 그 값이 "base|result" 형태면, 이 write 가 host 가 발행한 결과 인코딩을 지우는 순간이다.
+      // ⚠️ 로깅만을 위해 DB 를 추가로 읽지 않는다(사양 10) — 이미 가진 state 만 본다.
+      const __prevRow = (state.participants || []).find(p => p.id === state.currentUserId);
+      const __prevChoice = __prevRow ? __prevRow.choice : null;
+      const __traceId = (typeof qaNextTraceId === "function" ? qaNextTraceId('choicewrite') : 'choicewrite:0');
+      try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'CHOICE_WRITE_BEGIN',
+        traceId: __traceId, playerId: state.currentUserId || null, payload: choice,
+        prevChoice: __prevChoice,
+        prevHadResultEncoding: hasConfirmedRoundResult(__prevChoice),
+        localNow: Date.now() }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+      const __t0 = Date.now();
+      const { error } = await db.from('participants').update({ choice }).eq('id', state.currentUserId);
+      try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'CHOICE_WRITE_END',
+        traceId: __traceId, playerId: state.currentUserId || null, payload: choice,
+        success: !error, durationMs: Date.now() - __t0,
+        errorCode: error ? (error.code || null) : null,
+        errorMessage: error ? String(error.message || error).slice(0, 160) : null,
+        prevHadResultEncoding: hasConfirmedRoundResult(__prevChoice),
+        localNow: Date.now() }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
     }
 
     // --- 기존 UI 제어 로직 수정 ---
@@ -8575,6 +8718,9 @@
           try {
             const { data: freshRoom } = await db.from('rooms').select('penalty').eq('id', state.roomCode).single();
             if (freshRoom && freshRoom.penalty) scheduledStartAt = getCountdownStartAt(freshRoom.penalty);
+            // Build39 계측: 재시도 각 회차가 실제로 무엇을 읽었는지. 값이 여전히 0이면 MISSING 이
+            // 남아 "host 가 아직 안 썼다" 와 "썼는데 지워졌다" 를 host 쪽 WRITE_END 와 대조 가능.
+            if (typeof qaObserveCountdownStartAt === "function") qaObserveCountdownStartAt(scheduledStartAt || 0, 'countdownRetryFetch');
           } catch (e) {}
         }
         attempt++;

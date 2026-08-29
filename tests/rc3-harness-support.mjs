@@ -95,7 +95,10 @@ const M = {
   updateSelectedCountStart: 'function updateSelectedCount() {',
   playResultVoiceStart: 'function playResultVoiceOnce(eventKey, ttsText, pitch, rate, delayMs) {',
   publishHostResultStart: 'async function publishHostRoundResult(participantsFromDb = null) {',
-  scheduleFetchParticipantsStart: "function scheduleFetchParticipants(roomCode, delayMs = 80) {",
+  // ⚠️ 시그니처 전체를 마커로 쓰지 않는다. 이 마커의 용도는 publishHostRoundResult 블록의
+  //    "끝 지점"을 잡는 것뿐이고 인자 목록은 부수적이다. Build39 계측이 qaReason 인자를
+  //    추가하자 마커가 깨져 4개 테스트가 한꺼번에 실패했다 — 함수 이름까지만 잡는다.
+  scheduleFetchParticipantsStart: "function scheduleFetchParticipants(roomCode",
   judgeRoundStart: 'function judgeRound(participants) {',
   renderRoundResultStart: 'function renderRoundResult(caseType, roundLoserCount, remainingSlots) {',
   scheduleRematchStart: 'function scheduleRematchAutoAdvance(delayMs = 1500) {',

@@ -41,7 +41,7 @@ const LEAVE_SRC = extractBlock(
   'async function _doLeaveRoom() {\n      const successorHostId = state.pendingSuccessorHostId || null;',
   '// WRPS-056(DR-14): 마지막 1인만 남은', 'leave');
 const FETCH_CLUSTER_SRC = extractBlock(
-  'function scheduleFetchParticipants(roomCode, delayMs = 80) {', 'async function updateRoomStatus(status) {', 'fetchCluster');
+  'function scheduleFetchParticipants(roomCode', 'async function updateRoomStatus(status) {', 'fetchCluster');
 const FINISH_SRC = extractBlock('async function finishRoundLocal() {', 'function scheduleRematchAutoAdvance(', 'finish');
 
 // ── 결정적 fake supabase (두 단말이 공유) ───────────────────────────────────
