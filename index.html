@@ -312,6 +312,16 @@
       gap: 6px;
     }
 
+    /* Build39 UI(승인 사양 D): 2열 grid 안에서 한 행을 통째로 쓰는 버튼.
+       "한번더"/"다음 호스트되기"가 여기 해당하고, 그 아래 행에 승률 보기와 나가기가
+       나란히 놓인다. center-last-action 의 홀수 보정 대상에서는 제외된다
+       (updateActionGridLayouts 참고) — 그렇지 않으면 나가기가 홀수 취급되어
+       혼자 가운데로 밀린다. */
+    .action-grid > button.span-full,
+    .footer-actions > button.span-full,
+    .compact-action-grid > button.span-full,
+    #finalResultBtns > button.span-full{ grid-column: 1 / -1; }
+
     .action-grid > button.center-last-action,
     .footer-actions > button.center-last-action,
     .compact-action-grid > button.center-last-action,
@@ -1965,6 +1975,15 @@
       margin:12px 0;
       box-shadow:var(--shadow);
     }
+    /* Build39 UI(승인 사양 D): 검은 결과 카드 내부 제목("라운드 결과").
+       외부 <h3> 를 대체하므로 h3 와 비슷한 무게를 유지하되 카드 배경 위에서 읽히도록 한다. */
+    .game-progress-title{
+      font-size:15px;
+      font-weight:900;
+      letter-spacing:.01em;
+      color:#e5e7eb;
+      margin:0 0 10px;
+    }
     .game-progress-top{
       display:flex;
       justify-content:space-between;
@@ -3141,7 +3160,7 @@
 
     </section>
 
-    <section class="card maru-card hidden" id="screenRoundResult">
+    <section class="card maru-card card-flush-bottom hidden" id="screenRoundResult">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
@@ -3160,7 +3179,8 @@
       </div>
       </div>
       <div class="c-body">
-        <h3 data-i18n="result.roundResultsH3">라운드 결과</h3>
+        <!-- Build39 UI(승인 사양 D): 외부 <h3>라운드 결과</h3> 제거 —
+             검은 결과 카드 안의 제목으로 통합했다(renderRoundProgressCards 참고). -->
       <div class="game-progress-card" data-round-progress></div>
       <div class="participant-list" id="roundResultList"></div>
       </div>
@@ -3181,14 +3201,17 @@
           <div id="finalResultBtns" class="hidden"></div>
         </div>
 
-      <div class="action-grid">
+      <!-- Build39 UI(승인 사양 D): 최종 결과에서는 나가기가 #finalResultBtns 안으로 들어가
+           승률 보기와 한 행을 이룬다. 그때 이 정적 행은 중복이라 숨는다(showRoundResult 참고).
+           라운드 진행 중(다시해!/게임 종료 및 통계 보기) 상태에서는 종전대로 노출된다. -->
+      <div class="action-grid" id="roundResultExitRow">
         <button class="btn-outline" onclick="window.leaveRoom()" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
       </div>
       </div>
 
     </section>
 
-    <section class="card maru-card hidden" id="screenWinnerWait">
+    <section class="card maru-card card-flush-bottom hidden" id="screenWinnerWait">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
@@ -3197,8 +3220,10 @@
         <img id="winnerWaitMaru" class="result-maru" src="ASSETS/rps/scenes/cat-win-happy.png" alt="우선안전!" style="animation:winnerBounce 0.7s ease-in-out infinite alternate" />
         <div class="vrshow-cap vrshow-cap-lg" style="margin-bottom:6px" data-i18n="winnerWait.cap">세이프!</div>
         <div class="result-title win" data-i18n="winnerWait.title">우선안전!</div>
-        <p class="lead" data-i18n="winnerWait.message">이번 재게임에서는 빠지고 최종 술래가 나올 때까지 기다려주세요.</p>
-        <p style="color:#888;font-size:14px" data-i18n="winnerWait.hint">남은 참여자들만 재게임을 진행 중입니다 🍵</p>
+        <!-- Build39 UI(승인 사양 E): "이번 재게임에서는 빠지고…" 설명은 아래 hint 와
+             같은 내용을 두 번 말하는 중복이라 제거했다. 이 화면이 전달해야 하는 것은
+             ① 너는 대기 중이고 ② 남은 참여자가 계속 진행 중이며 ③ 현재 상태 뿐이다. -->
+        <p class="lead" data-i18n="winnerWait.hint">남은 참여자들만 재게임을 진행 중입니다 🍵</p>
       </div>
       </div>
       <div class="c-body">
@@ -3258,7 +3283,7 @@
 
     </section>
 
-    <section class="card maru-card hidden" id="screenLoserWait">
+    <section class="card maru-card card-flush-bottom hidden" id="screenLoserWait">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
@@ -4915,6 +4940,11 @@
         finalBtns.innerHTML = "";
         finalBtns.classList.add("hidden");
       }
+      // Build39 UI: gameOver 분기가 숨겼던 정적 나가기 행을 finalBtns 초기화와 짝으로 되돌린다.
+      // showRoundResult() 진입부에도 같은 복원이 있지만, 이 함수는 새 게임회차 진입 등
+      // showRoundResult 를 거치지 않는 경로에서도 불린다 — 두 곳 모두에서 복원해야
+      // "나가기 버튼이 사라진 채로 남는" 상태가 생기지 않는다.
+      $("roundResultExitRow")?.classList.remove("hidden");
       if (actionsDiv) actionsDiv.style.display = "";
       if (nextBtn) {
         nextBtn.disabled = false;
@@ -10677,13 +10707,19 @@ function summarizeGameStats(rows) {
       const nextBtn = $("nextRoundBtn");
       const actionsDiv = $("roundResultActions");
       const finalBtns = $("finalResultBtns");
+      const roundResultExitRow = $("roundResultExitRow");
       const penTxt = getPenaltyText();
 
       // 단계 안내: 무승부=재대결/재선택, 종료=결과 확인, 그 외=다음 대결/결과 확인
+      // Build39 UI(승인 사양 D): 술래가 확정된 최종 결과 화면에서는 안내 배너를 띄우지 않는다.
+      // "게임 종료! 결과를 확인하세요."는 바로 위 제목/메시지와 중복이고, .maru-guide 는
+      // 12px 마진 + 패딩까지 약 60px 를 먹는다. 빈 문자열이면 .maru-guide:empty 가
+      // display:none 으로 접어 세로 여백도 남지 않는다(별도 숨김 처리 불필요).
+      // draw / 라운드 진행 중 안내는 종전 그대로 유지한다.
       const guideMsg = caseType === "draw"
         ? (state.role === "host" ? t("guide.host.drawReplay") : t("guide.guest.drawChoose"))
         : caseType === "gameOver"
-        ? t("guide.gameOver")
+        ? ""
         : (state.role === "host" ? t("guide.host.nextMatch") : t("guide.guest.checkResult"));
       setGuideText("roundResultGuide", guideMsg);
 
@@ -10711,6 +10747,9 @@ function summarizeGameStats(rows) {
       penaltyBox.classList.add("hidden");
       finalBtns.classList.add("hidden");
       finalBtns.innerHTML = "";
+      // 최종 결과가 아닌 상태로 되돌아오면 정적 나가기 행을 다시 노출한다
+      // (gameOver 분기에서만 숨기므로, 매 렌더 진입 시 기본값으로 복원한다).
+      if (roundResultExitRow) roundResultExitRow.classList.remove("hidden");
       // Build23: 매 라운드 결과 렌더마다 '한번더' 버튼의 노출/허용 상태를 QA에 남긴다 — 실기기에서
       // 부분 재경기(tooMany/tooFew) 중 버튼이 보였다는 리포트를 캡션/개수와 함께 추적하기 위함.
       try {
@@ -10776,17 +10815,25 @@ function summarizeGameStats(rows) {
         // Build23: '한번더'(전체 참여자 새 게임) 버튼은 술래 선정이 실제로 완료된 경우에만 노출한다
         // (caseType==='gameOver' 분기 안이라 구조적으로 항상 true여야 하지만, 방어적으로 명시 —
         // 이 조건이 버튼 노출과 handler 하드블록 양쪽에서 쓰는 단일 진실 소스다).
+        // Build39 UI(승인 사양 D): #finalResultBtns 는 2열 grid 다. "한번더"는 전폭(span-full)
+        // 으로 한 행을 차지하고, 그 아래 행에 [게임 승률 보기][게임방에서 나가기] 가 나란히
+        // 놓인다. 종전에는 나가기가 c-foot 의 별도 .action-grid 에 있어 항상 다른 행으로
+        // 밀렸다(실측: 승률 top=689 / 나가기 top=747). 행 간격은 grid gap 이 만들므로
+        // 인라인 margin-bottom 은 제거한다 — 남겨두면 gap 과 이중으로 벌어진다.
         if (canShowPlayAgainButton()) {
-          html += `<button class="btn-success btn-full" onclick="window.returnToLobbyAfterGame()" style="margin-bottom:8px">${t("result.hostSettingsBtn")}</button>`;
+          html += `<button class="btn-success btn-full span-full" onclick="window.returnToLobbyAfterGame()">${t("result.hostSettingsBtn")}</button>`;
         }
-        html += `<button class="btn-light btn-full" onclick="window.showStatsPopup()" style="margin-bottom:8px">${t("result.viewStatsBtn")}</button>`;
+        html += `<button class="btn-light btn-full" onclick="window.showStatsPopup()">${t("result.viewStatsBtn")}</button>`;
+        html += `<button class="btn-outline btn-full" onclick="window.leaveRoom()">${t("common.leaveRoomShort")}</button>`;
         // "다음 게임 호스트" 벌칙은 모든 locale에서 defaultPenalty.nextHost 값과 비교
         const nextHostKeywords = [t("defaultPenalty.nextHost"), "호스트", "Host", "host", "ホスト"];
         const isNextHostPenalty = nextHostKeywords.some(k => penTxt && penTxt.includes(k));
         if (myResult === "lose" && isNextHostPenalty) {
-          html += `<button id="becomeNextHostBtn" class="btn-primary btn-full" onclick="window.becomeNextHost()" style="margin-top:8px">${t("result.becomeNextHostBtn", { n: 5 })}</button>`;
+          html += `<button id="becomeNextHostBtn" class="btn-primary btn-full span-full" onclick="window.becomeNextHost()">${t("result.becomeNextHostBtn", { n: 5 })}</button>`;
         }
         finalBtns.innerHTML = html;
+        // 나가기가 이 그룹으로 들어왔으므로 c-foot 의 정적 나가기 행은 중복이다.
+        if (roundResultExitRow) roundResultExitRow.classList.add("hidden");
         if (myResult === "lose" && isNextHostPenalty) {
           startGameOverCountdown(5);
         }
@@ -11456,6 +11503,9 @@ function summarizeGameStats(rows) {
       const html = mkHtml(info.rematchText);
       const roomCodeChip = `${t("join.codeLabel")} <strong>${state.roomCode || "----"}</strong>`;
       const lobbyHtml = mkHtml(roomCodeChip);
+      // Build39 UI(승인 사양 D): 결과 화면에서는 외부 <h3>라운드 결과</h3> 를 없애고
+      // 이 카드의 내부 제목으로 통합한다 — 같은 말을 카드 밖/안에서 두 번 하지 않는다.
+      const resultHtml = `<div class="game-progress-title">${t("result.roundResultsH3")}</div>` + html;
       // P0(Build38): Host 대기방 카드만 compact 변형을 쓴다.
       // 대기방에서는 라운드/승·무·패/잠금 안내가 아직 의미가 없는데 그 높이(약 100px+)가
       // c-head 를 밀어올려 참가자 목록 공간을 잡아먹는다. 대기실 코드와 술래 숫자
@@ -11470,7 +11520,11 @@ function summarizeGameStats(rows) {
       cards.forEach(card => {
         const isHostRoomCard = card.closest && card.closest("#screenHostRoom");
         const isLobbyCard = card.closest && card.closest("#screenLobby");
-        card.innerHTML = isHostRoomCard ? compactHtml : (isLobbyCard ? lobbyHtml : html);
+        const isResultCard = card.closest && card.closest("#screenRoundResult");
+        card.innerHTML = isHostRoomCard ? compactHtml
+          : isLobbyCard ? lobbyHtml
+          : isResultCard ? resultHtml
+          : html;
         card.classList.toggle("hidden", !state.roomCode && !state.penalty);
       });
     }
@@ -11576,8 +11630,11 @@ function summarizeGameStats(rows) {
           getComputedStyle(el).display !== "none"
         );
         [...group.children].forEach(el => el.classList?.remove("center-last-action"));
-        if (buttons.length % 2 === 1) {
-          buttons[buttons.length - 1].classList.add("center-last-action");
+        // Build39 UI: span-full 버튼은 이미 한 행을 통째로 쓰므로 2열 홀짝 계산에서 뺀다.
+        // 빼지 않으면 [전폭][A][B] 3개가 홀수로 잡혀 B 가 혼자 가운데로 밀린다.
+        const paired = buttons.filter(el => !el.classList.contains("span-full"));
+        if (paired.length % 2 === 1) {
+          paired[paired.length - 1].classList.add("center-last-action");
         }
       });
     }

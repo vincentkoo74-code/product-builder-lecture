@@ -950,7 +950,15 @@ describe('Build29 Round2 [CEO 인수기준 7/8/9] 오프라인/db-unavailable �
     // 그 버튼이 속한 화면은 screenRoundResult이고, MEDIUM-1 테스트(위 describe)가 오프라인
     // 확정자가 항상 이 화면에 도달함을 이미 실행 검증했다 — 여기서는 그 결론과 버튼 존재를
     // 하나의 테스트로 고정해 회귀를 방지한다.
-    const ROUND_RESULT_SCREEN_SRC = extractBlock('<section class="card maru-card hidden" id="screenRoundResult">', '<section class="card maru-card hidden" id="screenWinnerWait"');
+    // ⚠️ 마커는 id 만으로 잡는다. 종전에는 `<section class="card maru-card hidden" id="...">`
+    //    처럼 class 목록 전체를 마커에 넣었는데, 이 테스트가 실제로 고정하려는 것은
+    //    "nextRoundBtn 이 screenRoundResult 소속인가" 뿐이고 class 구성은 부수적이다.
+    //    Build39 UI 에서 card-flush-bottom 이 추가되자 마커가 깨져 이 테스트가 실패했다 —
+    //    단언 내용은 그대로 두고 마커만 무관한 변화에 견디도록 좁힌다.
+    const ROUND_RESULT_SCREEN_SRC = extractBlock('id="screenRoundResult"', 'id="screenWinnerWait"');
+    // 공허성 가드: 추출이 빗나가 빈/과대 블록이 되면 아래 단언이 무의미해진다.
+    expect(ROUND_RESULT_SCREEN_SRC.length).toBeGreaterThan(200);
+    expect(ROUND_RESULT_SCREEN_SRC).not.toContain('id="screenWinnerWait"');
     expect(ROUND_RESULT_SCREEN_SRC).toContain('id="nextRoundBtn"');
   });
 
