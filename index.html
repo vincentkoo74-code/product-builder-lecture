@@ -9702,6 +9702,18 @@
       }
     }
 
+    // Build40 P0-1: 화면 caseType 과 음성 키가 **같은 mode** 에서 나오도록 묶는다.
+    // caseType 은 renderRoundResult 가 이미 받은 값이고, 여기서는 그 caseType 이 mode 와
+    // 일치하는지 기록한 뒤 mode 로부터 음성 키를 꺼낸다 — 분기마다 음성 키를 따로 고르지 않는다.
+    function announceContinuation(mode, caseType, delayMs) {
+      const voiceKey = continuationVoiceKey(mode);
+      const sem = continuationSemantic(mode);
+      try { QA.emit('metric', Object.assign({ wrps: 'WRPS-P01', eventType: 'CONTINUATION_MESSAGE_RENDERED',
+        mode, visualCaseType: caseType, visualSemanticKo: sem ? sem.ko : null, ttsVoiceKey: voiceKey,
+        ttsSemanticKo: sem ? sem.ko : null, consistent: continuationModeFromOutcome(caseType === "draw" ? "allDraw" : caseType) === mode },
+        (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+      if (voiceKey) playResultVoiceOnce(voiceKey, null, 1, 1, delayMs);
+    }
     async function finishRoundLocal() {
       if (state.finishingRound) return; // 중복 실행 방지
       // Build19(WRPS-072-B19): 라운드 재분류 방지(idempotency) — 이미 이 round(eventId)를 확정했다면
@@ -9777,18 +9789,6 @@
 	      );
 	      const hasStoredResults = activeForStoredResult.length > 0 &&
 	        activeForStoredResult.every(p => hasConfirmedRoundResult(p.choice));
-    // Build40 P0-1: 화면 caseType 과 음성 키가 **같은 mode** 에서 나오도록 묶는다.
-    // caseType 은 renderRoundResult 가 이미 받은 값이고, 여기서는 그 caseType 이 mode 와
-    // 일치하는지 기록한 뒤 mode 로부터 음성 키를 꺼낸다 — 분기마다 음성 키를 따로 고르지 않는다.
-    function announceContinuation(mode, caseType, delayMs) {
-      const voiceKey = continuationVoiceKey(mode);
-      const sem = continuationSemantic(mode);
-      try { QA.emit('metric', Object.assign({ wrps: 'WRPS-P01', eventType: 'CONTINUATION_MESSAGE_RENDERED',
-        mode, visualCaseType: caseType, visualSemanticKo: sem ? sem.ko : null, ttsVoiceKey: voiceKey,
-        ttsSemanticKo: sem ? sem.ko : null, consistent: continuationModeFromOutcome(caseType === "draw" ? "allDraw" : caseType) === mode },
-        (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
-      if (voiceKey) playResultVoiceOnce(voiceKey, null, 1, 1, delayMs);
-    }
 	      // Build22-C: TAGGER_SNAPSHOT_GAVE_UP 이후 실제로 어느 데이터 소스로 판정했는지 QA에서
 	      // 바로 알 수 있도록 명시적으로 남긴다 — 'stored'=서버가 이미 확정한 win/lose 태그 사용,
 	      // 'localJudge'=이 단말이 참가자 raw choice로 judgeRound() 로컬 재계산(judgePure, 판정
