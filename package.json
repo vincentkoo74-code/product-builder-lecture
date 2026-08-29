@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:syntax": "node scripts/check-html-syntax.mjs",
     "test:release-gate": "node scripts/run-release-gate.mjs",
-    "gate:release": "node scripts/run-release-gate.mjs"
+    "gate:release": "node scripts/run-release-gate.mjs",
+    "test:known-red": "vitest run --config vitest.known-red.config.mjs"
   },
   "repository": {
     "type": "git",

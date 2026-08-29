@@ -26,3 +26,7 @@ ASSETS/voice-backups/
 
 # 실기기 QA export 원본(JSON) — 저장소 밖에서 관리, 요약은 docs/history/에 기록
 QA-index/
+
+# vitest Chrome geometry 하네스 임시 프로브 (실행 중 kill 시 잔류)
+_*.probe.html
+_*probe.test.html
