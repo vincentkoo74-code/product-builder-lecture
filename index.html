@@ -10378,6 +10378,14 @@ function summarizeGameStats(rows) {
             // recent[] 트리밍과 무관하게 QA 요약에서 바로 확인할 수 있게 한다.
             countdownServerTsZero: 0, resultValueNull: 0, syncLateRenderOver1000: 0 },
           drift: [], countdownDrift: [], resultDrift: [], audioDelay: [], recent: [], snapshots: [],
+          // Build40(QA retention): 2-tier 보존.
+          //   critical[] — 게임/라운드 전이, countdownStartAt 생성·write·최초 관측, 동기화 실패,
+          //                선택/결과 write, continuation 결정, 스냅샷 정체, 에러. 세션 전체 보존(유계 3000).
+          //   recent[]   — 고빈도 fetch/realtime/poll 진단. 유계 링(300) + 이상치는 critical 로 승격.
+          // Build39 필드 실측: 단일 300 링에 fetch 계측이 76~81% 를 차지해 10판 중 1.5판만 남았다.
+          critical: [],
+          // 유실 회계 — export 에서 "얼마나 버려졌는가"가 보이지 않으면 증거 부재를 정상으로 오인한다.
+          retention: { dropped: 0, sampled: 0, criticalEvicted: 0 },
           previousSession: null,   // Build17: 앱 재시작 시 복구한 직전 세션 리포트(1단계 지속화)
           recoveredAt: null,       // Build17: 복구 시각(ISO)
         };
@@ -10390,11 +10398,38 @@ function summarizeGameStats(rows) {
           } catch (e) {}
           return { session: m.session, roomId: state.roomCode || null, playerId: state.currentUserId || null, deviceRole: state.role || null, deviceType: dev };
         }
+        const QA_CRITICAL_CAP = 3000;   // 라운드당 ~15건 × 3라운드 × 60판 이상 — 현실적 세션을 넘는다
+        const QA_RECENT_CAP = 300;      // 고빈도 진단 링(종전과 동일 크기, 이제 critical 을 밀어내지 못한다)
+        // 고빈도 진단 — 이 타입만 recent 링으로 간다. 나머지 전부(알 수 없는 타입 포함)는 critical.
+        // "모르는 이벤트는 보존한다"가 기본값이어야 새 계측이 추가돼도 조용히 유실되지 않는다.
+        const QA_HIGH_FREQ_TYPES = new Set([
+          'FETCH_PARTICIPANTS_BEGIN', 'FETCH_PARTICIPANTS_END', 'FETCH_PARTICIPANTS_DEFERRED',
+          'REALTIME_PARTICIPANTS_EVENT', 'POLL_ROOM_TRIGGER', 'CLOCK_SYNC_SAMPLE',
+          'PLAY_AGAIN_BUTTON_STATE', 'APP_VISIBILITY', 'SYNC_RENDER_DUPLICATE_SKIPPED',
+        ]);
+        // 고빈도 타입이라도 이상치는 critical 로 승격 — 상관 id(seq/traceId)를 잃지 않게 한다.
+        function qaIsCriticalMetric(rec) {
+          const t = rec.eventType || '';
+          if (!QA_HIGH_FREQ_TYPES.has(t)) return true;
+          if (t === 'FETCH_PARTICIPANTS_END') {
+            if (rec.success === false) return true;
+            if (Number.isFinite(rec.durationMs) && rec.durationMs >= 1000) return true; // 느린 fetch
+          }
+          if (t === 'FETCH_PARTICIPANTS_DEFERRED') return false;
+          return false;
+        }
         function emit(channel, data) {
           if (!QA_INSTRUMENTATION) return;
           const rec = Object.assign(base(), { ts: Date.now() }, data || {});
           m.counts.metric++;
-          m.recent.push(rec); if (m.recent.length > 300) m.recent.shift();
+          // Build40(QA retention): critical 은 세션 전체 보존, 고빈도 진단은 샘플링 링.
+          if (qaIsCriticalMetric(rec)) {
+            m.critical.push(rec);
+            if (m.critical.length > QA_CRITICAL_CAP) { m.critical.shift(); m.retention.criticalEvicted++; }
+          } else {
+            if (m.recent.length >= QA_RECENT_CAP) { m.recent.shift(); m.retention.sampled++; }
+            m.recent.push(rec);
+          }
           if (Number.isFinite(rec.driftMs)) m.drift.push(rec.driftMs);
           if (Number.isFinite(rec.countdownDriftMs)) m.countdownDrift.push(rec.countdownDriftMs);
           if (Number.isFinite(rec.resultDriftMs)) m.resultDrift.push(rec.resultDriftMs);
@@ -10435,6 +10470,12 @@ function summarizeGameStats(rows) {
             countdownServerTsZeroCount: m.counts.countdownServerTsZero,
             resultValueNullCount: m.counts.resultValueNull,
             syncLateRenderOver1000Count: m.counts.syncLateRenderOver1000,
+            // Build40(QA retention): 유실 회계. metrics === critical + recent + dropped + sampled 가
+            // 항상 성립해야 한다(테스트가 이 항등식을 고정한다).
+            metricsCritical: m.critical.length,
+            metricsRecent: m.recent.length,
+            metricsDropped: m.retention.criticalEvicted,
+            metricsSampled: m.retention.sampled,
           };
         }
         // Build16: 세션 메타(qa-metrics.json / qa-report.json 표준 필드).
@@ -10459,7 +10500,7 @@ function summarizeGameStats(rows) {
         // Build16: Analyzer 표준 입력(qa-metrics.json) 전체 export. copyText는 경량 클립보드용 유지.
         function exportMetrics() {
           return { manifest: m.manifest, session: sessionInfo(), summary: summary(),
-                   recent: m.recent.slice(), snapshots: m.snapshots.slice() };
+                   critical: m.critical.slice(), recent: m.recent.slice(), snapshots: m.snapshots.slice() };
         }
         function copyText() { return JSON.stringify({ summary: summary(), recent: m.recent.slice(-50) }, null, 2); }
 
@@ -10553,6 +10594,10 @@ function summarizeGameStats(rows) {
             if (prev.previousSession) prev.previousSession = { note: 'older-session-omitted', session: prev.previousSession.session || null };
             try {
               if (prev.qaMetrics && Array.isArray(prev.qaMetrics.recent) && prev.qaMetrics.recent.length > 100) prev.qaMetrics.recent = prev.qaMetrics.recent.slice(-100);
+              // Build40(QA retention): previousSession 의 critical 도 상한을 둔다 — 현재 세션 3000 +
+              // 이월 세션 3000 이 localStorage 에 함께 실리면 QUOTA 에 걸려 저장 자체가 실패한다.
+              // 이월분은 "직전 게임 세션의 요약 증거" 용도이므로 최근 1000 건이면 충분하다.
+              if (prev.qaMetrics && Array.isArray(prev.qaMetrics.critical) && prev.qaMetrics.critical.length > 1000) prev.qaMetrics.critical = prev.qaMetrics.critical.slice(-1000);
               if (prev.qaMetrics && Array.isArray(prev.qaMetrics.snapshots) && prev.qaMetrics.snapshots.length > 20) prev.qaMetrics.snapshots = prev.qaMetrics.snapshots.slice(-20);
             } catch (e) {}
             m.previousSession = prev; // 손실 방지: 재로드/강제종료 모두 직전 데이터를 이월
