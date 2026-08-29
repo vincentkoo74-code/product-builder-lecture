@@ -103,11 +103,15 @@ describe('WRPS-SYNC-B19 — RESULT/NEXT_ROUND/GAME_OVER/COUNTDOWN scheduled-rend
   });
 
   it('updateRoomStatusScheduled는 status와 예정시각을 원자적으로 함께 기록한다', () => {
-    expect(html).toMatch(/async function updateRoomStatusScheduled\(status, phaseKind\)[\s\S]{0,300}await db\.from\('rooms'\)\.update\(\{ status, penalty \}\)/);
+    // 계약은 "status 와 penalty(예정시각)를 한 write 로 기록"이다. 인자 목록은 부수적이다 —
+    // Build40 P0-1 이 continuation 인자를 더하면서 시그니처 전체 매칭이 깨졌다(마커 규약 D).
+    expect(html).toMatch(/async function updateRoomStatusScheduled\(status, phaseKind[\s\S]{0,1600}await db\.from\('rooms'\)\.update\(\{ status, penalty \}\)/);
   });
 
   it('publishHostRoundResult의 두 커밋 지점 모두 updateRoomStatusScheduled를 사용한다', () => {
-    expect((html.match(/await updateRoomStatusScheduled\("result", "result"\)/g) || []).length).toBe(2);
+    // 두 커밋 지점 모두 updateRoomStatusScheduled("result","result", …) 를 쓴다. Build40 P0-1 이
+    // 세 번째 인자(continuation)를 더했으므로 닫는 괄호까지 정확 일치시키지 않는다.
+    expect((html.match(/await updateRoomStatusScheduled\("result", "result"[,)]/g) || []).length).toBe(2);
   });
 
   it('nextRound()는 ready 전환에도 예정시각을 함께 기록한다', () => {

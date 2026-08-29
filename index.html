@@ -5138,6 +5138,7 @@
           choiceEndAt: toPositiveInt(raw.choiceEndAt, 0),
           phaseScheduledAt: toPositiveInt(raw.phaseScheduledAt, 0),
           phaseKind: raw.phaseKind || "",
+          continuation: parseContinuationEnvelope(raw.continuation),
         };
       }
       try {
@@ -5151,10 +5152,61 @@
             choiceEndAt: toPositiveInt(p.choiceEndAt, 0),
             phaseScheduledAt: toPositiveInt(p.phaseScheduledAt, 0),
             phaseKind: p.phaseKind || "",
+            continuation: parseContinuationEnvelope(p.continuation),
           };
         }
       } catch {}
-      return { text: raw || "", loserCount: 1, gameRound: null, countdownStartAt: 0, choiceEndAt: 0, phaseScheduledAt: 0, phaseKind: "" };
+      return { text: raw || "", loserCount: 1, gameRound: null, countdownStartAt: 0, choiceEndAt: 0, phaseScheduledAt: 0, phaseKind: "", continuation: null };
+    }
+    // ── Build40 P0-1: 권위 있는 재대결 안내(continuation) ─────────────────────
+    // 필드(Build39): 같은 라운드에서 기기마다 "승자끼리"/"패자끼리"가 갈렸다. 원인은 각 기기가
+    // finishRoundLocal() 을 독립 실행하면서 remainingSlots = target − prevLoserIds.length 의
+    // prevLoserIds 를 서로 다른 출처(host: 직전 로컬 결정 / 참가자: DB 마커 refetch)에서 읽는 것.
+    // 마커는 nextRound() 가 다음 라운드에 쓰므로 참가자 refetch 가 그보다 앞서면 한 라운드
+    // 뒤처진 prevLoserIds 로 tooMany ↔ tooFew 가 뒤집힌다.
+    // 계약: gameNo/round 당 결정은 host 가 한 번 내리고 rooms.penalty 에 신원과 함께 싣는다.
+    //       참가자는 그 값을 소비한다. 화면 문구와 음성은 같은 mode 에서 나온다.
+    const CONTINUATION_MODES = ["WINNERS", "LOSERS", "ALL", "FINAL", "UNKNOWN"];
+    function parseContinuationEnvelope(c) {
+      if (!c || typeof c !== "object") return null;
+      const gameNo = toPositiveInt(c.gameNo, 0), round = toPositiveInt(c.round, 0);
+      // 신원(gameNo/round) 없는 값은 버린다 — 다음 라운드/게임으로 새어 나가면 안 된다.
+      if (!gameNo || !round) return null;
+      const mode = CONTINUATION_MODES.includes(c.mode) ? c.mode : "UNKNOWN";
+      return { gameNo, round, mode, confirmedLoserIds: Array.isArray(c.confirmedLoserIds) ? c.confirmedLoserIds.slice() : [] };
+    }
+    // resolveElimination().outcome → 의미 모드. 기존 도메인 결과를 그대로 쓴다(병렬 로직 금지).
+    function continuationModeFromOutcome(outcome) {
+      if (outcome === "tooFew")  return "WINNERS";  // 패자 확정, 승자끼리 추가 대결
+      if (outcome === "tooMany") return "LOSERS";   // 승자 안전, 패자끼리 축소 대결
+      if (outcome === "allDraw" || outcome === "draw") return "ALL";
+      if (outcome === "gameOver") return "FINAL";
+      return "UNKNOWN";
+    }
+    // 화면/음성이 공유하는 단일 의미 테이블. ko 는 음성 파일의 실제 문장과 일치한다(13251행 부근 주석).
+    function continuationSemantic(mode) {
+      const T = {
+        WINNERS: { ko: "승자끼리 다시 합니다", en: "Winners only, play again", ja: "勝った人だけでもう一回" },
+        LOSERS:  { ko: "패자끼리 다시 합니다", en: "Losers only, play again",  ja: "負けた人だけでもう一回" },
+        ALL:     { ko: "무승부, 다시 합니다",   en: "Draw, play again",          ja: "引き分け、もう一回" },
+        FINAL:   { ko: "술래가 정해졌습니다",   en: "Tagger decided",            ja: "鬼が決まりました" },
+      };
+      return T[mode] || null;
+    }
+    // 음성 키도 같은 mode 에서 나온다 — 분기마다 하드코딩하지 않는다.
+    function continuationVoiceKey(mode) {
+      if (mode === "WINNERS") return "replayWinnersOnly";
+      if (mode === "LOSERS")  return "replayLosersOnly";
+      if (mode === "ALL")     return "drawRetry";
+      if (mode === "FINAL")   return "taggerSelected";
+      return null;
+    }
+    // 현재 gameNo/round 에 맞는 권위 continuation 만 돌려준다. 신원이 다르면 null(stale 소비 금지).
+    function getAuthoritativeContinuation(raw = state.penalty) {
+      const c = parsePenalty(raw).continuation;
+      if (!c) return null;
+      if (c.gameNo !== getGameRound() || c.round !== (state.round || 1)) return null;
+      return c;
     }
     function getPenaltyText() { return String(parsePenalty(state.penalty).text || "").trim(); }
     // Penalties are host-authored user content. Display non-empty text exactly as entered;
@@ -5338,7 +5390,7 @@
         }
       } catch (e) {}
     }
-    function buildPenaltyValue({ text = getPenaltyText(), loserCount = state.targetLoserCount, gameRound = state.gameRound, countdownStartAt = 0, choiceEndAt = 0, phaseScheduledAt = 0, phaseKind = "" } = {}) {
+    function buildPenaltyValue({ text = getPenaltyText(), loserCount = state.targetLoserCount, gameRound = state.gameRound, countdownStartAt = 0, choiceEndAt = 0, phaseScheduledAt = 0, phaseKind = "", continuation = null } = {}) {
       const value = {
         text: text || "",
         loserCount: clampLoserCount(loserCount || 1),
@@ -5353,6 +5405,9 @@
       if (choiceAt > 0) value.choiceEndAt = choiceAt;
       const phaseAt = toPositiveInt(phaseScheduledAt, 0);
       if (phaseAt > 0) { value.phaseScheduledAt = phaseAt; value.phaseKind = phaseKind || ""; }
+      // Build40 P0-1: continuation 은 gameNo/round 신원이 있을 때만 싣는다("0이면 생략" 규칙과 동일).
+      const cont = parseContinuationEnvelope(continuation);
+      if (cont) value.continuation = cont;
       return JSON.stringify(value);
     }
     // Build19: RESULT/GAME_OVER/NEXT_ROUND(ready) 전환 예정 시각 계산(countdown과 동일한 lead 패턴).
@@ -7198,6 +7253,21 @@
 	      `;
 	    }
 
+	    // Build40 P0-1: host 의 권위 continuation 결정. resolveElimination() 이 이미 outcome 을
+	    // 계산하므로 그 결과를 mode 로 옮길 뿐, 판정 로직을 새로 만들지 않는다.
+	    function hostDecideContinuation(roundResults, prevSafeIds, prevLoserIds) {
+	      try {
+	        const r = resolveElimination({ roundResults, prevLoserIds: prevLoserIds || [], prevSafeIds: prevSafeIds || [], targetLoserCount: getTargetLoserCount() });
+	        const decision = { gameNo: getGameRound(), round: state.round || 1,
+	          mode: continuationModeFromOutcome(r.outcome), confirmedLoserIds: r.newConfirmedLoserIds || [] };
+	        try { QA.emit('metric', Object.assign({ wrps: 'WRPS-P01', eventType: 'CONTINUATION_DECISION',
+	          mode: decision.mode, outcome: r.outcome,
+	          prevLoserIds: (prevLoserIds || []).slice(), roundLoserIds: roundResults.filter(x => x.result === 'lose').map(x => x.id),
+	          newConfirmedLoserIds: decision.confirmedLoserIds, remainingSlots: r.remainingSlots, localNow: Date.now() },
+	          (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+	        return decision;
+	      } catch (e) { return null; }
+	    }
 	    async function publishHostRoundResult(participantsFromDb = null) {
 	      if (state.role !== "host" || state.status !== "playing" || !getOnlineMode() || !db || !state.roomCode) return;
 	      if (state.publishingRoundResult) return;
@@ -7217,7 +7287,8 @@
 	        if (!active.length) return;
 
 	        if (active.every(p => hasConfirmedRoundResult(p.choice))) {
-	          await updateRoomStatusScheduled("result", "result");
+	          await updateRoomStatusScheduled("result", "result",
+	            (typeof hostDecideContinuation === "function" ? hostDecideContinuation : () => null)(active.map(p => ({ id: p.id, result: getChoiceResult(p.choice) })), safeIds, loserIds));
 	          return;
 	        }
 	        if (!active.every(p => getChoiceBase(p.choice))) return;
@@ -7264,7 +7335,8 @@
 	        state.participants = participants.map(p => updatedById.get(p.id) || p);
 	        updateSelectedCount();
 	        renderAll();
-	        await updateRoomStatusScheduled("result", "result");
+	        await updateRoomStatusScheduled("result", "result",
+	          (typeof hostDecideContinuation === "function" ? hostDecideContinuation : () => null)(active.map(p => ({ id: p.id, result: result[p.id] })), safeIds, loserIds));
 	      } finally {
 	        state.publishingRoundResult = false;
 	      }
@@ -7554,12 +7626,27 @@
     }
     // Build19: RESULT/READY 전환 시 서버 예정 시각을 penalty에 함께 기록(countdown과 동일 패턴,
     // DB 스키마 무변경) — 모든 클라이언트가 같은 서버 시각에 화면을 표시하도록 한다.
-    async function updateRoomStatusScheduled(status, phaseKind) {
+    async function updateRoomStatusScheduled(status, phaseKind, continuation = null) {
       if (!db) return;
       if (isRoomClosingOrDestroyed()) return; // WRPS-083 2B(Tier 2, defense-in-depth)
-      const penalty = buildPenaltyValue({ gameRound: getGameRound(), phaseScheduledAt: getNextPhaseScheduledAt(), phaseKind });
+      // Build40 P0-1: result 전이 write 에 host 의 권위 continuation 을 함께 싣는다.
+      const penalty = buildPenaltyValue({ gameRound: getGameRound(), phaseScheduledAt: getNextPhaseScheduledAt(), phaseKind, continuation });
       state.penalty = penalty;
-      await db.from('rooms').update({ status, penalty }).eq('id', state.roomCode);
+      if (continuation) {
+        try { QA.emit('metric', Object.assign({ wrps: 'WRPS-P01', eventType: 'CONTINUATION_WRITE_BEGIN',
+          mode: continuation.mode, contGameNo: continuation.gameNo, contRound: continuation.round,
+          confirmedLoserIds: continuation.confirmedLoserIds, localNow: Date.now() },
+          (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+      }
+      const __t0 = Date.now();
+      const { error } = await db.from('rooms').update({ status, penalty }).eq('id', state.roomCode);
+      if (continuation) {
+        try { QA.emit('metric', Object.assign({ wrps: 'WRPS-P01', eventType: 'CONTINUATION_WRITE_END',
+          mode: continuation.mode, contGameNo: continuation.gameNo, contRound: continuation.round,
+          success: !error, durationMs: Date.now() - __t0,
+          errorCode: error ? (error.code || null) : null, localNow: Date.now() },
+          (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+      }
     }
 
     async function updateParticipantChoice(choice) {
@@ -9615,6 +9702,18 @@
 	      );
 	      const hasStoredResults = activeForStoredResult.length > 0 &&
 	        activeForStoredResult.every(p => hasConfirmedRoundResult(p.choice));
+    // Build40 P0-1: 화면 caseType 과 음성 키가 **같은 mode** 에서 나오도록 묶는다.
+    // caseType 은 renderRoundResult 가 이미 받은 값이고, 여기서는 그 caseType 이 mode 와
+    // 일치하는지 기록한 뒤 mode 로부터 음성 키를 꺼낸다 — 분기마다 음성 키를 따로 고르지 않는다.
+    function announceContinuation(mode, caseType, delayMs) {
+      const voiceKey = continuationVoiceKey(mode);
+      const sem = continuationSemantic(mode);
+      try { QA.emit('metric', Object.assign({ wrps: 'WRPS-P01', eventType: 'CONTINUATION_MESSAGE_RENDERED',
+        mode, visualCaseType: caseType, visualSemanticKo: sem ? sem.ko : null, ttsVoiceKey: voiceKey,
+        ttsSemanticKo: sem ? sem.ko : null, consistent: continuationModeFromOutcome(caseType === "draw" ? "allDraw" : caseType) === mode },
+        (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+      if (voiceKey) playResultVoiceOnce(voiceKey, null, 1, 1, delayMs);
+    }
 	      // Build22-C: TAGGER_SNAPSHOT_GAVE_UP 이후 실제로 어느 데이터 소스로 판정했는지 QA에서
 	      // 바로 알 수 있도록 명시적으로 남긴다 — 'stored'=서버가 이미 확정한 win/lose 태그 사용,
 	      // 'localJudge'=이 단말이 참가자 raw choice로 judgeRound() 로컬 재계산(judgePure, 판정
@@ -9705,7 +9804,26 @@
       }
 
       const prevSafeIds = [...(state.confirmedSafeIds || [])];
-      const prevLoserIds = [...(state.confirmedLoserIds || [])];
+      let prevLoserIds = [...(state.confirmedLoserIds || [])];
+      // Build40 P0-1: host 가 이번 gameNo/round 에 대해 싣어 둔 권위 continuation 이 있으면,
+      // 아래 분기의 유일한 가변 입력인 prevLoserIds 를 권위값과 정렬한다.
+      //   권위 newConfirmedLoserIds = prev ∪ 이번 라운드 패자  →  prev = 권위 − 이번 라운드 패자
+      // 이렇게 하면 participant 의 stale 마커 refetch 가 remainingSlots 를 흔들지 못하고,
+      // 같은 roundLosers 로 host 와 동일한 tooMany/tooFew/gameOver 를 낸다.
+      // 권위값이 없거나(구버전 host, 오프라인) 신원이 다르면 종전 경로 그대로다.
+      const authoritativeContinuation = (typeof getAuthoritativeContinuation === "function") ? getAuthoritativeContinuation() : null;
+      if (authoritativeContinuation) {
+        const thisRoundLoserIds = new Set((state.participants || [])
+          .filter(p => !prevSafeIds.includes(p.id) && !isNonPlayingChoice(p.choice) && getChoiceBase(p.choice) && p.lastResult === "lose")
+          .map(p => p.id));
+        const alignedPrev = (authoritativeContinuation.confirmedLoserIds || []).filter(id => !thisRoundLoserIds.has(id));
+        try { QA.emit('metric', Object.assign({ wrps: 'WRPS-P01', eventType: 'CONTINUATION_OBSERVED',
+          mode: authoritativeContinuation.mode, contGameNo: authoritativeContinuation.gameNo, contRound: authoritativeContinuation.round,
+          source: 'roomPenalty', localPrevLoserIds: prevLoserIds.slice(), alignedPrevLoserIds: alignedPrev,
+          diverged: JSON.stringify([...prevLoserIds].sort()) !== JSON.stringify([...alignedPrev].sort()), localNow: Date.now() },
+          (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+        prevLoserIds = alignedPrev;
+      }
 	      const activePlayers = state.participants.filter(p =>
 	        !prevSafeIds.includes(p.id) && !prevLoserIds.includes(p.id) &&
 	        !isNonPlayingChoice(p.choice) && getChoiceBase(p.choice)
@@ -10032,8 +10150,9 @@
         // Build29(WRPS-076) [P2, Fix-1]: 비종결 분기 — 우선안전/확정 술래는 대기화면 유지.
         showRoundResultOrWait(iPlayedThisRound);
         playResultSfxOnce("draw", 300); // 무승부 전용 사운드
-        // Build21: 무승부 재대결 그룹 공지
-        playResultVoiceOnce("drawRetry", null, 1, 1, 300);
+        // Build21: 무승부 재대결 그룹 공지 / Build40 P0-1: 화면·음성 단일 mode
+        if (typeof announceContinuation === "function") announceContinuation("ALL", "draw", 300);
+        else playResultVoiceOnce("drawRetry", null, 1, 1, 300); // 추출본 폴백: 종전 키 그대로
         __engineV2ShadowCompare("allDraw");
         recordRoundResolution({ eventId: roundEventId, confirmedSafeIds: [...state.confirmedSafeIds], confirmedLoserIds: [...state.confirmedLoserIds], outcome: "draw", roundLoserCount: 0, remainingSlots });
         state.finishingRound = false;
@@ -10066,15 +10185,17 @@
         autoSaveGameOverResultOnce();
         // 게임 종료: 승자=arcade 팡파레, 패자(술래)=low-tone decay(개인 신호=SFX 유지)
         playResultSfxOnce(myResult === "win" ? "win" : "lose");
-        // Build21: 술래 확정 그룹 공지(전원 동일, 승패 무관) — 구 becameLoser/gameOver 승자관점 분기 통합
-        playResultVoiceOnce("taggerSelected", null, 1, 1, 2200);
+        // Build21: 술래 확정 그룹 공지(전원 동일, 승패 무관) / Build40 P0-1: 단일 mode
+        if (typeof announceContinuation === "function") announceContinuation("FINAL", "gameOver", 2200);
+        else playResultVoiceOnce("taggerSelected", null, 1, 1, 2200); // 추출본 폴백: 종전 키 그대로
       } else if (roundLosers.length > remainingSlots) {
         state.confirmedSafeIds = [...prevSafeIds, ...roundWinners.map(p => p.id)];
         renderRoundResult("tooMany", roundLosers.length, remainingSlots);
         // Build29(WRPS-076) [P2, Fix-1]: 비종결 분기 — 우선안전/확정 술래는 대기화면 유지.
         showRoundResultOrWait(iPlayedThisRound);
-        // Build21: 패자끼리 재대결 그룹 공지
-        playResultVoiceOnce("replayLosersOnly", null, 1, 1, 600);
+        // Build21: 패자끼리 재대결 그룹 공지 / Build40 P0-1: 단일 mode
+        if (typeof announceContinuation === "function") announceContinuation("LOSERS", "tooMany", 600);
+        else playResultVoiceOnce("replayLosersOnly", null, 1, 1, 600); // 추출본 폴백: 종전 키 그대로
         scheduleRematchAutoAdvance();
       } else {
         state.confirmedLoserIds = [...prevLoserIds, ...roundLosers.map(p => p.id)];
@@ -10085,8 +10206,9 @@
         if (roundLosers.length > 0 && myResult === "lose") {
           playResultSfxOnce("lose", 600); // 라운드 술래 확정: 패배음
         }
-        // Build21: 승자끼리 재대결 그룹 공지(구 becameLoser/continue 개인관점 분기 통합)
-        playResultVoiceOnce("replayWinnersOnly", null, 1, 1, 600);
+        // Build21: 승자끼리 재대결 그룹 공지 / Build40 P0-1: 단일 mode
+        if (typeof announceContinuation === "function") announceContinuation("WINNERS", "tooFew", 600);
+        else playResultVoiceOnce("replayWinnersOnly", null, 1, 1, 600); // 추출본 폴백: 종전 키 그대로
         scheduleRematchAutoAdvance();
       }
       // WRPS-049 섀도우: fall-through 분기(gameOver/tooMany/tooFew) 종료 시 대조(라벨은 조건으로 도출)

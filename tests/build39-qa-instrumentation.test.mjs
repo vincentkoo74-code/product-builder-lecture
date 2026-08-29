@@ -191,7 +191,8 @@ describe('Build39 계측 — host 결과 발행 per-row (M2 판별)', () => {
   it('write 경로 자체는 재설계하지 않았다 (동작 무변경)', () => {
     // 여전히 Promise.all 로 독립 write 를 병렬 수행하고, 실패해도 진행한다.
     expect(pub).toContain('await Promise.all(active.map(async p =>');
-    expect(pub).toContain('await updateRoomStatusScheduled("result", "result");');
+    // Build40 P0-1 이 continuation 인자를 더했다 — status 전이 호출 자체는 그대로다.
+    expect(pub).toMatch(/await updateRoomStatusScheduled\("result", "result"[,)]/);
     // 실패 시 throw/return 으로 흐름을 바꾸지 않는다 — 계측만 한다.
     expect(pub).not.toContain('throw new Error(\'HOST_RESULT');
   });

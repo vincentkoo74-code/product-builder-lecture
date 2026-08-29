@@ -109,10 +109,19 @@ describe('Build21 — runCountdown() 2박자 통일 구조(정적 계약)', () =
 
 describe('Build21 — finishRoundLocal() 그룹 음성 공지(정적 계약)', () => {
   it('5개 결과 분기가 각각 올바른 신규 audioKey를 호출한다', () => {
-    expect(html).toContain('playResultVoiceOnce("taggerSelected", null, 1, 1, 2200);');
-    expect(html).toContain('playResultVoiceOnce("drawRetry", null, 1, 1, 300);');
-    expect(html).toContain('playResultVoiceOnce("replayLosersOnly", null, 1, 1, 600);');
-    expect(html).toContain('playResultVoiceOnce("replayWinnersOnly", null, 1, 1, 600);');
+    // Build40 P0-1: 분기마다 음성 키를 직접 고르지 않는다. 각 분기는 continuationMode 를
+    // announceContinuation(mode, caseType, delayMs) 에 넘기고, 키는 continuationVoiceKey(mode) 가
+    // 단일 매핑으로 돌려준다 — 화면 문구와 음성이 같은 mode 에서 나오게 하기 위해서다.
+    // 계약(어느 분기가 어느 음성인가)은 그대로이고, 검사 지점만 mode 매핑으로 옮긴다.
+    expect(html).toContain('announceContinuation("FINAL", "gameOver", 2200)');
+    expect(html).toContain('announceContinuation("ALL", "draw", 300)');
+    expect(html).toContain('announceContinuation("LOSERS", "tooMany", 600)');
+    expect(html).toContain('announceContinuation("WINNERS", "tooFew", 600)');
+    const vk = html.slice(html.indexOf('function continuationVoiceKey('), html.indexOf('function getAuthoritativeContinuation('));
+    expect(vk).toContain('if (mode === "FINAL")   return "taggerSelected";');
+    expect(vk).toContain('if (mode === "ALL")     return "drawRetry";');
+    expect(vk).toContain('if (mode === "LOSERS")  return "replayLosersOnly";');
+    expect(vk).toContain('if (mode === "WINNERS") return "replayWinnersOnly";');
   });
   it('개인 SFX(win/lose/draw)는 그대로 유지된다(회귀 방지)', () => {
     expect(html).toContain('playResultSfxOnce(isConfirmedLoser() ? "lose" : "win")');
