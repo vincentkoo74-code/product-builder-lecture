@@ -135,9 +135,18 @@ maybe('산출물 manifest — 빌드 후에만 검사', () => {
   it('버전 필드를 플랫폼 간 공유하지 않는다', () => {
     // manifest.build 는 iOS 의 CURRENT_PROJECT_VERSION 이다. Android versionCode 는 gradle 소관.
     const gradle = readFileSync(join(ROOT, 'android/app/build.gradle'), 'utf8');
-    expect(gradle).toContain('versionCode 3801');
-    expect(gradle).toContain('versionName "1.0-KR-B38"');
-    expect(String(AND_M().build)).not.toBe('3801');   // 같은 필드로 억지 공유 금지
+    // 계약은 "Android versionCode 는 gradle 소관이고 manifest.build(iOS) 와 같은 필드를 공유하지
+    // 않는다"이다. 특정 빌드 번호(3801 등)를 못박으면 빌드마다 깨진다 — 두 값을 각자 소스에서
+    // 읽어 관계만 단언한다. (Build39 게이트에서는 dist 부재로 skip 돼 3901 도 잡지 못했다.)
+    const vc = Number((/versionCode\s+(\d+)/.exec(gradle) || [])[1]);
+    const vn = (/versionName\s+"([^"]+)"/.exec(gradle) || [])[1];
+    const iosBuild = Number(AND_M().build);
+    expect(vc, 'versionCode 를 못 읽었다').toBeGreaterThan(0);
+    expect(vn, 'versionName 을 못 읽었다').toMatch(/^1\.0-KR-B\d+$/);
+    expect(String(vc)).not.toBe(String(iosBuild));            // 같은 필드로 억지 공유 금지
+    // versionCode 는 iOS build 번호에 01 을 붙인 규칙(3901 ← 39)이어야 한다 — 번호만 다르고 규칙은 고정
+    expect(vc, `versionCode ${vc} 가 iOS build ${iosBuild} 에서 파생된 규칙(build*100+1)과 다르다`).toBe(iosBuild * 100 + 1);
+    expect(vn.endsWith('B' + iosBuild), `versionName ${vn} 이 iOS build ${iosBuild} 와 어긋난다`).toBe(true);
   });
 
   it('[T1] 어느 산출물에도 Tokyo ref 가 없다', () => {
