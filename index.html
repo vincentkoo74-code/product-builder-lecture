@@ -8989,19 +8989,18 @@
             (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
           if (!isCountdownGenerationCurrent(myGen, "staleStartAt")) return false;
           if (state.role === "host") {
-            if (isSafeForHostCountdownRepublish()) {
-              // 아무도 아직 라운드에 들어가지 않았다 → 새 startAt 으로 전원 재정렬.
-              try { QA.emit('metric', Object.assign({ wrps: 'WRPS-R1-B40', eventType: 'STALE_COUNTDOWN_HOST_REPUBLISH', lateByMs: cls.lateByMs },
-                (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
-              scheduledStartAt = await republishCountdownStartAsHost();
-              if (!isCountdownGenerationCurrent(myGen, "staleRepublish")) return false;
-            } else {
-              // 이미 진행 중인 라운드를 되감으면 안 된다 → 권위 room 상태로 다시 진입한다.
-              try { QA.emit('metric', Object.assign({ wrps: 'WRPS-R1-B40', eventType: 'STALE_COUNTDOWN_HOST_REFETCH', lateByMs: cls.lateByMs,
-                reason: 'choiceWindowOpenOrChoiceCommitted' }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
-              showCountdownSyncError(overlay, numEl, labelEl, async () => { await runCountdownThenShowGame(); });
-              return false;
-            }
+            // Build40 R1(게이트 4, split-start 방지): STALE 에서 host 는 startAt 을 **재발행하지 않는다**.
+            // host 가 볼 수 있는 로컬 신호(선택 창 미발행 / 선택 미커밋)는 "다른 기기가 old startAt 을
+            // 이미 수락하지 않았다"를 증명하지 못한다 — STALE 은 정의상 startAt 이 과거이므로 그 사이
+            // 어떤 기기든 카운트다운을 시작했을 수 있다. 재발행하면 같은 세대에 두 startAt epoch 이
+            // 생긴다(split-start). 증명 불가 → 재발행 금지, 권위 room 상태 복구로 간다(참가자와 동일).
+            // 종전 Build22 의 "host 는 항상 자체 복구" 는 startAt 이 **없을 때**(null)만 유효하다 —
+            // 그 경로(waitForValidCountdownStart 실패 → republish)는 그대로 둔다.
+            try { QA.emit('metric', Object.assign({ wrps: 'WRPS-R1-B40', eventType: 'STALE_COUNTDOWN_HOST_REFETCH', lateByMs: cls.lateByMs,
+              reason: 'staleStartAt_noSplitStart', localSafeSignals: isSafeForHostCountdownRepublish() },
+              (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+            showCountdownSyncError(overlay, numEl, labelEl, async () => { await runCountdownThenShowGame(); });
+            return false;
           } else {
             // participant 는 startAt 을 만들지 않는다 — 권위 재조회로 수렴한다.
             showCountdownSyncError(overlay, numEl, labelEl, async () => { await runCountdownThenShowGame(); });

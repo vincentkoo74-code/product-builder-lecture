@@ -117,6 +117,29 @@ describe('Build39 R1 — 복구된 stale countdownStartAt', () => {
     expect(started.length, '경미한 지연까지 막으면 과잉 차단이다').toBe(1);
   });
 
+  // ── CEO 지시 5: SLIGHTLY_LATE 는 절대 타임라인에 정렬한다 ────────────────
+  for (const lateBy of [400, 1450]) {
+    it(`[R1 정렬] ${lateBy}ms late — 로컬 시각으로 새 카운트다운을 시작하지 않고 절대 startAt 에 정렬한다`, async () => {
+      const r = await runSyncBlock({ recoveredStartAt: NOW - lateBy });
+      const started = r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START');
+      expect(started.length).toBe(1);
+      // waitMs=0 (더 기다리지 않음) 이지만 drift 는 정확히 lateBy — 즉 "startAt 은 그대로, 나만 늦게 합류"
+      expect(r.waitMs).toBe(0);
+      expect(started[0].countdownDriftMs, 'drift 가 serverNow-startAt 로 계산되지 않았다').toBeGreaterThanOrEqual(lateBy - 5);
+      expect(started[0].countdownStartServerTs, 'startAt 이 로컬 시각으로 교체됐다').toBe(NOW - lateBy);
+      const sl = r.calls.metrics.filter(m => m.eventType === 'SLIGHTLY_LATE_COUNTDOWN_STARTAT');
+      expect(sl.length, 'SLIGHTLY_LATE 정렬 신호가 없다').toBe(1);
+      expect(sl[0].lateByMs).toBeGreaterThanOrEqual(lateBy - 5);
+      // 세대는 새로 발급되지 않는다(같은 epoch 에 합류)
+      expect(r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_GENERATION_STARTED').length).toBe(0);
+    });
+  }
+  it('[R1 경계] 1550ms late 는 stale 로 거부된다', async () => {
+    const r = await runSyncBlock({ recoveredStartAt: NOW - 1550 });
+    expect(r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START').length).toBe(0);
+    expect(r.calls.metrics.filter(m => m.eventType === 'STALE_COUNTDOWN_STARTAT').length).toBe(1);
+  });
+
   it('[RED-R1a] 6초 지난 복구값으로 카운트다운을 그대로 시작하면 안 된다', async () => {
     // 실측 재현: drift +6026ms
     const r = await runSyncBlock({ recoveredStartAt: NOW - 6026 });
@@ -142,11 +165,14 @@ describe('Build39 R1 — 복구된 stale countdownStartAt', () => {
       .toBeGreaterThan(0);
   });
 
-  it('[RED-R1d] host 는 stale 복구 시 새 예약시각을 재발행해야 한다', async () => {
+  // [R1d 정정 — CEO 지시 4] 종전 이 케이스는 "host 는 stale 시 재발행해야 한다"였다. split-start
+  // 분석 결과 host 는 다른 기기의 old-startAt 수락 여부를 증명할 수 없으므로 STALE 재발행은
+  // 금지된다. 계약을 뒤집는다: host 도 재발행 없이 권위 복구로 간다(R1h2 와 동일 계약).
+  it('[R1d] host 는 stale 복구값을 그대로 쓰지도, 새 startAt 으로 대체하지도 않는다', async () => {
     const r = await runSyncBlock({ recoveredStartAt: NOW - 6026, role: 'host' });
-    expect(r.calls.republished,
-      'host 가 stale 복구값을 그대로 쓴다 — 방 전체가 늦은 startAt 에 묶인다')
-      .toBeGreaterThan(0);
+    expect(r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START').length, 'stale 값으로 시작했다').toBe(0);
+    expect(r.calls.republished, 'STALE 에서 host 가 재발행했다(split-start)').toBe(0);
+    expect(r.calls.syncErrorShown + r.calls.retriedWhole, '권위 복구 경로가 아니다').toBeGreaterThan(0);
   });
 
   // ── Build40 확장 (CEO 지시 9): 실측값 3종 + 경계 + 중복/세대/수렴 ─────────────
@@ -181,12 +207,32 @@ describe('Build39 R1 — 복구된 stale countdownStartAt', () => {
     expect(r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START').length).toBe(0);
   });
 
-  it('[RED-R1h] host 는 안전 조건(선택 창 미발행·선택 미커밋)일 때만 재발행한다', async () => {
-    // 선택 창이 이미 열린 상태(choiceEndAt>0)면 다른 기기가 이미 라운드에 들어갔을 수 있다 → 재발행 금지
-    const unsafe = await runSyncBlock({ recoveredStartAt: NOW - 6026, role: 'host', choiceEndAt: NOW + 5000 });
-    expect(unsafe.calls.republished, '선택 창이 열린 뒤에도 host 가 startAt 을 재발행했다 — 이미 진행 중인 라운드를 되감는다').toBe(0);
-    const safe = await runSyncBlock({ recoveredStartAt: NOW - 6026, role: 'host', choiceEndAt: 0 });
-    expect(safe.calls.republished, '안전 조건인데 host 가 재발행하지 않는다').toBeGreaterThan(0);
+  // ── CEO 지시 4 (split-start 방지) ──────────────────────────────────────────
+  // host 는 다른 기기가 old startAt 을 이미 수락했는지 원격으로 알 수 없다. STALE 은 정의상
+  // startAt 이 과거이므로 "아무도 아직 시작하지 않았다"를 host 가 증명할 방법이 없다.
+  // → STALE 에서 host 재발행은 어떤 로컬 신호로도 정당화되지 않는다. 권위 상태 복구로 간다.
+  it('[RED-R1h] STALE 에서 host 는 선택 창이 열렸으면 재발행하지 않는다', async () => {
+    const r = await runSyncBlock({ recoveredStartAt: NOW - 6026, role: 'host', choiceEndAt: NOW + 5000 });
+    expect(r.calls.republished, '선택 창이 열린 뒤 host 가 startAt 을 재발행했다').toBe(0);
+    expect(r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START').length).toBe(0);
+  });
+
+  it('[RED-R1h2] STALE 에서 host 는 로컬 신호가 "안전"해 보여도 재발행하지 않는다 (split-start 방지)', async () => {
+    // choiceEndAt=0, 로컬 참가자 선택 없음 — 그래도 다른 기기가 old startAt 으로 이미 카운트다운을
+    // 시작했을 수 있다. 같은 세대에 두 개의 startAt epoch 이 생기면 안 된다.
+    const r = await runSyncBlock({ recoveredStartAt: NOW - 6026, role: 'host', choiceEndAt: 0 });
+    expect(r.calls.republished, 'host 가 STALE 복구값을 새 startAt 으로 대체했다 — 이미 old startAt 을 수락한 기기와 epoch 이 갈라진다').toBe(0);
+    expect(r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START').length, '두 번째 epoch 으로 카운트다운을 시작했다').toBe(0);
+    expect(r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_GENERATION_STARTED').length, '새 세대 발급').toBe(0);
+    expect(r.calls.syncErrorShown + r.calls.retriedWhole, '권위 상태 복구 경로로 가지 않았다').toBeGreaterThan(0);
+    const stale = r.calls.metrics.find(m => m.eventType === 'STALE_COUNTDOWN_STARTAT');
+    expect(stale && stale.role, 'host 의 stale 관측이 기록되지 않았다').toBe('host');
+  });
+
+  it('[R1 split-start 대조군] FRESH(미래 startAt) 에서는 host 도 종전대로 정상 시작한다', async () => {
+    const r = await runSyncBlock({ recoveredStartAt: NOW + 3000, viaRecovery: false, role: 'host' });
+    expect(r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START').length).toBe(1);
+    expect(r.calls.republished).toBe(0);
   });
 
   it('[RED-R1i] participant 는 stale 시 새 startAt 을 만들지 않고 권위 재조회로 수렴한다', async () => {
