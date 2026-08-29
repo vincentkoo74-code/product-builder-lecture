@@ -1,0 +1,204 @@
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+// ════════════════════════════════════════════════════════════════════════════
+// Build39 R1 — 복구된 countdownStartAt 이 이미 과거일 때의 late-start 하한.
+//
+// 실기기 증거 (qa-report-build38-2026-08-29-00-03-07.json / 방 3VT6 / iPhone participant):
+//   t=132.8  INVALID_COUNTDOWN_SERVER_TS attempt=0
+//   t=134.0/134.7/135.9/136.8  attempt=1..4        ← 재시도 예산 4.4초 소진
+//   t=137.2  COUNTDOWN_SYNC_FAILED
+//   t=149.0  COUNTDOWN_START  countdownDriftMs=+6026  waitMs=0
+//   t=149.0  SYNC_LATE_RENDER lateRenderMs=6026
+//
+// 즉 동기화 실패 후 복구된 scheduledStartAt 이 이미 6초 지난 값이었고, runCountdown() 은
+//   const waitMs = scheduledStartAt ? Math.max(0, scheduledStartAt - serverNow()) : 0;
+// 로 그 값을 그대로 받아들여 waitMs=0 으로 즉시 시작했다. 신선도 상한이 없어서
+// "동기화된 것처럼" 카운트다운을 시작하지만 실제로는 다른 기기보다 6초 늦다.
+//
+// Build22 는 "동기화 없이 시작"(scheduledStartAt=0)은 하드블록했지만
+// "낡은 동기화로 시작"(scheduledStartAt 이 과거)은 열어 두었다 — 이 파일이 그 구멍을 고정한다.
+//
+// ⚠️ 이 RED 는 **아직 미확정인 트리거 경로**(왜 4.4초간 null 이었나)를 다루지 않는다.
+//    자기완결적인 stale-start 가드만 대상으로 한다(CEO 지시).
+// ⚠️ 공허성 방지: 정상 lead(미래 startAt) 대조군을 함께 둔다 — 가드가 정상 경로까지
+//    막아버리면 대조군이 깨진다.
+// ════════════════════════════════════════════════════════════════════════════
+
+const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+
+function extractBlock(a, b) {
+  const s = html.indexOf(a);
+  if (s < 0) throw new Error('start marker not found: ' + a);
+  const e = html.indexOf(b, s);
+  if (e < 0) throw new Error('end marker not found: ' + b);
+  return html.slice(s, e);
+}
+
+// runCountdown() 의 동기화 구간만 떼어낸다(오버레이 표시 직후 ~ 라운드 라벨 계산 직전).
+// waitForValidCountdownStart 안의 동일 문장과 구분하기 위해 앞줄까지 포함한 마커를 쓴다.
+const SYNC_BLOCK = extractBlock(
+  'overlay.classList.remove("hidden");\n\n      let scheduledStartAt = getCountdownStartAt();',
+  'const roundLabel = state.round > 1'
+);
+// Build40 R1: 동기화 구간이 참조하는 신선도 정책(임계 상수 / 분류 / host 안전조건)은
+// runCountdown 밖에 정의돼 있다. 정책이 없으면 구간이 ReferenceError 로 죽으므로 함께 주입한다.
+// 정책 블록은 serverNow / getChoiceEndAt / state / isNonPlayingChoice / getChoiceBase 만 참조한다.
+const POLICY_BLOCK = (() => {
+  const a = 'const STALE_COUNTDOWN_TOLERANCE_MS = ';
+  if (html.indexOf(a) < 0) return '';   // RED 단계(미구현)에서는 빈 블록 → 종전 동작 그대로 측정
+  return extractBlock(a, 'async function republishCountdownStartAsHost() {');
+})();
+
+const NOW = 1_700_000_000_000;
+
+/**
+ * 추출한 동기화 구간을 실제로 실행한다.
+ * @param {number} recoveredStartAt  waitForValidCountdownStart 가 돌려주는 값(서버 시간 도메인)
+ * @param {boolean} viaRecovery      재시도를 거친 복구 경로인지(=최초 조회는 실패)
+ */
+async function runSyncBlock({ recoveredStartAt, viaRecovery = true, role = 'participant', choiceEndAt = 0 }) {
+  const calls = { sleeps: [], metrics: [], syncErrorShown: 0, republished: 0, retriedWhole: 0 };
+  const state = { round: 1, role, status: 'playing', roomCode: '3VT6', gameRound: 3, countdownGeneration: 1, choiceEndAt };
+  const mkEl = () => ({ className: '', style: {}, textContent: '', classList: { add() {}, remove() {} } });
+  const overlay = mkEl(), numEl = mkEl(), labelEl = mkEl();
+
+  const fn = new Function(
+    'overlay', 'numEl', 'labelEl', 'state', 'QA', 't', 'sleep', 'serverNow',
+    'serverClockOffsetMs', 'getOnlineMode', 'getCountdownStartAt', 'waitForValidCountdownStart',
+    'isCountdownGenerationCurrent', 'republishCountdownStartAsHost', 'showCountdownSyncError',
+    'runCountdownThenShowGame', 'getGameRound', 'Date', 'getChoiceEndAt', 'isNonPlayingChoice', 'getChoiceBase',
+    `${POLICY_BLOCK}\nreturn (async function(myGen){ ${SYNC_BLOCK} return { scheduledStartAt, waitMs }; })(1);`
+  );
+
+  const result = await fn(
+    overlay, numEl, labelEl, state,
+    { emit: (_k, m) => calls.metrics.push(m) },
+    (k) => k,
+    async (ms) => { calls.sleeps.push(ms); },
+    () => NOW,
+    0,
+    () => true,
+    // 최초 조회: 복구 경로면 0(무효) → waitForValidCountdownStart 로 진입한다.
+    () => (viaRecovery ? 0 : recoveredStartAt),
+    async () => recoveredStartAt,
+    () => true,
+    async () => { calls.republished++; return recoveredStartAt; },
+    (_o, _n, _l, onRetry) => { calls.syncErrorShown++; if (onRetry) calls.retriedWhole++; },
+    async () => {},
+    () => 3,
+    { now: () => NOW },
+    () => state.choiceEndAt || 0,
+    (c) => c === '__safe__' || c === '__loser__' || c === '__waiting__',
+    (c) => (c ? String(c).split('|')[0] : null)
+  );
+  return { ...(result || {}), calls };
+}
+
+describe('Build39 R1 — 복구된 stale countdownStartAt', () => {
+  it('전제(공허성 가드): 동기화 구간을 실제로 추출했다', () => {
+    expect(SYNC_BLOCK.length).toBeGreaterThan(400);
+    expect(SYNC_BLOCK).toContain('waitForValidCountdownStart');
+    expect(SYNC_BLOCK).toContain('waitMs');
+    expect(SYNC_BLOCK).toContain('COUNTDOWN_START');
+  });
+
+  it('[대조군] 정상 lead(미래 startAt)는 종전대로 대기 후 시작한다', async () => {
+    const r = await runSyncBlock({ recoveredStartAt: NOW + 3000, viaRecovery: false });
+    expect(r.waitMs, '정상 경로에서 lead 대기가 사라지면 안 된다').toBeGreaterThan(2000);
+    const started = r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START');
+    expect(started.length, '정상 경로에서 COUNTDOWN_START 가 나지 않았다').toBe(1);
+    expect(started[0].countdownDriftMs).toBeLessThanOrEqual(0);
+  });
+
+  it('[대조군] 복구값이 살짝 늦은 정도(≤1s)면 그대로 진행한다', async () => {
+    const r = await runSyncBlock({ recoveredStartAt: NOW - 400 });
+    const started = r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START');
+    expect(started.length, '경미한 지연까지 막으면 과잉 차단이다').toBe(1);
+  });
+
+  it('[RED-R1a] 6초 지난 복구값으로 카운트다운을 그대로 시작하면 안 된다', async () => {
+    // 실측 재현: drift +6026ms
+    const r = await runSyncBlock({ recoveredStartAt: NOW - 6026 });
+    const started = r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START');
+    expect(started.length,
+      `이미 6026ms 지난 startAt 으로 COUNTDOWN_START 를 발행했다(waitMs=${r.waitMs}) — ` +
+      '다른 기기보다 6초 늦게 시작하는 것이 보장된다').toBe(0);
+  });
+
+  it('[RED-R1b] 심하게 지난 복구값은 stale 로 관측 가능해야 한다', async () => {
+    const r = await runSyncBlock({ recoveredStartAt: NOW - 6026 });
+    const staleEvents = r.calls.metrics.filter(m =>
+      /STALE/i.test(String(m.eventType || '')) && /COUNTDOWN/i.test(String(m.eventType || '')));
+    expect(staleEvents.length,
+      'stale 복구를 구분해 남기는 metric 이 없다 — 필드에서 재현/추적이 불가능하다')
+      .toBeGreaterThan(0);
+  });
+
+  it('[RED-R1c] participant 는 stale 복구 시 동기화 오류 안내로 빠져야 한다', async () => {
+    const r = await runSyncBlock({ recoveredStartAt: NOW - 6026, role: 'participant' });
+    expect(r.calls.syncErrorShown,
+      'stale 복구인데도 참가자에게 아무 안내 없이 늦은 카운트다운이 시작된다')
+      .toBeGreaterThan(0);
+  });
+
+  it('[RED-R1d] host 는 stale 복구 시 새 예약시각을 재발행해야 한다', async () => {
+    const r = await runSyncBlock({ recoveredStartAt: NOW - 6026, role: 'host' });
+    expect(r.calls.republished,
+      'host 가 stale 복구값을 그대로 쓴다 — 방 전체가 늦은 startAt 에 묶인다')
+      .toBeGreaterThan(0);
+  });
+
+  // ── Build40 확장 (CEO 지시 9): 실측값 3종 + 경계 + 중복/세대/수렴 ─────────────
+  for (const [label, lateBy] of [['3.5s (Build39 participant max)', 3510], ['5.75s (Build39 host max)', 5755], ['6.026s (Build38 실측)', 6026]]) {
+    it(`[RED-R1e] ${label} stale 복구값으로 정상 카운트다운을 시작하지 않는다`, async () => {
+      const r = await runSyncBlock({ recoveredStartAt: NOW - lateBy });
+      const started = r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START');
+      expect(started.length, `lateBy=${lateBy}ms 인데 COUNTDOWN_START 가 발행됐다`).toBe(0);
+      const stale = r.calls.metrics.filter(m => m.eventType === 'STALE_COUNTDOWN_STARTAT');
+      expect(stale.length, 'STALE_COUNTDOWN_STARTAT metric 이 없다').toBeGreaterThan(0);
+      expect(stale[0].lateByMs, 'lateByMs 필드가 실측값을 담지 않는다').toBeGreaterThanOrEqual(lateBy - 5);
+    });
+  }
+
+  it('[RED-R1f] 경계: 허용 한계 바로 아래는 통과, 바로 위는 거부 (임계가 실제로 존재한다)', async () => {
+    // 구현이 STALE_COUNTDOWN_TOLERANCE_MS 를 노출해야 경계를 검증할 수 있다.
+    const m = /const STALE_COUNTDOWN_TOLERANCE_MS = (\d+);/.exec(html);
+    expect(m, 'STALE_COUNTDOWN_TOLERANCE_MS 상수가 소스에 없다').toBeTruthy();
+    const tol = Number(m[1]);
+    expect(tol, '임계가 lead(3600) 이상이면 "늦게 시작할 권한"이 된다 — 지터 허용치여야 한다').toBeLessThan(3600);
+    expect(tol, '임계가 실측 fetch p99(931ms) 보다 작으면 정상 지연을 stale 로 오탐한다').toBeGreaterThanOrEqual(931);
+    const under = await runSyncBlock({ recoveredStartAt: NOW - (tol - 50) });
+    const over  = await runSyncBlock({ recoveredStartAt: NOW - (tol + 50) });
+    expect(under.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START').length, `tol-50ms 는 통과해야 한다`).toBe(1);
+    expect(over.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START').length, `tol+50ms 는 거부해야 한다`).toBe(0);
+  });
+
+  it('[RED-R1g] stale 거부 시 카운트다운 세대를 새로 발급하지 않는다 (중복 카운트다운 금지)', async () => {
+    const r = await runSyncBlock({ recoveredStartAt: NOW - 6026, role: 'participant' });
+    const gens = r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_GENERATION_STARTED');
+    expect(gens.length, 'stale 거부 경로가 새 세대를 시작했다').toBe(0);
+    expect(r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START').length).toBe(0);
+  });
+
+  it('[RED-R1h] host 는 안전 조건(선택 창 미발행·선택 미커밋)일 때만 재발행한다', async () => {
+    // 선택 창이 이미 열린 상태(choiceEndAt>0)면 다른 기기가 이미 라운드에 들어갔을 수 있다 → 재발행 금지
+    const unsafe = await runSyncBlock({ recoveredStartAt: NOW - 6026, role: 'host', choiceEndAt: NOW + 5000 });
+    expect(unsafe.calls.republished, '선택 창이 열린 뒤에도 host 가 startAt 을 재발행했다 — 이미 진행 중인 라운드를 되감는다').toBe(0);
+    const safe = await runSyncBlock({ recoveredStartAt: NOW - 6026, role: 'host', choiceEndAt: 0 });
+    expect(safe.calls.republished, '안전 조건인데 host 가 재발행하지 않는다').toBeGreaterThan(0);
+  });
+
+  it('[RED-R1i] participant 는 stale 시 새 startAt 을 만들지 않고 권위 재조회로 수렴한다', async () => {
+    const r = await runSyncBlock({ recoveredStartAt: NOW - 6026, role: 'participant' });
+    expect(r.calls.republished, 'participant 가 startAt 을 발행했다').toBe(0);
+    expect(r.calls.syncErrorShown + r.calls.retriedWhole, '재조회/복구 경로로 가지 않았다').toBeGreaterThan(0);
+  });
+
+  it('[불변식] 어떤 경우에도 waitMs 는 음수가 아니다', async () => {
+    for (const off of [-6026, -400, 0, 3000]) {
+      const r = await runSyncBlock({ recoveredStartAt: NOW + off, viaRecovery: off <= 0 });
+      if (r.waitMs !== undefined) expect(r.waitMs).toBeGreaterThanOrEqual(0);
+    }
+  });
+});

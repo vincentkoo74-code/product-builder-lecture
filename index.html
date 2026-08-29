@@ -8817,6 +8817,45 @@
     }
     // Build22(A): host는 항상 자체 복구 가능 — 새 countdownStartAt을 만들어 재발행한다(기존
     // enterPlayingStateFromRoomUpdate 등에서 쓰는 것과 동일한 republish 패턴, status는 바꾸지 않음).
+    // ── Build40 R1: 복구된 countdownStartAt 의 신선도 정책 ────────────────────
+    // 결함(Build38/39 실측): 동기화 재시도 끝에 복구된 startAt 이 이미 3.5~6초 과거인데
+    //   waitMs = Math.max(0, startAt − serverNow())  →  0
+    // 으로 그대로 받아들여 "동기화된 것처럼" 즉시 시작했다. 다른 기기보다 그만큼 늦다.
+    //
+    // lateByMs = serverNow() − scheduledStartAt 이 핵심 수량이다. 상태 3종:
+    //   FRESH          lateByMs <= 0               → 정상 대기 (종전 그대로)
+    //   SLIGHTLY_LATE  0 < lateByMs <= TOLERANCE   → 같은 절대 startAt 에 정렬해 진행 (waitMs 0)
+    //   STALE          lateByMs  > TOLERANCE       → 정상 카운트다운 입력으로 거부
+    //
+    // TOLERANCE 도출(Build39 실측, 방 ZDWQ, n=141):
+    //   fetch durationMs  p50 288 / p90 360 / p99 931 / max 1353
+    //   write_end → 각 기기 최초 관측  269 ~ 341 ms
+    // 임계는 "네트워크/스케줄링 지터 허용치"이지 "늦게 시작할 권한"이 아니다. 따라서
+    //   · p99(931) 아래면 정상 지연을 stale 로 오탐한다
+    //   · lead(3600) 이상이면 사실상 무제한 허용이 된다(종전 결함과 동일)
+    // 1500 = p99 × 1.6, max(1353) 포함. 실측 stale 3.5s / 5.75s / 6.026s 는 모두 거부된다.
+    // ⚠️ lead(3600)+buffer(900)=4500 을 임계로 쓰지 않는다 — lead 는 startAt 이 처음에 미래인
+    //    이유를 설명할 뿐, 얼마나 늦어도 되는지의 근거가 아니다(CEO 지시 6).
+    const STALE_COUNTDOWN_TOLERANCE_MS = 1500;
+    function classifyCountdownStartAt(scheduledStartAt) {
+      if (!scheduledStartAt) return { state: "MISSING", lateByMs: null };
+      const lateByMs = serverNow() - scheduledStartAt;
+      if (lateByMs <= 0) return { state: "FRESH", lateByMs };
+      if (lateByMs <= STALE_COUNTDOWN_TOLERANCE_MS) return { state: "SLIGHTLY_LATE", lateByMs };
+      return { state: "STALE", lateByMs };
+    }
+    // host 가 startAt 을 새로 발행해도 안전한가 — 다른 기기가 이미 이 라운드에 들어갔으면 안 된다.
+    //   · 선택 창(choiceEndAt)이 아직 발행되지 않았다
+    //   · 활성 참가자 중 이번 라운드 선택을 커밋한 사람이 없다
+    function hasAnyCommittedChoice() {
+      try {
+        return (state.participants || []).some(p => !isNonPlayingChoice(p.choice) && getChoiceBase(p.choice));
+      } catch (e) { return false; }
+    }
+    function isSafeForHostCountdownRepublish() {
+      const choiceWindowOpen = (typeof getChoiceEndAt === "function" ? getChoiceEndAt() : 0) > 0;
+      return !choiceWindowOpen && !hasAnyCommittedChoice();
+    }
     async function republishCountdownStartAsHost() {
       state.countdownStartAt = getNextCountdownStartAt();
       // Build30-R2 Phase2(WRPS-078, CONFIRMED ROOT CAUSE 수정): 이 republish는 countdownStartAt만
@@ -8935,6 +8974,42 @@
         }
       }
       // 예정 시각은 서버 시간 도메인 → 로컬도 serverNow()로 평가해야 기기 간 동시 시작이 보장됨.
+      // Build40 R1: 복구/조회된 startAt 이 이미 과거면 그대로 시작하지 않는다.
+      {
+        // ⚠️ typeof 가드: build30-rc2 등이 runCountdown 만 좁게 추출해 독립 실행한다(Build39 관례).
+        //    정책이 스코프에 없으면 FRESH 로 취급해 종전 동작 그대로 진행한다.
+        const cls = (typeof classifyCountdownStartAt === "function") ? classifyCountdownStartAt(scheduledStartAt) : { state: "FRESH", lateByMs: null };
+        if (cls.state === "STALE") {
+          try { QA.emit('metric', Object.assign({ wrps: 'WRPS-R1-B40', eventType: 'STALE_COUNTDOWN_STARTAT',
+            scheduledStartAt, lateByMs: cls.lateByMs, toleranceMs: STALE_COUNTDOWN_TOLERANCE_MS,
+            role: state.role, generation: myGen, localNow: Date.now() },
+            (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+          if (!isCountdownGenerationCurrent(myGen, "staleStartAt")) return false;
+          if (state.role === "host") {
+            if (isSafeForHostCountdownRepublish()) {
+              // 아무도 아직 라운드에 들어가지 않았다 → 새 startAt 으로 전원 재정렬.
+              try { QA.emit('metric', Object.assign({ wrps: 'WRPS-R1-B40', eventType: 'STALE_COUNTDOWN_HOST_REPUBLISH', lateByMs: cls.lateByMs },
+                (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+              scheduledStartAt = await republishCountdownStartAsHost();
+              if (!isCountdownGenerationCurrent(myGen, "staleRepublish")) return false;
+            } else {
+              // 이미 진행 중인 라운드를 되감으면 안 된다 → 권위 room 상태로 다시 진입한다.
+              try { QA.emit('metric', Object.assign({ wrps: 'WRPS-R1-B40', eventType: 'STALE_COUNTDOWN_HOST_REFETCH', lateByMs: cls.lateByMs,
+                reason: 'choiceWindowOpenOrChoiceCommitted' }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+              showCountdownSyncError(overlay, numEl, labelEl, async () => { await runCountdownThenShowGame(); });
+              return false;
+            }
+          } else {
+            // participant 는 startAt 을 만들지 않는다 — 권위 재조회로 수렴한다.
+            showCountdownSyncError(overlay, numEl, labelEl, async () => { await runCountdownThenShowGame(); });
+            return false;
+          }
+        } else if (cls.state === "SLIGHTLY_LATE") {
+          try { QA.emit('metric', Object.assign({ wrps: 'WRPS-R1-B40', eventType: 'SLIGHTLY_LATE_COUNTDOWN_STARTAT',
+            scheduledStartAt, lateByMs: cls.lateByMs, toleranceMs: STALE_COUNTDOWN_TOLERANCE_MS },
+            (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+        }
+      }
       const waitMs = scheduledStartAt ? Math.max(0, scheduledStartAt - serverNow()) : 0;
       // QA(WRPS-026/036): 카운트다운 시작 드리프트 — 이 단말의 serverNow가 예정 startAt을 얼마나 벗어났나.
       QA.emit('metric', { wrps: 'WRPS-036', eventType: 'COUNTDOWN_START', round: state.round,
