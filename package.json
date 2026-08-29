@@ -31,20 +31,20 @@
   },
   "homepage": "https://github.com/vincentkoo74-code/product-builder-lecture#readme",
   "dependencies": {
-    "@capacitor/app": "^7.0.0",
-    "@capacitor/browser": "^7.0.5",
-    "@capacitor/filesystem": "^7.1.8",
-    "@capacitor/screen-orientation": "^7.0.0",
-    "@capacitor/share": "^7.0.4",
+    "@capacitor/app": "7.1.2",
+    "@capacitor/browser": "7.0.5",
+    "@capacitor/filesystem": "7.1.8",
+    "@capacitor/screen-orientation": "7.0.4",
+    "@capacitor/share": "7.0.4",
     "@supabase/supabase-js": "^2.108.1",
     "jose": "^6.2.3",
     "jsqr": "^1.4.0"
   },
   "devDependencies": {
-    "@capacitor/android": "^7.0.0",
-    "@capacitor/cli": "^7.0.0",
-    "@capacitor/core": "^7.0.0",
-    "@capacitor/ios": "^7.0.0",
+    "@capacitor/android": "7.6.8",
+    "@capacitor/cli": "7.6.8",
+    "@capacitor/core": "7.6.8",
+    "@capacitor/ios": "7.6.8",
     "typescript": "^6.0.3",
     "vitest": "^2.1.8"
   }
