@@ -207,7 +207,7 @@ describe('P0-1 — envelope merge 보존 (RED)', () => {
     expect(p.choiceEndAt, 'choiceEndAt 유실').toBe(1700000005000);
     expect(p.phaseScheduledAt, 'phaseScheduledAt 유실').toBe(1700000009000);
     expect(p.phaseKind, 'phaseKind 유실').toBe('result');
-    expect(p.continuation, 'continuation 이 envelope 에 실리지 않았다').toEqual(cont);
+    expect(p.continuation, 'continuation 이 envelope 에 실리지 않았다').toEqual({ ...cont, roomCode: null });
   });
 
   it('[RED-M2] continuation 은 gameNo/round 신원 없이 bare 로 실리지 않는다', () => {
