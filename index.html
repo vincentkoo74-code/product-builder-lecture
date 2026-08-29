@@ -8954,7 +8954,11 @@
       // 오프라인(단일기기 pass-play)은 애초에 기기간 동기화 대상이 아니므로(서버/방 없음) 이
       // 하드블록은 온라인 모드에서만 적용한다 — 오프라인에서 misfire하면 매 라운드 불필요한
       // 대기(waitForValidCountdownStart의 재시도 지연)만 유발한다.
+      // Build40 R1: 이 startAt 이 "복구값"(최초 조회 실패 → 재시도 루프가 되찾음)인지, room row 가
+      // 처음부터 실어 온 "정상 조회값"인지를 구분한다. STALE 거부는 복구값에만 적용한다(아래 참고).
+      let startAtWasRecovered = false;
       if (!scheduledStartAt && getOnlineMode()) {
+        startAtWasRecovered = true;
         scheduledStartAt = await waitForValidCountdownStart();
         // Build30-R2 Phase2(WRPS-078) checkpoint 1/5: waitForValidCountdownStart 반환 직후.
         // 이 세대가 이미 stale이면 곧바로 이어지는 DB write(republishCountdownStartAsHost)나
@@ -8982,7 +8986,17 @@
         // ⚠️ typeof 가드: build30-rc2 등이 runCountdown 만 좁게 추출해 독립 실행한다(Build39 관례).
         //    정책이 스코프에 없으면 FRESH 로 취급해 종전 동작 그대로 진행한다.
         const cls = (typeof classifyCountdownStartAt === "function") ? classifyCountdownStartAt(scheduledStartAt) : { state: "FRESH", lateByMs: null };
-        if (cls.state === "STALE") {
+        // ⚠️ 거부 범위 = **복구값**만. room row 가 처음부터 실어 온 startAt 이 전송 지연으로 늦게
+        //    도착한 것(pessimistic realtime 꼬리 최대 9s, rc3 시뮬 실측)은 stale 이 아니라 "늦게 합류"다 —
+        //    절대 타임라인(startAt)은 권위 그대로이므로 serverNow−startAt 만큼 뒤에서 합류한다.
+        //    이 경우까지 거부하면 재시도 탭이 없는 단말(시뮬/무인 QA)이 STALL 하고, 실기기도
+        //    Build39 에서는 늦게라도 합류했던 라운드를 오류 화면으로 막는다(회귀). rc3 sim 5건 실패로 확인.
+        //    반면 복구값은 "아무도 startAt 을 못 본 창 → 재시도 끝에 되찾은 과거값"이라 정렬 대상이 아니다.
+        if (cls.state === "STALE" && !startAtWasRecovered) {
+          try { QA.emit('metric', Object.assign({ wrps: 'WRPS-R1-B40', eventType: 'LATE_DELIVERED_COUNTDOWN_STARTAT',
+            scheduledStartAt, lateByMs: cls.lateByMs, toleranceMs: STALE_COUNTDOWN_TOLERANCE_MS, joinedLate: true },
+            (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+        } else if (cls.state === "STALE") {
           try { QA.emit('metric', Object.assign({ wrps: 'WRPS-R1-B40', eventType: 'STALE_COUNTDOWN_STARTAT',
             scheduledStartAt, lateByMs: cls.lateByMs, toleranceMs: STALE_COUNTDOWN_TOLERANCE_MS,
             role: state.role, generation: myGen, localNow: Date.now() },

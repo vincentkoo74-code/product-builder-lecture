@@ -241,6 +241,28 @@ describe('Build39 R1 — 복구된 stale countdownStartAt', () => {
     expect(r.calls.syncErrorShown + r.calls.retriedWhole, '재조회/복구 경로로 가지 않았다').toBeGreaterThan(0);
   });
 
+  // ── Build40 R1 정정 (rc3 sim STALL 5건으로 발견): 거부 범위는 복구값뿐이다 ─────────
+  // room row 가 처음부터 실어 온 startAt 이 전송 지연(pessimistic 꼬리 ~9s)으로 늦게 도착하면
+  // 절대 타임라인에 그만큼 뒤에서 합류한다. 오류 화면으로 막으면 재시도 탭이 없는 단말은 STALL.
+  for (const lateBy of [3510, 5755, 6026]) {
+    it(`[R1 전송지연 합류] room row 가 실어 온 startAt 이 ${lateBy}ms 늦게 도착 → 거부하지 않고 합류한다`, async () => {
+      const r = await runSyncBlock({ recoveredStartAt: NOW - lateBy, viaRecovery: false });
+      const started = r.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START');
+      expect(started.length, '늦게 도착한 정상값을 거부해 카운트다운이 없다(STALL 경로)').toBe(1);
+      expect(started[0].countdownStartServerTs, 'startAt 을 교체했다').toBe(NOW - lateBy);
+      expect(r.waitMs).toBe(0);
+      expect(r.calls.syncErrorShown, '오류 화면으로 막았다').toBe(0);
+      expect(r.calls.metrics.filter(m => m.eventType === 'LATE_DELIVERED_COUNTDOWN_STARTAT').length, '합류 관측 metric 없음').toBe(1);
+      expect(r.calls.metrics.filter(m => m.eventType === 'STALE_COUNTDOWN_STARTAT').length, '정상 지연 도착을 stale 로 오분류').toBe(0);
+    });
+  }
+  it('[R1 구분] 같은 6026ms 라도 복구값이면 거부, 전송지연이면 합류 — 두 경로가 실제로 갈린다', async () => {
+    const rec = await runSyncBlock({ recoveredStartAt: NOW - 6026, viaRecovery: true });
+    const del = await runSyncBlock({ recoveredStartAt: NOW - 6026, viaRecovery: false });
+    expect(rec.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START').length).toBe(0);
+    expect(del.calls.metrics.filter(m => m.eventType === 'COUNTDOWN_START').length).toBe(1);
+  });
+
   it('[불변식] 어떤 경우에도 waitMs 는 음수가 아니다', async () => {
     for (const off of [-6026, -400, 0, 3000]) {
       const r = await runSyncBlock({ recoveredStartAt: NOW + off, viaRecovery: off <= 0 });
