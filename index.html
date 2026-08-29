@@ -9707,11 +9707,11 @@
     // Build40 P0-1: 화면 caseType 과 음성 키가 **같은 mode** 에서 나오도록 묶는다.
     // caseType 은 renderRoundResult 가 이미 받은 값이고, 여기서는 그 caseType 이 mode 와
     // 일치하는지 기록한 뒤 mode 로부터 음성 키를 꺼낸다 — 분기마다 음성 키를 따로 고르지 않는다.
+    function announceContinuation(mode, caseType, delayMs) {
       // 같은 gameNo:round 에서는 한 번만 — finishRoundLocal 이 재진입(defer-retry/에코)해도 안내는 1회.
       const onceKey = `${getGameRound()}:${state.round || 1}`;
       if (state.__continuationAnnouncedKey === onceKey) return;
       state.__continuationAnnouncedKey = onceKey;
-    function announceContinuation(mode, caseType, delayMs) {
       const voiceKey = continuationVoiceKey(mode);
       const sem = continuationSemantic(mode);
       try { QA.emit('metric', Object.assign({ wrps: 'WRPS-P01', eventType: 'CONTINUATION_MESSAGE_RENDERED',
@@ -9913,6 +9913,7 @@
       const remainingSlots = targetCount - prevLoserIds.length;
       const allDraw = activePlayers.length > 0 && activePlayers.every(p => p.lastResult === "draw");
       const iPlayedThisRound = activePlayers.some(p => p.id === state.currentUserId);
+
       // Build40 P0-1(게이트 2): 재대결 안내(WINNERS/LOSERS)가 갈릴 수 있는 라운드에서 일치하는
       // 권위 envelope 이 아직 없으면 로컬 재계산으로 반대 안내를 내지 않고 **대기**한다.
       //   · 참가자이고(host 는 결정 주체)
@@ -9937,7 +9938,6 @@
         }
       }
       if (authoritativeContinuation) state.__continuationAwaitCount = 0;
-
 
       // Build28(WRPS-075) [수정1-a]: 빈 스냅샷 판정 보류 — 실측 host 04:54:09 eventId="6:2"(새
       // gameNo 6 + 직전 게임의 stale round 2가 섞인 eventId), resultValue=null, tooFew,
