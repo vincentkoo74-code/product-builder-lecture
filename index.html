@@ -2365,6 +2365,19 @@
     .c-body::-webkit-scrollbar{display:none}
     /* c-foot: Primary CTA는 어떤 기기 높이에서도 잘리지 않는다 */
     .c-foot{flex:0 0 auto;padding-top:10px}
+    /* Build39 UI(승인 사양 B-4/D/E): 흰 오방색 패널을 화면 바닥까지 연속시킨다.
+       .app 는 하단 안전영역만큼 padding-bottom 을 갖는데, 카드가 그 위에서 끝나면
+       아래로 분홍/크림 배경 띠가 드러나 "카드가 끊긴" 것처럼 보인다(실측 34px).
+       카드를 그 패딩만큼 끌어내리고 같은 크기의 여백을 카드 안(.c-foot)으로 옮긴다 —
+       버튼의 실제 터치 여백은 그대로 유지되면서 흰 표면만 바닥까지 이어진다.
+       색동 스트라이프는 카드 전체 높이를 따라가므로(top:0;bottom:0) 함께 연장된다. */
+    .card.card-flush-bottom{
+      margin-bottom: calc(-1 * var(--safe-bottom, 24px)) !important;
+      border-bottom-left-radius:0;
+      border-bottom-right-radius:0;
+    }
+    .card.card-flush-bottom > .c-foot{ padding-bottom: var(--safe-bottom, 24px) }
+    .card.card-flush-bottom .saekdong-v{ border-bottom-left-radius:0 }
     .c-foot > .action-grid,
     .c-foot > .footer-actions,
     .c-foot > .compact-action-grid{margin-top:0}
@@ -2970,7 +2983,7 @@
     </section>
 
     <!-- Phase 2: 로비 화면 (게임 완료 후) -->
-    <section class="card maru-card hidden" id="screenLobby">
+    <section class="card maru-card card-flush-bottom hidden" id="screenLobby">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
@@ -2981,10 +2994,10 @@
       <div class="vrshow-cap vrshow-cap-lg" data-i18n="lobby.cap">한 판 더?</div>
       <p class="maru-section-sub" style="margin-top:6px" data-i18n-html="lobby.subtitle">친구들 다 모이면<br/>마루가 새 판! 🐾</p>
       <div class="maru-guide" id="lobbyGuide"></div>
-      <div class="compact-info-row">
-        <span class="label"><span id="lobbyIdentityLabel" data-i18n="lobby.hostLabel">👑 호스트</span> - <span id="lobbyIdentityName">-</span></span>
-        <span id="lobbyRoomCodeLine" class="value">방 코드: <strong id="lobbyRoomCode">ABCD</strong></span>
-      </div>
+      <!-- Build39 UI(승인 사양 B-1): "나 - 닉네임 / 방 코드: XXXX" 중복 row 제거.
+           방 코드는 아래 검은 진행 카드 안(game-progress-rematch 자리)으로 옮겼다
+           — renderRoundProgressCards()의 screenLobby 변형 참고. 역할/닉네임은 참가자
+           목록에 이미 배지로 표시되므로 여기서 다시 보여줄 필요가 없다. -->
       <div id="lobbyPenaltyBox" class="compact-info-row compact-penalty-row">
         <span class="label" data-i18n="lobby.penaltyBoxLabel">이번 게임 벌칙</span>
         <strong id="lobbyPenaltyText" class="value" data-i18n="lobby.penaltyEmpty">아직 벌칙이 설정되지 않았습니다.</strong>
@@ -11423,10 +11436,14 @@ function summarizeGameStats(rows) {
       if (!cards.length) return;
       const info = getRoundProgressData();
       const lockText = info.locked ? t("progress.locked") : t("progress.editable");
-      const html = `
+      // Build39 UI(승인 사양 B-2): 대기실(screenLobby)에서는 우상단 칩이 "첫 대결" 같은
+      // 재대결 카운터가 아니라 **방 코드**를 보여준다 — 위에서 제거한 중복 row 의 정보가
+      // 여기로 옮겨온다. 게임이 진행 중인 화면(결과/대기/플레이)에서는 재대결 회차가 실제
+      // 정보를 담으므로 종전 그대로 둔다(무변경).
+      const mkHtml = (topRightChip) => `
         <div class="game-progress-top">
           <div class="game-progress-round">${t("progress.round", { n: info.round })}</div>
-          <div class="game-progress-rematch">${info.rematchText}</div>
+          <div class="game-progress-rematch">${topRightChip}</div>
         </div>
 	        <div class="game-progress-stats">
 	          <div class="game-progress-stat safe"><strong>${info.safeCount}</strong><span>${t("progress.safe")}</span></div>
@@ -11436,6 +11453,9 @@ function summarizeGameStats(rows) {
         </div>
         <div class="game-progress-lock">${lockText}</div>
       `;
+      const html = mkHtml(info.rematchText);
+      const roomCodeChip = `${t("join.codeLabel")} <strong>${state.roomCode || "----"}</strong>`;
+      const lobbyHtml = mkHtml(roomCodeChip);
       // P0(Build38): Host 대기방 카드만 compact 변형을 쓴다.
       // 대기방에서는 라운드/승·무·패/잠금 안내가 아직 의미가 없는데 그 높이(약 100px+)가
       // c-head 를 밀어올려 참가자 목록 공간을 잡아먹는다. 대기실 코드와 술래 숫자
@@ -11449,7 +11469,8 @@ function summarizeGameStats(rows) {
       `;
       cards.forEach(card => {
         const isHostRoomCard = card.closest && card.closest("#screenHostRoom");
-        card.innerHTML = isHostRoomCard ? compactHtml : html;
+        const isLobbyCard = card.closest && card.closest("#screenLobby");
+        card.innerHTML = isHostRoomCard ? compactHtml : (isLobbyCard ? lobbyHtml : html);
         card.classList.toggle("hidden", !state.roomCode && !state.penalty);
       });
     }
@@ -14539,19 +14560,9 @@ function summarizeGameStats(rows) {
 
     // 로비 화면 렌더링
     function renderLobby() {
-      const host = state.participants.find(p => p.is_host);
       const me = state.participants.find(p => p.id === state.currentUserId);
-      const identityLabel = $("lobbyIdentityLabel");
-      const identityName = $("lobbyIdentityName");
-      if (identityLabel) identityLabel.textContent = state.role === "host" ? t("lobby.hostLabel") : t("lobby.meLabel");
-      if (identityName) {
-        identityName.textContent = state.role === "host"
-          ? (host?.name || t("lobby.hostUnknown"))
-          : (me?.name || state.nickname || loadNickname() || "-");
-      }
-      // "방 코드: ABCD" 줄 통째로 갱신
-      const codeLine = $("lobbyRoomCodeLine");
-      if (codeLine) codeLine.innerHTML = t("lobby.roomCodeLabel", { code: state.roomCode || "----" });
+      // Build39 UI(승인 사양 B-1): 역할/닉네임 + 방 코드 중복 row 는 제거됐다.
+      // 방 코드는 renderRoundProgressCards()가 검은 진행 카드 안에 렌더한다.
       // 참여자 목록 헤딩 ("참여자 목록 (N명)")
       const heading = $("lobbyParticipantHeading");
       if (heading) heading.textContent = t("lobby.participantCount", { n: state.participants.length });
@@ -14559,8 +14570,13 @@ function summarizeGameStats(rows) {
       // 벌칙 표시
       const penEl = $("lobbyPenaltyText");
       if (penEl) penEl.textContent = getPenaltyDisplayText("lobby.penaltyEmpty");
+      // Build39 UI(승인 사양 C): 술래 숫자 row 는 **host 전용**이다.
+      // 참가자에게는 visibility:hidden 이나 투명 placeholder 가 아니라 레이아웃 흐름에서
+      // 완전히 제거되어야 한다(.hidden = display:none !important) — 그래야 아래 검은 카드와
+      // 참가자 목록이 그만큼 위로 올라온다. 참가자는 술래 인원을 검은 카드의 "술래 N명"으로
+      // 이미 보고 있어 이 row 는 중복이다.
       const loserBox = $("lobbyLoserCountBox");
-      if (loserBox) loserBox.classList.remove("hidden");
+      if (loserBox) loserBox.classList.toggle("hidden", state.role !== "host");
       updateLoserCountDropdown();
 
       const btn = $("lobbyReadyBtn");
