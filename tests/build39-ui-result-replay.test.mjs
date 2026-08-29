@@ -153,6 +153,24 @@ describe.skipIf(!hasChrome)('Build39 UI — 결과/대기 화면 geometry', () =
       expect(r.outerHeading.total, '외부 heading 이 아직 세로 공간을 차지한다').toBe(0);
     });
 
+    it(`[RED-P1-B40] ${d.name} — 최종 결과 검은 카드에 "술래 숫자 잠김" 안내가 없다`, () => {
+      // Build39 필드 스크린샷(IMG_2010): 게임이 끝난 결과 화면 하단에
+      // "술래 숫자는 이번 게임이 끝날 때까지 잠겨 있습니다." 가 fade mask 에 걸려 반투명하게 잘렸다.
+      // 끝난 게임에서 이 안내는 의미가 없다. 결과 화면 변형(resultHtml)에서만 제거한다.
+      const r = pick(d.name, 'finalResult');
+      expect(r.blackCard.natH, '공허성 가드: 검은 카드 높이가 0 이다').toBeGreaterThan(0);
+      expect(/잠겨 있습니다|변경할 수 있습니다|locked|editable/.test(r.blackCardText),
+        `결과 카드에 lock 안내가 남아 있다 — "${r.blackCardText.slice(-60)}"`).toBe(false);
+    });
+
+    it(`[대조군-P1] ${d.name} — 대기 화면(winnerWait) 검은 카드에는 lock 안내가 유지된다`, () => {
+      // 진행 중 화면에서는 이 안내가 의미가 있으므로 제거되면 안 된다(과잉 삭제 방지).
+      const r = pick(d.name, 'winnerWait');
+      expect(r.blackCard.natH, '공허성 가드').toBeGreaterThan(0);
+      expect(/잠겨 있습니다|변경할 수 있습니다/.test(r.blackCardText),
+        '대기 화면에서 lock 안내가 사라졌다 — 결과 화면에만 한정해야 한다').toBe(true);
+    });
+
     it(`[RED-A7] ${d.name} — 검은 카드가 "라운드 결과" 제목을 품는다`, () => {
       const r = pick(d.name, 'finalResult');
       expect(r.blackCard.natH, '공허성 가드: 검은 카드 높이가 0 이다').toBeGreaterThan(0);
