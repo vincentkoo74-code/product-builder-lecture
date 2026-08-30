@@ -10,16 +10,16 @@
 
 | # | 파일 | 플랫폼 / 뷰포트(dp) | 역할 | 화면 | 증상 | 영향 | 심각도 |
 |---|---|---|---|---|---|---|---|
-| 1 | IMG_2011.PNG | iPhone 390×844 | 참가자(술래) | screenRoundResult(gameOver·lose) | 검은 "라운드 결과" 카드가 벌칙 박스 아래 ~40px만 보이고 잘림, 참가자 결과 목록 안 보임 | 결과 확인 불가(스크롤 필요, 스크롤 가능함을 알 수 없음) | P1 |
-| 2 | IMG_2012.PNG | iPhone 390×844 | 참가자(승) | screenRoundResult(gameOver·win) | 정상. 잠금 문구 제거 확인. c-body 하단 ~250px 빈 공간 | 없음(정보) | – |
-| 3 | IMG_2013.PNG | iPhone 390×844 | 참가자 | screenGame(5라운드, 선택 후) | 큰 손 미리보기가 c-head 를 밀어 요약 행(남은 시간/선택/참가자 숫자)이 위가 잘림; QA fab 이 선택 버튼 위에 겹침 | 타이머 판독 불가, QA 버튼 오탭 | P1 |
-| 4 | IMG_2014.PNG | iPhone 390×844 | 참가자(술래) | screenRoundResult(lose) | #1 과 동일(다른 게임) — 재현성 확인 | #1 과 동일 | P1 |
-| 5 | IMG_2015.PNG | iPhone 390×844 | 참가자 | 내 누적 기록 팝업 | 백엔드 원문 오류 `permission denied for table user_game_stats`; 라벨이 "기록 불러 / 오기 실패"로 2줄 분절 | 기능 실패(백엔드) + 문구 파손 | P1(백엔드) / P2(UI) |
-| 6 | Screenshot_20260830_091037.jpg | Android 360×~760 | 호스트(승) | screenRoundResult(win) | 결과 카드 승/무/패 라벨이 c-body fade 에 걸려 반투명·잘림; QA fab 이 "게임방에서 나가기" 위에 겹침 | 결과 판독 저하, 나가기 오탭 | P1 |
-| 7 | IMG_2043.JPG | Android 360×~760 | 호스트 | screenReady(round≥2) | 참가자 준비 현황 목록이 ~15px 만 보임; "나가기"+"게임방에서 나가기" 2개; "⚡ 다시한번! 강제 시작" 2줄 | 누가 안 눌렀는지 알 수 없음, 잘못된 나가기(goHome) 노출 | P0/P1 |
-| 8 | IMG_2044.JPG | Android 360×~760 | 호스트(승) | screenRoundResult(win) | #6 과 동일 | #6 과 동일 | P1 |
-| 9 | IMG_2045.JPG | Android 360×~760 | 호스트 | screenLobby | 정상 | 없음 | – |
-| 10 | IMG_2046.JPG | Android 360×~760 | 호스트 | screenWinnerWait | 강제 시작 버튼 2줄; QA fab 겹침. 그 외 정상 | 경미 | P2 |
+| 1 | IMG_2011.PNG | iPhone 15/16급 393×852 (webview 393×818) · **Build39** | 참가자(술래) | screenRoundResult(gameOver·lose) | 검은 "라운드 결과" 카드가 벌칙 박스 아래 ~40px만 보이고 잘림, 참가자 결과 목록 안 보임 | 결과 확인 불가(스크롤 필요, 스크롤 가능함을 알 수 없음) | P1 |
+| 2 | IMG_2012.PNG | iPhone 15/16급 393×852 (webview 393×818) · **Build39** | 참가자(승) | screenRoundResult(gameOver·win) | 메시지 아래 40dp 간격 · 버튼 아래 56dp 슬롯 슬랙(흰 띠) · (Build39) 잠금 문구 fade | 하단 공간 낭비 인상 | P2 (원래 결함) |
+| 3 | IMG_2013.PNG | iPhone 15/16급 393×852 (webview 393×818) · Build39 | 참가자 | screenGame(5라운드, 선택 후) | 큰 손 미리보기가 c-head 를 밀어 요약 행(남은 시간/선택/참가자 숫자)이 위가 잘림; QA fab 이 선택 버튼 위에 겹침 | 타이머 판독 불가, QA 버튼 오탭 | P1 |
+| 4 | IMG_2014.PNG | iPhone 15/16급 393×852 (webview 393×818) · Build39 | 참가자(술래) | screenRoundResult(lose) | #1 과 동일(다른 게임) — 재현성 확인 | #1 과 동일 | P1 |
+| 5 | IMG_2015.PNG | iPhone 15/16급 393×852 · Build39 | 참가자 | 내 누적 기록 팝업 | 백엔드 원문 오류 `permission denied for table user_game_stats`; 라벨이 "기록 불러 / 오기 실패"로 2줄 분절 | 기능 실패(백엔드) + 문구 파손 | P1(백엔드) / P2(UI) |
+| 6 | Screenshot_20260830_091037.jpg | **Android** 1080×2280 @3x = 360×760 (webview 360×732) · Build40 KR-B40 | 호스트(승) | screenRoundResult(win) | 결과 카드 승/무/패 라벨이 c-body fade 에 걸려 반투명·잘림; QA fab 이 "게임방에서 나가기" 위에 겹침 | 결과 판독 저하, 나가기 오탭 | P1 |
+| 7 | IMG_2043.JPG | Android(사진: iPhone 16 카메라) 360×760 · Build40 | 호스트 | screenReady(round≥2) | 참가자 준비 현황 목록이 ~15px 만 보임; "나가기"+"게임방에서 나가기" 2개; "⚡ 다시한번! 강제 시작" 2줄 | 누가 안 눌렀는지 알 수 없음, 잘못된 나가기(goHome) 노출 | P0/P1 |
+| 8 | IMG_2044.JPG | Android(사진) 360×760 · Build40 | 호스트(승) | screenRoundResult(win) | #6 과 동일 | #6 과 동일 | P1 |
+| 9 | IMG_2045.JPG | Android(사진) 360×760 · Build40 | 호스트 | screenLobby | 정상 | 없음 | – |
+| 10 | IMG_2046.JPG | Android(사진) 360×760 · Build40 | 호스트 | screenWinnerWait | 강제 시작 버튼 2줄; QA fab 겹침. 그 외 정상 | 경미 | P2 |
 
 ### 증상 → 코드 추적 (root cause chain)
 
@@ -143,3 +143,56 @@ QA fab: 하단 고정(선택 버튼과 13~104px 겹침) → topbar 아래 도크
 - RC-E: `user_game_stats` SELECT grant(Seoul) — `supabase/migrations/20260824021500_account_game_stats_grants.sql` Dashboard 적용 대기. 오류 원문 노출은 grant 적용으로 사라짐(문구 자체는 i18n `account.loadFailed` 유지).
 - 360×640 결과(술래): 벌칙 꼬리 하단이 c-body 가장자리 9px 위 — 텍스트 자체는 fade(14px) 밖(18px 위)이라 판독 영향 없음.
 - Android 런처 아이콘(KR-ANDROID-LAUNCHER-ICON): 별도 백로그.
+
+## 7. 증거 재조정 (Evidence Reconciliation Gate, 2026-08-30)
+
+### 7.1 기기·빌드 식별 (세션 증거 기준, 외관 추정 아님)
+| 파일 | 근거 | 결론 |
+|---|---|---|
+| IMG_2011~2015.PNG | 1179×2556 px(@3x → 393×852, iPhone 15/16급); iOS 상태바(Dynamic Island, 5G, 14:10~14:22); 파일 생성 2026-08-29 14:10~14:22(로컬). Build40 메타 커밋 `1deba2b` = 08-29 17:30 → **촬영 시점에 Build40 은 존재하지 않음**. IMG_2012 결과 카드에 잠금 문구(fade) 잔존 = Build40 P1 이전 = **Build39**. QA JSON(fmx30ai8, iPhone OS 18.7, 08-30 10:15)은 별개 세션(Build40). | iPhone 15/16급, Build39 TestFlight, 참가자 |
+| Screenshot_20260830_091037.jpg | 1080×2280 px(@3x = 360×760); Android 상태바(09:10, KB/s, VPN 칩, 진동 아이콘), 하단 제스처 바; 파일명 규칙 `Screenshot_YYYYMMDD_HHMMSS.jpg`(Android). IMG_2044.JPG(iPhone 16 카메라, 09:10:46)가 **9초 뒤 같은 화면을 찍은 사진**이며 그 기기는 물방울 노치 Android. iPhone 11 은 828×1792 이며 Android 상태바가 없다. | **Android 360×760, 호스트, Build40 KR-B40** — iPhone 11 아님 |
+| IMG_2043~2046.JPG | EXIF Apple iPhone 16 / iOS 26.6 카메라 사진(4032×3024), 09:10~09:13 | 피사체 = 위 Android 기기 |
+
+**필드 실측 webview 뷰포트**: iPhone — QA fab(`position:fixed;bottom:8px`) 하단이 809dp → 레이아웃 뷰포트 하단 ≈ 818dp(홈 인디케이터 34dp 는 webview 밖, 흰색 네이티브 영역), 상단은 status bar 아래로 확장(topbar 67dp 시작) → **393×818, safe-top 67 / safe-bottom fallback 18**. Android — 360×732(status bar 28dp 제외), safe 18/18. 이하 재계측은 이 두 클래스로 했다(`_maru-rps-evidence/Build41-UI-fieldfix/recon/`).
+
+### 7.2 IMG_2012 정정 처분 — "정상" 철회 → 원래 결함 / 부분 수정
+| 증상 | BEFORE(393×818) | AFTER | 판정 | 원인 |
+|---|---|---|---|---|
+| 메시지 아래 과도한 간격 | 40dp(필드 프로파일 44) | **20dp** | FIXED | `.lead{margin-bottom:20px}`(본문 문단용) + hero padding 10 + 카드 margin 10 |
+| 버튼이 바닥보다 너무 위 / 하단 빈 공간 | 마지막 버튼 하단 729/818, 버튼 아래 89dp(필드 106) | 729/818 **동일** | **NOT FIXED** | `#verdictActionSlot{min-height:104px}`(Build35 결정3: 상태 전환 layout-jump 방지)가 참가자의 1행(48px) 상태에도 2행 예약 → 56dp 슬랙 |
+| 결과 카드 | 147/147 | 147/147 | – | – |
+
+### 7.3 IMG_2011 / IMG_2014 5항목 (393×818, 참가자·술래)
+| 항목 | BEFORE | AFTER | FIXED | 원인 |
+|---|---|---|---|---|
+| A 메시지 아래 간격 | 44dp(필드 48) | 20dp | YES | `.lead` 하단 마진 — hero 가 간격 소유하도록 0 |
+| B 벌칙 박스 크기 | 92.7dp(필드 93) | 42dp 한 줄 꼬리 | YES | `.penalty-box{padding:18;strong 22px block}` 을 c-head 에 배치 |
+| C 결과 카드 잘림 | 47.5/147 (필드 가시 20dp) | 147/147 | YES | c-head 483dp = 뷰포트 59% |
+| D 버튼이 바닥보다 너무 위 | 마지막 버튼 하단 729/818(필드 712/818) | 729/818 | **NO** | 슬롯 min-height 104 예약 슬랙 56 |
+| E 의미 없는 흰 띠 | unexpectedFooterHeight **56dp** (+ 의도 패딩 18) | **56dp** | **NO** | 동일 |
+
+### 7.4 IMG_2013 하단 공간 (393×818)
+- beforeBottomDeadSpace = afterBottomDeadSpace = **45dp** = c-foot 내부 12 + 카드 padding-bottom 15 + `.app` 안전 패딩 18(카드 아래 크림 띠; screenGame 은 card-flush-bottom 미적용).
+- choiceActionsBottom: 773/818 (BEFORE=AFTER) — 선택 버튼은 이미 c-foot(바닥 고정)이라 **아래로 이동하지 않았고 이동할 여지도 없었다**. safeAreaTop 67.
+- 원래 불만의 실체는 상단: 요약 행(타이머) 잘림 33dp → 0, c-body 가시 66 → 357dp. "하단 낭비" 45dp 는 의도된 안전 패딩 구성이며 예상 밖 여백 0.
+
+### 7.5 IMG_2043 (360×732, 호스트 round≥2)
+- BEFORE: 나가기 2개 — `나가기`(goHome, 서버 미통지) + `게임방에서 나가기`(leaveRoom). AFTER: **1개**(leaveRoom, grid 48px).
+- 참가자 준비 현황: BEFORE 27.6/100(2행 중 첫 행 일부) → AFTER **100/100** (h3 잘림 0). 강제 시작 2줄 → 0.
+
+### 7.6 하단 흰 띠 분해 (결과 화면)
+| 클래스 | safeAreaInset(webview 내부) | intentionalBottomPadding(c-foot, card-flush-bottom) | unexpectedFooterHeight | 비고 |
+|---|---|---|---|---|
+| iPhone16-field 호스트(한번더 있음) | 0 (홈 인디케이터 34dp 는 webview 밖) | 18 | **0** | 카드 하단 = 뷰포트 하단(cardToViewport 0) |
+| iPhone16-field 참가자 | 0 | 18 | **56** (BEFORE=AFTER) | 슬롯 슬랙 |
+| And360x732 호스트 | 0 | 18 | **0** | |
+| And360x732 참가자 | 0 | 18 | **56** (BEFORE=AFTER) | 슬롯 슬랙 |
+카드 최하단 ~28dp 가 연분홍으로 보이는 것은 `.card{background:rgba(255,255,255,.92)}` 반투명 위로 `.app` 그라데이션이 비치는 것 — 카드는 바닥까지 닿아 있다(예상 밖 footer 아님).
+
+### 7.7 재조정 중 발견한 미해결 (프로덕션 코드 미변경 — 승인 대기)
+1. **참가자 결과 화면 슬롯 슬랙 56dp** (IMG_2011/2012/2014 D·E): `#verdictActionSlot{min-height:104px}` 가 gameOver 참가자 상태(1행)에도 적용. 제안: gameOver 분기에서 슬롯에 `slot-final` 클래스 → `min-height:0`(상태 전환이 더 없으므로 layout-jump 방지 목적이 소멸). 렌더러 1줄 + CSS 1줄, build35 핀(min-height 존재) 유지.
+2. **Android 360×732 참가자·술래 + 2줄 제목**("술래 확정! (1/1명)" 42px 이 360dp 에서 2줄): AFTER 결과 카드 2.8dp 잘림 + 벌칙 꼬리가 fold 아래(가시 0). 예산(580) 에 2줄 제목이 없음. 위 1) 의 56dp 회수로 함께 해결됨(체크 완료 필요). 필드 이미지에는 없던 상태(필드 Android 는 호스트).
+3. IMG_2046 강제 시작 2줄: 하네스(기본 글꼴 배율)에서는 재현되지 않음 — 기기 글꼴 배율 추정. AFTER 는 span-full 로 구조적으로 전폭.
+
+### 7.8 사후 시각 증거 (필드 클래스 렌더, vault `recon/shots/`)
+IMG_2011·2014 → `AFTER_resultLoserParticipant_iPhone16-field.png` (A/B/C FIXED, D/E OPEN) · IMG_2012 → `AFTER_resultWinnerParticipant_iPhone16-field.png` (간격 FIXED, 슬랙 OPEN) · IMG_2013 → `AFTER_gameChosen_iPhone16-field.png` (FIXED) · Screenshot_091037/IMG_2044 → `AFTER_resultWinner_And360x732-field.png` (FIXED) · IMG_2043 → `AFTER_readyHost_And360x732-field.png` (FIXED) · IMG_2046 → `AFTER_winnerWait_And360x732-field.png` (FIXED) · 추가: `AFTER_resultLoserParticipant_And360x732-field.png` (OPEN 2 재현).

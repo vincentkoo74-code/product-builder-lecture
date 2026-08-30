@@ -14,7 +14,7 @@ export const DEVICES = [
   { name: 'AndMedium',   w: 360, h: 780, top: 24, bottom: 0  },
   { name: 'AndTall',     w: 412, h: 915, top: 24, bottom: 0  },
 ];
-export const VIEWS = ['resultLoser', 'resultWinner', 'readyHost', 'readyParticipant', 'gameChosen', 'winnerWait', 'statsPopup'];
+export const VIEWS = ['resultLoser', 'resultWinner', 'resultLoserParticipant', 'resultWinnerParticipant', 'readyHost', 'readyParticipant', 'gameChosen', 'winnerWait', 'statsPopup'];
 
 export function buildProbePage(devices, indexSrc = '/index.html') {
   return `<!doctype html><meta charset="utf-8"><body style="margin:0"><pre id="out">…</pre><script>
@@ -38,9 +38,10 @@ function seed(win, extra){ const st=win.eval('state'); Object.assign(st,{role:'h
   participants:[{id:'h',name:'호스트',is_ready:false,is_host:true},{id:'a',name:'참가자A',is_ready:true},{id:'b',name:'참가자B',is_ready:false}],
   confirmedLoserIds:[],confirmedSafeIds:[],roomStatus:'ready',status:'ready'}, extra||{}); return st; }
 function call(win,log,expr){ try{ win.eval(expr); log.push(expr.split('(')[0]+':ok'); }catch(e){ log.push(expr.split('(')[0]+':'+String(e).slice(0,50)); } }
-function finalBtns(doc,sec){ doc.getElementById('roundResultActions').style.display='none';
+function finalBtns(doc,sec,host=true){ doc.getElementById('roundResultActions').style.display='none';
   const f=doc.getElementById('finalResultBtns'); f.classList.remove('hidden');
-  f.innerHTML='<button class="btn-success btn-full span-full">한번더</button><button class="btn-light btn-full">게임 승률 보기</button><button class="btn-outline btn-full">게임방에서 나가기</button>';
+  // 렌더러(gameOver 분기)와 동일: 한번더는 host(canShowPlayAgainButton)만, 참가자는 [승률 보기][나가기] 한 행.
+  f.innerHTML=(host?'<button class="btn-success btn-full span-full">한번더</button>':'')+'<button class="btn-light btn-full">게임 승률 보기</button><button class="btn-outline btn-full">게임방에서 나가기</button>';
   sec.querySelector('.c-foot > .action-grid')?.classList.add('hidden'); }
 const VIEWS={
  resultLoser(doc,win,log){ const s=show(doc,'screenRoundResult'); seed(win,{roomStatus:'result',status:'result',confirmedLoserIds:['h']});
@@ -53,6 +54,12 @@ const VIEWS={
   finalBtns(doc,s); return s; },
  resultWinner(doc,win,log){ const s=VIEWS.resultLoser(doc,win,log); doc.getElementById('resultPenaltyBox').classList.add('hidden');
   doc.getElementById('resultTitle').textContent='승리!'; doc.getElementById('resultMessage').textContent='술래 1명이 정해졌어요.'; return s; },
+ // 참가자 결과(필드 IMG_2011/2012/2014 상태): 한번더 없음, 제목은 필드 문구 그대로.
+ resultLoserParticipant(doc,win,log){ const s=VIEWS.resultLoser(doc,win,log); seed(win,{role:'participant',currentUserId:'a',roomStatus:'result',status:'result',confirmedLoserIds:['a']});
+  doc.getElementById('resultTitle').textContent='술래 확정! (1/1명)'; doc.getElementById('resultMessage').textContent='축하합니다(?) 벌칙을 수행하세요!'; doc.getElementById('resultPenaltyText').textContent='청소하기';
+  finalBtns(doc,s,false); return s; },
+ resultWinnerParticipant(doc,win,log){ const s=VIEWS.resultLoserParticipant(doc,win,log); doc.getElementById('resultPenaltyBox').classList.add('hidden');
+  doc.getElementById('resultTitle').textContent='승리!'; doc.getElementById('resultMessage').textContent='술래 1명이 모두 결정됐습니다!'; return s; },
  readyHost(doc,win,log){ const s=show(doc,'screenReady'); seed(win);
   call(win,log,'renderRoundProgressCards()'); call(win,log,'updateGuides()'); call(win,log,'renderReadyList()');
   call(win,log,'renderInlinePenaltyBox(document.getElementById("readyPenaltyBox"))');
@@ -101,11 +108,21 @@ const VIEWS={
       wrappedButtons:btns.filter(b=>b.h>60&&!/가위|바위|보/.test(b.t)).map(b=>b.t), btns};
     if(view.startsWith('result')){ const pen=doc.getElementById('resultPenaltyBox'); row.penaltyShown=shown(win,pen,sec); row.penalty=row.penaltyShown?vis(win,pen):null;
       row.heroH=px(q('.result-hero').getBoundingClientRect().height); row.maruSize=px(doc.getElementById('resultMaru').getBoundingClientRect().height);
-      const first=doc.getElementById('roundResultList').firstElementChild; row.firstRow=vis(win,first); }
+      const first=doc.getElementById('roundResultList').firstElementChild; row.firstRow=vis(win,first);
+      // footer 분해: safeAreaInset(뷰포트 하단 안전영역) / intentionalBottomPadding(c-foot 의 padding-bottom, card-flush-bottom 규칙) /
+      // unexpectedFooterHeight(= 마지막 버튼 아래 ~ c-foot 패딩 시작까지의 빈 높이 = #verdictActionSlot 예약 슬랙 등)
+      const slot=doc.getElementById('verdictActionSlot'), fin=doc.getElementById('finalResultBtns'); const sr=slot.getBoundingClientRect(), fr2=fin.getBoundingClientRect(), footR=foot.getBoundingClientRect();
+      const footPadB=parseFloat(win.getComputedStyle(foot).paddingBottom)||0; const cardR=sec.getBoundingClientRect(), appR=doc.querySelector('.app').getBoundingClientRect();
+      row.footer={ safeAreaInset:safeB, intentionalBottomPadding:px(footPadB), slotMinHeight:parseFloat(win.getComputedStyle(slot).minHeight)||0, slotH:px(sr.height), finalBtnsH:px(fr2.height),
+        slotSlack:px(Math.max(0,sr.bottom-fr2.bottom)), unexpectedFooterHeight:px(Math.max(0,(footR.bottom-footPadB)-lastBottom)), cardBottom:px(cardR.bottom), appBottom:px(appR.bottom), gapCardToViewport:px(d.h-cardR.bottom) };
+      const lead=doc.getElementById('resultMessage').getBoundingClientRect(); const next=row.penaltyShown?doc.getElementById('resultPenaltyBox'):card; row.gapBelowMessage=px(next.getBoundingClientRect().top-lead.bottom); row.penaltyH=row.penaltyShown?px(doc.getElementById('resultPenaltyBox').getBoundingClientRect().height):0; }
     if(view.startsWith('ready')){ const list=doc.getElementById('readyParticipantList'); row.participantListVisibleHeight=vis(win,list).visH;
       row.participantListFullHeight=vis(win,list).natH; row.firstRow=vis(win,list.firstElementChild); row.h3=vis(win,q('.c-body h3')); }
     if(view==='gameChosen'){ row.summary=vis(win,q('.summary-row')); const cbs=[...sec.querySelectorAll('.choice-button')].map(b=>vis(win,b));
       row.choiceButtonsVisible=cbs.every(c=>c.clipped===0&&c.bottom<=d.h); row.choiceBtn=cbs[0]; row.anim=vis(win,doc.getElementById('choiceAnim')); }
+    // 모든 뷰 공통 하단 분해: 마지막 버튼 아래의 공간 = [c-foot 잔여] + [c-foot padding-bottom] + [카드 아래 ~ 뷰포트]
+    { const footR=foot.getBoundingClientRect(); const footPadB=parseFloat(win.getComputedStyle(foot).paddingBottom)||0; const cardR=sec.getBoundingClientRect(); const appR=doc.querySelector('.app').getBoundingClientRect();
+      row.bottom={ lastBtnBottom:px(lastBottom), footInnerSlack:px(Math.max(0,(footR.bottom-footPadB)-lastBottom)), footPaddingBottom:px(footPadB), cardBottom:px(cardR.bottom), cardToViewport:px(d.h-cardR.bottom), appPaddingBottom:px(parseFloat(win.getComputedStyle(doc.querySelector('.app')).paddingBottom)||0), viewportH:d.h }; }
     rows.push(JSON.stringify(row));
   }catch(e){rows.push(JSON.stringify({dev:d.name,view,error:String(e),log}))} }
   f.remove(); }
