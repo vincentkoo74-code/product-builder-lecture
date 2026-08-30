@@ -53,10 +53,23 @@ function makeDb(overrides = {}) {
   const calls = [];
   const db = {
     from: (table) => ({
+      // JP-BL-027-B: 실제 PostgREST 는 `.select().eq()` 를 그 자체로 await 할 수 있다.
+      // 기존 더블은 then 이 없어 nextRound 의 권위 사전조회를 표현하지 못했다.
+      // 반환 집합은 이 파일의 mutation() 규약과 동일하게 room-scoped 단일 행으로 맞춘다
+      // (그래야 W1 의 "기대 집합 == 반환 집합" 대조가 같은 추상 수준에서 성립한다).
       select: () => ({
-        eq: () => ({
-          single: async () => (overrides.single ? overrides.single(table) : { data: null, error: null }),
-        }),
+        eq: (col, val) => {
+          const scoped = () => Promise.resolve(
+            overrides.selectRows ? overrides.selectRows(table, col, val)
+                                 : { data: affectedRows(col, val), error: null });
+          return {
+            single: async () => (overrides.single ? overrides.single(table) : { data: null, error: null }),
+            order: () => scoped(),
+            then: (res, rej) => scoped().then(res, rej),
+            catch: (rej) => scoped().catch(rej),
+            finally: (fn) => scoped().finally(fn),
+          };
+        },
       }),
       update: (payload) => ({
         eq: (col, val) => { calls.push({ table, op: 'update', payload, col, val }); return mutation(col, val, () => (overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null }))); },

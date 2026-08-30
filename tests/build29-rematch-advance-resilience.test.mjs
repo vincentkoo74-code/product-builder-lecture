@@ -91,6 +91,25 @@ function makeDb(overrides = {}) {
   const calls = [];
   const db = {
     from: (table) => ({
+      // JP-BL-027-B: nextRound 가 권위 사전조회(`select('id').eq('room_id', …)`)를 하므로
+      // 더블도 그 체인을 표현해야 한다. 반환 집합은 mutation() 규약과 동일하게 room-scoped 다.
+      select: () => ({
+        eq: (col, val) => {
+          const scoped = () => Promise.resolve({
+            data: (col === 'id')
+              ? (Array.isArray(val) ? val.map((v) => ({ id: v })) : [{ id: val }])
+              : [{ id: '__scoped__' }],
+            error: null,
+          });
+          return {
+            order: () => scoped(),
+            single: async () => ({ data: null, error: null }),
+            then: (res, rej) => scoped().then(res, rej),
+            catch: (rej) => scoped().catch(rej),
+            finally: (fn) => scoped().finally(fn),
+          };
+        },
+      }),
       update: (payload) => ({
         eq: (col, val) => { calls.push({ table, payload, col, val }); return mutation(col, val, () => (overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null }))); },
         in: (col, val) => { calls.push({ table, op: 'update-in', payload, col, val }); return mutation(col, val, () => (overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null }))); },
@@ -133,6 +152,28 @@ function makeResolveDb({ failIndexes = [], errorMessage = 'FetchError: failed to
   };
   const db = {
     from: (table) => ({
+      // makeResolveDb: 권위 사전조회는 write 가 아니다 — failIndexes 의 1-based 인덱스가
+      // 계속 "참가자 초기화=1, safe=2, loser=3, rooms.update=4" 를 가리키도록
+      // select 는 callIndex 를 소비하지 않는다(주입 대상도 아니다).
+      // JP-BL-027-B: nextRound 가 권위 사전조회(`select('id').eq('room_id', …)`)를 하므로
+      // 더블도 그 체인을 표현해야 한다. 반환 집합은 mutation() 규약과 동일하게 room-scoped 다.
+      select: () => ({
+        eq: (col, val) => {
+          const scoped = () => Promise.resolve({
+            data: (col === 'id')
+              ? (Array.isArray(val) ? val.map((v) => ({ id: v })) : [{ id: val }])
+              : [{ id: '__scoped__' }],
+            error: null,
+          });
+          return {
+            order: () => scoped(),
+            single: async () => ({ data: null, error: null }),
+            then: (res, rej) => scoped().then(res, rej),
+            catch: (rej) => scoped().catch(rej),
+            finally: (fn) => scoped().finally(fn),
+          };
+        },
+      }),
       update: (payload) => ({
         eq: (col, val) => respond(table, payload, col, val),
         in: (col, val) => respond(table, payload, col, val),
@@ -242,6 +283,25 @@ function loadBeginNewGameRound(state) {
   const dbCalls = [];
   const db = {
     from: (table) => ({
+      // JP-BL-027-B: nextRound 가 권위 사전조회(`select('id').eq('room_id', …)`)를 하므로
+      // 더블도 그 체인을 표현해야 한다. 반환 집합은 mutation() 규약과 동일하게 room-scoped 다.
+      select: () => ({
+        eq: (col, val) => {
+          const scoped = () => Promise.resolve({
+            data: (col === 'id')
+              ? (Array.isArray(val) ? val.map((v) => ({ id: v })) : [{ id: val }])
+              : [{ id: '__scoped__' }],
+            error: null,
+          });
+          return {
+            order: () => scoped(),
+            single: async () => ({ data: null, error: null }),
+            then: (res, rej) => scoped().then(res, rej),
+            catch: (rej) => scoped().catch(rej),
+            finally: (fn) => scoped().finally(fn),
+          };
+        },
+      }),
       update: (payload) => ({
         eq: (col, val) => { dbCalls.push({ table, payload, col, val }); return Promise.resolve({ data: null, error: null }); },
       }),

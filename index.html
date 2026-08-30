@@ -11101,10 +11101,32 @@ function summarizeGameStats(rows) {
             throw new Error('nextRound ' + context + ' affected ' + affected + ' rows (expected ' + expected + ')');
           };
 
+          // W1 은 `.eq('room_id', …)` 대량 갱신이라 "몇 행이어야 하는가"를 write 자체로는 알 수 없다.
+          // "1행 이상"만 요구하면 **부분 write**(2명 중 1명만 리셋)를 놓친다. 그래서 직전에
+          // **권위 참가자 집합**을 한 번 읽어 반환된 집합과 대조한다.
+          // ⚠️ state.participants 는 낡을 수 있으므로 기대 집합의 출처로 쓰지 않는다(권위 조회만 쓴다).
+          const preRead = await db.from('participants').select('id').eq('room_id', state.roomCode);
+          if (preRead && preRead.error) throw new Error('nextRound participants.preread failed: ' + (preRead.error.message || preRead.error));
+          const expectedIds = rowsOfWrite(preRead).map((r) => r && r.id).filter(Boolean);
+          if (expectedIds.length < 1) failNextRoundWrite('participants.preread', '>=1', expectedIds.length);
+
           const resReset = await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode).select('id');
           if (resReset && resReset.error) throw new Error('nextRound participants.reset failed: ' + (resReset.error.message || resReset.error));
           const resetRows = rowsOfWrite(resReset);
-          if (resetRows.length < 1) failNextRoundWrite('participants.reset', '>=1', resetRows.length);
+          const resetIds = resetRows.map((r) => r && r.id).filter(Boolean);
+          // 권위 조회와 갱신 사이에 참가자가 들어오면 resetIds 에 **추가**가 생긴다 — 그 사람도
+          // 함께 리셋됐다는 뜻이므로 무해하다. 문제는 **누락**이다(리셋되지 않은 참가자).
+          let missingIds = expectedIds.filter((id) => !resetIds.includes(id));
+          if (missingIds.length > 0) {
+            // 누락의 원인은 둘 중 하나다: (a) 그 사이에 나갔다(행 삭제 — 무해),
+            // (b) RLS 등으로 그 행만 갱신되지 않았다(부분 write — 치명적).
+            // 구분하려면 한 번 더 권위 조회한다(이상 경로에서만 발생하는 추가 조회다).
+            const recheck = await db.from('participants').select('id').eq('room_id', state.roomCode);
+            if (recheck && recheck.error) throw new Error('nextRound participants.recheck failed: ' + (recheck.error.message || recheck.error));
+            const stillPresent = rowsOfWrite(recheck).map((r) => r && r.id).filter(Boolean);
+            missingIds = missingIds.filter((id) => stillPresent.includes(id));
+          }
+          if (missingIds.length > 0) failNextRoundWrite('participants.reset', expectedIds.length, resetIds.length);
           // 확정 안전자/술래는 DB 마커로 기록 + 자동 준비 완료 (재연결 후에도 상태 유지됨)
           if (safeIds.length > 0) {
             const resSafe = await db.from('participants').update({ choice: '__safe__', is_ready: true }).in('id', safeIds).select('id');

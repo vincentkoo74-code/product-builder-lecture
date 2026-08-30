@@ -28,7 +28,7 @@
 | JP-BL-025 | OPEN | Medium | `rooms.status` enum 제약 — 전수 증명 방법 확정 후 적용 | 아니오 |
 | JP-BL-026 | OPEN | Low | `created_at` NOT NULL 제약 추가 여부 | 아니오 |
 | JP-BL-027 | DONE | **High** | RLS 무음 거부 — 9개 write 에 인라인 검증 적용, 행위 테스트로 실증 | — |
-| JP-BL-027-B | DONE | **High** | `nextRound` 4개 write 카디널리티 검증 완료(CORE). strict 에서 0행 오류 0건·회귀 없음 | — |
+| JP-BL-027-B | DONE | **High** | `nextRound` W1~W4 카디널리티 검증(CORE). W1 은 권위 조회 집합 대조로 **부분 write** 까지 탐지. strict 0행 오류 0건 | — |
 | JP-BL-027-D | OPEN | **High** | **strictFilters 기본값 전환 결정** — legacy 근사는 이제 게임을 진행시키지 못한다(실측 legacy 0/700 vs strict 700/700). CEO 결정 필요 | **예** |
 | JP-BL-027-C | PARTIAL | **High** | rc3 하니스에 participants realtime 전파 모델링 (전파·가드 구현 완료, strict RED — R1 미해소) | 아니오 |
 | JP-BL-027-C-R1 | DONE | **High** | 시뮬레이터가 REAL `fetchParticipants` 의 host 권위 경로를 우회 — host 역할 전환·자동 시작 배선 완료, strict 하드게이트 90→44 | — |
@@ -509,6 +509,22 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-08-30 (2차) — JP-BL-027-B W1 부분 write 보강 (CEO CONDITIONAL PASS 대응)
+
+CEO 지적: `participants.reset` 의 `>=1` 계약은 0행은 잡지만 **부분 write**(2명 중 1명만 리셋)를
+통과시킨다. 실제로 그랬다 — 역검증에서 `>=1` 중간본(1fd3720)은 부분 write 테스트 2건에서 실패한다.
+
+`nextRound` 에는 권위 참가자 집합이 없다(로컬 `state.confirmedSafeIds/LoserIds` 와 `roomCode` 뿐).
+그래서 **최소 권위 조회**를 넣었다: `select('id').eq('room_id', …)` → 반환 집합과 대조.
+낡을 수 있는 `state.participants` 는 기대 집합의 출처로 쓰지 않는다.
+
+동시성 처리: 조회와 갱신 사이의 **추가**(입장)는 무해로 통과, **누락**(리셋 안 됨)만 실패로 본다.
+누락이 나오면 한 번 더 권위 조회해 "아직 방에 있는" 경우만 실패로 확정한다(동시 퇴장 오탐 제거).
+
+부분 성공 매트릭스(신규 12개 테스트, REAL nextRound 격리 실행): W1~W4 각각에 0행/부분행/error 를
+주입해 (a) 방이 진행하지 않고 (b) ZERO_ROW_WRITE 가 남고 (c) advancingRound 가 풀리고
+(d) 재시도 카운터가 성공으로 오인 정리되지 않고 (e) 재시도가 변이를 누적시키지 않음을 확인.
 
 ### 2026-08-30 — JP-BL-027-B 완료 (CORE)
 

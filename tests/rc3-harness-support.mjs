@@ -613,6 +613,17 @@ export function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDela
     return b;
   }
 
+  // await 가능하면서 추가 체인(.order()/.single())도 받는 결과 객체.
+  function thenable(run, extra) {
+    const o = {
+      then: (res, rej) => run().then(res, rej),
+      catch: (rej) => run().catch(rej),
+      finally: (fn) => run().finally(fn),
+    };
+    for (const [k, v] of Object.entries(extra || {})) o[k] = v;
+    return o;
+  }
+
   function from(table) {
     if (table !== 'rooms' && table !== 'participants') {
       throw new Error(`[rc3-harness] unsupported table: ${table}`);
@@ -620,9 +631,15 @@ export function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDela
     return {
       update: (patch) => mutationBuilder(table, 'update', patch),
       delete: () => mutationBuilder(table, 'delete', null),
+      // 실제 PostgREST 는 `.select().eq()` 를 **그 자체로 await** 할 수 있다(.order()/.single() 없이도).
+      // 기존 더블은 then 이 없어 그 체인을 표현하지 못했고, 그래서 nextRound 의 권위 사전조회
+      // (`select('id').eq('room_id', …)`)가 하니스에서만 undefined 를 돌려줬다 — 더블의 결함이다.
       select: () => (table === 'rooms'
-        ? { eq: () => ({ single: () => opRoomsSelectSingle() }) }
-        : { eq: () => ({ order: () => opParticipantsSelect(), single: () => opParticipantsSelect() }) }),
+        ? { eq: () => thenable(() => opRoomsSelectSingle(), { single: () => opRoomsSelectSingle() }) }
+        : { eq: () => thenable(() => opParticipantsSelect(), {
+            order: () => opParticipantsSelect(),
+            single: () => opParticipantsSelect(),
+          }) }),
     };
   }
   async function rpc(name) {

@@ -53,8 +53,25 @@ describe('[JP-BL-027-B] 4개 write 전부가 영향 행을 되돌려받는다', 
 describe('[JP-BL-027-B] 카디널리티 계약이 write 별로 다르게 강제된다', () => {
   const block = EXTRACTED_SOURCE_BLOCKS.nextRound;
 
-  it('reset 은 "1행 이상"을 요구한다 (방 인원은 가변이므로 정확한 수를 알 수 없다)', () => {
-    expect(block).toMatch(/resetRows\.length\s*<\s*1/);
+  it('reset 은 권위 조회로 얻은 **집합**과 대조한다 (">=1" 로는 부분 write 를 놓친다)', () => {
+    // 기대 집합의 출처가 권위 조회여야 한다 — 낡을 수 있는 state.participants 가 아니다.
+    expect(block).toMatch(/from\('participants'\)\s*\.select\('id'\)\s*\.eq\('room_id',\s*state\.roomCode\)/);
+    expect(block).toMatch(/expectedIds\s*=\s*rowsOfWrite\(preRead\)/);
+    // 반환 집합에서 누락된 id 를 찾는다.
+    expect(block).toMatch(/missingIds\s*=\s*expectedIds\.filter\(\(id\)\s*=>\s*!resetIds\.includes\(id\)\)/);
+    expect(block).toMatch(/if\s*\(missingIds\.length\s*>\s*0\)\s*failNextRoundWrite\('participants\.reset'/);
+  });
+
+  it('권위 조회 자체가 0행이면 진행하지 않는다', () => {
+    expect(block).toMatch(/expectedIds\.length\s*<\s*1\)\s*failNextRoundWrite\('participants\.preread'/);
+  });
+
+  it('동시 입장(추가 id)은 무해로 통과시키고, 동시 퇴장은 재확인으로 걸러낸다', () => {
+    // 추가분은 검사하지 않는다(리셋됐다는 뜻이므로 무해).
+    expect(block).not.toMatch(/extraIds/);
+    // 누락분은 한 번 더 권위 조회해 아직 방에 있는 경우만 실패로 본다.
+    expect(block).toMatch(/participants\.recheck failed/);
+    expect(block).toMatch(/stillPresent\.includes\(id\)/);
   });
   it('markSafe 는 정확히 safeIds.length 를 요구한다', () => {
     expect(block).toMatch(/safeRows\.length\s*!==\s*safeIds\.length/);
