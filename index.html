@@ -624,6 +624,10 @@
     .participant strong {
       font-size: 14px;
     }
+    /* Build41 UI(필드픽스 RC-D): 오류 행은 라벨/메시지를 세로로 쌓는다. 가로 flex(space-between)에서는
+       긴 오류 메시지가 라벨(<strong>)을 ~60px 폭으로 밀어 "기록 불러 / 오기 실패"로 쪼갰다. */
+    .participant.stats-error{flex-direction:column;align-items:flex-start;gap:4px}
+    .participant.stats-error span{font-size:12px;color:var(--muted);white-space:normal;word-break:break-word}
 
     #screenLobby #lobbyParticipantList,
     #screenReady #readyParticipantList,
@@ -813,6 +817,13 @@
       display: block;
       text-align: center;
     }
+    /* Build41 UI(필드픽스 RC-A1): 결과 카드 아래 한 줄 꼬리 형태의 벌칙 표기(라벨 + 값 한 줄). */
+    #screenRoundResult .penalty-tail{
+      display:flex;align-items:baseline;justify-content:center;gap:8px;
+      padding:9px 12px;margin:0 0 var(--action-gap);
+    }
+    #screenRoundResult .penalty-tail small,
+    #screenRoundResult .penalty-tail strong{display:inline;margin:0;font-size:inherit;line-height:inherit}
 
 	    #screenHostRoom #penaltyStatusBox{
 	      background:#FFF7EA;
@@ -901,7 +912,17 @@
     .result-hero {
       text-align: center;
       padding: 18px 0 10px;
+      /* Build41 UI(필드픽스 RC-A1): 결과 hero 이미지는 Home hero(--home-hero)와 같은 방식으로
+         "예산에서 남는 만큼"만 커진다. 예산(580px) = 이미지를 뺀 고정 콘텐츠의 합 — topbar+카드 패딩(≈77),
+         캡/제목/메시지(≈120), 결과 카드+마진(≈157), 벌칙 꼬리(≈40), c-foot(≈132) + fade 여유(14) — 를
+         실측(tests/harness/ui-fieldfix-build41.mjs)으로 확인한 값. 기기별 미디어쿼리 고정값(170/104px)
+         대신 연속 clamp 하나로, 어느 높이에서도 결과 카드+벌칙이 첫 화면에 온전히 들어온다
+         (상한 170px = 종전 정체성 크기, 하한 64px = 720px 미만 기기에서 fade 14px 밖에 꼬리가 남는 크기). */
+      --result-maru: clamp(64px, calc(100dvh - var(--safe-top, 20px) - var(--safe-bottom, 24px) - 580px), 170px);
     }
+    /* Build41 UI(필드픽스 RC-A1): hero 안의 메시지 간격은 hero 의 padding 이 책임진다 —
+       본문 문단용 .lead 의 20px 하단 마진이 c-head 를 키워 c-body(결과 카드)를 밀어냈다. */
+    .result-hero .lead{margin-bottom:0}
 
     .result-emoji {
       font-size: 84px;
@@ -1462,7 +1483,7 @@
 
     /* 결과 화면 마루 (이모지 대체) */
     .result-maru{
-      width:170px;height:170px;
+      width:var(--result-maru);height:var(--result-maru);
       margin:0 auto 8px;display:block;
       object-fit:contain;
       filter:drop-shadow(0 10px 20px rgba(245,163,86,.25));
@@ -2530,7 +2551,7 @@
       #screenAuth .maru-hero-bg{height:130px}
       #screenHome .maru-title{font-size:30px !important;margin:2px 0 4px !important}
       #screenStats .maru-hero img{width:86px;height:86px}
-      .result-maru{width:104px;height:104px;margin-bottom:4px}
+      .result-maru{margin-bottom:4px}
       .result-title{font-size:28px;margin-bottom:6px}
       .result-hero{padding:4px 0 4px}
       .qr-code, .fake-qr{max-width:104px;max-height:104px}
@@ -3059,11 +3080,13 @@
       <p class="maru-section-sub" style="margin-top:6px" data-i18n-html="ready.subtitle">모두 ✋ 누르면<br/>마루가 시작 신호!</p>
       <div class="maru-guide" id="readyGuide"></div>
       <div class="maru-notice" id="readyPenaltyBox" style="margin-bottom:14px"></div>
-      <div class="game-progress-card" data-round-progress></div>
       </div>
       <div class="c-body">
         <h3 data-i18n="ready.participantsStatus">참가자 준비 현황</h3>
       <div id="readyParticipantList" style="margin-bottom:16px"></div>
+      <!-- Build41 UI(필드픽스 RC-A2): 진행 카드를 c-head → c-body 로. 준비 화면의 핵심은
+           "누가 아직 안 눌렀나"(목록)이므로 목록이 먼저, 회차/전적 카드는 그 아래에서 스크롤된다. -->
+      <div class="game-progress-card" data-round-progress></div>
       </div>
       <div class="c-foot">
         <div class="grid action-grid">
@@ -3074,12 +3097,12 @@
         <button id="hostStartBtn" class="btn-success btn-full hidden" onclick="window.startGame()" data-i18n="ready.hostStart">🎮 게임 시작</button>
         <!-- Build27(WRPS-074): 호스트 전용 부분 재경기 강제 시작. WRPS-042의 hostStartBtn(라운드1 폐지)과
              별개 컨트롤 — state.round > 1 && status==='ready' && 활성 전원 미준비일 때만 노출. -->
-        <button id="forceStartReplayBtnReady" class="btn-success btn-full hidden force-start-replay-btn" onclick="window.forceStartReplay()" data-i18n="ready.forceStartReplay">⚡ 다시한번! 강제 시작</button>
+        <button id="forceStartReplayBtnReady" class="btn-success btn-full span-full hidden force-start-replay-btn" onclick="window.forceStartReplay()" data-i18n="ready.forceStartReplay">⚡ 다시한번! 강제 시작</button>
         <button id="editPenaltyBtn" class="btn-light btn-full hidden" onclick="window.showPenaltyScreen()" data-i18n="ready.editPenalty">✏️ 벌칙 수정</button>
-        <button class="btn-outline btn-full" onclick="window.goHome()" data-i18n="ready.exit">나가기</button>
-      </div>
-      <div style="text-align:center;margin-top:8px">
-        <button class="btn-quiet" onclick="window.leaveRoom()" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
+        <!-- Build41 UI(필드픽스 RC-B): 나가기는 하나. 종전에는 "나가기"(goHome: 서버에 알리지 않고 로컬 세션만
+             폐기 → 방에 유령 참가자 잔존)와 "게임방에서 나가기"(leaveRoom)가 나란히 있었다. 다른 게임 화면과
+             같이 leaveRoom 하나만 grid 안에 둔다(44px+ 터치). -->
+        <button class="btn-outline btn-full" onclick="window.leaveRoom()" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
       </div>
       </div>
 
@@ -3094,8 +3117,6 @@
       <h2 class="maru-section-title" id="roundTitle" style="margin-top:6px">라운드 <span id="roundNumber">1</span></h2>
       <p class="maru-section-sub" data-i18n="game.subtitle">마루를 따라 하나만 선택해 ✊✌️🖐</p>
       <div class="maru-guide" id="gameGuide"></div>
-      <div class="game-progress-card" data-round-progress></div>
-      <div class="choice-anim" id="choiceAnim"></div>
       </div>
       <div class="c-body">
         <div class="summary-row">
@@ -3103,6 +3124,10 @@
         <div class="summary-item"><strong id="selectedCount">0</strong><span data-i18n="game.summarySelected">선택 완료</span></div>
         <div class="summary-item"><strong id="totalCount">0</strong><span data-i18n="game.summaryTotal">참가자</span></div>
       </div>
+      <!-- Build41 UI(필드픽스 RC-A3): 선택 미리보기(장식)와 진행 카드(맥락)를 c-head → c-body 로.
+           c-head 에는 캡·제목·부제·안내만 남는다. 타이머/선택 인원(요약 행)이 항상 첫 화면에 온다. -->
+      <div class="choice-anim" id="choiceAnim"></div>
+      <div class="game-progress-card" data-round-progress></div>
       </div>
       <div class="c-foot">
         <div class="choice-buttons">
@@ -3173,15 +3198,18 @@
         <div class="maru-guide" id="roundResultGuide" style="justify-content:center"></div>
       </div>
 
-      <div class="penalty-box hidden" id="resultPenaltyBox">
-        <small data-i18n="result.penaltyBoxLabel">이번 벌칙</small>
-        <strong id="resultPenaltyText"></strong>
-      </div>
       </div>
       <div class="c-body">
         <!-- Build39 UI(승인 사양 D): 외부 <h3>라운드 결과</h3> 제거 —
              검은 결과 카드 안의 제목으로 통합했다(renderRoundProgressCards 참고). -->
       <div class="game-progress-card" data-round-progress></div>
+      <!-- Build41 UI(필드픽스 RC-A1): 벌칙 박스를 c-head(고정) → c-body(스크롤)의 결과 카드 바로 아래로.
+           c-head 는 hero 정체성만 갖고, 데이터 블록(결과 카드·벌칙)은 c-body 가 소유한다.
+           id 와 hidden 토글은 무변경(렌더러·테스트 계약 유지) — 위치와 형태(한 줄 꼬리)만 바뀐다. -->
+      <div class="penalty-box penalty-tail hidden" id="resultPenaltyBox">
+        <small data-i18n="result.penaltyBoxLabel">이번 벌칙</small>
+        <strong id="resultPenaltyText"></strong>
+      </div>
       <div class="participant-list" id="roundResultList"></div>
       </div>
       <div class="c-foot">
@@ -3233,7 +3261,7 @@
         <!-- Build27(WRPS-074): 호스트가 이미 안전 확정이어도 부분 재경기를 강제 시작할 수 있어야 한다.
            남은 활성 참가자들이 재게임 대기(ready)로 들어오면 아래 버튼이 활성화된다. -->
       <div class="action-grid" style="margin-top:12px">
-        <button id="forceStartReplayBtnWinnerWait" class="btn-success btn-full hidden force-start-replay-btn" onclick="window.forceStartReplay()" data-i18n="ready.forceStartReplay">⚡ 다시한번! 강제 시작</button>
+        <button id="forceStartReplayBtnWinnerWait" class="btn-success btn-full span-full hidden force-start-replay-btn" onclick="window.forceStartReplay()" data-i18n="ready.forceStartReplay">⚡ 다시한번! 강제 시작</button>
       </div>
       <div style="text-align:center;margin-top:12px">
         <button class="btn-quiet" onclick="window.leaveRoom()" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
@@ -3306,7 +3334,7 @@
         <!-- Build27(WRPS-074): 호스트가 이미 술래 확정이어도 부분 재경기를 강제 시작할 수 있어야 한다.
            남은 활성 참가자들이 재게임 대기(ready)로 들어오면 아래 버튼이 활성화된다. -->
       <div class="action-grid" style="margin-top:12px">
-        <button id="forceStartReplayBtnLoserWait" class="btn-success btn-full hidden force-start-replay-btn" onclick="window.forceStartReplay()" data-i18n="ready.forceStartReplay">⚡ 다시한번! 강제 시작</button>
+        <button id="forceStartReplayBtnLoserWait" class="btn-success btn-full span-full hidden force-start-replay-btn" onclick="window.forceStartReplay()" data-i18n="ready.forceStartReplay">⚡ 다시한번! 강제 시작</button>
       </div>
       <div style="text-align:center;margin-top:12px">
         <button class="btn-quiet" onclick="window.leaveRoom()" data-i18n="common.leaveRoomShort">게임방에서 나가기</button>
@@ -10921,7 +10949,7 @@ function summarizeGameStats(rows) {
           const btn = document.createElement('button');
           btn.id = 'qaCopyBtn';
           btn.textContent = 'QA📋';
-          btn.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:99999;font-size:12px;padding:6px 9px;background:#111;color:#0f0;border:1px solid #0f0;border-radius:6px;opacity:.85';
+          btn.style.cssText = 'font-size:12px;padding:6px 9px;background:#111;color:#0f0;border:1px solid #0f0;border-radius:6px;opacity:.85';
           btn.addEventListener('click', async (ev) => {
             ev.stopPropagation();
             const txt = QA.copyText();
@@ -10929,13 +10957,20 @@ function summarizeGameStats(rows) {
             catch (e) { console.log('[QA-METRIC] SUMMARY', txt); btn.textContent = 'QA(log)'; }
             setTimeout(() => { btn.textContent = 'QA📋'; }, 1500);
           });
-          (document.body || document.documentElement).appendChild(btn);
+          // Build41 UI(필드픽스 RC-C): QA 버튼 2개는 화면 하단 고정이 아니라 topbar 아래 우측 도크에 세로로
+          // 쌓인다. 하단 고정(bottom:8/44px)은 c-foot 의 실제 CTA(가위바위보 선택·나가기)를 13~104px 덮어
+          // 필드 QA 자체를 방해했다. 도크 top 은 :root 의 --device-ui-fade-end(topbar 아래 경계)를 그대로 쓴다.
+          const dock = document.createElement('div');
+          dock.id = 'qaFabDock';
+          dock.style.cssText = 'position:fixed;right:8px;top:var(--device-ui-fade-end);display:flex;flex-direction:column;gap:6px;align-items:flex-end;z-index:99999';
+          dock.appendChild(btn);
+          (document.body || document.documentElement).appendChild(dock);
 
           // Build17: 파일 저장/공유 버튼(Documents 저장 + Share Sheet, 실패 시 클립보드).
           const saveBtn = document.createElement('button');
           saveBtn.id = 'qaSaveBtn';
           saveBtn.textContent = 'QA💾';
-          saveBtn.style.cssText = 'position:fixed;right:8px;bottom:44px;z-index:99999;font-size:12px;padding:6px 9px;background:#111;color:#0ff;border:1px solid #0ff;border-radius:6px;opacity:.85';
+          saveBtn.style.cssText = 'font-size:12px;padding:6px 9px;background:#111;color:#0ff;border:1px solid #0ff;border-radius:6px;opacity:.85';
           let exporting = false; // 연타 방지(Share in-progress reject 회피)
           saveBtn.addEventListener('click', async (ev) => {
             ev.stopPropagation();
@@ -10948,7 +10983,7 @@ function summarizeGameStats(rows) {
             finally { exporting = false; saveBtn.disabled = false; }
             setTimeout(() => { saveBtn.textContent = 'QA💾'; }, 1800);
           });
-          (document.body || document.documentElement).appendChild(saveBtn);
+          dock.appendChild(saveBtn);
 
           console.log('[QA-METRIC] QA build instrumentation ENABLED. session=', QA._m.session);
         } catch (e) {}
@@ -13436,7 +13471,7 @@ function summarizeGameStats(rows) {
           <div style="display:flex;flex-direction:column;gap:8px">${historyHtml}</div>
         `;
       } catch (e) {
-        body.innerHTML = `<div class="participant"><strong>${t("account.loadFailed")}</strong><span>${escapeHtml(e?.message || String(e))}</span></div>`;
+        body.innerHTML = `<div class="participant stats-error"><strong>${t("account.loadFailed")}</strong><span>${escapeHtml(e?.message || String(e))}</span></div>`;
       }
     }
 
