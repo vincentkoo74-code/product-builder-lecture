@@ -13,6 +13,10 @@ export const DEVICES = [
   { name: 'AndCompact',  w: 360, h: 640, top: 24, bottom: 0  },
   { name: 'AndMedium',   w: 360, h: 780, top: 24, bottom: 0  },
   { name: 'AndTall',     w: 412, h: 915, top: 24, bottom: 0  },
+  // 필드 실측 webview 클래스(증거 재조정 §7.1): iPhone 은 홈 인디케이터 위에서 끝나 safe-bottom fallback 18,
+  // Android 는 status bar 아래 360×732.
+  { name: 'iPhone16-field',   w: 393, h: 818, top: 59, bottom: 0 },
+  { name: 'And360x732-field', w: 360, h: 732, top: 10, bottom: 0 },
 ];
 export const VIEWS = ['resultLoser', 'resultWinner', 'resultLoserParticipant', 'resultWinnerParticipant', 'readyHost', 'readyParticipant', 'gameChosen', 'winnerWait', 'statsPopup'];
 
@@ -42,6 +46,8 @@ function finalBtns(doc,sec,host=true){ doc.getElementById('roundResultActions').
   const f=doc.getElementById('finalResultBtns'); f.classList.remove('hidden');
   // 렌더러(gameOver 분기)와 동일: 한번더는 host(canShowPlayAgainButton)만, 참가자는 [승률 보기][나가기] 한 행.
   f.innerHTML=(host?'<button class="btn-success btn-full span-full">한번더</button>':'')+'<button class="btn-light btn-full">게임 승률 보기</button><button class="btn-outline btn-full">게임방에서 나가기</button>';
+  // Build41 결함 A: 렌더러(gameOver 분기)는 참가자(1행)에게 slot-final 을 켜 2행 예약(min-height)을 푼다 — 테스트가 소스에서 같은 줄을 단언해 둘을 묶는다.
+  doc.getElementById('verdictActionSlot').classList.toggle('slot-final', !host);
   sec.querySelector('.c-foot > .action-grid')?.classList.add('hidden'); }
 const VIEWS={
  resultLoser(doc,win,log){ const s=show(doc,'screenRoundResult'); seed(win,{roomStatus:'result',status:'result',confirmedLoserIds:['h']});

@@ -196,3 +196,29 @@ QA fab: 하단 고정(선택 버튼과 13~104px 겹침) → topbar 아래 도크
 
 ### 7.8 사후 시각 증거 (필드 클래스 렌더, vault `recon/shots/`)
 IMG_2011·2014 → `AFTER_resultLoserParticipant_iPhone16-field.png` (A/B/C FIXED, D/E OPEN) · IMG_2012 → `AFTER_resultWinnerParticipant_iPhone16-field.png` (간격 FIXED, 슬랙 OPEN) · IMG_2013 → `AFTER_gameChosen_iPhone16-field.png` (FIXED) · Screenshot_091037/IMG_2044 → `AFTER_resultWinner_And360x732-field.png` (FIXED) · IMG_2043 → `AFTER_readyHost_And360x732-field.png` (FIXED) · IMG_2046 → `AFTER_winnerWait_And360x732-field.png` (FIXED) · 추가: `AFTER_resultLoserParticipant_And360x732-field.png` (OPEN 2 재현).
+
+## 8. 최종 결함 2건 수정 (2026-08-30, 게이트 "FINAL TWO DEFECTS ONLY")
+
+### 8.1 프로덕션 diff (index.html, +9줄, 다른 화면·로직 무변경)
+- 결과 렌더러 리셋부: `$("verdictActionSlot")?.classList.remove("slot-final");`
+- 결과 렌더러 gameOver 분기(`finalBtns.innerHTML = html;` 직후): `$("verdictActionSlot")?.classList.toggle("slot-final", state.role !== "host");`
+- CSS: `#verdictActionSlot.slot-final{min-height:0}` (base `min-height:104px` 와 ≤600px `96px` 는 그대로 — 호스트 2행 예약 유지)
+
+### 8.2 RED → GREEN (`tests/build41-ui-fieldfix.test.mjs`, 뷰포트 9종 = 7 매트릭스 + 필드 클래스 2)
+| 테스트 | 수정 전 | 수정 후 |
+|---|---|---|
+| [결함 A] 참가자 최종 결과: slotSlack=0 · unexpectedFooterHeight=0 · 버튼 뷰포트 안 | RED (슬랙 56) | GREEN |
+| [결함 B] 참가자 결과(2줄 제목 포함): 카드·벌칙 꼬리 clippedPx=0 | RED (AndMedium 카드 2.8, And360x732 꼬리 42) | GREEN — **추가 CSS 없이** A 의 56px 회수로 해소 |
+| [호스트 대조군] 호스트 최종 결과 2행 예약(min-height≥96, finalBtnsH>96, 슬랙 0, 카드 clip 0) | GREEN | GREEN |
+| [결함 A 소스 계약] 토글/리셋/CSS 존재 + base 예약 존재 | RED | GREEN |
+suite 23 → 26 tests, 26/26 PASS. `build35-layout-contract` 27/27(슬롯 min-height 핀 유지).
+
+### 8.3 필드 클래스 계측 (참가자 = Defect A/B 대상, 호스트 = 대조군)
+| 뷰 | 기기 | slack B→A | 카드/꼬리 clip (Build40 → Build41-pre → Build41) | actionsBottom | visibleBottom(vh−패딩) | safeOv | touch |
+|---|---|---|---|---|---|---|---|
+| 참가자·술래 | iPhone16-field 393×818 | 56 → **0** | 99.5/0 → 0/0 → **0/0** | 785 | 800 | 0 | 48 |
+| 참가자·승 | iPhone16-field | 56 → **0** | 0 → 0 → **0** | 785 | 800 | 0 | 48 |
+| 참가자·술래(2줄 제목) | And360x732-field | 56 → **0** | 147/0 → 2.8/42 → **0/0** | 699 | 714 | 0 | 48 |
+| 참가자·승 | And360x732-field | 56 → **0** | 15.8 → 0 → **0** | 699 | 714 | 0 | 48 |
+| 호스트·술래 (대조군) | iPhone16-field | 0 → 0 | 101.5/0 → 0/0 → **0/0** | 785 | 800 | 0 | 48 (slotMin 104, 2행 106) |
+| 호스트·승 (대조군) | And360x732-field | 0 → 0 | 17.8 → 0 → **0** | 699 | 714 | 0 | 48 (slotMin 104, 2행 106) |

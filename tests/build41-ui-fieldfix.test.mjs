@@ -164,6 +164,41 @@ describe.skipIf(!hasChrome)('Build41 UI — geometry 계약 (7 viewport)', () =>
       expect(r.penalty.clipped, `${r.dev} 벌칙 꼬리`).toBe(0);
     }
   });
+  // ── Build41 결함 A/B (증거 재조정 §7.7): 참가자 최종 결과의 2행 예약 슬랙 · Android 2줄 제목 잘림 ──
+  it('[결함 A] 참가자 최종 결과: verdictActionSlot 미사용 예약 = 0, 예상 밖 하단 슬랙 = 0', () => {
+    for (const r of [...of('resultLoserParticipant'), ...of('resultWinnerParticipant')]) {
+      const tag = `${r.dev}/${r.view}`;
+      expect(r.footer.slotSlack, `${tag} 슬롯 예약 슬랙`).toBe(0);
+      expect(r.footer.unexpectedFooterHeight, `${tag} 예상 밖 하단 여백`).toBe(0);
+      expect(r.bottom.footPaddingBottom, `${tag} 의도된 하단 패딩(안전영역 fallback)`).toBeGreaterThanOrEqual(18);
+      expect(r.actionsBottom, `${tag} 버튼이 뷰포트 안`).toBeLessThanOrEqual(r.vh - r.bottom.footPaddingBottom);
+    }
+  });
+  it('[결함 B] 참가자 결과(2줄 제목 "술래 확정! (1/1명)" 포함): 결과 카드·벌칙 꼬리 clippedPx=0 (전 기기)', () => {
+    for (const r of of('resultLoserParticipant')) {
+      expect(r.clippedPx, `${r.dev} 결과 카드`).toBe(0);
+      expect(r.penaltyShown, `${r.dev} 벌칙 표시`).toBe(true);
+      expect(r.penalty.clipped, `${r.dev} 벌칙 꼬리`).toBe(0);
+    }
+    for (const r of of('resultWinnerParticipant')) expect(r.clippedPx, `${r.dev} 결과 카드`).toBe(0);
+  });
+  it('[호스트 대조군] 호스트 최종 결과: 2행(한번더 + 승률/나가기) 예약이 그대로 렌더된다', () => {
+    for (const r of [...of('resultLoser'), ...of('resultWinner')]) {
+      const tag = `${r.dev}/${r.view}`;
+      expect(r.footer.slotMinHeight, `${tag} 호스트 슬롯 예약 유지`).toBeGreaterThanOrEqual(96);
+      expect(r.footer.finalBtnsH, `${tag} 2행 버튼 높이`).toBeGreaterThan(96);
+      expect(r.footer.slotSlack, `${tag} 호스트 슬랙`).toBe(0);
+      expect(r.clippedPx, `${tag} 결과 카드`).toBe(0);
+    }
+  });
+  it('[결함 A 소스 계약] 렌더러 gameOver 분기가 참가자에게 slot-final 을 켜고, 리셋에서 끈다', () => {
+    expect(html).toContain('$("verdictActionSlot")?.classList.toggle("slot-final", state.role !== "host");');
+    expect(html).toContain('$("verdictActionSlot")?.classList.remove("slot-final");');
+    expect(html).toMatch(/#verdictActionSlot\.slot-final\{min-height:0\}/);
+    // 호스트 예약(base min-height)은 남아 있어야 한다
+    expect(html).toMatch(/#verdictActionSlot\{[^}]*min-height:\s*\d+px/);
+  });
+
   it('결과(승리): 결과 카드 clippedPx=0, 벌칙 숨김', () => {
     for (const r of of('resultWinner')) { expect(r.clippedPx, r.dev).toBe(0); expect(r.penaltyShown, r.dev).toBe(false); }
   });
