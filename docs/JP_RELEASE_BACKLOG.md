@@ -28,7 +28,8 @@
 | JP-BL-025 | OPEN | Medium | `rooms.status` enum 제약 — 전수 증명 방법 확정 후 적용 | 아니오 |
 | JP-BL-026 | OPEN | Low | `created_at` NOT NULL 제약 추가 여부 | 아니오 |
 | JP-BL-027 | DONE | **High** | RLS 무음 거부 — 9개 write 에 인라인 검증 적용, 행위 테스트로 실증 | — |
-| JP-BL-027-B | OPEN | **High** | `nextRound` 무음 0행 미탐지 — Phase A STOP GATE 로 착수 못 함 | **예** |
+| JP-BL-027-B | DONE | **High** | `nextRound` 4개 write 카디널리티 검증 완료(CORE). strict 에서 0행 오류 0건·회귀 없음 | — |
+| JP-BL-027-D | OPEN | **High** | **strictFilters 기본값 전환 결정** — legacy 근사는 이제 게임을 진행시키지 못한다(실측 legacy 0/700 vs strict 700/700). CEO 결정 필요 | **예** |
 | JP-BL-027-C | PARTIAL | **High** | rc3 하니스에 participants realtime 전파 모델링 (전파·가드 구현 완료, strict RED — R1 미해소) | 아니오 |
 | JP-BL-027-C-R1 | DONE | **High** | 시뮬레이터가 REAL `fetchParticipants` 의 host 권위 경로를 우회 — host 역할 전환·자동 시작 배선 완료, strict 하드게이트 90→44 | — |
 | JP-BL-027-C-R1b | PARTIAL | **High** | 두 발행 트리거 매핑·Trigger A 구현·선택 제출 게이트 보정 완료. Trigger A 배선은 H1-a 미해소로 보류 | 아니오 |
@@ -508,6 +509,32 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-08-30 — JP-BL-027-B 완료 (CORE)
+
+상세: `docs/JP_CRIS_JP_BL_027B_2026-08-30.md`
+
+`nextRound`(index.html:11057~) 의 4개 write 에 `.select('id')` + **write 별로 다른 카디널리티
+계약**을 적용했다. 위반 시 `ZERO_ROW_WRITE` metric(context `nextRound.*`, expectedRows/
+affectedRows 포함)을 남기고 throw 로 승격한다 — 승격해야 기존 catch 의 안전망 A/재시도가
+dead code 가 되지 않는다.
+
+| write | 필터 | 계약 |
+|---|---|---|
+| participants.reset | `.eq('room_id', …)` | **≥1** (방 인원 가변) |
+| participants.markSafe | `.in('id', safeIds)` | **정확히 safeIds.length** |
+| participants.markLoser | `.in('id', loserIds)` | **정확히 loserIds.length** |
+| rooms.advance | `.eq('id', …)` | **정확히 1 + id 일치** |
+
+계약 테스트 17개 신설, 반공허성 역검증 완료(수정 전 13/17 실패).
+
+**부수 발견(중요)**: 이 검증이 켜지자 legacy 근사 필터가 `nextRound.participants.reset` 을
+0행으로 만든다는 사실이 드러났다 — 즉 **rc3 legacy 는 그 write 가 한 번도 실행된 적 없는
+세계를 시뮬레이션해 왔다**(하니스가 `applyNextRoundMarkerWrites` 로 직접 주입해 대체).
+실측: legacy 완주 **0/700**, strict 완주 **700/700**. → JP-BL-027-D 로 등록.
+
+회귀: 전체 스위트 **82 파일 1431 통과 / 실패 0**. rc3 strict **8 실패(하드게이트 87), 0행 오류 0건**
+— 수정 전과 동일하므로 **strict 회귀 없음**.
 
 ### 2026-08-29 (3차) — R1b 슬라이스: 트리거 매핑 완료, 배선은 보류
 

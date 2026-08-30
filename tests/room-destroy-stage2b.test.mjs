@@ -70,9 +70,14 @@ function createFakeDb({ participants = [], rooms = [], failRoomUpdate = false,
     const filters = [];
     const b = {
       _single: false,
+      // JP-BL-027-B: 프로덕션은 write 뒤에 `.select('id')` 로 **영향 행**을 되돌려받아
+      // 무음 0행을 탐지한다. 이 더블에는 select() 자체가 없어 그 체인을 표현하지 못했다.
+      // 실제 PostgREST 는 UPDATE ... RETURNING 으로 갱신된 행을 돌려주므로 그대로 재현한다.
+      _selected: false,
       eq(c, v) { filters.push([c, v]); return b; },
       in(c, v) { filters.push([c, v, 'in']); return b; },
       order() { return b; },
+      select() { b._selected = true; return b; },
       single() { b._single = true; return b; },
       then(res, rej) { return exec().then(res, rej); },
     };
@@ -92,9 +97,11 @@ function createFakeDb({ participants = [], rooms = [], failRoomUpdate = false,
       if (op === 'update') {
         writeLog.push({ table, op, patch: { ...payload }, filters: filters.map(f => [...f]), matched: rows.length });
         if (failRoomUpdate && table === 'rooms') return { data: null, error: { message: '[injected] rooms update failed' } };
-        if (roomUpdateNoop && table === 'rooms') return { data: null, error: null }; // error 없이 0-row no-op
+        // error 없이 0-row no-op — 이 주입의 의미는 그대로 둔다. select 체인이면
+        // "영향 행 0"을 명시적으로 돌려줘야 프로덕션의 0행 탐지가 실제로 동작한다.
+        if (roomUpdateNoop && table === 'rooms') return { data: b._selected ? [] : null, error: null };
         rows.forEach(r => Object.assign(r, payload));
-        return { data: null, error: null };
+        return { data: b._selected ? rows.map(r => ({ ...r })) : null, error: null };
       }
       if (op === 'delete') {
         writeLog.push({ table, op, filters: filters.map(f => [...f]), matched: rows.length });

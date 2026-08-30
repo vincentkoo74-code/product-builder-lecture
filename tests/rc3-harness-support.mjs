@@ -3051,9 +3051,12 @@ export async function runRematchAdvanceRecoveryScenario({
   combinedSourceOverride = null, dbErrorInjectionFn = null, idempotencyCacheEnabled = true,
   simulateLostTimer = true, applyNextRoundMarkerWrites = true, deliverDuplicateEcho = true,
   preEchoDrainMs = 0, vi, settleBudgetMs = 30000, stepMs = 250,
+  // JP-BL-027-B: nextRound 의 write 경로를 검증하는 시나리오는 `.eq('room_id', …)` 를 정확히
+  // 매칭하는 필터가 있어야 한다(legacy 근사는 그 write 를 0행으로 만든다). 인자로 전달한다.
+  strictFilters = undefined,
 }) {
   const world = createTrialWorld({
-    participantCount, seed, targetLoserCount,
+    participantCount, seed, targetLoserCount, strictFilters,
     resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor,
     combinedSourceOverride, dbErrorInjectionFn, idempotencyCacheEnabled,
   });

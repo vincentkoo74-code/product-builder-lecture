@@ -11081,26 +11081,52 @@ function summarizeGameStats(rows) {
           // 기존 { error } 승격 패턴, 약 6026-6030 참고). 이 try/catch가 실전에서 발화하려면 각 write의
           // error를 직접 검사해 throw로 승격해야 한다 — 그렇지 않으면 아래 catch(8829 부근)와 그
           // catch가 트리거하는 안전망 A(재시도 재예약)/metric/카운터 정리가 전부 dead code가 된다.
-          // JP-BL-027-B(미해결, CEO 반환): 이 write 들은 error 만 검사하며 무음 0행은 놓친다.
-          // 행 수 검증을 시도했으나 rc3 시뮬레이션 하니스가 `.eq('room_id', …)` 대량 업데이트를
-          // 재현하지 못해(하니스가 §한계로 문서화) 18건이 실패했다. 하니스 의미론 교정은
-          // 시뮬레이션 동역학을 바꾸므로 별도 슬라이스가 필요하다.
-          const { error: eResetParticipants } = await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode);
-          if (eResetParticipants) throw new Error('nextRound participants.reset failed: ' + (eResetParticipants.message || eResetParticipants));
+          // JP-BL-027-B: error 만 검사하면 RLS 무음 거부(HTTP 200/204 + 0행 + error===null)를
+          // 성공으로 오인한다. 각 write 는 `.select('id')` 로 영향 행을 되돌려받아 **카디널리티
+          // 계약**을 검사하고, 위반이면 ZERO_ROW_WRITE 를 emit 한 뒤 throw 로 승격한다
+          // (승격해야 아래 catch 의 안전망 A/metric/카운터 정리가 dead code 가 되지 않는다).
+          //
+          // 카디널리티 계약 — write 마다 다르다. 하나로 뭉뚱그리면 안 된다:
+          //   reset     : 이 방의 참가자 **전원**(가변 N). 인원수를 여기서 알 수 없으므로
+          //               "1행 이상"만 요구한다. 0행은 이 방에 참가자가 하나도 매치되지
+          //               않았다는 뜻이고, 그 상태로 라운드를 넘기면 이전 선택이 잔존한다.
+          //   markSafe  : **정확히 safeIds.length**. 부분 반영이면 판정 집합이 오염된다.
+          //   markLoser : **정확히 loserIds.length**. 동일.
+          //   advance   : **정확히 1**(rooms PK). 0행이면 라운드가 진행되지 않아 전 기기가 멈춘다.
+          const rowsOfWrite = (res) => (Array.isArray(res?.data) ? res.data : (res?.data ? [res.data] : []));
+          const failNextRoundWrite = (context, expected, affected) => {
+            try { QA.emit('metric', { eventType: 'ZERO_ROW_WRITE', context: 'nextRound.' + context,
+              roomCode: state.roomCode || null, round: state.round || 1,
+              expectedRows: expected, affectedRows: affected }); } catch (mErr) {}
+            throw new Error('nextRound ' + context + ' affected ' + affected + ' rows (expected ' + expected + ')');
+          };
+
+          const resReset = await db.from('participants').update({ choice: null, is_ready: false }).eq('room_id', state.roomCode).select('id');
+          if (resReset && resReset.error) throw new Error('nextRound participants.reset failed: ' + (resReset.error.message || resReset.error));
+          const resetRows = rowsOfWrite(resReset);
+          if (resetRows.length < 1) failNextRoundWrite('participants.reset', '>=1', resetRows.length);
           // 확정 안전자/술래는 DB 마커로 기록 + 자동 준비 완료 (재연결 후에도 상태 유지됨)
           if (safeIds.length > 0) {
-            const { error: eMarkSafe } = await db.from('participants').update({ choice: '__safe__', is_ready: true }).in('id', safeIds);
-            if (eMarkSafe) throw new Error('nextRound participants.markSafe failed: ' + (eMarkSafe.message || eMarkSafe));
+            const resSafe = await db.from('participants').update({ choice: '__safe__', is_ready: true }).in('id', safeIds).select('id');
+            if (resSafe && resSafe.error) throw new Error('nextRound participants.markSafe failed: ' + (resSafe.error.message || resSafe.error));
+            const safeRows = rowsOfWrite(resSafe);
+            if (safeRows.length !== safeIds.length) failNextRoundWrite('participants.markSafe', safeIds.length, safeRows.length);
           }
           if (loserIds.length > 0) {
-            const { error: eMarkLoser } = await db.from('participants').update({ choice: '__loser__', is_ready: true }).in('id', loserIds);
-            if (eMarkLoser) throw new Error('nextRound participants.markLoser failed: ' + (eMarkLoser.message || eMarkLoser));
+            const resLoser = await db.from('participants').update({ choice: '__loser__', is_ready: true }).in('id', loserIds).select('id');
+            if (resLoser && resLoser.error) throw new Error('nextRound participants.markLoser failed: ' + (resLoser.error.message || resLoser.error));
+            const loserRows = rowsOfWrite(resLoser);
+            if (loserRows.length !== loserIds.length) failNextRoundWrite('participants.markLoser', loserIds.length, loserRows.length);
           }
           // Build19: 다음 라운드 준비화면도 모든 기기가 같은 서버 시각에 표시하도록 예정 시각 동봉.
           const readyPenalty = buildPenaltyValue({ gameRound: getGameRound(), phaseScheduledAt: getNextPhaseScheduledAt(), phaseKind: "ready" });
           state.penalty = readyPenalty;
-          const { error: eAdvanceRoom } = await db.from('rooms').update({ round: state.round + 1, status: 'ready', penalty: readyPenalty }).eq('id', state.roomCode);
-          if (eAdvanceRoom) throw new Error('nextRound rooms.advance failed: ' + (eAdvanceRoom.message || eAdvanceRoom));
+          const resAdvance = await db.from('rooms').update({ round: state.round + 1, status: 'ready', penalty: readyPenalty }).eq('id', state.roomCode).select('id');
+          if (resAdvance && resAdvance.error) throw new Error('nextRound rooms.advance failed: ' + (resAdvance.error.message || resAdvance.error));
+          const advanceRows = rowsOfWrite(resAdvance);
+          if (advanceRows.length !== 1 || advanceRows[0]?.id !== state.roomCode) {
+            failNextRoundWrite('rooms.advance', 1, advanceRows.length);
+          }
           // Build29 Round2(CEO 확정 사양): 성공 시 이 라운드의 재시도 카운터를 지운다 — "성공 시
           // counter clear" 요구사항. try 블록 맨 끝(모든 write가 실제로 성공한 뒤)에 있어, 위
           // 어느 await라도 throw하면 catch로 빠져 이 줄에 도달하지 않는다(부분 실패는 절대

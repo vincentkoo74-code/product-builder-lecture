@@ -109,8 +109,14 @@ describe('[JP-BL-027] 의도적으로 건드리지 않은 경로 (회귀 방지)
   });
 
   it('nextRound 는 Build29 계약(오류 throw 승격 + 재시도 안전망)을 그대로 유지한다', () => {
-    expect(html).toMatch(/const \{ error: eAdvanceRoom \} = await db\.from\('rooms'\)\.update/);
-    expect(html).toMatch(/const \{ error: eResetParticipants \} = await db\.from\('participants'\)\.update/);
+    // JP-BL-027-B 이후 구문이 바뀌었다(구조분해 → res 객체 + 행수 검증). 고정해야 하는 것은
+    // **변수명이 아니라 계약**이다: 네 write 각각의 error 가 검사되어 throw 로 승격되는가.
+    // 행수 계약은 tests/jp-bl-027b-nextround-write-integrity.test.mjs 가 별도로 강제한다.
+    for (const ctx of ['participants.reset', 'participants.markSafe', 'participants.markLoser', 'rooms.advance']) {
+      expect(html, ctx).toContain(`throw new Error('nextRound ${ctx} failed: `);
+    }
+    // 재시도 안전망(성공 시 카운터 정리)이 모든 write 뒤에 남아 있다.
+    expect(html).toMatch(/delete state\.rematchAdvanceRetryAttempts\[getRematchAdvanceRetryKey\(\)\]/);
   });
 
   it('promoteParticipantToHost 는 기존 검증 재조회를 유지한다 (중복 적용 안 함)', () => {
