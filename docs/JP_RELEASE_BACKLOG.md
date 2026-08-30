@@ -510,6 +510,26 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
 
+### 2026-08-30 (4차) — JP-SYNC-INVITE-001 (부분): 방 시작 정책 + 초대 토큰
+
+상세: `docs/JP_SYNC_INVITE_FOUNDATION_2026-08-30.md`
+
+**근본 원인 확정**: `areAllActivePlayersReady()` 의 하한이 `active.length > 0` 이라 host 가
+혼자 준비를 마치면 **1인 자동 시작**이 발화하고, `status='playing'` 이 되면서
+`isJoinLocked()`(index.html:5587)가 초대받은 친구의 입장을 막는다. `isJoinLocked` 의 ready 분기는
+host 를 제외하므로 잠금의 실제 경로는 ready 가 아니라 **자동 시작**이다.
+
+**CORE 추상화**(시장 분기 없음): `ROOM_START_POLICY.minParticipantsToStart`.
+미설정 시 1 — **KR 동작 불변**(QR 자리에서 host 단독 시작 유지). JP 시장 레이어가 2 로 설정한다.
+
+**초대 토큰**(CORE, 플랫폼 중립): `generateInviteToken()` = 16바이트 CSPRNG → base64url 22자.
+CSPRNG 부재 시 약한 토큰으로 대체하지 않고 throw 한다. `isValidInviteTokenFormat()` 이
+조회 전에 형식을 거른다. 저장은 `rooms.invite_token` 컬럼 하나(전용 테이블 아님).
+마이그레이션 `20260830010000_jp_v1_room_invite_token.sql` **작성만 했고 배포하지 않았다**.
+
+미구현(다음 슬라이스): 대기 화면 UI, host 부재 상태 화면, 토큰 발급/조회 배선(스키마 배포 선행),
+stale room 정리 인프라.
+
 ### 2026-08-30 (3차) — JP-BL-027-D: strict = 권위 모드 (CEO 결정)
 
 rc3 필터 모드의 권위를 옮겼다. **하니스/QA 변경이며 프로덕션 게임 규칙 변경이 아니다** —

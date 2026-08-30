@@ -4891,6 +4891,20 @@
     document.documentElement.lang = currentLocale;
     if (document.body) document.body.setAttribute("data-locale", currentLocale);
 
+    // ── JP 시장 레이어 설정 (JP-SYNC-INVITE-001) ────────────────────────────────
+    // CORE 게임 로직에는 시장 분기를 두지 않는다. 시장별 차이는 **여기 값으로만** 표현한다.
+    // CORE 는 ROOM_START_POLICY 를 통해 이 값을 읽는다(미설정 시 1 = 기존 KR 동작).
+    //
+    // minParticipantsToStart = 2 인 이유:
+    //   JP V1 은 "LINE 으로 링크를 보내 친구와 지금 바로 한 판" 이다. host 가 혼자 준비를
+    //   마치면 1인 자동 시작이 발화하고 status 가 'playing' 이 되어 isJoinLocked() 가
+    //   초대받은 친구의 입장을 막는다 — 초대 퍼널이 성립하지 않는다.
+    //   KR(QR 로 한자리에 모이는 사용)은 이 값을 설정하지 않으므로 host 단독 시작이 유지된다.
+    const MARKET_CONFIG = {
+      market: 'JP',
+      minParticipantsToStart: 2,
+    };
+
     // V1.0_JP: 일본 빌드는 Tokyo(ap-northeast-1) Supabase 를 가리킨다.
     // 리전 선언의 단일 기준은 config/active-region.json 이며, scripts/region-guard.mjs 가
     // 이 상수와 선언 리전의 일치를 빌드마다 검사한다(fail-closed). 임의 변경 금지.
@@ -5463,6 +5477,52 @@
     // 이번 라운드 활성 플레이어(확정 술래/안전 제외) — 단일 소스 computePlayerStatuses 사용.
     // WRPS-042/043: 호스트도 플레이어로 포함된다(심판 모델 폐지).
     // 다중 술래 재대결에서 확정자(__safe__/__loser__, is_ready=true)가 준비 게이트를 오염시키지 않도록 한다.
+    // ── CORE: 초대 토큰 (JP-SYNC-INVITE-001) ────────────────────────────────────
+    // 플랫폼 중립이다 — LINE/LIFF 를 전혀 참조하지 않는다. 어댑터가 이 토큰을 URL 로 만든다.
+    //
+    // 방 코드(4자·약 20.7비트·Math.random)는 QR 근접 입장용이며 URL 초대 자격증명으로
+    // 쓰기에 부족하다(열거 가능). 초대 URL 에는 이 토큰만 쓴다. KR 방 코드 UX 는 불변이다.
+    const INVITE_TOKEN_BYTES = 16; // 128비트
+
+    function generateInviteToken() {
+      const c = (typeof globalThis !== 'undefined' && globalThis.crypto) ? globalThis.crypto : null;
+      if (!c || typeof c.getRandomValues !== 'function') {
+        // CSPRNG 가 없으면 **약한 토큰으로 대체하지 않는다** — 조용한 강도 저하가 더 위험하다.
+        throw new Error('generateInviteToken: CSPRNG unavailable');
+      }
+      const bytes = new Uint8Array(INVITE_TOKEN_BYTES);
+      c.getRandomValues(bytes);
+      let bin = '';
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      // base64url — URL 에 그대로 넣을 수 있고 패딩이 없다.
+      return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    // 토큰 형식 검증. 조회 전에 형식부터 거른다(무효 토큰으로 DB 를 두드리지 않는다).
+    function isValidInviteTokenFormat(token) {
+      if (typeof token !== 'string') return false;
+      // 16바이트 → base64url 22자.
+      return /^[A-Za-z0-9_-]{22}$/.test(token);
+    }
+
+    // ── CORE: 방 시작 정책 (JP-SYNC-INVITE-001) ─────────────────────────────────
+    // 시장별 분기(`if (market === 'JP')`)를 게임 로직 안에 두지 않는다. CORE 는 **값**만 읽고,
+    // 그 값은 시장 레이어(MARKET_CONFIG)가 설정한다.
+    //
+    // minParticipantsToStart — 게임을 시작하려면 활성 플레이어가 최소 몇 명이어야 하는가.
+    //   KR: 미설정 → 1 (기존 동작과 정확히 동일하다. QR 로 모인 자리에서 host 단독 시작 허용)
+    //   JP: 2       (초대 링크로 친구를 부르는 플레이 — 혼자 시작해 방이 잠기면 안 된다)
+    //
+    // MARKET_CONFIG 가 없는 실행 환경(테스트 하니스 추출 샌드박스 등)에서는 1 로 떨어진다 —
+    // 즉 이 추상화는 기존 동작을 바꾸지 않는다.
+    const ROOM_START_POLICY = {
+      get minParticipantsToStart() {
+        const v = (typeof MARKET_CONFIG !== 'undefined' && MARKET_CONFIG)
+          ? MARKET_CONFIG.minParticipantsToStart : undefined;
+        return (typeof v === 'number' && Number.isFinite(v) && v >= 1) ? v : 1;
+      },
+    };
+
     function getActivePlayers() {
       const statuses = computePlayerStatuses(
         (state.participants || []).map(p => ({ id: p.id, isHost: p.is_host, choice: p.choice })),
@@ -5487,7 +5547,16 @@
     // 활성 플레이어가 1명 이상이고 전원 준비 완료인가 → 자동 시작 트리거 조건.
     function areAllActivePlayersReady() {
       const active = getActivePlayers();
-      return active.length > 0 && active.every(p => p.is_ready);
+      // JP-SYNC-INVITE-001 근본 원인: 하한이 `> 0` 이라 host 혼자 준비해도 자동 시작이 발화하고,
+      // status 가 'playing' 이 되면서 isJoinLocked() 가 초대받은 친구의 입장을 막았다.
+      // 하한을 정책 값으로 바꾼다 — 기본값 1 이므로 KR 동작은 그대로다.
+      //
+      // ⚠️ typeof 가드 근거는 7157 부근 관례와 동일하다 — 여러 테스트 하니스가 이 함수만
+      // 좁게 추출해 독립 실행하므로(추출 구간에 ROOM_START_POLICY 선언이 안 들어올 수 있다),
+      // 그 환경에서는 기본값 1(= 기존 동작)로 떨어져야 한다. 실제 앱에서는 항상 참이다.
+      const minToStart = (typeof ROOM_START_POLICY !== 'undefined' && ROOM_START_POLICY)
+        ? ROOM_START_POLICY.minParticipantsToStart : 1;
+      return active.length >= minToStart && active.every(p => p.is_ready);
     }
 
     // Build23: "술래 선정이 완료됐는가"의 단일 진실 소스(state model A~C 구분의 핵심).
