@@ -237,6 +237,8 @@ describe('Build35 — 히트 타깃 44px', () => {
 
   it('인라인 스타일 나가기 버튼이 .btn-quiet로 통일됐다', () => {
     expect(html).not.toContain('style="color:#999;background:none;border:1px solid #ddd;padding:8px 16px');
-    expect(html.match(/class="btn-quiet" onclick="window\.leaveRoom\(\)"/g).length).toBe(3);
+    // Build41 UI(필드픽스 RC-B): screenReady 의 btn-quiet 나가기는 grid 안의 leaveRoom 버튼으로 통합됐다
+    // (goHome "나가기" + btn-quiet "게임방에서 나가기" 중복 제거). 남은 btn-quiet 는 winnerWait / loserWait 2개.
+    expect(html.match(/class="btn-quiet" onclick="window\.leaveRoom\(\)"/g).length).toBe(2);
   });
 });
