@@ -3815,6 +3815,18 @@
         "toast.codeRequired": "방 코드를 입력해주세요.",
         "toast.nameRequired": "닉네임을 입력해주세요.",
         "toast.roomNotFound": "존재하지 않는 방입니다.",
+        // JP-SYNC-INVITE-002: 초대 해석 결과별 전용 상태(토스트 하나로 끝내지 않는다).
+        "invite.hostGone.title": "상대가 더 이상 기다리지 않아요",
+        "invite.hostGone.desc": "이 도전은 끝났어요. 새로 만들어 보세요.",
+        "invite.unavailable.title": "지금은 참여할 수 없어요",
+        "invite.unavailable.desc": "게임이 이미 진행 중이거나 끝난 방이에요.",
+        "invite.invalid.title": "초대 링크가 올바르지 않아요",
+        "invite.invalid.desc": "링크가 만료됐거나 잘못됐어요.",
+        "invite.roomFull.title": "정원이 찼어요",
+        "invite.action.newChallenge": "새로 도전 만들기",
+        "invite.action.home": "홈으로",
+        "invite.waiting.title": "친구를 기다리는 중",
+        "invite.waiting.desc": "링크를 보내고 이 화면에서 기다려 주세요.",
         "toast.roomClosedAlone": "혼자 남아 방이 종료되었어요. 홈으로 이동합니다.",
         "toast.hostTransferFailed": "⚠️ 호스트 넘기기에 실패했어요. 잠시 후 다시 시도해 주세요.",
         "toast.leaveAfterRound": "🚪 이번 판이 끝나면 나갈게요. 지금 라운드는 끝까지 함께해요!",
@@ -4200,6 +4212,17 @@
         "toast.codeRequired": "Please enter a room code.",
         "toast.nameRequired": "Please enter a nickname.",
         "toast.roomNotFound": "Room not found.",
+        "invite.hostGone.title": "They're no longer waiting",
+        "invite.hostGone.desc": "This challenge has ended. Start a new one.",
+        "invite.unavailable.title": "You can't join right now",
+        "invite.unavailable.desc": "The game is already in progress or finished.",
+        "invite.invalid.title": "This invite link isn't valid",
+        "invite.invalid.desc": "The link may be expired or incorrect.",
+        "invite.roomFull.title": "The room is full",
+        "invite.action.newChallenge": "Start a new challenge",
+        "invite.action.home": "Home",
+        "invite.waiting.title": "Waiting for your friend",
+        "invite.waiting.desc": "Send the link and stay on this screen.",
         "toast.roomClosedAlone": "You're the only one left — the room was closed. Returning home.",
         "toast.hostTransferFailed": "⚠️ Couldn't transfer the host role. Please try again.",
         "toast.leaveAfterRound": "🚪 You'll leave after this round. Finish this one first!",
@@ -4582,6 +4605,17 @@
         "toast.codeRequired": "部屋コードを入力してください。",
         "toast.nameRequired": "ニックネームを入力してください。",
         "toast.roomNotFound": "存在しない部屋です。",
+        "invite.hostGone.title": "相手はもう待っていません",
+        "invite.hostGone.desc": "この対戦は終了しました。新しく作りましょう。",
+        "invite.unavailable.title": "いまは参加できません",
+        "invite.unavailable.desc": "すでに対戦中か、終了した部屋です。",
+        "invite.invalid.title": "招待リンクが正しくありません",
+        "invite.invalid.desc": "リンクの有効期限が切れているか、間違っています。",
+        "invite.roomFull.title": "定員に達しました",
+        "invite.action.newChallenge": "新しく対戦をつくる",
+        "invite.action.home": "ホームへ",
+        "invite.waiting.title": "友だちを待っています",
+        "invite.waiting.desc": "リンクを送って、この画面で待ってください。",
         "toast.roomClosedAlone": "一人になったため部屋を終了しました。ホームに戻ります。",
         "toast.hostTransferFailed": "⚠️ ホストの引き継ぎに失敗しました。もう一度お試しください。",
         "toast.leaveAfterRound": "🚪 このラウンドが終わったら退出します。最後まで一緒に！",
@@ -5503,6 +5537,46 @@
       if (typeof token !== 'string') return false;
       // 16바이트 → base64url 22자.
       return /^[A-Za-z0-9_-]{22}$/.test(token);
+    }
+
+    // ── CORE: 초대 해석 (JP-SYNC-INVITE-002) ────────────────────────────────────
+    // 플랫폼 중립이다. 어댑터가 (1) 토큰을 URL 에서 꺼내고 (2) 권위 조회를 수행한 뒤
+    // 그 결과를 이 순수 함수에 넘긴다. 여기서는 DB 도 네트워크도 만지지 않는다.
+    //
+    // 상태 모델은 실제 동작으로 정당화되는 최소 집합이다:
+    //   VALID          입장 가능
+    //   INVALID_TOKEN  형식 불일치 또는 매칭되는 방 없음(회수된 토큰 포함 — 회수는 NULL 이라 매칭 실패)
+    //   HOST_GONE      방은 있으나 host 참가자 행이 없다(명시적 퇴장 = 행 삭제)
+    //   ROOM_FULL      정원 초과
+    //   ALREADY_JOINED 이 사용자가 이미 참가자다(재입장 = 멱등)
+    //   UNAVAILABLE    방 상태가 신규 입장을 받지 않는다(진행 중/종료/파괴)
+    //
+    // ⚠️ 원시 DB 오류를 UI 로 그대로 노출하지 않는다 — 항상 위 상태 중 하나로 정규화한다.
+    const INVITE_JOINABLE_STATUSES = ['waiting', 'lobby', 'ready'];
+
+    function resolveInviteChallenge({ token, room, participants, selfId } = {}) {
+      if (!isValidInviteTokenFormat(token)) return { state: 'INVALID_TOKEN' };
+      // 권위 조회가 방을 못 찾았거나 토큰이 다르면 무효다(회수된 토큰은 NULL 이라 여기 걸린다).
+      if (!room || !room.id || room.invite_token !== token) return { state: 'INVALID_TOKEN' };
+
+      const rows = Array.isArray(participants) ? participants : [];
+      // 이미 참가자면 재입장은 멱등이다 — 정원/상태 판정보다 먼저 본다(같은 링크 재열기).
+      if (selfId && rows.some(p => p && p.id === selfId)) {
+        return { state: 'ALREADY_JOINED', roomCode: room.id };
+      }
+      // host 참가자 행이 없으면 도전은 더 이상 유효하지 않다.
+      // 명시적 퇴장은 행을 삭제하므로(index.html:12440 부근) 이 신호는 신뢰할 수 있다.
+      if (!rows.some(p => p && p.is_host)) return { state: 'HOST_GONE', roomCode: room.id };
+
+      if (!INVITE_JOINABLE_STATUSES.includes(room.status)) {
+        return { state: 'UNAVAILABLE', roomCode: room.id, status: room.status };
+      }
+      // ⚠️ typeof 가드 근거는 7157 부근 관례와 동일하다 — 테스트 하니스가 이 함수만 좁게
+      // 추출해 독립 실행할 수 있고, 그때 MAX_ROOM_PARTICIPANTS 선언이 구간 밖일 수 있다.
+      // (선언은 파일 뒤쪽이지만 같은 스크립트 스코프라 실제 앱 호출 시점에는 항상 초기화돼 있다.)
+      const maxRoom = (typeof MAX_ROOM_PARTICIPANTS !== 'undefined') ? MAX_ROOM_PARTICIPANTS : 20;
+      if (rows.length >= maxRoom) return { state: 'ROOM_FULL', roomCode: room.id };
+      return { state: 'VALID', roomCode: room.id };
     }
 
     // ── CORE: 방 시작 정책 (JP-SYNC-INVITE-001) ─────────────────────────────────

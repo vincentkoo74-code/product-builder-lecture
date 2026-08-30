@@ -21,7 +21,9 @@
 | JP-BL-011 | OPEN | Low | `~/.rps_seoul_env` 파일명/내용 불일치 정리 | 아니오 |
 | JP-BL-012 | OPEN | Low | JP 앱 식별자·딥링크 스킴 분리 검토 | 미정 |
 | JP-BL-014 | DONE | Medium | A5 device-matrix 타임아웃 → **Tokyo 복원으로 해소, 통과 확인** | — |
-| JP-BL-015 | OPEN | **High** | JP 통합 마이그레이션 3종 작성 (현 4종은 신규 프로젝트에 적용 불가) | **예** |
+| JP-BL-015 | RE-VERIFIED | **High** | 로컬 clean bootstrap 실증: 9종 전부 0 실패 · 멱등 재적용 0 · 반복 재구축 0. 배포는 여전히 미승인 | **예** |
+| JP-H1A-STRICT-CALIBRATION | OPEN | Medium | strict 권위 모드의 mutation 민감도 임계값 재보정(11 vs 12, 399.0 vs 400.7). **이번 슬라이스에서 건드리지 않았다** | 아니오 |
+| JP-INFRA-STALE-ROOM | OPEN | Medium | 물리적 stale row 정리(cron/TTL) — 별도 인프라 태스크. 도전 유효성 판정과 분리됨 | 아니오 |
 | JP-BL-016 | DECIDED | High | free plan 은 엔지니어링 기간 유지, 외부 베타 전 Pro 승격 (JP-PROD-GATE) | **예** |
 | JP-BL-017 | OPEN | Medium | `SUPABASE_DB_PASSWORD` 리전별 분리 | 아니오 |
 | JP-BL-018 | DESIGNED | **High** | 목표 RLS 설계 완료 — 배포 미승인 | **예** |
@@ -509,6 +511,41 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-08-31 — JP-SYNC-INVITE-002: 대기 / host 부재 / 초대 해석
+
+상세: `docs/JP_WAITING_INVITE_RESOLUTION_2026-08-31.md`
+
+**host presence 조사 결과(§6)** — 발명하지 않고 실제 모델을 확인했다:
+- presence 는 **Supabase Realtime 채널 기반**(`state.channel.presenceState()`)이고 **DB 에 영속되지 않는다**
+- 명시적 퇴장은 **참가자 행을 삭제**한다(index.html:12440 부근)
+- `cleanupDroppedParticipants` 는 **host 를 명시적으로 제외**한다(`!p.is_host`) → 끊긴 host 행은 정리되지 않는다
+- 스키마에 `last_seen_at`/`is_online` 이 **없다**
+
+| 구분 | DB 만으로 판별 |
+|---|---|
+| HOST EXPLICITLY LEFT | ✅ host 행 없음 |
+| HOST RECORD STILL EXISTS | ✅ |
+| HOST DISCONNECTED TEMPORARILY | ❌ ACTIVELY WAITING 과 구분 불가 |
+| HOST ACTIVELY WAITING | ❌ 동일 |
+
+**갭**: 영속 liveness 신호가 없다. V1 최소안은 **구조적 신호만 사용**(host 행 존재 + 방 상태)하고,
+"행은 있으나 조용한 host" 는 입장 후 기존 Realtime presence 가 처리하게 둔다.
+heartbeat 인프라는 **추가하지 않았다**.
+
+**초대 해석 계약(CORE, 순수 함수)**: `resolveInviteChallenge({token, room, participants, selfId})`
+→ `VALID / INVALID_TOKEN / HOST_GONE / ROOM_FULL / ALREADY_JOINED / UNAVAILABLE`.
+DB·네트워크를 만지지 않는다(권위 조회는 호출자 책임). 원시 DB 오류를 UI 로 노출하지 않는다.
+입장 가능 상태는 `['waiting','lobby','ready']` 로 명시 — **오래된 행이 자동으로 유효한 도전을 뜻하지 않는다**(§9-A).
+
+**host-gone UX**: ko/ja/en 3개 로케일 i18n 키 추가. 일본어는 지정 개념 그대로 「相手はもう待っていません」.
+복구 행동 2가지(새 도전 만들기 / 홈).
+
+**로컬 스키마 검증(§8·§12-15, Tokyo 미배포)**: PostgreSQL 17 clean bootstrap —
+9종 마이그레이션 **0 실패**, 멱등 재적용 0, 완전 재구축 0.
+`rooms.invite_token` 컬럼·부분 unique 인덱스 생성 확인, 유효/무효 조회, **중복 토큰 거부 실증**,
+회수(NULL) 다중 허용, host 퇴장 후 `has_host=null`, 새 도전=새 토큰, RLS on(정책 7개),
+anon grants(INSERT/SELECT/UPDATE), **롤백→재적용 성공**.
 
 ### 2026-08-30 (4차) — JP-SYNC-INVITE-001 (부분): 방 시작 정책 + 초대 토큰
 
