@@ -29,7 +29,7 @@
 | JP-BL-026 | OPEN | Low | `created_at` NOT NULL 제약 추가 여부 | 아니오 |
 | JP-BL-027 | DONE | **High** | RLS 무음 거부 — 9개 write 에 인라인 검증 적용, 행위 테스트로 실증 | — |
 | JP-BL-027-B | DONE | **High** | `nextRound` W1~W4 카디널리티 검증(CORE). W1 은 권위 조회 집합 대조로 **부분 write** 까지 탐지. strict 0행 오류 0건 | — |
-| JP-BL-027-D | OPEN | **High** | **strictFilters 기본값 전환 결정** — legacy 근사는 이제 게임을 진행시키지 못한다(실측 legacy 0/700 vs strict 700/700). CEO 결정 필요 | **예** |
+| JP-BL-027-D | DONE | **High** | strict = **권위·릴리스 게이팅 모드**로 전환. legacy = 과거 참조 전용(비권위, 삭제하지 않음) | — |
 | JP-BL-027-C | PARTIAL | **High** | rc3 하니스에 participants realtime 전파 모델링 (전파·가드 구현 완료, strict RED — R1 미해소) | 아니오 |
 | JP-BL-027-C-R1 | DONE | **High** | 시뮬레이터가 REAL `fetchParticipants` 의 host 권위 경로를 우회 — host 역할 전환·자동 시작 배선 완료, strict 하드게이트 90→44 | — |
 | JP-BL-027-C-R1b | PARTIAL | **High** | 두 발행 트리거 매핑·Trigger A 구현·선택 제출 게이트 보정 완료. Trigger A 배선은 H1-a 미해소로 보류 | 아니오 |
@@ -509,6 +509,32 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-08-30 (3차) — JP-BL-027-D: strict = 권위 모드 (CEO 결정)
+
+rc3 필터 모드의 권위를 옮겼다. **하니스/QA 변경이며 프로덕션 게임 규칙 변경이 아니다** —
+같은 커밋에서 `index.html` / `supabase/` 는 변경되지 않는다.
+
+| 모드 | 지위 |
+|---|---|
+| **strict** (기본값) | **권위 · 릴리스 게이팅.** 릴리스 준비도는 이 모드로만 판단한다 |
+| legacy | 과거 참조 전용 · **비권위 · 게이팅 금지.** 삭제하지 않고 라벨만 명확히 함 |
+
+legacy 가 권위를 잃은 근거(실측):
+- `.eq('room_id', …)` 를 표현하지 못해 그 필터의 대상 행을 0건으로 만든다
+- 그 결과 프로덕션 `autoFillChoices` 의 권위 재조회가 한 번도 발화하지 못했다(auto-choice 0 vs strict 10)
+- JP-BL-027-B 이후 `participants.reset` 이 항상 0행이 되어 게임이 진행되지 못한다
+  (legacy 완주 0/700 · strict 700/700, legacy rc3 0행 오류 63200건)
+
+전환이 프로덕션 동작을 바꾸지 않았음:
+- rc3 권위 모드 결과 **10 실패 / 53 통과, 0행 오류 0건** — 전환 직전 strict 측정과 **동일**
+- 전체 스위트(rc3 제외) 83 파일 1445 통과
+
+**권위 모드의 잔여 10건**(릴리스 게이팅 백로그, 전부 기존 H1-a 계열):
+- CROSS_DEVICE_OUTCOME_MISMATCH 하드게이트 40건
+- mutation 민감도 마진 2건(11 vs 12, 399.0 vs 400.7) — 변이는 여전히 탐지되며 마진만 근소 미달.
+  임계값은 **건드리지 않았다**. strict 기준 재보정이 필요하다(별도 항목).
+- 타임아웃 2건
 
 ### 2026-08-30 (2차) — JP-BL-027-B W1 부분 write 보강 (CEO CONDITIONAL PASS 대응)
 

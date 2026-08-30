@@ -411,7 +411,7 @@ function scheduleReorderableDelivery({ roomStore, sub, snapshot, rng, participan
 // 네트워크 왕복 시간은 쓰이며, 이래야 주입 on/off가 rng 스트림 자체를 어긋내지 않는다.
 export function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, realtimeDelayRegime = 'pessimistic', deliveryOrderMode = 'monotonic', dbErrorInjectionFn = null,
   // Phase A: 컬럼 인식 필터링. 기본은 false(legacy) 다 — 자세한 근거는 아래 selectRows 주석.
-  strictFilters = false }) {
+  strictFilters = true }) {
   function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.round(ms))));
   }
@@ -481,23 +481,30 @@ export function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDela
   const rowsOf = (table) => (table === 'rooms' ? [roomStore.row] : getParticipantRows());
   const matches = (row, filters) => filters.every((f) =>
     f.op === 'in' ? f.val.includes(row[f.col]) : row[f.col] === f.val);
-  // ⚠️ strictFilters 기본값이 false 인 이유 (Phase A 검증 결과, JP-BL-027-B 로 추적)
+  // ── strictFilters — rc3 필터 모드 (JP-BL-027-D, CEO 결정 2026-08-30) ──────────
   //
-  // 교정본(strictFilters=true)은 프로덕션 쿼리 계약을 정확히 재현한다. 그런데 이를 rc3
-  // 시뮬레이션 기본값으로 켜면 CROSS_DEVICE_OUTCOME_MISMATCH 88건이 드러나며 하드 게이트가
-  // 깨진다. 원인 분리 실험 결과 rooms 컬럼 인식은 무해했고, **participants 대량 갱신
-  // (`.eq('room_id', …)`)이 실제로 적용되기 시작한 것**이 유일한 원인이었다.
+  //   strict (기본값, **권위 모드 · 릴리스 게이팅**)
+  //     프로덕션 PostgREST 쿼리 계약을 컬럼 단위로 정확히 재현한다.
+  //     릴리스 준비도는 **오직 이 모드의 결과로만** 판단한다.
   //
-  // 이 발산이 실제 프로덕션 결함인지는 **아직 단정할 수 없다.** 이 하니스는 participants
-  // 변경에 realtime 전파가 없고(구독/브로드캐스트가 rooms 에만 있다) 기기들이 fetch 로만
-  // 알게 되므로, 대량 리셋이 적용되는 순간 기기 간 관측 격차를 실제보다 과대평가할 수 있다.
-  // 프로덕션은 participants 도 postgres_changes 로 전파된다.
+  //   legacy (**과거 호환/참조 전용 · 비권위 · 게이팅 금지**)
+  //     participants 필터의 마지막 항목을 id 로 간주하는 옛 근사다.
+  //     삭제하지 않고 남겨 두되, 이 모드의 GREEN 은 **어떤 릴리스 판단 근거도 되지 못한다.**
   //
-  // 따라서 "교정 = 즉시 켜기" 로 가지 않는다. 켜려면 participants realtime 전파까지 함께
-  // 모델링해야 하며, 그건 별도 슬라이스다. 기존 하드 게이트 단언은 **약화하지 않았다**.
+  // 왜 legacy 가 권위를 잃었는가 (실측 근거):
+  //   legacy 는 `.eq('room_id', …)` 를 표현하지 못해 그 필터가 겨냥한 행을 0건으로 만든다.
+  //   그 결과 (a) 프로덕션 `autoFillChoices` 의 권위 재조회가 한 번도 발화하지 못했고
+  //   (auto-choice 행 0건 vs strict 10건), (b) JP-BL-027-B 로 `nextRound` 가 영향 행을
+  //   검증하기 시작하자 `participants.reset` 이 항상 0행이 되어 게임이 진행되지 못한다
+  //   (실측: legacy 완주 0/700 · strict 완주 700/700, legacy rc3 0행 오류 63200건).
+  //   즉 legacy 는 프로덕션이 실제로 의존하는 의미론을 **표현할 수 없는** 근사다.
+  //
+  // 이 전환은 **하니스/QA 변경이며 프로덕션 게임 규칙 변경이 아니다** — 같은 커밋에서
+  // index.html / supabase/ 는 변경되지 않는다.
   const selectRows = (table, filters) => {
     if (strictFilters) return rowsOf(table).filter((r) => matches(r, filters));
-    // legacy: rooms 는 단일 방 행, participants 는 마지막 필터를 id 로 간주(기존 동역학 보존).
+    // legacy(비권위·참조 전용): rooms 는 단일 방 행, participants 는 마지막 필터를 id 로 간주.
+    // 프로덕션 의미론이 아니다 — 릴리스 판단에 쓰지 말 것(JP-BL-027-D).
     if (table === 'rooms') return rowsOf(table);
     const last = filters[filters.length - 1];
     if (!last) return [];

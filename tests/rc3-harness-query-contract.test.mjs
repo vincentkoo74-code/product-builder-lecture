@@ -26,7 +26,7 @@ function world({ isHost = true } = {}) {
     roomStore, deviceId: 'p1', isHost, rng: () => 0.5,
     clockRttFn: () => ({ rttBase: 1, upFrac: 0.5, jitterMs: 0 }),
     ackDelayFn: () => 0,
-    strictFilters: true, // 교정된 계약을 검증한다(rc3 시뮬 기본값은 legacy — 하니스 주석 참조).
+    strictFilters: true, // 권위 모드를 명시한다(JP-BL-027-D 이후 기본값이지만 의도를 남긴다).
   });
   return { db, roomStore };
 }

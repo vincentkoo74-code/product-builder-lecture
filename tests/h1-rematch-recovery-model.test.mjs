@@ -166,7 +166,8 @@ describe('H-1 §안전망 A(경로 #4, index.html:9733): nextRound() 실패 catc
 
   it('[테스트4] DB write(rooms.update status:ready) 실패를 주입하면 REAL nextRound() catch(:9825) → scheduleRematchAdvanceRetryAfterFailure(:9717) → scheduleRematchAutoAdvance(backoff, :9733)가 실제로 발화한다', async () => {
     const r = await runRematchAdvanceRecoveryScenario({
-      // JP-BL-027-B: nextRound write 경로 검증 — 정확한 필터 필요(legacy 는 0행을 만든다).
+      // JP-BL-027-D 이후 strict 가 기본값이지만, 이 시나리오는 정확한 필터가 **필수**이므로
+      // 의도를 명시적으로 남긴다(기본값이 바뀌어도 이 테스트는 흔들리지 않는다).
       strictFilters: true,
       resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
       dbErrorInjectionFn: makeNextRoundAdvanceFailureFn(),
@@ -207,7 +208,8 @@ describe('H-1 §안전망 A(경로 #4, index.html:9733): nextRound() 실패 catc
     expect(mutatedSource).not.toBe(EXTRACTED_COMBINED_SOURCE);
 
     const r = await runRematchAdvanceRecoveryScenario({
-      // JP-BL-027-B: nextRound write 경로 검증 — 정확한 필터 필요(legacy 는 0행을 만든다).
+      // JP-BL-027-D 이후 strict 가 기본값이지만, 이 시나리오는 정확한 필터가 **필수**이므로
+      // 의도를 명시적으로 남긴다(기본값이 바뀌어도 이 테스트는 흔들리지 않는다).
       strictFilters: true,
       resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
       combinedSourceOverride: mutatedSource,
@@ -229,7 +231,8 @@ describe('H-1 §안전망 A(경로 #4, index.html:9733): nextRound() 실패 catc
 
   it('[mutation 4: DB error injection 제거] 같은 시나리오를 주입 없이(dbErrorInjectionFn=null, 하니스 기본값) 돌리면 nextRound()가 성공해 실패/재예약 신호가 하나도 나오지 않는다(테스트4가 RED가 된다 — 주입 경로가 테스트4의 필수 조건임을 증명)', async () => {
     const r = await runRematchAdvanceRecoveryScenario({
-      // JP-BL-027-B: nextRound write 경로 검증 — 정확한 필터 필요(legacy 는 0행을 만든다).
+      // JP-BL-027-D 이후 strict 가 기본값이지만, 이 시나리오는 정확한 필터가 **필수**이므로
+      // 의도를 명시적으로 남긴다(기본값이 바뀌어도 이 테스트는 흔들리지 않는다).
       strictFilters: true,
       resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
       dbErrorInjectionFn: null,
@@ -256,7 +259,8 @@ describe('H-1 §안전망 B(경로 #5, index.html:8212→9759): duplicate result
 
   it('[테스트5] 예약 타이머가 유실된 뒤 duplicate result 호출이 오면 재판정 없이(idempotent) 안전망 B가 재예약한다 — 카운터는 증가하지 않는다(index.html:9740-9746 계약)', async () => {
     const r = await runRematchAdvanceRecoveryScenario({
-      // JP-BL-027-B: nextRound write 경로 검증 — 정확한 필터 필요(legacy 는 0행을 만든다).
+      // JP-BL-027-D 이후 strict 가 기본값이지만, 이 시나리오는 정확한 필터가 **필수**이므로
+      // 의도를 명시적으로 남긴다(기본값이 바뀌어도 이 테스트는 흔들리지 않는다).
       strictFilters: true,
       resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
       simulateLostTimer: true, deliverDuplicateEcho: true,
@@ -283,7 +287,8 @@ describe('H-1 §안전망 B(경로 #5, index.html:8212→9759): duplicate result
 
   it('[테스트6] 복구 경로가 실제로 없으면(duplicate 호출 없음) 방은 result에서 빠져나오지 못한다 — 진짜 STALL은 그대로 검출된다', async () => {
     const r = await runRematchAdvanceRecoveryScenario({
-      // JP-BL-027-B: nextRound write 경로 검증 — 정확한 필터 필요(legacy 는 0행을 만든다).
+      // JP-BL-027-D 이후 strict 가 기본값이지만, 이 시나리오는 정확한 필터가 **필수**이므로
+      // 의도를 명시적으로 남긴다(기본값이 바뀌어도 이 테스트는 흔들리지 않는다).
       strictFilters: true,
       resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
       simulateLostTimer: true, deliverDuplicateEcho: false,
@@ -317,7 +322,8 @@ describe('H-1 §안전망 B(경로 #5, index.html:8212→9759): duplicate result
 
   it('[테스트7] duplicate 호출로 복구되면 방은 실제로 다음 라운드로 진행한다 — false STALL도, 재판정(재분류)도 발생하지 않는다', async () => {
     const r = await runRematchAdvanceRecoveryScenario({
-      // JP-BL-027-B: nextRound write 경로 검증 — 정확한 필터 필요(legacy 는 0행을 만든다).
+      // JP-BL-027-D 이후 strict 가 기본값이지만, 이 시나리오는 정확한 필터가 **필수**이므로
+      // 의도를 명시적으로 남긴다(기본값이 바뀌어도 이 테스트는 흔들리지 않는다).
       strictFilters: true,
       resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
       simulateLostTimer: true, deliverDuplicateEcho: true, applyNextRoundMarkerWrites: true,
@@ -348,7 +354,8 @@ describe('H-1 §안전망 B(경로 #5, index.html:8212→9759): duplicate result
     expect(mutatedSource).not.toBe(EXTRACTED_COMBINED_SOURCE);
 
     const r = await runRematchAdvanceRecoveryScenario({
-      // JP-BL-027-B: nextRound write 경로 검증 — 정확한 필터 필요(legacy 는 0행을 만든다).
+      // JP-BL-027-D 이후 strict 가 기본값이지만, 이 시나리오는 정확한 필터가 **필수**이므로
+      // 의도를 명시적으로 남긴다(기본값이 바뀌어도 이 테스트는 흔들리지 않는다).
       strictFilters: true,
       resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
       combinedSourceOverride: mutatedSource,
@@ -368,7 +375,8 @@ describe('H-1 §안전망 B(경로 #5, index.html:8212→9759): duplicate result
 
   it('[mutation 3: idempotency 캐시 제거] 캐시를 끄면(H-1 이전 하니스 동작) 같은 duplicate 호출이 이 라운드를 전량 재판정해 REAL에 없는 재분류가 발생한다(테스트7이 RED가 된다)', async () => {
     const r = await runRematchAdvanceRecoveryScenario({
-      // JP-BL-027-B: nextRound write 경로 검증 — 정확한 필터 필요(legacy 는 0행을 만든다).
+      // JP-BL-027-D 이후 strict 가 기본값이지만, 이 시나리오는 정확한 필터가 **필수**이므로
+      // 의도를 명시적으로 남긴다(기본값이 바뀌어도 이 테스트는 흔들리지 않는다).
       strictFilters: true,
       resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
       idempotencyCacheEnabled: false,
@@ -396,7 +404,8 @@ describe('H-1 §공유 예산(index.html:9681/9740-9746): 안전망 A/B가 한 �
 
   it('[테스트8] 안전망 A가 상한(MAX_REMATCH_ADVANCE_RETRIES=3)을 모두 소진한 뒤 duplicate 호출이 와도 안전망 B는 재예약하지 않는다(무한 루프 불가) — EXHAUSTED(source=duplicateEchoRecovery)만 남는다', async () => {
     const r = await runRematchAdvanceRecoveryScenario({
-      // JP-BL-027-B: nextRound write 경로 검증 — 정확한 필터 필요(legacy 는 0행을 만든다).
+      // JP-BL-027-D 이후 strict 가 기본값이지만, 이 시나리오는 정확한 필터가 **필수**이므로
+      // 의도를 명시적으로 남긴다(기본값이 바뀌어도 이 테스트는 흔들리지 않는다).
       strictFilters: true,
       resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
       dbErrorInjectionFn: makeNextRoundAdvanceFailureFn(),
@@ -427,7 +436,8 @@ describe('H-1 §공유 예산(index.html:9681/9740-9746): 안전망 A/B가 한 �
 
   it('[mutation 3-b: idempotency 캐시 제거] 캐시를 끄면 duplicate 호출이 REAL 예산을 우회해(조기반환 대신 재판정 후 onOutcome이 무조건 재예약) 소진된 예산 뒤에도 타이머가 되살아난다 — 테스트8이 RED가 된다', async () => {
     const r = await runRematchAdvanceRecoveryScenario({
-      // JP-BL-027-B: nextRound write 경로 검증 — 정확한 필터 필요(legacy 는 0행을 만든다).
+      // JP-BL-027-D 이후 strict 가 기본값이지만, 이 시나리오는 정확한 필터가 **필수**이므로
+      // 의도를 명시적으로 남긴다(기본값이 바뀌어도 이 테스트는 흔들리지 않는다).
       strictFilters: true,
       resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
       idempotencyCacheEnabled: false,

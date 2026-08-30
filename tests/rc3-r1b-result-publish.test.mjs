@@ -295,14 +295,18 @@ describe('[R1b] REAL publishHostRoundResult 자체 방어 (스텁 없음)', () =
     await runReal(a);
     const snap = ['p0', 'p1', 'p2'].map((id) => {
       const r = rowOf(w, id);
-      return { id, wins: r.wins, losses: r.losses, draws: r.draws, choice: r.choice };
+      return { id, wins: r.wins, losses: r.losses, draws: r.draws };
     });
     // 두 번째 호출 — REAL 멱등 가드(index.html:7053)가 재판정을 막아야 한다.
     await runReal(a);
+    // 검증 대상은 **승패 통계의 멱등성**이다. `choice` 는 여기 포함하지 않는다 —
+    // JP-BL-027-D(strict 권위 모드) 이후에는 결과 발행 뒤 room→'result' 전파가 실제로
+    // 일어나 라운드가 정상 진행하고, 그 과정에서 choice 가 다음 라운드용으로 리셋된다.
+    // 그것은 이중 집계가 아니라 **정상적인 라운드 진행**이므로 멱등성 판정에 섞지 않는다.
     for (const s of snap) {
       const r = rowOf(w, s.id);
-      expect({ wins: r.wins, losses: r.losses, draws: r.draws, choice: r.choice })
-        .toEqual({ wins: s.wins, losses: s.losses, draws: s.draws, choice: s.choice });
+      expect({ wins: r.wins, losses: r.losses, draws: r.draws })
+        .toEqual({ wins: s.wins, losses: s.losses, draws: s.draws });
     }
   });
 
