@@ -243,6 +243,11 @@ export function createRoomStore(roomId = 'ROOM-SIM', { initialPenalty = '' } = {
     participants: new Map(), // id -> row
     order: [], // insertion order (created_at asc 흉내)
     subscribers: [], // { deviceId, onRoomRow(rowSnapshot) }
+    // JP-BL-027-C: participants 변경 구독자. 프로덕션은 rooms 와 participants **양쪽**을
+    // postgres_changes 로 구독하고, participants 콜백은 scheduleFetchParticipants 만 호출한다
+    // (index.html subscribeToRoom). 즉 "이벤트 → 권위 재조회" 모델이다.
+    participantSubscribers: [], // { deviceId, onParticipantsChange() }
+    participantSubLastScheduledAbsMs: new Map(), // 구독자별 마지막 예정 도착 절대시각(순서 보장)
     subscriberLastScheduledAbsMs: new Map(), // 구독자별 마지막 예정 도착 절대시각(순서 보장용)
     version: 0,
   };
@@ -526,16 +531,36 @@ export function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDela
     const target = selectRows(table, filters);
 
     if (op === 'delete') {
+      const removedInThisRoom = target.some((r) => r.room_id === roomStore.id);
       for (const row of target) {
         roomStore.participants.delete(row.id);
         const i = roomStore.order.indexOf(row.id);
         if (i >= 0) roomStore.order.splice(i, 1);
+      }
+      // 실제로 지워진 행이 있을 때만 이벤트를 낸다.
+      if (table === 'participants' && removedInThisRoom) {
+        for (const psub of roomStore.participantSubscribers) {
+          scheduleParticipantDelivery({
+            roomStore, sub: psub, rng, realtimeDelayRegime, deliveryOrderMode, delay,
+          });
+        }
       }
       await delay(ackDelay);
       return withRows ? { data: target.map((r) => ({ ...r })), error: null } : { error: null };
     }
 
     for (const row of target) Object.assign(row, patch);
+
+    // JP-BL-027-C: participants 도 프로덕션처럼 postgres_changes 로 전파한다.
+    // 0행/실패 write 는 이벤트를 만들지 않는다(실제 DB 와 동일 — 바뀐 게 없으면 이벤트도 없다).
+    // 다른 방을 대상으로 한 변경도 이 방 구독자에게 가지 않는다(row.room_id 로 확인).
+    if (table === 'participants' && target.some((r) => r.room_id === roomStore.id)) {
+      for (const psub of roomStore.participantSubscribers) {
+        scheduleParticipantDelivery({
+          roomStore, sub: psub, rng, realtimeDelayRegime, deliveryOrderMode, delay,
+        });
+      }
+    }
 
     // rooms 는 실제로 바뀐 경우에만 버전을 올리고 구독자에게 전파한다.
     // 0행(예: CAS 가드 `.eq('status','result')` 불일치)은 커밋도 브로드캐스트도 아니다.
@@ -879,12 +904,261 @@ function makeFinishRoundLocalSubstitute({
 // 앱에서는 안 일어날 STALL/desync를 하니스가 인위적으로 만들어낼 수 있다. 그래서 poll은 반드시
 // realtime과 "동일한" onRoomRow 래퍼를 통해서만 room row를 전달해야 한다 — 이 함수는 그 래퍼
 // 자체를 인자로 받는다(createTrialWorld가 subscriber 등록 직후 넘겨준다).
+// JP-BL-027-C: participants 이벤트 배달. rooms 와 동일하게 구독자별 도착 시각을 단조증가로
+// 강제한다(Supabase realtime 은 구독자당 단일 순서보장 스트림이다). deliveryOrderMode 가
+// 'outOfOrder' 면 rooms 와 마찬가지로 그 강제를 끈다.
+function scheduleParticipantDelivery({ roomStore, sub, rng, realtimeDelayRegime, deliveryOrderMode, delay }) {
+  // 프로덕션은 **2계층**이다(index.html subscribeToRoom / scheduleFetchParticipants):
+  //   1계층 — postgres_changes 알림이 이 구독자에게 도착하기까지의 네트워크 전파지연(가변).
+  //   2계층 — 알림 도착 시 `scheduleFetchParticipants(roomCode, 80)` 의 **고정 80ms** 로컬
+  //           디바운스. 매 알림마다 clearTimeout 후 재설정하므로 trailing-edge 이고,
+  //           병합 창의 크기는 전파지연이 아니라 항상 80ms 다.
+  // 이 둘을 하나로 합쳐 전파지연 분포를 병합 창으로 쓰면(이전 구현) 병합 창이 프로덕션의
+  // 80ms 대비 수십~수백 배로 부풀어, 실제로는 각각 재조회를 유발했을 커밋들이 한 번으로
+  // 합쳐진다 — 관측을 낙관적으로 왜곡한다. 그래서 두 계층을 분리해 모델링한다.
+  //
+  // 비용: 알림마다 타이머를 거는 순진한 구현은 가짜 타이머 큐가 이벤트 수에 비례해 폭증한다
+  // (실측: rc3 1200s → 3065s, 400s 예산 테스트 타임아웃). 여기서는 **알림 도착 시각마다
+  // 깨어날 필요가 없다**는 점을 이용한다 — 깨어나야 하는 시점은 오직 "재조회 예정 시각"뿐이고,
+  // 깨어난 뒤 그 시점까지 도착한 알림을 한꺼번에 소진하면 결과가 동일하다.
+  const DEBOUNCE_MS = 80;
+
+  // 1계층: 이 알림의 도착 시각. 구독자당 단일 순서보장 스트림이므로 단조증가를 강제한다.
+  const propDelay = sampleRealtimeDelayMs(rng, roomStore.participantSubscribers.length, realtimeDelayRegime);
+  const rawArriveAbsMs = Date.now() + propDelay;
+  const prevAbsMs = roomStore.participantSubLastScheduledAbsMs.get(sub.deviceId) ?? -Infinity;
+  const arriveAbsMs = deliveryOrderMode === 'outOfOrder'
+    ? rawArriveAbsMs
+    : Math.max(rawArriveAbsMs, prevAbsMs + 1);
+  roomStore.participantSubLastScheduledAbsMs.set(sub.deviceId, arriveAbsMs);
+
+  if (!sub._arrivals) sub._arrivals = [];
+  sub._arrivals.push(arriveAbsMs);
+  // outOfOrder 레짐에서는 도착 시각이 역전될 수 있으므로 큐를 정렬해 둔다.
+  //
+  // [알려진 근사 — 동등하지 않음] monotonic 레짐에서는 "새 도착이 이미 계산된 wake 시점보다
+  // 이를 수 없다"는 불변식이 성립하므로 wake 시점을 재조회 목표로만 한정하는 최적화가 정확하다.
+  // outOfOrder 레짐은 그 불변식을 의도적으로 끄므로, 이미 `await delay(...)` 로 잠든 뒤
+  // 더 이른 시각의 도착이 push 되면 루프가 그 시각에 깨어나지 못하고 다음 기존 wake 에서
+  // 함께 처리한다 — 배달이 합쳐지거나 늦어질 수 있다(유계). 이 근사는 outOfOrder 를 쓰는
+  // Degraded/Extreme(informational/stress) 프로파일에만 적용되며, release_gate 로 쓰이는
+  // Normal 프로파일은 monotonic 이라 영향이 없다.
+  if (deliveryOrderMode === 'outOfOrder') sub._arrivals.sort((a, b) => a - b);
+
+  if (sub._debounceLoopRunning) return;
+  sub._debounceLoopRunning = true;
+
+  // 프로덕션 finishFetchParticipants(index.html:7111) 의 보류 재예약은
+  //   scheduleFetchParticipants(roomCode)   // = 로컬 80ms 타이머 하나
+  // 뿐이다. **네트워크 왕복을 다시 기다리지 않는다** — 이미 도착한 알림에 대한
+  // 재조회를 미루는 것이므로 1계층(전파지연)을 다시 굴리면 안 된다.
+  // (scheduleParticipantDelivery 를 그대로 재호출하면 sampleRealtimeDelayMs 가 다시
+  //  샘플링되어 pessimistic 레짐에서 ~80ms 여야 할 간격이 ~880ms 로 벌어진다.)
+  const reschedule = () => {
+    const target = Date.now() + DEBOUNCE_MS;
+    sub._fetchAtAbsMs = sub._fetchAtAbsMs == null ? target : Math.max(sub._fetchAtAbsMs, target);
+    if (!sub._debounceLoopRunning) { sub._debounceLoopRunning = true; loop(); }
+  };
+
+  const loop = async () => {
+    try {
+      while (true) {
+        const now = Date.now();
+        // 지금까지 도착한 알림을 모두 소진한다. 2계층 디바운스는 **마지막 도착 + 80ms**.
+        let lastArrived = null;
+        while (sub._arrivals.length && sub._arrivals[0] <= now) lastArrived = sub._arrivals.shift();
+        if (lastArrived !== null) sub._fetchAtAbsMs = lastArrived + DEBOUNCE_MS;
+
+        // 다음에 깨어나야 하는 시점 = 재조회 예정 시각과 다음 알림 도착 중 이른 쪽.
+        // (알림 도착만 남았다면 그때 깨어나 디바운스를 새로 건다.)
+        const candidates = [];
+        if (sub._fetchAtAbsMs != null) candidates.push(sub._fetchAtAbsMs);
+        if (sub._arrivals.length) candidates.push(sub._arrivals[0]);
+        if (candidates.length === 0) break;
+
+        const wakeAt = Math.min(...candidates);
+        if (wakeAt > Date.now()) {
+          await delay(wakeAt - Date.now());
+          continue; // 깨어난 뒤 도착분을 다시 소진한다(= clearTimeout 후 재설정).
+        }
+
+        if (sub._fetchAtAbsMs != null && Date.now() >= sub._fetchAtAbsMs) {
+          sub._fetchAtAbsMs = null;
+          // 프로덕션 finishFetchParticipants 는 보류가 있으면 scheduleFetchParticipants 로
+          // 다시 예약한다. 재예약 수단을 콜백으로 넘긴다.
+          await sub.onParticipantsChange(reschedule);
+        }
+      }
+    } finally {
+      sub._debounceLoopRunning = false;
+      // 루프 종료와 새 알림 push 사이의 경합: 남은 알림이 있으면 루프를 다시 띄운다.
+      if (sub._arrivals.length || sub._fetchAtAbsMs != null) {
+        sub._debounceLoopRunning = true;
+        loop();
+      }
+    }
+  };
+  loop();
+}
+
+// JP-BL-027-C: 참가자 권위 재조회 — realtime 이벤트 경로와 폴링 경로가 **같은 구현**을 쓴다.
+//
+// ⚠️ 충실성 편차(명시): 프로덕션은 이 지점에서 REAL fetchParticipants(index.html)를 호출한다.
+// 그 함수는 243줄에 외부 의존이 38개(beginNewGameRound/publishHostRoundResult/startGame/
+// showScreen 등 화면·진행 함수 다수)라 이 하니스에 충실히 추출되어 있지 않다(§기존 한계).
+// 그래서 여기서는 그 함수의 **관측 가능한 핵심 효과**(권위 목록을 created_at 순으로 다시 읽어
+// state.participants 를 대체)만 재현한다. 이는 이 하니스가 폴링 경로에서 이미 하던 것과 동일한
+// 수준이며, 새로 도입한 근사가 아니다. REAL fetchParticipants 추출은 별도 슬라이스다.
+// 프로덕션 fetchParticipants(index.html)의 **재조회 경합 가드**를 그대로 반영한다.
+// 프로덕션은 응답을 state 에 반영하기 전에 세 가지를 검사한다:
+//   (1) fetchParticipantsBusy / fetchParticipantsPending — 재진입 시 중복 조회 대신 1회 예약
+//   (2) fetchParticipantsSeq — 더 새로운 요청이 있었으면 늦게 도착한 응답을 폐기
+//   (3) state.roomCode — 방을 떠났거나 다른 방이면 응답을 폐기
+// 이 가드가 없으면 시뮬레이터는 프로덕션이 실제로 막는 "오래된 응답이 최신 상태를
+// 덮어쓰는" 경합을 인위적으로 만들어내고, 그 결과를 프로덕션 결함으로 오인하게 된다.
+export async function refreshParticipantsAuthoritative({ db, roomStore, implRef, reschedule, publishHostResultOnRefresh = true }) {
+  const impl = implRef();
+  const st = impl.state;
+  // (1) 재진입 가드: 조회 중이면 '보류'만 표시하고 즉시 반환한다.
+  if (st._fetchParticipantsBusy) { st._fetchParticipantsPending = true; return; }
+  st._fetchParticipantsBusy = true;
+  try {
+    const mySeq = (st._fetchParticipantsSeq = (st._fetchParticipantsSeq || 0) + 1);
+    const { data: rows } = await db.from('participants').select('*')
+      .eq('room_id', roomStore.id).order('created_at', { ascending: true });
+    // (2) 최신성 가드 — 더 새로운 요청이 있었으면 이 응답은 폐기한다.
+    if (!rows || mySeq !== st._fetchParticipantsSeq) return;
+    // (3) 방-동일성 가드 — 프로덕션 index.html:7137 과 **동일한 형태**여야 한다:
+    //     if (!state.roomCode || roomCode !== state.roomCode) return;
+    // 즉 roomCode 가 비어 있는 경우(goHome() 등으로 방을 떠난 뒤)도 폐기 대상이다.
+    // `st.roomCode && ...` 로 쓰면 단락평가 때문에 "떠난 뒤 늦게 도착한 응답"이 통과해
+    // 프로덕션이 WRPS-083 후속으로 명시적으로 막은 경합을 하니스가 재현하지 못한다.
+    if (!st.roomCode || st.roomCode !== roomStore.id) return;
+
+    // ── R1: 프로덕션 fetchParticipants 의 **권위 재조회 이후 본문**을 재현한다 ──────────────
+    // (index.html:7140~7354). 이전 하니스는 `state.participants = rows` 하나만 수행해,
+    // 프로덕션이 매 재조회마다 실행하는 host 권위 전이를 통째로 건너뛰었다 — 그 결과 rc3 는
+    // 결과 확정/자동 시작을 드라이버 글루로 대신 트리거했고, participants 전파를 켜자마자
+    // 두 경로가 어긋나 strict 수치가 요동쳤다(JP-BL-027-C 리포트 §8 R1).
+    //
+    // 여기서는 REAL 함수만 호출한다. ready/choice/round/status/host 를 시뮬레이터가 직접
+    // 대입하는 지름길은 쓰지 않는다(§7).
+    const prevParticipants = st.participants || [];
+
+    // (a) 호스트 역할 전환 (index.html:7141-7160). 권위 스냅샷이 유일한 근거다.
+    let justBecameHostThisSnapshot = false;
+    const me = rows.find((p) => p.id === st.currentUserId);
+    if (me) {
+      if (me.is_host && st.role !== 'host') {
+        st.role = 'host';
+        justBecameHostThisSnapshot = true;
+        // 승계자는 라운드 시작 시점에 한 번만 세워지는 host-only 경로를 물려받지 못한다.
+        try { if (typeof impl.rearmHostProgressionAuthority === 'function') impl.rearmHostProgressionAuthority(); } catch (e) {}
+      } else if (!me.is_host && st.role === 'host') {
+        st.role = 'participant';
+      }
+    }
+
+    // [class D 트립와이어] shouldResetForParticipantChange→beginNewGameRound / ensureHostExists /
+    // recoverRoundWhenAllPlayersWaiting 를 미구현으로 둔 근거는 "rc3 시나리오는 라운드 진행 중
+    // 참가자가 증감하지 않는다"는 **암묵 불변식**이다. 그 전제가 깨지면 이 세 경로는 프로덕션과
+    // 조용히 갈라지고 어떤 테스트도 잡지 못한다. 그래서 전제가 깨지는 순간 시끄럽게 알린다.
+    if (Array.isArray(prevParticipants) && prevParticipants.length > 0
+        && prevParticipants.length !== rows.length
+        && (st.status === 'playing' || st.status === 'ready')) {
+      const msg = `[R1 class-D 전제 위반] 라운드 진행 중 참가자 수 변화 ${prevParticipants.length}→${rows.length} `
+        + `(status=${st.status}). shouldResetForParticipantChange / ensureHostExists / `
+        + `recoverRoundWhenAllPlayersWaiting 를 함께 추출해 배선해야 한다.`;
+      if (typeof impl.telemetryEmit === 'function') { try { impl.telemetryEmit(msg); } catch (e) {} }
+      throw new Error(msg);
+    }
+
+    // (b) 권위 스냅샷 반영 (index.html:7278-7279).
+    st.participants = rows;
+    try { if (typeof impl.updateSelectedCount === 'function') impl.updateSelectedCount(); } catch (e) {}
+
+    // (c) host 전용 후속 (index.html:7321-7354). 프로덕션 자신의 가드를 그대로 쓴다.
+    if (st.role !== 'host') return;
+
+    // (c-1) 전원 선택 완료 시 결과 발행 (index.html:7327-7336).
+    //
+    // [R1b] 프로덕션에는 자동 결과 발행 트리거가 **둘** 있다(grep 전수):
+    //   Trigger A  index.html:7334  fetchParticipants — 활성 전원이 선택을 마친 **즉시**
+    //   Trigger B  index.html:9271  autoFillChoices  — **선택창이 끝났을 때**(beginRoundTimer 종료)
+    //   (index.html:10640 hostJudgeRound 는 수동 UI 버튼 전용 — 자동 트리거가 아니다)
+    // 이 분기가 Trigger A 다.
+    //
+    // 중복 발행 방어는 **프로덕션 자신의 기제**를 그대로 쓴다(하니스 전용 "1회만" 지름길 없음):
+    //   publishHostRoundResult(index.html:7035~7101) 내부에
+    //     ① host/status/online/roomCode 가드(7036)
+    //     ② state.publishingRoundResult in-flight 래치(7037-7038, finally 에서 해제 7099)
+    //     ③ **자체 권위 재조회**(7041-7043) — 넘겨준 스냅샷이 낡았어도 신선한 행으로 대체된다
+    //     ④ active.every(hasConfirmedRoundResult) → 이미 발행됨 → status 만 result 로(7053-7056)
+    //     ⑤ !active.every(getChoiceBase) → 아직 전원 선택 전 → 반환(7057)
+    // 여기 호출부의 사전 필터(alreadyProcessed / every(getChoiceBase))는 프로덕션 7327-7336 과
+    // 동일하며, 최종 판단은 위 ①~⑤ 가 다시 한다.
+    //
+    // ⚠️ [rc3 배선에서만 꺼져 있다 — 남은 격차는 "선택 제출 지연 모델"이다]
+    // 이 슬라이스에서 선택 제출 게이트(선택창이 실제로 열린 뒤에만 제출)를 프로덕션 등가로
+    // 바로잡았고, **그 게이트 단독으로는 legacy 63/63 GREEN 을 유지한다**(실측). 그런데 Trigger A
+    // 를 함께 켜면 legacy 가 5건 실패로 회귀한다(하드 채널이 아니라 correctnessPassRate 게이트:
+    // 0.283/0.915/0.94). strict 는 하드게이트 44→30 으로 줄지만 타임아웃이 0→7 로 새로 생긴다.
+    //
+    // 원인: 하니스는 선택창이 열리는 즉시 **전원이 동시에** 선택을 제출한다. 실제 사용자의 선택은
+    // 5초 창 전체에 분산되는데 그 지연 모델이 없다. Trigger B 만 배선돼 있던 동안에는 발행이
+    // 어차피 창 종료까지 기다렸으므로 이 차이가 보이지 않았다. Trigger A 를 켜면 라운드가 창을
+    // 쓰지 않고 t≈0 에 끝나 버려, 창 종료 기준으로 보정된 phase/타이밍 측정이 모두 어긋난다.
+    //
+    // 병행 가설(codex-critic, 미검증): publishHostRoundResult 는 활성 참가자마다 개별 update 를
+    // 날리므로(7061-7077, N회) 하니스에서 N×M 개의 participants 이벤트 팬아웃을 만든다.
+    // strict 타임아웃 7건은 이 성능 열화 때문일 수 있다(프로덕션에는 벽시계 예산이 없으므로
+    // 그 타임아웃 자체는 프로덕션 결함일 수 없다). 두 원인은 배타적이지 않다.
+    //
+    // 그래서 기본값은 프로덕션 충실한 true 로 두고(계약 테스트가 이 경로를 검증한다),
+    // rc3 배선만 명시적으로 false 를 넘긴다. 미해결 구분을 숨기지 않은 채 분리한 것이다.
+    if (publishHostResultOnRefresh && st.status === 'playing') {
+      const safeIds = st.confirmedSafeIds || [];
+      const loserIds = st.confirmedLoserIds || [];
+      const activeForRound = rows.filter((p) =>
+        !safeIds.includes(p.id) && !loserIds.includes(p.id) && !impl.isNonPlayingChoice(p.choice));
+      const alreadyProcessed = activeForRound.some((p) => impl.hasConfirmedRoundResult(p.choice));
+      if (!alreadyProcessed && activeForRound.length > 0 && activeForRound.every((p) => impl.getChoiceBase(p.choice))) {
+        await impl.publishHostRoundResult(rows);
+      }
+    }
+
+    // (c-2) 전원 준비 완료 시 자동 시작 (index.html:7347-7353).
+    // status 'lobby' 분기(startFromLobby)는 rc3 시나리오가 lobby 를 거치지 않으므로 제외한다
+    // (§3 분류 B). 'ready' 분기만 재현한다.
+    if (st.status === 'ready' && !st.gameStarting) {
+      if (impl.areAllActivePlayersReady() && !st.autoStartInFlight) {
+        st.autoStartInFlight = true;
+        try { await impl.startGame(); } finally { st.autoStartInFlight = false; }
+      }
+    }
+
+    // justBecameHostThisSnapshot / prevParticipants 는 participant-change reset 게이트
+    // (shouldResetForParticipantChange → beginNewGameRound, index.html:7227-7254)에서 쓰인다.
+    // 그 두 함수는 현재 추출 블록에 포함되어 있지 않고, rc3 시나리오는 게임 진행 중 참가자
+    // 증감이 없어 이 게이트가 도달하지 않는다(§3 분류 D). 도달 가능한 시나리오를 추가할 때
+    // 함께 추출해야 한다 — 그때까지 이 두 값은 의도적으로 사용하지 않는다.
+    void justBecameHostThisSnapshot; void prevParticipants;
+  } finally {
+    // 프로덕션 finishFetchParticipants(index.html:7111) 와 동일하게, 보류가 있으면
+    // **즉시 재조회하지 않고** 디바운스 스케줄러를 통해 다시 예약한다.
+    // (즉시 재시도(do/while)는 프로덕션보다 수렴이 빠르고 재진입이 잦아 충실하지 않다.)
+    st._fetchParticipantsBusy = false;
+    if (st._fetchParticipantsPending) {
+      st._fetchParticipantsPending = false;
+      if (typeof reschedule === 'function') reschedule();
+    }
+  }
+}
+
 function startDevicePolling({ pollingEnabled, pollIntervalMs, db, roomStore, implRef, telemetry, onRoomRow }) {
   let handle = null;
   async function pollFetchParticipants() {
-    const { data: rows } = await db.from('participants').select('*')
-      .eq('room_id', roomStore.id).order('created_at', { ascending: true });
-    if (rows) implRef().state.participants = rows;
+    await refreshParticipantsAuthoritative({ db, roomStore, implRef });
   }
   function start() {
     if (!pollingEnabled || handle) return;
@@ -909,7 +1183,10 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
   // H-1: 기본값(null/true)은 기존 동작과 완전히 동일하다 — dbErrorInjectionFn=null이면 fake db는
   // 수정 전과 바이트 동일 경로로 동작하고(§createDb), idempotencyCacheEnabled=false는 H-1 이전
   // (캐시 없음) 동작으로 되돌리는 mutation 토글이다(§makeFinishRoundLocalSubstitute).
-  dbErrorInjectionFn = null, idempotencyCacheEnabled = true }) {
+  dbErrorInjectionFn = null, idempotencyCacheEnabled = true,
+  // 측정 재현성: 파일을 임시 편집해 기본값을 뒤집는 방식은 동시 실행 시 서로를 오염시킨다.
+  // strictFilters 는 반드시 인자로 흘려보낸다.
+  strictFilters = undefined }) {
   const dom = createFakeDom();
   const telemetry = createTelemetry();
   // §STOP-SHIP Part B: skewMsOverrideFn이 주어지면(예: createAlternatingSkewFn) 그것으로 skew를
@@ -971,6 +1248,7 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
     realtimeDelayRegime,
     deliveryOrderMode,
     dbErrorInjectionFn,
+    ...(strictFilters === undefined ? {} : { strictFilters }),
   });
 
   // 하니스 관측용 기록(측정 전용 — 판정 로직에 영향 없음).
@@ -992,6 +1270,8 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
   // 동일한 지연 바인딩 필요 — env.setInterval 훅이 이걸 다시 호출해 0 도달 시각을 관측한다).
   const computeChoiceRemainingSecondsHolder = { fn: () => null };
 
+  // R1b: 선택창 개시 훅 홀더 — createTrialWorld 가 device 생성 이후 연결한다.
+  const choiceWindowOpenHook = { fn: null };
   const env = {
     state, db, QA: telemetry, sleep: (ms) => new Promise((r) => setTimeout(r, ms)), Date: FakeDate,
     // beginRoundTimer()가 등록하는 1초 tick — 실제 코드가 이 이름을 자유변수로 참조하므로 여기서
@@ -1001,6 +1281,14 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
       const round = state.round;
       if (!rendered.choiceStartByRound[round]) {
         rendered.choiceStartByRound[round] = { ts: RealDate.now(), localTs: FakeDate.now() };
+        // R1b: "이 기기의 이번 라운드 선택 화면이 실제로 열렸다" — 프로덕션에서 선택 버튼이
+        // 존재하기 시작하는 바로 그 순간이다(runCountdown 완주 → beginRoundTimer, :9017).
+        // 트라이얼 글루가 이 시점에 선택을 제출하도록 훅을 제공한다(관측만 하던 이 지점에
+        // 부작용을 더하지 않기 위해, 콜백은 마이크로태스크로 분리해 원본 흐름을 막지 않는다).
+        if (typeof choiceWindowOpenHook.fn === 'function') {
+          const cb = choiceWindowOpenHook.fn;
+          Promise.resolve().then(() => cb(round)).catch(() => {});
+        }
       }
       return setInterval(() => {
         fn();
@@ -1074,7 +1362,10 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
       getOnlineMode,
       isSafeParticipant, isConfirmedLoser, isNonPlayingChoice, getChoiceBase, getChoiceResult,
       isAutoChoice, encodeRoundChoice, hasConfirmedRoundResult,
-      getActivePlayers,
+      getActivePlayers, areAllActivePlayersReady,
+      // H1-a: 선택 창 길이는 프로덕션 상수를 그대로 쓴다(index.html:5286, parseAndSchedule 블록 내부).
+      CHOICE_WINDOW_MS,
+      rearmHostProgressionAuthority,
       waitForPhaseRender, isCurrentRoundParticipant, isWaitingForNextGame, isScreenActive,
       isCountdownActive, getPlayingEntryKey, syncConfirmedIdsFromParticipants,
       enterPlayingStateFromRoomUpdate,
@@ -1179,7 +1470,7 @@ export function createDevice({ id, isHost, roomStore, rng, participantCount, res
   // 그 래퍼가 아직 없으므로 여기서는 폴링을 시작하지 않는다 — stopPolling은 createTrialWorld가
   // device 객체에 사후 부착한다(기본값 미부착 시 아래 optional chaining으로 안전하게 no-op).
 
-  return { id, isHost, impl, dom, telemetry, rendered, roomStore, skewMs, clockRtt, env };
+  return { id, isHost, impl, dom, telemetry, rendered, roomStore, skewMs, clockRtt, env, choiceWindowOpenHook };
 }
 
 // ── RC-3 Phase4(반공허성 B): 객관적-stale-row 기반 regression 검출기 ────────────
@@ -1293,9 +1584,59 @@ export function finishReadyBranchClobberCheck(device, checkCtx) {
 // 호출 결과를 그대로 쓴다. 3곳만 하니스가 대신한다: ①1라운드 시작 트리거 ②참가자 선택 제출
 // 트리거(실제 UI 클릭 대신) ③"전원 ready 렌더 완료" 감지 후 다음 라운드 시작 트리거(실제 UI의
 // markReady 버튼 클릭 체인 대신, host의 실제 startGame()을 직접 호출).
+// ── H1-a: 결정론적 선택 스케줄 ────────────────────────────────────────────────
+// 모든 시점은 프로덕션 상수 CHOICE_WINDOW_MS(index.html:5286)의 **분수**로만 표현한다.
+// 독립적인 wall-clock 상수나 "사람 평균 반응시간"을 도입하지 않는다.
+//
+// 기본 스케줄: N명을 창 내부에 균등 배치한다 — offset_i = round(W * (i+1) / (N+1)).
+// i=0..N-1 이므로 항상 0 < offset < W (합법 구간 내부, 경계 제외).
+// "전원이 정확히 같은 타임스탬프에 제출한다"는 가정을 제거하는 것이 목적이며,
+// 특정 지연값이 현실적이라고 주장하지 않는다.
+export function defaultChoiceOffsetMs(index, participantCount, choiceWindowMs) {
+  const n = Math.max(1, participantCount);
+  return Math.round((choiceWindowMs * (index + 1)) / (n + 1));
+}
+
+// 스케줄 클래스(S1~S7). 전부 창 길이의 분수로 정의된다.
+// eps: 시뮬레이터 클럭 해상도(가짜 타이머 1ms)에서 표현 가능한 최소 간격 —
+//      "마감 직전"을 마감과 구별하기 위한 최소값이며 그 이상의 의미는 없다.
+export const CHOICE_SCHEDULES = {
+  // S1 — 합법 최초 시점에 전원 동시. 적대적 경계 사례로 유지한다.
+  S1: ({ choiceWindowMs }) => 0 * choiceWindowMs,
+  // S2 — 이른 구간에 계단식 분산 (창의 1/16 간격).
+  S2: ({ index, choiceWindowMs }) => Math.round((choiceWindowMs * index) / 16),
+  // S3 — 창 중앙부에 분산 (3/8 ~ 5/8).
+  S3: ({ index, participantCount, choiceWindowMs }) => {
+    const n = Math.max(1, participantCount);
+    return Math.round(choiceWindowMs * (3 / 8 + (index / n) * (1 / 4)));
+  },
+  // S4 — 절반은 이른 시점, 절반은 늦은 시점.
+  S4: ({ index, choiceWindowMs }) => (index % 2 === 0
+    ? Math.round(choiceWindowMs / 16)
+    : Math.round((choiceWindowMs * 3) / 4)),
+  // S5 — 마지막 수동 선택이 마감 직전(창 - 1ms).
+  S5: ({ index, participantCount, choiceWindowMs }) => (index === participantCount - 1
+    ? choiceWindowMs - 1
+    : Math.round((choiceWindowMs * (index + 1)) / (participantCount + 2))),
+  // S6 — 최소 1명이 끝내 수동 선택하지 않는다 → Trigger B(autoFillChoices)가 권위.
+  S6: ({ index, participantCount, choiceWindowMs }) => (index === participantCount - 1
+    ? null
+    : Math.round((choiceWindowMs * (index + 1)) / (participantCount + 1))),
+  // S7 — Trigger A/B 경계: 마지막 수동 선택이 autofill tick(1000ms 단위) 직전/직후에 걸린다.
+  //      프로덕션 타이머 granularity 는 1000ms(index.html:9120 setInterval)이므로
+  //      "마지막 tick 직전"은 W - 1ms, "직전 tick"은 W - 1000ms 로 표현한다.
+  S7: ({ index, participantCount, choiceWindowMs }) => (index === participantCount - 1
+    ? choiceWindowMs - 1
+    : choiceWindowMs - 1000),
+};
+
 export function createTrialWorld({ participantCount, seed, targetLoserCount = 1, resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride = null, realtimeDelayRegime = 'pessimistic', choiceDriverFn = null, deliveryOrderMode = 'monotonic', skewMsOverrideFn = null, clockRttOverrideFn = null, pollingEnabled = false, pollIntervalMs = 2600,
   // H-1: 기본값(null/true)은 기존 동작과 동일 — §createDevice/§createDb 주석 참고.
-  dbErrorInjectionFn = null, idempotencyCacheEnabled = true }) {
+  dbErrorInjectionFn = null, idempotencyCacheEnabled = true,
+  // H1-a: 결정론적 선택 스케줄. null 이면 defaultChoiceOffsetMs(창 내부 균등 배치).
+  choiceScheduleFn = null,
+  // 측정 재현성: 파일 편집 없이 인자로만 전환한다(동시 실행 오염 방지).
+  strictFilters = undefined }) {
   const rng = mulberry32(seed);
   const roomStore = createRoomStore(`ROOM-${seed}-${participantCount}`);
   const devices = [];
@@ -1306,8 +1647,9 @@ export function createTrialWorld({ participantCount, seed, targetLoserCount = 1,
       id, isHost, roomStore, rng, participantCount, resolveElimination, judgePure,
       computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, targetLoserCount, combinedSourceOverride,
       realtimeDelayRegime, deliveryOrderMode, index: i, skewMsOverrideFn, clockRttOverrideFn,
-      dbErrorInjectionFn, idempotencyCacheEnabled,
+      dbErrorInjectionFn, idempotencyCacheEnabled, strictFilters,
     });
+    device.index = i;
     devices.push(device);
   }
   for (const d of devices) {
@@ -1389,19 +1731,18 @@ export function createTrialWorld({ participantCount, seed, targetLoserCount = 1,
         // 드라이버가 라운드/기기별로 rock/paper/scissors를 고른다 — REAL isCurrentRoundParticipant()
         // (REAL 추출)가 "이번 라운드에 실제로 참여하는가"를 가리므로, 이미 확정된(safe/loser)
         // 기기는 이 분기 자체에 들어오지 않는다(선택 제출 없음 — 실제 UI와 동일).
-        if (d.impl.state.status === 'playing' && d.impl.isCurrentRoundParticipant()) {
-          const round = d.impl.state.round;
-          if (submittedChoiceRound.get(d.id) !== round) {
-            submittedChoiceRound.set(d.id, round);
-            const choiceBase = choiceDriverFn ? choiceDriverFn({ device: d, round }) : 'scissors';
-            // EG 오라클 원장(§runEliminationTrial): "이 라운드에 실제로 무엇을 냈는가"의 그라운드
-            // 트루스를 REAL 파이프라인과 완전히 독립적으로 별도 보관한다(테스트 전용 부기 —
-            // 판정에는 전혀 관여하지 않음).
-            if (!roundChoicesByRound.has(round)) roundChoicesByRound.set(round, new Map());
-            roundChoicesByRound.get(round).set(d.id, choiceBase);
-            try { await d.impl.updateParticipantChoice(choiceBase); } catch (e) {}
-          }
-        }
+        // 접합부 ②: 선택 제출. R1b 충실성 보정 —
+        // 프로덕션에서 사용자는 **선택 화면이 실제로 열린 뒤에만** 손을 낼 수 있다.
+        // selectChoice() 의 코드 가드는 status/isCurrentRoundParticipant 둘뿐이지만, 선택 버튼은
+        // runCountdown() 완주 후 beginRoundTimer()(index.html:9017)가 화면을 띄운 다음에야
+        // 존재한다 — UI 가 실질적 게이트다.
+        // 하니스는 UI 클릭을 생략하므로 그 게이트가 없었고, handleRoomUpdate 반환 직후
+        // (카운트다운 진행 중)에 제출했다. Trigger B(선택창 종료 시 autoFillChoices)만 배선돼
+        // 있던 동안에는 발행이 어차피 창 종료까지 기다려 이 조기 제출이 보이지 않았다.
+        // Trigger A(전원 선택 즉시 발행)를 켜면 조기 제출이 카운트다운을 중도에 끊어
+        // MISSING_COUNTDOWN_RENDER 를 만든다 — 프로덕션에는 존재할 수 없는 순서다.
+        // 그래서 제출은 이 기기의 이번 라운드 선택창이 실제로 열린 뒤에만 한다.
+        await submitChoiceIfChoiceWindowOpen(d);
         // 접합부 ③ 제거됨(STOP-SHIP happens-before 수정, critic A/B 검증): 이 위치(handleRoomUpdate
         // 리턴 "직후")에서 status==='result'를 보고 scheduleRematchAutoAdvance()를 발화하던 예전
         // 트리거는 REAL의 happens-before를 위반했다 — REAL handleRoomUpdate(index.html:6001)는
@@ -1436,6 +1777,82 @@ export function createTrialWorld({ participantCount, seed, targetLoserCount = 1,
   // realtime 배달과 poll 배달 양쪽에 동일하게 적용된다(poll이 realtime과 다른 코드 경로를 타지
   // 않는다). pollingEnabled=false(기본값)이면 startDevicePolling 내부에서 타이머가 아예 생성되지
   // 않는다(회귀 없음).
+  // JP-BL-027-C: participants 구독 등록. 프로덕션 subscribeToRoom 은
+  //   .on(postgres_changes, {table:'participants', filter:`room_id=eq.${roomCode}`}, () => scheduleFetchParticipants(roomCode))
+  // 로 **권위 재조회만** 트리거한다 — 이벤트 페이로드로 로컬 상태를 직접 고치지 않는다.
+  // 여기서도 같은 모델을 쓴다: 이벤트 → 재조회 → 상태 재조정.
+  // R1b 공용: "이 기기의 이번 라운드 선택창이 열렸는가"를 REAL beginRoundTimer 의 부작용으로
+  // 판정하고, 열렸으면 REAL updateParticipantChoice() 로 선택을 제출한다(라운드당 1회).
+  // 호출 지점은 둘이다 — (1) room row 배달 직후, (2) 선택창이 실제로 열리는 순간(훅).
+  // 둘 중 어느 쪽이 먼저 성립하든 제출은 정확히 한 번만 일어난다(submittedChoiceRound 원장).
+  async function submitChoiceIfChoiceWindowOpen(d) {
+    const st = d.impl.state;
+    if (st.status !== 'playing') return;
+    if (!d.impl.isCurrentRoundParticipant()) return;
+    const round = st.round;
+    // T_open: REAL beginRoundTimer 가 이 기기의 이번 라운드 선택 화면을 실제로 연 시각.
+    if (!(d.rendered && d.rendered.choiceStartByRound && d.rendered.choiceStartByRound[round])) return;
+    // 라운드당 정확히 1회. (스케줄 예약 자체를 원장에 먼저 기록해 이중 예약을 막는다.)
+    if (submittedChoiceRound.get(d.id) === round) return;
+    submittedChoiceRound.set(d.id, round);
+
+    // ── H1-a: 결정론적 선택 스케줄 ──────────────────────────────────────────
+    // "모두가 t=0 에 동시에 낸다"는 가정을 버린다. 대신 **프로덕션이 정의한 합법 구간**
+    //   [T_open, T_deadline) = [0, CHOICE_WINDOW_MS)   (index.html:5286, 8866)
+    // 안의 결정론적 시점에 제출한다. 사람의 평균 반응시간 같은 상수는 도입하지 않는다 —
+    // 이것은 인간 행동 모델이 아니라 **동시성 스케줄 모델**이다.
+    // 오프셋은 항상 창 길이의 분수로 표현한다(독립 상수 금지).
+    const W = d.impl.CHOICE_WINDOW_MS;
+    const offset = choiceScheduleFn
+      ? choiceScheduleFn({ device: d, round, index: d.index, participantCount, choiceWindowMs: W })
+      : defaultChoiceOffsetMs(d.index, participantCount, W);
+    // null/undefined 또는 창 밖(>= W) 이면 **수동 제출을 하지 않는다** — 프로덕션에서 창이 지난 뒤
+    // 수동 선택은 불가능하고, 그 자리는 Trigger B(autoFillChoices)가 권위적으로 채운다.
+    if (offset == null || !(offset >= 0) || offset >= W) return;
+
+    const fire = async () => {
+      const cur = d.impl.state;
+      // 예약 시점과 발화 시점 사이에 라운드/상태가 바뀌었으면 제출하지 않는다.
+      if (cur.status !== 'playing' || cur.round !== round) return;
+      if (!d.impl.isCurrentRoundParticipant()) return;
+      // 창이 이미 닫혔으면(권위 남은시간 0) 수동 제출은 불법이다.
+      const remaining = d.impl.computeChoiceRemainingSeconds();
+      if (remaining != null && remaining <= 0) return;
+      const choiceBase = choiceDriverFn ? choiceDriverFn({ device: d, round }) : 'scissors';
+      // EG 오라클 원장(§runEliminationTrial): 판정에 관여하지 않는 테스트 전용 부기.
+      if (!roundChoicesByRound.has(round)) roundChoicesByRound.set(round, new Map());
+      roundChoicesByRound.get(round).set(d.id, choiceBase);
+      try { await d.impl.updateParticipantChoice(choiceBase); } catch (e) {}
+    };
+
+    if (offset === 0) { await fire(); return; }
+    // 실제 사용자의 클릭 시점을 모사한다 — 예약만 하고 트라이얼 진행을 막지 않는다.
+    d.env.sleep(offset).then(fire).catch(() => {});
+  }
+
+  // 선택창이 열리는 순간에도 제출을 시도한다(room row 가 그 뒤에 다시 오지 않을 수 있다).
+  for (const d of devices) {
+    d.choiceWindowOpenHook.fn = () => { submitChoiceIfChoiceWindowOpen(d).catch(() => {}); };
+  }
+
+  for (const d of devices) {
+    roomStore.participantSubscribers.push({
+      deviceId: d.id,
+      onParticipantsChange: async (reschedule) => {
+        try {
+          // H1-a §10: Trigger A(index.html:7334)를 활성화한다. R1b 에서 이를 껐던 사유는
+          // "하니스가 t≈0 에 전원 동시 제출한다"는 인공물이었고, 이번 슬라이스가 그 가정을
+          // 결정론적 스케줄 모델로 대체했으므로 더 이상 끌 이유가 없다.
+          await refreshParticipantsAuthoritative({
+            db: d.env.db, roomStore, implRef: () => d.impl, reschedule,
+          });
+        } catch (e) {
+          try { d.telemetry.emit('metric', { wrps: 'RC3-HARNESS', eventType: 'PARTICIPANT_REFRESH_THREW', message: String(e && e.message || e) }); } catch (_) {}
+        }
+      },
+    });
+  }
+
   for (let i = 0; i < devices.length; i++) {
     const d = devices[i];
     const sub = roomStore.subscribers[i];
@@ -2876,8 +3293,13 @@ export async function runMeasuredTrial({
   pollingEnabled = false, pollIntervalMs = 2600,
   // H-1: 기본값(null/true)은 기존 측정치와 동일 경로 — §createDb/§makeFinishRoundLocalSubstitute.
   dbErrorInjectionFn = null, idempotencyCacheEnabled = true,
+  // H1-a: 결정론적 선택 스케줄(§CHOICE_SCHEDULES). null 이면 창 내부 균등 배치.
+  choiceScheduleFn = null,
+  // 측정 재현성: 파일 편집 없이 인자로만 전환한다.
+  strictFilters = undefined,
 }) {
   const world = createTrialWorld({
+    choiceScheduleFn, strictFilters,
     participantCount, seed, targetLoserCount: targetLoserCount ?? Math.max(1, Math.floor(participantCount / 2)),
     resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, combinedSourceOverride,
     realtimeDelayRegime, deliveryOrderMode, skewMsOverrideFn, clockRttOverrideFn, pollingEnabled, pollIntervalMs,

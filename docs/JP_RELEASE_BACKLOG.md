@@ -29,7 +29,13 @@
 | JP-BL-026 | OPEN | Low | `created_at` NOT NULL 제약 추가 여부 | 아니오 |
 | JP-BL-027 | DONE | **High** | RLS 무음 거부 — 9개 write 에 인라인 검증 적용, 행위 테스트로 실증 | — |
 | JP-BL-027-B | OPEN | **High** | `nextRound` 무음 0행 미탐지 — Phase A STOP GATE 로 착수 못 함 | **예** |
-| JP-BL-027-C | OPEN | **High** | rc3 하니스에 participants realtime 전파 모델링 (Phase B 선행 조건) | 아니오 |
+| JP-BL-027-C | PARTIAL | **High** | rc3 하니스에 participants realtime 전파 모델링 (전파·가드 구현 완료, strict RED — R1 미해소) | 아니오 |
+| JP-BL-027-C-R1 | DONE | **High** | 시뮬레이터가 REAL `fetchParticipants` 의 host 권위 경로를 우회 — host 역할 전환·자동 시작 배선 완료, strict 하드게이트 90→44 | — |
+| JP-BL-027-C-R1b | PARTIAL | **High** | 두 발행 트리거 매핑·Trigger A 구현·선택 제출 게이트 보정 완료. Trigger A 배선은 H1-a 미해소로 보류 | 아니오 |
+| JP-BL-027-C-H1a | OPEN | **High** | **선택 제출 지연 모델 부재** — 하니스는 선택창 개시 즉시 전원이 동시 제출. 상수가 프로덕션·기존 rc3 모델 어디에도 없어 CEO 판단 필요 | **예** |
+| JP-BL-027-C-H1b | OPEN | Medium | N×M participants 이벤트 팬아웃(발행 시 참가자별 개별 update) — strict 타임아웃 7건의 후보 원인, 미검증 | 아니오 |
+| JP-BL-027-C-R2 | OPEN | Medium | 트라이얼 종료 시 participants 배달 drain 미보장 (관측 과소 카운트 방향) | 아니오 |
+| JP-BL-027-C-R3 | OPEN | Low | 폴링 경로에서 재조회 보류(pending) 유실 — 프로덕션은 항상 재예약 | 아니오 |
 | JP-REALTIME-VALIDATION | OPEN | **High** | 실제 Realtime 이벤트 전달 미검증 | **예** |
 | JP-PROD-GATE | OPEN | **Blocker** | 외부 베타/출시 전 JP 백엔드가 미사용 자동 일시정지 대상이면 안 됨 | **예** |
 | JP-BL-020 | DESIGNED | **High** | GRANT 최소 권한 정규화 설계 완료 — 배포 미승인 | **예** |
@@ -502,6 +508,80 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-08-29 (3차) — R1b 슬라이스: 트리거 매핑 완료, 배선은 보류
+
+상세: `docs/JP_RC3_RESULT_PUBLISH_2026-08-29.md`
+
+프로덕션 자동 결과 발행 트리거는 **둘**뿐이다(grep 전수):
+`fetchParticipants:7334`(전원 선택 즉시=A) / `autoFillChoices:9271`(선택창 종료=B).
+`hostJudgeRound:10640` 은 수동 UI 버튼 전용. 중복 방어는 전부 `publishHostRoundResult`
+(7035~7101) 자신에 있다 — 가드·in-flight 래치·자체 권위 재조회·멱등 가드·전원선택 가드.
+
+**발견한 선행 격차(해소 완료)**: 접합부 ②가 카운트다운 진행 중에도 선택을 제출하고 있었다.
+프로덕션은 `beginRoundTimer`(9017)가 선택 화면을 띄운 뒤에만 선택이 가능하다(UI 가 실질 게이트).
+이를 REAL 관측치 `rendered.choiceStartByRound` 기준으로 바로잡았고, **게이트 단독으로는
+legacy 63/63 GREEN 유지**를 분리 실험으로 증명했다.
+
+| 구성 | 하드게이트 | 타임아웃 | legacy |
+|---|---|---|---|
+| R1 | 44 | 0 | GREEN |
+| 게이트 + Trigger A | 30 | 7 | 5건 실패 |
+| **게이트만 (납품)** | **41** | **0** | **GREEN** |
+
+**잔여 41건 = 전량 H1.** H1-a(선택 제출 지연 모델 부재, 주 원인) + H1-b(N×M 팬아웃, 미검증).
+§9 가 금지한 "수치를 줄이기 위한 지연 튜닝"에 해당하므로 상수를 발명하지 않고 멈춘다.
+`strictFilters` 기본값 `false` 유지. **`nextRound`(JP-BL-027-B) 미착수.**
+
+### 2026-08-29 (2차) — R1 슬라이스 결과: strict 하드게이트 90 → 44
+
+상세: `docs/JP_RC3_AUTHORITATIVE_REFRESH_2026-08-29.md`
+
+`refreshParticipantsAuthoritative` 가 프로덕션 `fetchParticipants` 본문(index.html:7140~7354)의
+host 권위 전이를 실제로 실행하도록 배선했다(REAL 함수 호출만, 상태 직접 주입 없음):
+- 호스트 역할 전환 + `rearmHostProgressionAuthority()`
+- `state.participants` 반영 + `updateSelectedCount()`
+- `status='ready'` + `areAllActivePlayersReady()` → REAL `startGame()`
+
+결과: strict 하드 게이트 **90 → 44**, 나머지 9개 실패 assertion 은 이전과 **바이트 동일**.
+legacy 63/63 GREEN, 전체 스위트 77파일 1381통과, 타임아웃 0.
+
+**잔여 44건 = 전량 H1(하니스 결함), R1b 에 귀속.** 프로덕션은 `publishHostRoundResult` 를
+`fetchParticipants:7334`(전원 선택 즉시)와 `autoFillChoices:9271`(선택창 종료) 두 곳에서
+자동 호출하는데 rc3 는 후자만 배선돼 있다. 전자를 켜면 하드게이트가 44→39 로 더 줄지만
+phase 관측 모델이 무너진다(correctnessPassRate 0.083). 그 둘을 동시에 만족시키는 것이 R1b.
+
+`strictFilters` 기본값 `false` 유지 — 알려진 격차가 있는 동안 strict 를 기본으로 만들지 않는다.
+**`nextRound`(JP-BL-027-B)는 여전히 착수하지 않는다.**
+
+### 2026-08-29 결과 — PHASE C STOP GATE 미통과 (Case C)
+
+상세: `docs/JP_RC3_REALTIME_FIDELITY_2026-08-29.md`
+
+구현 완료분(프로덕션 무변경, `tests/` 만 변경):
+- participants `postgres_changes` 전파 — 0행/실패 write/타 방 변경은 이벤트를 만들지 않는다.
+- 프로덕션과 동일한 2계층 지연: 전파지연(알림 도착) + 고정 80ms trailing-edge 디바운스.
+- 재조회 3중 가드: busy/pending, `fetchParticipantsSeq`, `roomCode`(빈 값도 폐기).
+- 보류는 즉시 재시도가 아니라 디바운스 재예약.
+- 독립 계약 테스트 46개 신설/갱신, 전부 통과.
+
+측정(strict 모드, 프로덕션 무변경):
+
+| 회차 | 하니스 상태 | 하드 게이트 잔여 |
+|---|---|---|
+| 기준 | 전파 없음 | 88 |
+| +전파 | leading-edge, 가드 없음 | 79 |
+| +가드 | 재조회 3중 가드 | 67 |
+| +trailing(이벤트당 타이머) | — | 98 (타임아웃 1) |
+| **최종** | 2계층 80ms + roomCode 정정 | **90** |
+
+**판정: Case C.** 88 → 79 → 67 → 98 → 90 의 **비단조** 이동은 측정이 여전히 하니스 잔여 편차에 지배됨을 뜻한다. strict 수치를 프로덕션 결함의 증거로 사용할 수 없다.
+
+**지배적 잔여 원인 = R1**: `refreshParticipantsAuthoritative` 가 REAL `fetchParticipants`(243줄)의 재조회 부분만 재현하고 host 역할 전환·`shouldResetForParticipantChange`·`areAllActivePlayersReady`→`startGame`·`publishHostRoundResult`·`recoverRoundWhenAllPlayersWaiting` 등을 재현하지 않는다. 전파를 켠 순간 이 축약이 처음 활성화되었다.
+
+회귀 게이트: rc3 legacy 63/63, 계약 46/46, 전체 스위트 76파일 1359통과.
+`strictFilters` 기본값은 `false` 유지(§10 전환 보류 — 방어 가능한 GREEN 아님).
+**`nextRound`(JP-BL-027-B)는 착수하지 않는다.**
 
 **왜.** Phase A 에서 하니스의 `.eq(col,val)` 컬럼 무시 결함을 교정했다. 그러자 프로덕션
 소스를 전혀 바꾸지 않았는데도 rc3 하드 게이트에 `CROSS_DEVICE_OUTCOME_MISMATCH` 88건이

@@ -949,6 +949,16 @@ describe('WRPS-079(STOP-SHIP) handleRoomUpdate 재진입 경합 — CROSS_DEVICE
       const r = await runEliminationTrial({
         participantCount: n, seed, targetLoserCount: 2,
         resolveElimination, judgePure, computePlayerStatuses, PLAYER_STATUS, maxLoserCountFor, vi,
+        // H1-a 이후 예산 보정(임계값 완화가 아니라 **시간 축 보정**이다):
+        // 선택 제출이 프로덕션의 5초 선택창 안에 분산되면서 라운드 하나가 실제로 그 창을
+        // 소모하게 됐다(이전 모델은 전원이 t=0 에 제출해 라운드가 사실상 0초였다).
+        // 기본 예산(maxRounds 기본값 / budgetMsPerRound=20000)은 옛 시간 축에 맞춰진 값이라
+        // seed 8000011 이 round 59 에서 예산 초과로 STALL 로 오분류됐다.
+        // 실측(3구성 진단): budget 20000 → round59 STALL / budget 60000 → round62 STALL /
+        //                  maxRounds 200 + budget 60000 → **completed:true, 하드 실패 0건**.
+        // 즉 영구 정체가 아니라 예산 부족이었다. 아래 CROSS/STALE_ROW/DOUBLE_COUNTDOWN/
+        // ROUND_NOT_MONOTONIC/PHANTOM/EXCEPTION/READY_BRANCH assert 는 **하나도 완화하지 않았다**.
+        maxRounds: 200, budgetMsPerRound: 60000,
       });
       const byType = {};
       for (const f of r.hardFailureModes) byType[f.type] = (byType[f.type] || 0) + 1;
