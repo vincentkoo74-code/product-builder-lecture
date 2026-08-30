@@ -817,13 +817,16 @@
       display: block;
       text-align: center;
     }
-    /* Build41 UI(필드픽스 RC-A1): 결과 카드 아래 한 줄 꼬리 형태의 벌칙 표기(라벨 + 값 한 줄). */
-    #screenRoundResult .penalty-tail{
-      display:flex;align-items:baseline;justify-content:center;gap:8px;
-      padding:9px 12px;margin:0 0 var(--action-gap);
+    /* Build42 UI 방향(결정 1·2): 결과 화면 벌칙 카드 — 라벨+값 2줄, 내용 높이. 패딩/값 크기는 높이 예산으로 압축
+       (짧은 기기: 패딩 10px·값 18px, 긴 기기: 14px·22px). 기기 이름 분기 없음. */
+    #screenRoundResult .c-body .penalty-box{
+      padding:clamp(8px, 1.6dvh, 14px) 14px;margin:0 0 clamp(6px, 1.4dvh, 10px);
     }
-    #screenRoundResult .penalty-tail small,
-    #screenRoundResult .penalty-tail strong{display:inline;margin:0;font-size:inherit;line-height:inherit}
+    /* Build42(결정 2, 4단계): 결과 카드 패딩·제목 간격·마진도 높이 예산으로 압축(360×640 급에서 hero 하한 뒤에 쓰는 마지막 단계) */
+    #screenRoundResult .c-body .game-progress-card{padding:clamp(8px, 1.6dvh, 12px) 12px;margin:0 0 clamp(6px, 1.4dvh, 10px)}
+    #screenRoundResult .c-body .game-progress-title{margin-bottom:clamp(4px, 1.2dvh, 10px)}
+    #screenRoundResult .c-body .penalty-box small{margin-bottom:4px}
+    #screenRoundResult .c-body .penalty-box strong{font-size:clamp(18px, 2.8dvh, 22px);line-height:1.3}
 
 	    #screenHostRoom #penaltyStatusBox{
 	      background:#FFF7EA;
@@ -871,7 +874,11 @@
     }
 
     .choice-anim {
-      height: 120px;
+      /* Build42(§15): 미리보기 높이는 남는 예산으로 정한다(56~120px). 예산 640px = topbar·캡/제목/안내·요약·진행 카드·
+         가위바위보 버튼·간격의 합. 짧은 기기에서 미리보기가 먼저 줄고, 요약·카드·버튼은 유지된다. */
+      --choice-anim-h: clamp(56px, calc(100dvh - var(--safe-top, 20px) - var(--safe-bottom, 24px) - 640px), 120px);
+      height: var(--choice-anim-h);
+      margin-bottom: clamp(6px, 1.8dvh, 16px);
       display: grid;
       place-items: center;
       font-size: 72px;
@@ -911,14 +918,17 @@
 
     .result-hero {
       text-align: center;
-      padding: 18px 0 10px;
+      /* Build42: 장식 간격은 높이 예산으로 압축(4~18px / 4~10px) — 종전 ≤700px 고정값 대체 */
+      padding: clamp(2px, 1.4dvh, 18px) 0 clamp(2px, 1dvh, 10px);
       /* Build41 UI(필드픽스 RC-A1): 결과 hero 이미지는 Home hero(--home-hero)와 같은 방식으로
          "예산에서 남는 만큼"만 커진다. 예산(580px) = 이미지를 뺀 고정 콘텐츠의 합 — topbar+카드 패딩(≈77),
          캡/제목/메시지(≈120), 결과 카드+마진(≈157), 벌칙 꼬리(≈40), c-foot(≈132) + fade 여유(14) — 를
          실측(tests/harness/ui-fieldfix-build41.mjs)으로 확인한 값. 기기별 미디어쿼리 고정값(170/104px)
          대신 연속 clamp 하나로, 어느 높이에서도 결과 카드+벌칙이 첫 화면에 온전히 들어온다
          (상한 170px = 종전 정체성 크기, 하한 64px = 720px 미만 기기에서 fade 14px 밖에 꼬리가 남는 크기). */
-      --result-maru: clamp(64px, calc(100dvh - var(--safe-top, 20px) - var(--safe-bottom, 24px) - 580px), 170px);
+      /* Build42 UI 방향(§9): 상한 220px — tall 기기에서 hero 가 남는 공간을 자연스럽게 쓴다. 예산 620px = 벌칙 큰 카드
+         (≈95)까지 포함한 고정 콘텐츠 합. 하한 56px. 압축 순서: hero → 장식 간격 → 제목 크기 → 카드 패딩. */
+      --result-maru: clamp(40px, calc(100dvh - var(--safe-top, 20px) - var(--safe-bottom, 24px) - 620px), 220px);
     }
     /* Build41 UI(필드픽스 RC-A1): hero 안의 메시지 간격은 hero 의 padding 이 책임진다 —
        본문 문단용 .lead 의 20px 하단 마진이 c-head 를 키워 c-body(결과 카드)를 밀어냈다. */
@@ -930,7 +940,8 @@
     }
 
     .result-title {
-      font-size: 42px;
+      /* Build42(결정 2): 제목은 가독 clamp(28~42px) — 높이 압력에서 hero·간격 다음으로 줄어든다. 텍스트 삭제 없음. */
+      font-size: clamp(28px, 5.1dvh, 42px);
       font-weight: 900;
       margin-bottom: 10px;
     }
@@ -951,14 +962,16 @@
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 8px;
-      margin: 14px 0;
+      /* Build42(§15): 섹션 간격은 높이 예산으로 압축(6~14px) */
+      margin: clamp(4px, 1.6dvh, 14px) 0;
     }
 
     .summary-item {
       background: white;
       border: 1px solid var(--line);
       border-radius: 16px;
-      padding: 12px;
+      /* Build42(§15): 카드 패딩은 마지막 압축 단계(8~12px) */
+      padding: clamp(8px, 1.4dvh, 12px);
       text-align: center;
     }
 
@@ -1468,7 +1481,8 @@
       filter:drop-shadow(0 6px 12px rgba(228,134,56,.45));
     }
     .choice-anim img.maru-hand-lg{
-      width:96px;height:96px;object-fit:contain;
+      /* 박스 높이 변수에서 px 로 유도(퍼센트 높이는 replaced 요소에서 0 으로 붕괴할 수 있어 쓰지 않는다) */
+      width:auto;height:min(96px, calc(var(--choice-anim-h) - 16px));aspect-ratio:1;object-fit:contain;
       filter:drop-shadow(0 6px 12px rgba(245,163,86,.3));
       mix-blend-mode:multiply;
     }
@@ -1939,6 +1953,16 @@
     }
     .maru-guide::before{ content:"👉"; font-size:16px; flex:none; }
     .maru-guide:empty{ display:none; }
+    /* Build42(§15 1단계): 플레이 화면 상단 장식 간격(부제·안내·카드 마진)은 높이 예산으로 먼저 압축된다 */
+    #screenGame .maru-section-sub{margin-bottom:clamp(4px, 1.6dvh, 14px)}
+    #screenGame #roundTitle{margin-top:clamp(2px, 0.8dvh, 6px) !important}
+    #screenGame .choice-button .maru-hand{height:clamp(44px, 8.4dvh, 64px);width:auto}
+    #screenGame .maru-guide{margin-bottom:clamp(4px, 1.4dvh, 12px)}
+    #screenGame .game-progress-card{margin:clamp(4px, 1.4dvh, 12px) 0}
+    /* Build42: 섹션 제목 행(제목 + 상태 칩) */
+    .section-head-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .section-head-row h3{margin:0}
+    .tagger-chip{display:inline-flex;align-items:center;min-height:28px;padding:4px 10px;border-radius:999px;background:#111827;color:var(--maru-red);font-size:12px;font-weight:900;white-space:nowrap}
 
     /* 보조 라벨(OK/GO/READY/JOIN/JUDGE/AGAIN 등 go-pill) 전체 숨김.
        마크업/로직은 그대로 두고 표시만 끈다. pill이 차지하던 우측 여백을 줄여
@@ -2554,8 +2578,7 @@
       #screenHome .maru-title{font-size:30px !important;margin:2px 0 4px !important}
       #screenStats .maru-hero img{width:86px;height:86px}
       .result-maru{margin-bottom:4px}
-      .result-title{font-size:28px;margin-bottom:6px}
-      .result-hero{padding:4px 0 4px}
+      .result-title{margin-bottom:6px}
       .qr-code, .fake-qr{max-width:104px;max-height:104px}
       .qr-box{padding:8px;margin:8px 0}
       .code-text{font-size:24px;margin-top:4px}
@@ -3084,7 +3107,9 @@
       <div class="maru-notice" id="readyPenaltyBox" style="margin-bottom:14px"></div>
       </div>
       <div class="c-body">
-        <h3 data-i18n="ready.participantsStatus">참가자 준비 현황</h3>
+        <!-- Build42 UI 방향(준비 계약 5): 제목 행 우측 태거 칩 — renderRoundProgressCards() 가 진행 카드와 같은 데이터
+             (info.target)로 채운다. 카드가 스크롤 아래로 내려가도 술래 수는 항상 보인다. -->
+        <div class="section-head-row"><h3 data-i18n="ready.participantsStatus">참가자 준비 현황</h3><span class="tagger-chip hidden" data-tagger-chip></span></div>
       <div id="readyParticipantList" style="margin-bottom:16px"></div>
       <!-- Build41 UI(필드픽스 RC-A2): 진행 카드를 c-head → c-body 로. 준비 화면의 핵심은
            "누가 아직 안 눌렀나"(목록)이므로 목록이 먼저, 회차/전적 카드는 그 아래에서 스크롤된다. -->
@@ -3126,10 +3151,10 @@
         <div class="summary-item"><strong id="selectedCount">0</strong><span data-i18n="game.summarySelected">선택 완료</span></div>
         <div class="summary-item"><strong id="totalCount">0</strong><span data-i18n="game.summaryTotal">참가자</span></div>
       </div>
-      <!-- Build41 UI(필드픽스 RC-A3): 선택 미리보기(장식)와 진행 카드(맥락)를 c-head → c-body 로.
-           c-head 에는 캡·제목·부제·안내만 남는다. 타이머/선택 인원(요약 행)이 항상 첫 화면에 온다. -->
-      <div class="choice-anim" id="choiceAnim"></div>
+      <!-- Build42 UI 방향(정식 순서): 요약(시간/선택/참가자) → 진행 카드(게임 상태 정보) → 손 미리보기(2차 시각 피드백).
+           높이 압력에서는 미리보기가 먼저 줄어든다(.choice-anim 예산 clamp). 진행 정보는 사라지지 않는다. -->
       <div class="game-progress-card" data-round-progress></div>
+      <div class="choice-anim" id="choiceAnim"></div>
       </div>
       <div class="c-foot">
         <div class="choice-buttons">
@@ -3146,8 +3171,7 @@
           <span data-i18n="game.choicePaper">보</span>
         </button>
       </div>
-      <div style="height: 12px"></div>
-      <button class="btn-light btn-full dev-only" onclick="window.autoFillChoices()" data-i18n="game.devAuto">테스트용: 모든 참가자 랜덤 선택</button>
+      <button class="btn-light btn-full dev-only" style="margin-top:12px" onclick="window.autoFillChoices()" data-i18n="game.devAuto">테스트용: 모든 참가자 랜덤 선택</button>
       </div>
 
     </section>
@@ -3204,14 +3228,14 @@
       <div class="c-body">
         <!-- Build39 UI(승인 사양 D): 외부 <h3>라운드 결과</h3> 제거 —
              검은 결과 카드 안의 제목으로 통합했다(renderRoundProgressCards 참고). -->
-      <div class="game-progress-card" data-round-progress></div>
-      <!-- Build41 UI(필드픽스 RC-A1): 벌칙 박스를 c-head(고정) → c-body(스크롤)의 결과 카드 바로 아래로.
-           c-head 는 hero 정체성만 갖고, 데이터 블록(결과 카드·벌칙)은 c-body 가 소유한다.
-           id 와 hidden 토글은 무변경(렌더러·테스트 계약 유지) — 위치와 형태(한 줄 꼬리)만 바뀐다. -->
-      <div class="penalty-box penalty-tail hidden" id="resultPenaltyBox">
+      <!-- Build42 UI 방향(결정 1): 벌칙 박스는 "내가 확정 술래"일 때만 보이며(렌더러 토글 무변경) 그 상태에서는
+           벌칙이 1차 정보다 → 라운드 결과 카드 **앞**에 둔다(DOM 순서 = 스크린리더 순서 = 시각 순서, 역할 무관).
+           형태는 라벨+값 2줄 카드(높이는 내용 기준, 패딩은 예산 압축). id/hidden 토글은 Build30~41 계약 그대로. -->
+      <div class="penalty-box hidden" id="resultPenaltyBox">
         <small data-i18n="result.penaltyBoxLabel">이번 벌칙</small>
         <strong id="resultPenaltyText"></strong>
       </div>
+      <div class="game-progress-card" data-round-progress></div>
       <div class="participant-list" id="roundResultList"></div>
       </div>
       <div class="c-foot">
@@ -12008,6 +12032,11 @@ function summarizeGameStats(rows) {
           : isResultCard ? resultHtml
           : html;
         card.classList.toggle("hidden", !state.roomCode && !state.penalty);
+      });
+      // Build42 UI 방향: 준비 화면 제목 행의 태거 칩 — 위 카드와 같은 info.target 을 그대로 노출(새 계산 없음).
+      document.querySelectorAll("[data-tagger-chip]").forEach(chip => {
+        chip.textContent = t("progress.targetLoserCount", { n: info.target });
+        chip.classList.toggle("hidden", !state.roomCode && !state.penalty);
       });
     }
 
