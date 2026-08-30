@@ -40,18 +40,19 @@ describe('Build41 UI — RC-A 결과 화면: 벌칙 박스는 c-body 의 결과 
     expect(head).toContain('class="result-hero"');
     expect(head).not.toContain('id="resultPenaltyBox"');
   });
-  it('c-body 에서 결과 카드 바로 뒤에 벌칙 꼬리가 온다 (id/hidden 토글 계약 유지)', () => {
+  // Build42 UI 방향(결정 1)이 Build41 의 "카드 → 한 줄 꼬리"를 대체: 확정 술래의 벌칙은 1차 정보 → 카드 **앞** 2줄 카드.
+  it('c-body 순서: 벌칙 카드 → 결과 카드 → 참가자 행 (Build42, id/hidden 토글 계약 유지)', () => {
     const card = body.indexOf('data-round-progress'), pen = body.indexOf('id="resultPenaltyBox"'), list = body.indexOf('id="roundResultList"');
-    expect(card).toBeGreaterThan(-1); expect(pen).toBeGreaterThan(card); expect(list).toBeGreaterThan(pen);
-    expect(body).toContain('class="penalty-box penalty-tail hidden" id="resultPenaltyBox"');
+    expect(pen).toBeGreaterThan(-1); expect(card).toBeGreaterThan(pen); expect(list).toBeGreaterThan(card);
+    expect(body).toContain('class="penalty-box hidden" id="resultPenaltyBox"');
     expect(body).toContain('id="resultPenaltyText"');
   });
-  it('꼬리는 한 줄 flex 이며 small/strong 의 block·margin 을 해제한다', () => {
-    expect(html).toMatch(/#screenRoundResult \.penalty-tail\{[^}]*display:flex/);
-    expect(html).toMatch(/#screenRoundResult \.penalty-tail small,\s*\n\s*#screenRoundResult \.penalty-tail strong\{display:inline;margin:0/);
+  it('벌칙 카드 패딩/값 크기는 높이 예산 clamp (Build42)', () => {
+    expect(html).toMatch(/#screenRoundResult \.c-body \.penalty-box\{\s*\n?\s*padding:clamp\(/);
+    expect(html).toMatch(/#screenRoundResult \.c-body \.penalty-box strong\{font-size:clamp\(/);
   });
   it('hero 이미지는 예산 기반 연속 clamp 하나로 정해진다 (기기별 고정값 없음)', () => {
-    expect(html).toMatch(/--result-maru:\s*clamp\(\d+px,\s*calc\(100dvh - var\(--safe-top, ?20px\) - var\(--safe-bottom, ?24px\) - \d+px\),\s*170px\)/);
+    expect(html).toMatch(/--result-maru:\s*clamp\(\d+px,\s*calc\(100dvh - var\(--safe-top, ?20px\) - var\(--safe-bottom, ?24px\) - \d+px\),\s*\d+px\)/); // Build42: 상한 220
     expect(html).toMatch(/\.result-maru\{\s*width:var\(--result-maru\);height:var\(--result-maru\)/);
     expect(html).not.toMatch(/\.result-maru\{width:104px;height:104px/);
     expect(html).toContain('.result-hero .lead{margin-bottom:0}');
@@ -90,9 +91,9 @@ describe('Build41 UI — RC-A 플레이 화면: 타이머 요약이 c-body 첫 �
     expect(head).not.toContain('data-round-progress'); expect(head).not.toContain('id="choiceAnim"');
     expect(head).toContain('id="gameGuide"');
   });
-  it('c-body 순서: 요약 행 → 선택 미리보기 → 진행 카드', () => {
+  it('c-body 순서: 요약 행 → 진행 카드 → 선택 미리보기 (Build42 정식 순서)', () => {
     const sum = body.indexOf('class="summary-row"'), anim = body.indexOf('id="choiceAnim"'), card = body.indexOf('data-round-progress');
-    expect(sum).toBeGreaterThan(-1); expect(anim).toBeGreaterThan(sum); expect(card).toBeGreaterThan(anim);
+    expect(sum).toBeGreaterThan(-1); expect(card).toBeGreaterThan(sum); expect(anim).toBeGreaterThan(card);
   });
 });
 
@@ -220,12 +221,15 @@ describe.skipIf(!hasChrome)('Build41 UI — geometry 계약 (7 viewport)', () =>
     for (const r of of('statsPopup')) expect(r.strongLines, r.dev).toBe(1);
   });
 
-  it('[mutation] 벌칙 박스를 c-head 로 되돌리면 결과 카드가 다시 잘린다 (가드 공허성 검사)', async () => {
+  it('[mutation] 벌칙 박스를 c-head 로 되돌리고 hero 를 고정 170px 로 하면(Build40 상태) 결과 카드가 다시 잘린다 (가드 공허성 검사)', async () => {
     const src = html;
-    const tail = /      <!-- Build41 UI\(필드픽스 RC-A1\)[\s\S]*?<div class="penalty-box penalty-tail hidden" id="resultPenaltyBox">[\s\S]*?<\/div>\n/.exec(src);
+    const tail = /      <!-- Build42 UI 방향\(결정 1\)[\s\S]*?<div class="penalty-box hidden" id="resultPenaltyBox">[\s\S]*?<\/div>\n/.exec(src);
     expect(tail, '벌칙 꼬리 블록을 찾지 못했다').not.toBeNull();
     const headEnd = src.indexOf('      </div>\n      <div class="c-body">', src.indexOf('id="screenRoundResult"'));
-    const mutated = (src.slice(0, headEnd) + tail[0].replace('penalty-box penalty-tail hidden', 'penalty-box hidden') + src.slice(headEnd)).replace(tail[0], '');
+    // Build42 이후 hero 예산 clamp 가 벌칙 카드까지 흡수하므로 head 복귀만으로는 잘림이 재현되지 않는다 —
+    // Build40 상태(고정 170px hero + head 안의 벌칙)로 되돌려 가드가 실제로 잘림을 잡는지 확인한다.
+    const mutated = (src.slice(0, headEnd) + tail[0] + src.slice(headEnd)).replace(tail[0], '')
+      .replace(/--result-maru:\s*clamp\([^;]*\);/, '--result-maru: 170px;');
     const mutPath = join(ROOT, '_b41mut.index.html');
     await writeFile(mutPath, mutated, 'utf8');
     try {
