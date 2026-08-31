@@ -35,3 +35,8 @@
 - 한번더(승인): 매치 진행 중 = 다음 판(원장 유지) / 매치 종료 후 = **새 매치**(`matchReset` → matchNo+1, tally/stats/locked/qualified/final/원장 전부 생략=리셋, 방 설정·벌칙·룰·술래 수 유지). `canShowPlayAgainButton` 은 원형 복귀.
 - UI(§19): 목록 배지 `🔒 최종 술래`(tag.matchLocked ×3 로케일). locked 는 시드로 loserWait(대기) 화면에서 관전.
 - 무변경 보장: WINNERS/LOSERS/ALL/FINAL continuation·카운트다운·판정 알고리즘·DB 스키마·grants·auth·M1/M2.
+
+## 동결 전 명시 계약 노트 (2026-08-31, FREEZE 승인 §2)
+- **A. 정상 종료**: `matchFinalTaggerIds.length === targetTaggerCount` — locked 우선 → qualified 도달 순, 동판 동률 id 정렬로 정확히 target 명만 확정된다(overshoot 시 slice).
+- **B. 비상 최소 인원 종료**: 참가자 이탈/활성 고갈로 설정 target 이 수학적으로 불가능해지면 엔진은 target 미만 인원으로 종료할 수 있다(`insufficientPlayers=true`). 이는 **명시적 안전 종료**이며 정상 매치 완료가 아니다.
+- **exactly-once gameOver 커버리지**: Build43 결정적 매치 종료 테스트 + 기존 TAGGER_REPLAY_IDEMPOTENT 회귀의 결합으로 보증. realtime 에코 횟수를 직접 세는 신규 E2E 는 추가하지 않았음 → **필드 QA 시나리오 H** 로 실기기 검증한다.
