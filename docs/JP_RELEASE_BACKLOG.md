@@ -18,7 +18,8 @@
 | JP-BL-008 | OPEN | Medium | LINE MINI App / LIFF 요구사항 조사 및 설계 | **예** |
 | JP-BL-009 | OPEN | Medium | `ENABLE_LINE_LOGIN` 활성화 + 관련 테스트 잠금 해제 | **예** |
 | JP-BL-010 | DONE | Medium | region-guard 를 release gate 에 연결 (출시 모드) | — |
-| JP-BL-011 | OPEN | Low | `~/.rps_seoul_env` 파일명/내용 불일치 정리 | 아니오 |
+| JP-BL-011 | PARTIAL | Medium | `~/.rps_tokyo_env` 신설(0600, RPS_TOKYO_* 만). 기존 파일은 **미변경** — `SUPABASE_PROJECT_ID` 가 어느 브랜치와도 불일치해 소유 확인 필요 | 아니오 |
+| JP-TOKYO-SECURITY-MIGRATION-GATE | OPEN | **High** | Tokyo 보안 5종(room_id 인덱스·grants·created_at 불변·target RLS·realtime publication) 배포 게이트 — NO-GO 유지 | **예** |
 | JP-BL-012 | OPEN | Low | JP 앱 식별자·딥링크 스킴 분리 검토 | 미정 |
 | JP-BL-014 | DONE | Medium | A5 device-matrix 타임아웃 → **Tokyo 복원으로 해소, 통과 확인** | — |
 | JP-BL-015 | RE-VERIFIED | **High** | 로컬 clean bootstrap 실증 완료. **보안 5종은 여전히 Tokyo 미적용**(별도 게이트) | **예** |
@@ -512,6 +513,29 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-08-31 (4차) — JP-SYNC-INVITE-004: 방 생성 → 보안 토큰 → 대기
+
+`createRoom` 의 **host 참가자 insert 성공 직후**에 토큰 발급을 연결했다.
+발급은 `issueChallengeInviteTokenWithRetry(code, 3)` — **같은 room id 로만** 재시도하므로
+방이 중복 생성되지 않는다(재시도 코드에 insert/delete 가 없음을 테스트로 고정).
+
+부분 실패 처리(§3): 토큰 실패 시 `state.inviteAvailable=false` 로 두고
+`INVITE_TOKEN_UNAVAILABLE` metric 을 남긴다. **방은 지우지 않는다** — 참가자 행이 이미 있고
+삭제는 파괴적이며 경합을 만든다. 공개 초대를 유효한 것처럼 제시하지 않으며
+**짧은 방 코드로 대체하지 않는다**.
+
+대기 상태(§4): 별도 화면을 만들지 않고 `showHostRoom` 생명주기를 확장했다
+(`renderHostWaitingState`). KR QR 동작은 무변경이다. 초대 액션은 **토큰이 검증된 뒤에만** 노출된다.
+문구는 「友だちの参加を待っています」 — 온라인 여부를 단정하지 않는다.
+
+초대 전송(§5): `buildInviteUrl()` 은 플랫폼 중립 URL(`?invite=<token>`)을 만든다.
+나중에 LIFF 어댑터는 `copyInviteLink()` 상당의 **전송 계층만** 교체하면 된다.
+
+**JP-BL-011**: `~/.rps_tokyo_env` 신설(0600, `RPS_TOKYO_PROJECT_REF` 포함).
+저장소에는 이 파일들을 참조하는 스크립트가 **없다**(문서 언급뿐)。기존 `~/.rps_seoul_env` 는
+**변경하지 않았다** — 그 안의 `SUPABASE_PROJECT_ID=sannrfmhevebqgfdqcps` 가 JP/KR 어느 브랜치의
+Supabase URL 과도 일치하지 않아, 소유 프로젝트를 CEO 가 확인하기 전에는 재배치가 위험하다.
 
 ### 2026-08-31 (3차) — Tokyo invite_token 격리 배포 + UI 배선 (003B)
 

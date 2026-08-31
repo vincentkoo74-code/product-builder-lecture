@@ -2810,6 +2810,15 @@
       <p class="maru-section-sub" style="margin-top:6px" data-i18n-html="hostRoom.subtitle">QR이나 방 코드를 친구한테 보여주세요.<br/>마루가 입장을 기다리고 있어요 🐾</p>
       <div class="maru-guide" id="hostRoomGuide"></div>
 
+      <!-- JP-SYNC-INVITE-004: 친구 대기 상태 + 보안 초대. 토큰이 검증된 뒤에만 초대가 노출된다.
+           온라인 여부를 단정하지 않는다(영속 liveness 신호가 없다). -->
+      <div id="hostWaitingBox" class="hidden" style="margin:12px 0">
+        <strong id="hostWaitingTitle"></strong>
+        <p class="maru-section-sub" id="hostWaitingDesc" style="margin-top:4px"></p>
+        <button class="btn-kparty" id="inviteCopyBtn" data-i18n="invite.action.copy">초대 링크 복사</button>
+        <p class="maru-section-sub hidden" id="inviteUnavailableNote" data-i18n="invite.action.unavailable">지금은 초대 링크를 만들 수 없어요.</p>
+      </div>
+
       <div id="penaltyStatusBox" class="penalty-box hidden" style="margin:14px 0">
         <small data-i18n="hostRoom.penaltyBoxLabel">이번 게임 벌칙</small>
         <strong id="hostPenaltyText"></strong>
@@ -3846,6 +3855,9 @@
         "invite.action.home": "홈으로",
         "invite.waiting.title": "친구를 기다리는 중",
         "invite.waiting.desc": "링크를 보내고 이 화면에서 기다려 주세요.",
+        "invite.action.copy": "초대 링크 복사",
+        "invite.action.copied": "링크를 복사했어요!",
+        "invite.action.unavailable": "지금은 초대 링크를 만들 수 없어요.",
         "toast.roomClosedAlone": "혼자 남아 방이 종료되었어요. 홈으로 이동합니다.",
         "toast.hostTransferFailed": "⚠️ 호스트 넘기기에 실패했어요. 잠시 후 다시 시도해 주세요.",
         "toast.leaveAfterRound": "🚪 이번 판이 끝나면 나갈게요. 지금 라운드는 끝까지 함께해요!",
@@ -4242,6 +4254,9 @@
         "invite.action.home": "Home",
         "invite.waiting.title": "Waiting for your friend",
         "invite.waiting.desc": "Send the link and stay on this screen.",
+        "invite.action.copy": "Copy invite link",
+        "invite.action.copied": "Link copied!",
+        "invite.action.unavailable": "Can't create an invite link right now.",
         "toast.roomClosedAlone": "You're the only one left — the room was closed. Returning home.",
         "toast.hostTransferFailed": "⚠️ Couldn't transfer the host role. Please try again.",
         "toast.leaveAfterRound": "🚪 You'll leave after this round. Finish this one first!",
@@ -4633,8 +4648,11 @@
         "invite.roomFull.title": "定員に達しました",
         "invite.action.newChallenge": "新しく対戦をつくる",
         "invite.action.home": "ホームへ",
-        "invite.waiting.title": "友だちを待っています",
+        "invite.waiting.title": "友だちの参加を待っています",
         "invite.waiting.desc": "リンクを送って、この画面で待ってください。",
+        "invite.action.copy": "招待リンクをコピー",
+        "invite.action.copied": "リンクをコピーしました！",
+        "invite.action.unavailable": "いまは招待リンクを作れません。",
         "toast.roomClosedAlone": "一人になったため部屋を終了しました。ホームに戻ります。",
         "toast.hostTransferFailed": "⚠️ ホストの引き継ぎに失敗しました。もう一度お試しください。",
         "toast.leaveAfterRound": "🚪 このラウンドが終わったら退出します。最後まで一緒に！",
@@ -5676,6 +5694,35 @@
       const rows = Array.isArray(res?.data) ? res.data : (res?.data ? [res.data] : []);
       if (rows.length !== 1 || rows[0]?.id !== roomCode) return { ok: false, reason: 'zero_row' };
       return { ok: true, token };
+    }
+
+    // 토큰 발급 재시도. **같은 room id 로만** 재시도하므로 방이 중복 생성되지 않는다.
+    // 각 시도는 새 토큰을 만들지만, 마지막 성공 토큰 하나만 그 방에 남는다(멱등한 최종 상태).
+    async function issueChallengeInviteTokenWithRetry(roomCode, attempts = 3, dbRef) {
+      let last = { ok: false, reason: 'not_attempted' };
+      for (let i = 0; i < attempts; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        last = await issueChallengeInviteToken(roomCode, dbRef);
+        if (last.ok) return { ...last, attempts: i + 1 };
+        // CSPRNG 부재는 재시도해도 달라지지 않는다 — 즉시 중단한다.
+        if (last.reason === 'no_csprng' || last.reason === 'no_db') break;
+      }
+      return { ...last, attempts };
+    }
+
+    // 초대 가능 여부의 단일 진실. 토큰이 검증된 뒤에만 공개 초대를 노출한다.
+    // 실패 시 **짧은 방 코드로 대체하지 않는다**(JP 공개 자격증명 강도 저하 금지).
+    function getSecureInviteRef() {
+      if (!state.inviteToken || !isValidInviteTokenFormat(state.inviteToken)) return null;
+      return { token: state.inviteToken, roomCode: state.roomCode };
+    }
+
+    // 플랫폼 중립 초대 URL. 나중에 LIFF 어댑터는 **전송/공유 계층만** 교체하면 된다.
+    function buildInviteUrl(ref = getSecureInviteRef()) {
+      if (!ref) return null;
+      const base = state.shareBaseUrl || getDefaultShareBaseUrl();
+      const sep = base.includes('?') ? '&' : '?';
+      return `${base}${sep}invite=${encodeURIComponent(ref.token)}`;
     }
 
     // 해석 의도를 실제 화면으로 렌더링한다(JP-SYNC-INVITE-003B).
@@ -7911,6 +7958,28 @@
           );
           state.currentUserId = hostId;
           saveLastJoinedRoomCode(code, nickname, hostId, "host");
+
+          // JP-SYNC-INVITE-004: 보안 초대 토큰 발급·검증. 방 id 가 권위적으로 확정된 뒤에만 한다.
+          // 실패하면 **공개 초대를 유효한 것처럼 제시하지 않는다** — 짧은 방 코드로 대체하지도 않는다.
+          // 방 자체는 지우지 않는다(참가자 행이 이미 있고, 삭제는 파괴적이며 경합을 만든다).
+          // 호스트는 같은 방에 재시도하거나 새 도전을 만들 수 있다.
+          state.inviteToken = null;
+          state.inviteAvailable = false;
+          try {
+            const issued = await withTimeout(issueChallengeInviteTokenWithRetry(code, 3), 5000);
+            if (issued && issued.ok && isValidInviteTokenFormat(issued.token)) {
+              state.inviteToken = issued.token;
+              state.inviteAvailable = true;
+            } else {
+              try { QA.emit('lobby', { wrps: 'JP-SYNC-INVITE-004', eventType: 'INVITE_TOKEN_UNAVAILABLE',
+                roomCode: code, reason: (issued && issued.reason) || 'unknown',
+                attempts: (issued && issued.attempts) || 0 }); } catch (mErr) {}
+            }
+          } catch (tokErr) {
+            try { QA.emit('lobby', { wrps: 'JP-SYNC-INVITE-004', eventType: 'INVITE_TOKEN_UNAVAILABLE',
+              roomCode: code, reason: 'timeout' }); } catch (mErr) {}
+          }
+
           subscribeToRoom(code);
         } catch (e) {
           console.error("Supabase 연결 실패, 오프라인 모드로 전환:", e.message);
@@ -7962,10 +8031,53 @@
       try { await startGame(); } finally { state.autoStartInFlight = false; }
     }
 
+    // JP-SYNC-INVITE-004: 호스트 방 생명주기 안의 "친구 대기" 상태.
+    // 별도 화면을 만들지 않고 기존 host-room 을 확장한다(KR QR 동작 무변경).
+    // 초대 액션은 **보안 토큰이 검증된 뒤에만** 노출한다 — 실패 시 방 코드로 대체하지 않는다.
+    function renderHostWaitingState() {
+      const box = $("hostWaitingBox");
+      if (!box) return;
+      const others = (state.participants || []).filter(p => !p.is_host);
+      const waitingForFriend = state.role === "host"
+        && ["waiting", "lobby", "ready"].includes(state.status)
+        && others.length === 0;
+      if (!waitingForFriend) { box.classList.add("hidden"); return; }
+      box.classList.remove("hidden");
+      const titleEl = $("hostWaitingTitle");
+      const descEl = $("hostWaitingDesc");
+      if (titleEl) titleEl.textContent = t("invite.waiting.title");
+      if (descEl) descEl.textContent = t("invite.waiting.desc");
+      const ref = getSecureInviteRef();
+      const copyBtn = $("inviteCopyBtn");
+      const note = $("inviteUnavailableNote");
+      if (ref) {
+        if (copyBtn) { copyBtn.classList.remove("hidden"); copyBtn.onclick = () => copyInviteLink(); }
+        if (note) note.classList.add("hidden");
+      } else {
+        // 토큰이 없으면 공개 초대를 유효한 것처럼 제시하지 않는다.
+        if (copyBtn) copyBtn.classList.add("hidden");
+        if (note) note.classList.remove("hidden");
+      }
+    }
+
+    // 플랫폼 중립 초대 전송. 나중에 LIFF 어댑터가 이 한 함수만 교체하면 된다.
+    async function copyInviteLink() {
+      const url = buildInviteUrl();
+      if (!url) { showToast(t("invite.action.unavailable")); return false; }
+      try {
+        if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(url);
+        }
+        showToast(t("invite.action.copied"));
+        return true;
+      } catch (e) { showToast(t("invite.action.unavailable")); return false; }
+    }
+
     function showHostRoom() {
       showScreen("screenHostRoom");
       refreshRoomUrl();
       renderQr();
+      renderHostWaitingState();
       updateLoserCountDropdown();
       const penaltyBox = $("penaltyStatusBox");
       const penaltyTextEl = $("hostPenaltyText");
