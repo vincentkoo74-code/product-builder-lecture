@@ -59,6 +59,8 @@ function makeFakeElement(id) {
       remove: (c) => classes.delete(c),
       contains: (c) => classes.has(c),
     },
+    // B45 즉시-확정 모델: showTaggerPopup 이 제목 요소를 popup.querySelector 로 찾는다(샌드박스는 DOM 미탑재 → null 로 충분, 가드됨).
+    querySelector: () => null,
   };
 }
 
@@ -66,6 +68,7 @@ function loadTaggerPopupFns({ state, tImpl }) {
   const elements = {
     taggerPopup: makeFakeElement('taggerPopup'),
     taggerPopupNames: makeFakeElement('taggerPopupNames'),
+    taggerPopupMatchMsg: makeFakeElement('taggerPopupMatchMsg'),
   };
   const $ = (id) => elements[id] || null;
   const t = tImpl || ((key) => key);

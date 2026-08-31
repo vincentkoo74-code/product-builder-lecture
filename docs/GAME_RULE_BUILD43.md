@@ -47,3 +47,15 @@
 - **수정**: fallback 반환에 매치 필드 전체(빈 기본값) 추가 + `isMatchRuleEditable` 에 `|| {}` 방어.
 - **검증**: RED 2건(fallback 형태·방어 가드) → GREEN; headless Chrome 재현 — H43 동결본은 동일 TypeError 재현, 수정본은 QR canvas 렌더·옵션 [single,best3,best5]·변경(best3)이 state/envelope/getMatchRule 에 전파, window error 0.
 - **교훈**: envelope 필드 추가 시 parsePenalty 의 **세 번째(fallback) 분기까지** 같은 형태로 맞출 것 — 두 객체 분기만 고치면 새 방(빈 penalty)에서 즉사한다. 단위 테스트가 fallback 형태를 이제 고정한다.
+
+## 확정 룰 모델 개정 (2026-08-31, Vincent 확정 지시 — Build45 후보)
+Vincent 의 확정 지시가 종전 EARLY LOCK 계약의 이중 임계(자격 1/2/3 · 잠금 1/3/5)를 **단일 임계 즉시-확정 모델**로 대체한다.
+
+- **규칙**: 누적 패배(판 단위 술래 횟수)가 단판 **1** / 삼세판 **2** / 다섯판 **3** 에 도달하는 **즉시** 그 참가자는 "술래확정" — 개인 화면에 `술래확정` 렌더, 이후 판에서 열외(대기 상태 확정). 구현은 `matchEarlyLockThreshold(rule) = matchQualificationThreshold(rule)` 한 줄 통일 — `computeMatchDecision`/envelope/시드/델타 경로는 전부 그대로 재사용(locked 만 남고 qualified-미잠금 상태는 사실상 소멸).
+- **다중 참가자 예외**: 술래확정자 수가 호스트가 정한 술래 숫자에 미달이면 게임을 지속한다(먼저 도달한 순서대로 확정, 정확히 target 명). 동판 동시 도달 동률은 종전과 같이 id 정렬 tie-break. 최소 인원 강제 종료(insufficientPlayers) 규칙 유지.
+- **UI 1 (카드 셀)**: "N 라운드" → `"{게임룰} · {n}판째"` (예: `삼세판 · 2판째`) 한 줄 고정 — `.game-progress-round` white-space:nowrap + `.game-progress-top` flex-wrap:nowrap. i18n `progress.matchGameNo` ×3 (`{n}판째` / `Game {n}` / `{n}戦目`). `progress.round` 키는 다른 화면(대기실 등) 호환을 위해 유지.
+  - 단판 예외(§3 표): 판 수가 1로 고정이므로 카드 셀은 룰 라벨("단판")만 표기하고 "{n}판째"를 생략한다.
+- **UI 2 (승/무/패)**: 2-A 안 확정 = 매치 누계(`getMatchCumulativeStats`) 그대로 — 코드 무변경.
+- **UI 3-개인**: gameOver 패배 분기에서 내가 `matchLockedIds` 에 포함 + 매치 미완료면 cap/title/msg 를 `result.capTaggerLocked("술래확정!")` / `result.titleTaggerLocked("술래확정")` / `result.msgTaggerLocked` 로 교체(벌칙 박스·마루 이미지 유지). 매치 완료 시엔 기존 최종 선언 블록이 우선.
+- **UI 3-팝업**: 술래확정자 수가 목표 도달(=`getMatchState().complete`) 시 `showTaggerPopup` 이 매치 최종 모드로 전환 — 제목 `popup.matchFinalTitle` = `"최종술래 {names}"`(finalTaggerIds 닉네임, textContent 로 안전 주입), 본문 `#taggerPopupMatchMsg`: 승자 `"축하합니다! 승리하셨습니다!"` / 패자 `"다음에 힘내세요!"` + 줄바꿈 `"벌칙 {penalty}"`. 비최종 판은 종전 팝업 동작 그대로(제목 원복 + matchMsg hidden).
+- **테스트**: `tests/build43-early-lock.test.mjs` 전면 개정(즉시-확정 매트릭스 + UI 핀 + parsePenalty fallback 회귀 + [2-A] 무변경 핀) — RED 8 → GREEN. build43-match-rule 18/18 · build38/41/42/35 영향 스위트 85/85 유지.
