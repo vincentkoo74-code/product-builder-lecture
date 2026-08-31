@@ -32,6 +32,8 @@ function toPositiveInt(value, fallback = 0) {
 // ── Part A: penalty merge preserve ──────────────────────────────────────────
 describe('Build30-R2 Phase2(WRPS-078) Part A — penalty merge preserve(CONFIRMED ROOT CAUSE 수정)', () => {
   const PENALTY_BLOCK_SRC = extractBlock('function parsePenalty(raw) {', '// ── 서버 시각 동기화');
+  // Build43: parsePenalty/buildPenaltyValue 가 참조하는 매치 순수 함수(실소스) — hand-copy 금지 규칙 유지.
+  const MATCH_FNS_SRC = extractBlock('// ── Build43 게임룰(매치) 순수 함수 시작', '// ── Build43 게임룰(매치) 순수 함수 끝');
   const CHOICE_END_AT_BLOCK_SRC = extractBlock('function buildPenaltyValue({', 'function getVisiblePenaltyText() {');
   const REPUBLISH_SRC = extractBlock(
     'async function republishCountdownStartAsHost() {',
@@ -61,7 +63,7 @@ describe('Build30-R2 Phase2(WRPS-078) Part A — penalty merge preserve(CONFIRME
     const QA = { emit: (kind, payload) => { calls.qaMetrics.push({ kind, payload }); } };
     const factory = new Function(
       'state', 'toPositiveInt', 'clampLoserCount', 'db', 'QA', 'getOnlineMode', 'getNextCountdownStartAt',
-      PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + REPUBLISH_SRC + '\n' + PUBLISH_CHOICE_END_SRC +
+      MATCH_FNS_SRC + '\n' + PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + REPUBLISH_SRC + '\n' + PUBLISH_CHOICE_END_SRC +
       '\nreturn { buildPenaltyValue, getCountdownStartAt, getChoiceEndAt, republishCountdownStartAsHost, publishChoiceWindowEnd };'
     );
     const mod = factory(
@@ -141,7 +143,7 @@ describe('Build30-R2 Phase2(WRPS-078) Part A — penalty merge preserve(CONFIRME
     const QA = { emit: () => {} };
     const factory = new Function(
       'state', 'toPositiveInt', 'clampLoserCount', 'db', 'QA', 'getOnlineMode',
-      PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + brokenSrc +
+      MATCH_FNS_SRC + '\n' + PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + brokenSrc +
       '\nreturn { publishChoiceWindowEnd };'
     );
     const mod = factory(state, toPositiveInt, (v) => Math.max(1, parseInt(v, 10) || 1), db, QA, () => true);
@@ -154,6 +156,8 @@ describe('Build30-R2 Phase2(WRPS-078) Part A — penalty merge preserve(CONFIRME
 // ── Part B: countdown coroutine generation token ────────────────────────────
 describe('Build30-R2 Phase2(WRPS-078) Part B — countdown coroutine 세대 토큰', () => {
   const PENALTY_BLOCK_SRC = extractBlock('function parsePenalty(raw) {', '// ── 서버 시각 동기화');
+  // Build43: parsePenalty/buildPenaltyValue 가 참조하는 매치 순수 함수(실소스) — hand-copy 금지 규칙 유지.
+  const MATCH_FNS_SRC = extractBlock('// ── Build43 게임룰(매치) 순수 함수 시작', '// ── Build43 게임룰(매치) 순수 함수 끝');
   const CHOICE_END_AT_BLOCK_SRC = extractBlock('function buildPenaltyValue({', 'function getVisiblePenaltyText() {');
   const GENERATION_HELPER_BLOCK_SRC = extractBlock(
     'function isCountdownGenerationCurrent(myGen, checkpoint) {',
@@ -181,7 +185,7 @@ describe('Build30-R2 Phase2(WRPS-078) Part B — countdown coroutine 세대 토�
       'getOnlineMode', 'isCurrentRoundParticipant', 'isSafeParticipant', 'isConfirmedLoser',
       'showScreen', 'showLoserWaitScreen', 'runCountdown', 'stopRoundTimers', 'autoFillChoices',
       'updateSelectedCount', 'updateHostSelectedCount', 'isScreenActive',
-      PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + GENERATION_HELPER_BLOCK_SRC + '\n' + RUNCOUNTDOWN_BLOCK_SRC + '\n' + TIMER_BLOCK_SRC +
+      MATCH_FNS_SRC + '\n' + PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + GENERATION_HELPER_BLOCK_SRC + '\n' + RUNCOUNTDOWN_BLOCK_SRC + '\n' + TIMER_BLOCK_SRC +
       '\nreturn { runCountdownThenShowGame, isCountdownGenerationCurrent, getGameRound };'
     );
     const mod = factory(
@@ -314,7 +318,7 @@ describe('Build30-R2 Phase2(WRPS-078) Part B — countdown coroutine 세대 토�
       'getOnlineMode', 'isCurrentRoundParticipant', 'isSafeParticipant', 'isConfirmedLoser',
       'showScreen', 'showLoserWaitScreen', 'runCountdown', 'stopRoundTimers', 'autoFillChoices',
       'updateSelectedCount', 'updateHostSelectedCount', 'isScreenActive',
-      PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + GENERATION_HELPER_BLOCK_SRC + '\n' + brokenSrc + '\n' + TIMER_BLOCK_SRC +
+      MATCH_FNS_SRC + '\n' + PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + GENERATION_HELPER_BLOCK_SRC + '\n' + brokenSrc + '\n' + TIMER_BLOCK_SRC +
       '\nreturn { runCountdownThenShowGame };'
     );
     const mod = factory(
@@ -488,14 +492,16 @@ describe('Build30-R2 Phase2(WRPS-078) Part E — resultValue 렌더 게이트(CE
       'state', '$', 't', 'getChoiceResult', 'getChoiceBase', 'isAutoChoice', 'escapeHtml',
       'getTargetLoserCount', 'getActivePlayers', 'QA', 'canShowPlayAgainButton', 'startGameOverCountdown',
       'renderRoundProgressCards', 'updateActionGridLayouts', 'setGuideText', 'getPenaltyText', 'document', 'ROUND_CHOICES', 'currentLocale',
-      'getGameRound',
+      'getGameRound', 'isMatchComplete', 'getMatchState',
       src + '\n; return renderRoundResult;'
     );
     const renderRoundResult = factory(
       state, $, t, getChoiceResult, getChoiceBase, isAutoChoice, escapeHtml,
       getTargetLoserCount, getActivePlayers, QA, canShowPlayAgainButton, startGameOverCountdown,
       renderRoundProgressCards, updateActionGridLayouts, setGuideText, getPenaltyText, documentStub, ROUND_CHOICES, currentLocale,
-      getGameRound
+      getGameRound,
+      // Build43: 매치 게이트 스텁 — 이 스위트는 매치 미종료(현행 동작) 경로를 검증한다.
+      () => false, () => ({ finalTaggerIds: [], complete: false })
     );
     renderRoundResult(caseType, roundLoserCount, remainingSlots);
     return { els, calls };

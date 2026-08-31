@@ -360,7 +360,9 @@ describe('Build27 Task1/H1 — round===1 리셋이 game_over/result 확정 데�
     // gameNo 단독 비교로 되돌아가지 않았는지(M1 재발 방지 계약 — room-scope 없는 비교는 다시 금지).
     expect(html).not.toContain('state.confirmedIdsResetGameNo !== state.gameRound');
     // 리셋 본문(confirmedSafeIds/LoserIds 초기화 + room-scoped 키 기록)은 그대로 유지 — 새 게임 정리 기능 무변경.
-    expect(html).toMatch(/if \(room\.round === 1 && state\.confirmedIdsResetGameNo !== confirmedIdsResetKey\) \{\s*\n\s*state\.confirmedSafeIds = \[\];\s*\n\s*state\.confirmedLoserIds = \[\];\s*\n\s*state\.targetLoserCount = getTargetLoserCount\(\);\s*\n\s*state\.confirmedIdsResetGameNo = confirmedIdsResetKey;/);
+    // Build43 EARLY LOCK: 리셋 블록 안에 locked 시드(envelope 읽기)가 추가됐다 — 리셋 자체(safe/loser 초기화 +
+    // room-scoped 키 기록)는 유지된다. 시드 줄을 포함한 새 형태를 고정한다.
+    expect(html).toMatch(/if \(room\.round === 1 && state\.confirmedIdsResetGameNo !== confirmedIdsResetKey\) \{\s*\n\s*state\.confirmedSafeIds = \[\];\s*\n\s*state\.confirmedLoserIds = \[\];[\s\S]{0,900}state\.confirmedIdsResetGameNo = confirmedIdsResetKey;/);
   });
 });
 

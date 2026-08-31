@@ -49,7 +49,7 @@ describe('Build42 — 소스 계약', () => {
   });
   it('[기능 무변경] 판정/토글 계약 유지', () => {
     expect(html).toContain('penaltyBox.classList.remove("hidden");'); expect(html).toContain('finalBtns.innerHTML = html;');
-    expect(html).toContain('$("verdictActionSlot")?.classList.toggle("slot-final", state.role !== "host");');
+    expect(html).toContain('$("verdictActionSlot")?.classList.toggle("slot-final", !canShowPlayAgainButton());'); // Build43 확장
     expect(html).toContain('const isResultCard = card.closest && card.closest("#screenRoundResult");');
   });
 });

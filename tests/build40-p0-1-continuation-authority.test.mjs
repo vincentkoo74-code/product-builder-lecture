@@ -108,7 +108,7 @@ describe('P0-1 — 권위 결정 계약 (소스)', () => {
     expect(pub.includes('updateRoomStatusScheduled("result", "result",'), 'result 전이 write 에 결정을 싣지 않는다').toBe(true);
     expect(write.includes("eventType: 'CONTINUATION_WRITE_BEGIN'") && write.includes("eventType: 'CONTINUATION_WRITE_END'"),
       'CONTINUATION_WRITE_BEGIN/END 없음').toBe(true);
-    expect(write.includes('continuation }'), 'buildPenaltyValue 에 continuation 을 넘기지 않는다').toBe(true);
+    expect(write.includes('continuation, ...(matchUpdate || {}) }'), 'buildPenaltyValue 에 continuation 을 넘기지 않는다(Build43 매치 원장 spread 포함 형태)').toBe(true);
   });
 
   it('[RED-C3] penalty envelope 이 continuation 을 파싱/보존한다', () => {

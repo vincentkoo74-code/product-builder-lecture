@@ -88,14 +88,16 @@ function runRenderRoundResult({ caseType, roundLoserCount = 0, remainingSlots = 
     'state', '$', 't', 'getChoiceResult', 'getChoiceBase', 'isAutoChoice', 'escapeHtml',
     'getTargetLoserCount', 'getActivePlayers', 'QA', 'canShowPlayAgainButton', 'startGameOverCountdown',
     'renderRoundProgressCards', 'updateActionGridLayouts', 'setGuideText', 'getPenaltyText', 'document', 'ROUND_CHOICES', 'currentLocale',
-    'getGameRound',
+    'getGameRound', 'isMatchComplete', 'getMatchState',
     RENDER_ROUND_RESULT_SRC + '\n; return renderRoundResult;'
   );
   const renderRoundResult = factory(
     state, $, t, getChoiceResult, getChoiceBase, isAutoChoice, escapeHtml,
     getTargetLoserCount, getActivePlayers, QA, canShowPlayAgainButton, startGameOverCountdown,
     renderRoundProgressCards, updateActionGridLayouts, setGuideText, getPenaltyText, documentStub, ROUND_CHOICES, currentLocale,
-    getGameRound
+    getGameRound,
+    // Build43: 매치 게이트 스텁 — 이 스위트는 매치 미종료(현행 동작) 경로를 검증한다.
+    () => false, () => ({ finalTaggerIds: [], complete: false })
   );
   renderRoundResult(caseType, roundLoserCount, remainingSlots);
   return els;
@@ -137,8 +139,8 @@ describe('Build30-R2 Phase E(WRPS-078) "한번더"(canShowPlayAgainButton) — �
     expect(els.finalResultBtns.innerHTML).toBe('');
   });
 
-  it('소스 계약: canShowPlayAgainButton() 자체는 무변경(호출만)이다', () => {
-    expect(html).toMatch(/function canShowPlayAgainButton\(\) \{\s*\n\s*return state\.role === "host" && isTaggerSelectionComplete\(\);\s*\n\s*\}/);
+  it('소스 계약: canShowPlayAgainButton() 은 원형(host+술래확정) — EARLY LOCK 계약에서 한번더 = 다음 판/새 매치', () => {
+    expect(html).toMatch(/return state\.role === "host" && isTaggerSelectionComplete\(\);/);
   });
 });
 

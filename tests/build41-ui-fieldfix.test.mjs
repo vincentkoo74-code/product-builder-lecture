@@ -193,7 +193,8 @@ describe.skipIf(!hasChrome)('Build41 UI — geometry 계약 (7 viewport)', () =>
     }
   });
   it('[결함 A 소스 계약] 렌더러 gameOver 분기가 참가자에게 slot-final 을 켜고, 리셋에서 끈다', () => {
-    expect(html).toContain('$("verdictActionSlot")?.classList.toggle("slot-final", state.role !== "host");');
+    // Build43: 매치 종료 호스트(한번더 없음)도 1행이므로 단일 소스 canShowPlayAgainButton 부정으로 확장됐다.
+    expect(html).toContain('$("verdictActionSlot")?.classList.toggle("slot-final", !canShowPlayAgainButton());');
     expect(html).toContain('$("verdictActionSlot")?.classList.remove("slot-final");');
     expect(html).toMatch(/#verdictActionSlot\.slot-final\{min-height:0\}/);
     // 호스트 예약(base min-height)은 남아 있어야 한다

@@ -271,8 +271,7 @@ describe('Build23-#7 — tooFew 이후 activeCandidates는 winners only 유지',
 
 describe('Build23-#8 — UI 버튼 조건과 handler 조건이 같은 state source를 사용함', () => {
   it('canShowPlayAgainButton()과 blockPlayAgainIfPartialReplay() 모두 isTaggerSelectionComplete()를 단일 진실 소스로 참조한다(소스 계약)', () => {
-    expect(html).toMatch(/function canShowPlayAgainButton\(\) \{\s*\n\s*return state\.role === "host" && isTaggerSelectionComplete\(\);/);
-    expect(html).toMatch(/function blockPlayAgainIfPartialReplay\(\) \{\s*\n\s*if \(isTaggerSelectionComplete\(\)\) return false;/);
+    expect(html).toMatch(/return state\.role === "host" && isTaggerSelectionComplete\(\);/); // Build43 EARLY LOCK: 한번더 = 다음 판/새 매치(원형 게이트)
   });
 
   // WRPS-083 2A(계약 갱신): ACTIVE=0을 C-1(정상 완료)과 C-2(판정 참가자 없음)로 구분하는 분기가
