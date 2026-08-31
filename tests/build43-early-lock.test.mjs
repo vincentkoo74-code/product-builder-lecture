@@ -103,6 +103,37 @@ describe('EARLY LOCK — 결정적 매트릭스 (§20)', () => {
   });
 });
 
+describe('B43 필드 결함(호스트 QR 미생성·게임룰 고정) — parsePenalty 레거시 fallback 회귀', () => {
+  // 새 방은 state.penalty="" (createRoom) → JSON.parse 실패 → 레거시 문자열 fallback 분기.
+  // 그 분기가 매치 필드를 싣지 않으면 isMatchRuleEditable()의 Object.keys(matchTally)가 TypeError 를
+  // 던지고, 호스트 화면 렌더 체인(showScreen→renderAll)이 죽어 QR 도, 게임룰 옵션 채우기도 실행되지 않는다.
+  function extractParse() {
+    const s = html.indexOf('function parsePenalty(raw) {');
+    const e = html.indexOf('// ── Build40 P0-1: 권위 있는 재대결 안내', s);
+    expect(s).toBeGreaterThan(-1); expect(e).toBeGreaterThan(s);
+    const toPositiveInt = (v, d) => { const n = parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : d; };
+    const parseContinuationEnvelope = () => null;
+    return new Function('toPositiveInt', 'parseContinuationEnvelope', html.slice(s, e) + '\nreturn parsePenalty;')(toPositiveInt, parseContinuationEnvelope);
+  }
+  it('[RED] 빈 문자열/레거시 벌칙 문자열도 매치 필드가 완전한 형태로 돌아온다', () => {
+    const parsePenalty = extractParse();
+    for (const raw of ['', '커피 사기', null, undefined]) {
+      const r = parsePenalty(raw);
+      expect(r.matchTally, `${String(raw)} matchTally`).toEqual({});
+      expect(r.matchStats, `${String(raw)} matchStats`).toEqual({});
+      expect(r.matchLockedIds, `${String(raw)} lockedIds`).toEqual([]);
+      expect(r.matchFinalTaggerIds, `${String(raw)} finalIds`).toEqual([]);
+      expect(r.matchQualifiedIds, `${String(raw)} qualifiedIds`).toEqual([]);
+      expect(r.matchNo, `${String(raw)} matchNo`).toBe(1);
+      expect(r.matchTalliedGameNo, `${String(raw)} 원장`).toBe(0);
+    }
+  });
+  it('[RED] isMatchRuleEditable 은 matchTally 부재에도 던지지 않는다(방어 가드)', () => {
+    const s = html.indexOf('function isMatchRuleEditable()'); const body = html.slice(s, s + 500);
+    expect(body).toContain('.matchTally || {}');
+  });
+});
+
 describe('EARLY LOCK — 소스 계약', () => {
   it('[3·판당 target] getTargetLoserCount = 비단판이면 locked+1(판당 신규 1명), 설정 원본은 getConfiguredTaggerCount 로 분리', () => {
     expect(html).toContain('function getConfiguredTaggerCount()');

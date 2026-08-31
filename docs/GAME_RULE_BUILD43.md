@@ -40,3 +40,10 @@
 - **A. 정상 종료**: `matchFinalTaggerIds.length === targetTaggerCount` — locked 우선 → qualified 도달 순, 동판 동률 id 정렬로 정확히 target 명만 확정된다(overshoot 시 slice).
 - **B. 비상 최소 인원 종료**: 참가자 이탈/활성 고갈로 설정 target 이 수학적으로 불가능해지면 엔진은 target 미만 인원으로 종료할 수 있다(`insufficientPlayers=true`). 이는 **명시적 안전 종료**이며 정상 매치 완료가 아니다.
 - **exactly-once gameOver 커버리지**: Build43 결정적 매치 종료 테스트 + 기존 TAGGER_REPLAY_IDEMPOTENT 회귀의 결합으로 보증. realtime 에코 횟수를 직접 세는 신규 E2E 는 추가하지 않았음 → **필드 QA 시나리오 H** 로 실기기 검증한다.
+
+## B43 필드 결함 수정 (2026-08-31): 호스트 QR 미생성 + 게임룰 단판 고정
+- **증상**: 호스트 화면에서 QR 미생성, 게임룰 select 가 단판으로 고정(옵션 미채움).
+- **근원 원인(단일)**: `parsePenalty` 의 레거시 문자열 fallback 분기(새 방은 `createRoom` 이 `state.penalty=""` 설정 → JSON.parse 실패 → 이 분기)만 Build43 매치 필드를 싣지 않았다. `renderAll` 의 `updateMatchRuleDropdown()` → `isMatchRuleEditable()` 의 `Object.keys(matchTally=undefined)` 가 TypeError → `showScreen→renderAll` 예외가 `showHostRoom` 첫 문장에서 전파되어 이후의 `renderQr()`/옵션 채움이 실행되지 않았다(결함 2개 = 원인 1개).
+- **수정**: fallback 반환에 매치 필드 전체(빈 기본값) 추가 + `isMatchRuleEditable` 에 `|| {}` 방어.
+- **검증**: RED 2건(fallback 형태·방어 가드) → GREEN; headless Chrome 재현 — H43 동결본은 동일 TypeError 재현, 수정본은 QR canvas 렌더·옵션 [single,best3,best5]·변경(best3)이 state/envelope/getMatchRule 에 전파, window error 0.
+- **교훈**: envelope 필드 추가 시 parsePenalty 의 **세 번째(fallback) 분기까지** 같은 형태로 맞출 것 — 두 객체 분기만 고치면 새 방(빈 penalty)에서 즉사한다. 단위 테스트가 fallback 형태를 이제 고정한다.
