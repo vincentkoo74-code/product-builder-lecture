@@ -5279,7 +5279,12 @@
           };
         }
       } catch {}
-      return { text: raw || "", loserCount: 1, gameRound: null, countdownStartAt: 0, choiceEndAt: 0, phaseScheduledAt: 0, phaseKind: "", continuation: null };
+      // Build43 필드 결함 수정: 레거시 문자열/빈 벌칙(state.penalty="" — createRoom 직후)도 매치 필드를
+      // 완전한 형태로 돌려준다. 이 분기만 필드가 빠져 isMatchRuleEditable()의 Object.keys(undefined)가
+      // 호스트 렌더 체인(renderAll)을 죽였고, 그 결과 QR 미생성 + 게임룰 옵션 미채움(단판 고정)이 됐다.
+      return { text: raw || "", loserCount: 1, gameRound: null, countdownStartAt: 0, choiceEndAt: 0, phaseScheduledAt: 0, phaseKind: "",
+        matchRule: undefined, matchTally: {}, matchStats: {}, matchTalliedGameNo: 0, matchStatsGameNo: 0,
+        matchNo: 1, matchLockedIds: [], matchFinalTaggerIds: [], matchQualifiedIds: [], continuation: null };
     }
     // ── Build40 P0-1: 권위 있는 재대결 안내(continuation) ─────────────────────
     // 필드(Build39): 같은 라운드에서 기기마다 "승자끼리"/"패자끼리"가 갈렸다. 원인은 각 기기가
@@ -8322,7 +8327,7 @@
     function isMatchRuleEditable() {
       // 게임 룰은 매치(여러 판) 전체를 정의한다 — 1판째 시작 전(gameRound<=1)이고 아직 집계된 판이
       // 없을 때만 편집 가능. 판이 하나라도 끝나면 매치가 끝날 때까지 잠긴다.
-      return isLoserCountEditable() && getGameRound() <= 1 && Object.keys(parsePenalty(state.penalty).matchTally).length === 0;
+      return isLoserCountEditable() && getGameRound() <= 1 && Object.keys(parsePenalty(state.penalty).matchTally || {}).length === 0;
     }
     async function onMatchRuleChange(val) {
       if (!isMatchRuleEditable()) {
