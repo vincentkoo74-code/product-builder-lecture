@@ -271,6 +271,8 @@
 
     :root{
       --action-gap: 10px;
+      /* Build45 버튼 통일: 주요 변형 버튼(단일행)의 표준 높이 — sns-btn 실측 52px와 정렬, 터치 최소 44px 상회 */
+      --btn-h: 52px;
       --section-gap: 18px;
       --device-ui-fade-mid: max(58px, calc(env(safe-area-inset-top, 0px) + 34px));
       --device-ui-fade-end: max(96px, calc(env(safe-area-inset-top, 0px) + 64px));
@@ -1628,7 +1630,7 @@
       display:grid;
       grid-template-columns:repeat(2,minmax(0,1fr));
       grid-auto-flow:row dense;
-      gap:8px;
+      gap:var(--action-gap);
       margin-top:12px;
     }
     .compact-action-grid > button{
@@ -1704,7 +1706,7 @@
     /* 호스트룸 / 로비 푸터 액션 버튼 통일 — 동일 폰트·크기·패딩·중앙정렬·간격 */
     #screenHostRoom .footer-actions button,
     #screenLobby .grid > button{
-      padding:15px 16px;
+      padding:12px 10px; /* Build45 통일: 그리드 압축 표준 */
       font-size:15px;
       font-weight:800;
       font-family:var(--font-body);
@@ -1836,7 +1838,7 @@
       width:100%;padding:15px 70px 15px 24px;border:none;border-radius:18px;
       font-size:15px;font-weight:900;cursor:pointer;
       display:flex;align-items:center;justify-content:center;gap:10px;
-      margin-bottom:10px;transition:transform .15s;
+      margin-bottom:var(--action-gap);transition:transform .15s;
       background:linear-gradient(135deg,var(--orange),var(--orange-deep));
       color:#fff;
       box-shadow:0 8px 18px rgba(245,163,86,.35);
@@ -1861,8 +1863,8 @@
       align-items:center !important;
       justify-content:center !important;
       width:100% !important;
-      min-height:56px;
-      padding:15px 16px !important;
+      min-height:var(--btn-h); /* Build45 통일: 전용 56px → 표준 */
+      padding:12px 16px !important;
       margin-left:0 !important;
       margin-right:0 !important;
       text-align:center !important;
@@ -2330,7 +2332,8 @@
         font-size:16px;
       }
       .btn-kparty{
-        padding:14px 54px 14px 18px;
+        padding-left:18px;
+        padding-right:54px;
       }
       #screenAuth .sns-btn,
       #screenAuth .btn-outline.btn-full{
@@ -2346,8 +2349,8 @@
       }
       #screenHostRoom .footer-actions button,
       #screenLobby .grid > button{
-        padding:14px 12px;
-        font-size:14px;
+        padding:12px 10px;
+        font-size:15px; /* Build45 통일: 그리드 표준과 동일 */
       }
     }
 
@@ -2557,6 +2560,33 @@
       background:none;border:1px solid #ddd;color:#999;border-radius:12px;
       font-size:13px;font-weight:700;min-height:44px;padding:10px 16px;width:100%;
     }
+    /* Build45 버튼 통일(Vincent 지시 2026-09-01): 주요 변형 버튼의 높이·세로 패딩·글자 크기 단일 표준.
+       실측(360×732, 67버튼)에서 같은 클래스가 46.8~64.4px 로 흩어져 있었다 — 단일행이면 전부 52px 로 수렴.
+       명시 예외: #finalResultBtns>button 48px(2열 압축 표준, ID 특이성 우선) ·
+       .qr-direct-row .btn-kparty 56px(코드 입력 높이 매칭) · .btn-quiet/원형 아이콘류 44px(터치 최소) ·
+       choice-button(게임 선택 대형 버튼) · quick-btn(아이콘+라벨 2단). 캐스케이드 승리를 위해 반드시
+       모든 변형 정의와 미디어 오버라이드보다 뒤에 있어야 한다(테스트가 순서를 고정). */
+    .btn-kparty,
+    .btn-primary,
+    .btn-success,
+    .btn-light,
+    .btn-outline,
+    .btn-danger{
+      min-height:var(--btn-h);
+      padding-top:12px;
+      padding-bottom:12px;
+      font-size:15px;
+      line-height:1.25;
+    }
+    /* Build45 통일: 2열 액션 그리드는 전부 같은 압축 표준(48px)을 쓴다 —
+       #finalResultBtns>button · .compact-action-grid>button 과 동일 계약. */
+    .action-grid > button,
+    .footer-actions > button,
+    #screenLobby .grid > button{
+      min-height:48px;
+      padding:12px 10px;
+      margin-bottom:0;
+    }
     .screen-close-btn,
     .popup-close-btn{width:44px !important;height:44px !important}
     .loser-count-select{min-height:44px}
@@ -2667,7 +2697,7 @@
 
       <div class="auth-divider"><span data-i18n="auth.dividerOr">또는</span></div>
 
-      <button class="btn-outline btn-full" onclick="window.playAsGuest()" style="margin-bottom:8px" data-i18n="auth.guestPlay">
+      <button class="btn-outline btn-full" onclick="window.playAsGuest()" style="margin-bottom:var(--action-gap)" data-i18n="auth.guestPlay">
         🐱 로그인 없이 마루랑 놀기
       </button>
       <p style="text-align:center;font-size:12px;color:var(--muted);margin:0" data-i18n="auth.guestHint">
@@ -2740,7 +2770,7 @@
         <span data-i18n="home.createBtn">🏠 방 만들기 / 호스트 시작</span>
         <span class="go-pill">GO</span>
       </button>
-      <button class="btn-light btn-full" onclick="window.showQrScanner()" style="margin-bottom:10px" data-i18n="home.scanBtn">
+      <button class="btn-light btn-full" onclick="window.showQrScanner()" style="margin-bottom:var(--action-gap)" data-i18n="home.scanBtn">
         📷 QR 스캔해서 입장
       </button>
       </div>
@@ -3185,7 +3215,7 @@
           <span data-i18n="game.choicePaper">보</span>
         </button>
       </div>
-      <button class="btn-light btn-full dev-only" style="margin-top:12px" onclick="window.autoFillChoices()" data-i18n="game.devAuto">테스트용: 모든 참가자 랜덤 선택</button>
+      <button class="btn-light btn-full dev-only" style="margin-top:var(--action-gap)" onclick="window.autoFillChoices()" data-i18n="game.devAuto">테스트용: 모든 참가자 랜덤 선택</button>
       </div>
 
     </section>
@@ -3405,7 +3435,7 @@
           </thead>
           <tbody id="statsPopupBody"></tbody>
         </table>
-        <button onclick="window.closeStatsPopup()" class="btn-kparty" style="margin-top:16px">
+        <button onclick="window.closeStatsPopup()" class="btn-kparty" style="margin-top:var(--action-gap)">
           <span data-i18n="popup.statsClose">닫기</span>
           <span class="go-pill">OK</span>
         </button>
@@ -3424,11 +3454,11 @@
         <div id="accountStatsBody" class="participant-list" style="margin-bottom:12px">
           <div class="participant"><span data-i18n="account.loading">기록을 불러오는 중...</span></div>
         </div>
-        <button onclick="window.closeAccountStatsPopup()" class="btn-kparty" style="margin-top:8px">
+        <button onclick="window.closeAccountStatsPopup()" class="btn-kparty" style="margin-top:var(--action-gap)">
           <span data-i18n="account.close">닫기</span>
           <span class="go-pill">OK</span>
         </button>
-        <button onclick="window.deleteAccountWithConfirm()" class="btn-outline btn-full" style="margin-top:8px;color:#b91c1c;border-color:#fecaca" data-i18n="account.deleteBtn">계정 삭제</button>
+        <button onclick="window.deleteAccountWithConfirm()" class="btn-outline btn-full" style="margin-top:var(--action-gap);color:#b91c1c;border-color:#fecaca" data-i18n="account.deleteBtn">계정 삭제</button>
       </div>
     </div>
 
@@ -3440,8 +3470,8 @@
           <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
         </div>
         <h3 class="maru-section-title" style="font-size:18px;margin:0 0 16px" data-i18n="popup.hostLeaveTitle">🚪 나가기</h3>
-        <button onclick="window.chooseHostTransferFromLeave()" class="btn-light btn-full" style="margin-bottom:8px" data-i18n="popup.hostLeaveTransfer">👑 호스트 넘기기</button>
-        <button onclick="window.chooseRoomDestroyFromLeave()" class="btn-outline btn-full" style="margin-bottom:8px;color:#b91c1c;border-color:#fecaca" data-i18n="popup.hostLeaveDestroy">🛑 방 종료</button>
+        <button onclick="window.chooseHostTransferFromLeave()" class="btn-light btn-full" style="margin-bottom:var(--action-gap)" data-i18n="popup.hostLeaveTransfer">👑 호스트 넘기기</button>
+        <button onclick="window.chooseRoomDestroyFromLeave()" class="btn-outline btn-full" style="margin-bottom:var(--action-gap);color:#b91c1c;border-color:#fecaca" data-i18n="popup.hostLeaveDestroy">🛑 방 종료</button>
         <button onclick="window.closeHostLeavePopup()" class="btn-outline btn-full" data-i18n="common.cancel">취소</button>
       </div>
     </div>
@@ -3456,7 +3486,7 @@
         <p style="font-size:13px;color:var(--muted);margin:0 0 16px" data-i18n="popup.nextHostSubtitle">게임을 이어받을 다음 호스트를 선택해주세요.</p>
         <div id="nextHostList"></div>
         <div style="height:8px"></div>
-        <button onclick="window.leaveRoomForce()" class="btn-outline btn-full" style="margin-bottom:8px;background:#f3f4f6;border-color:#f3f4f6;color:#111827;font-weight:900" data-i18n="popup.nextHostRandom">그냥 나가기</button>
+        <button onclick="window.leaveRoomForce()" class="btn-outline btn-full" style="margin-bottom:var(--action-gap);background:#f3f4f6;border-color:#f3f4f6;color:#111827;font-weight:900" data-i18n="popup.nextHostRandom">그냥 나가기</button>
         <button onclick="window.closeNextHostPopup()" class="btn-outline btn-full" data-i18n="common.cancel">취소</button>
       </div>
     </div>
@@ -3473,7 +3503,7 @@
         </div>
         <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px;text-align:center" data-i18n="popup.inviteTitle">🎮 새 게임 초대</h3>
         <p style="font-size:13px;color:var(--muted);margin:0 0 16px;text-align:center" data-i18n="popup.inviteSubtitle">호스트가 같은 방에서 새 게임을 시작합니다!</p>
-        <button id="inviteAcceptBtn" onclick="window.acceptInvite()" class="btn-kparty" style="margin-bottom:8px">
+        <button id="inviteAcceptBtn" onclick="window.acceptInvite()" class="btn-kparty" style="margin-bottom:var(--action-gap)">
           <span data-i18n="popup.inviteAccept">수락하기</span>
           <span class="go-pill">JOIN</span>
         </button>
@@ -3494,7 +3524,7 @@
         <h3 class="maru-section-title" style="font-size:18px;margin:0 0 4px;text-align:center" data-i18n="popup.inviteHostTitle">🎮 게임 초대 중...</h3>
         <p style="font-size:13px;color:var(--muted);margin:0 0 16px;text-align:center" data-i18n="popup.inviteHostSubtitle">참가자들에게 초대를 보냈습니다. 잠시 후 자동으로 시작됩니다.</p>
         <div id="inviteCountdown" style="font-size:36px;font-weight:700;text-align:center;margin:12px 0;color:var(--orange-deep);font-family:var(--font-display)"></div>
-        <button onclick="window.startReinviteNow()" class="btn-success btn-full" style="margin-bottom:8px" data-i18n="popup.inviteHostStart">지금 시작하기</button>
+        <button onclick="window.startReinviteNow()" class="btn-success btn-full" style="margin-bottom:var(--action-gap)" data-i18n="popup.inviteHostStart">지금 시작하기</button>
         <button onclick="window.cancelReinvite()" class="btn-outline btn-full" data-i18n="popup.inviteHostCancel">취소</button>
       </div>
     </div>
@@ -3512,7 +3542,7 @@
         <h3 id="inAppPopupTitle" class="maru-section-title" style="font-size:18px;margin:0 0 4px;text-align:center">외부 브라우저에서 열어주세요</h3>
         <p id="inAppPopupMsg" style="font-size:13px;color:var(--muted);margin:0 0 12px;text-align:center;white-space:pre-line"></p>
         <p id="inAppGuestHint" style="font-size:12px;color:var(--muted);margin:0 0 12px;text-align:center;font-style:italic"></p>
-        <button id="inAppCopyBtn" class="btn-kparty" style="margin-bottom:8px">
+        <button id="inAppCopyBtn" class="btn-kparty" style="margin-bottom:var(--action-gap)">
           <span data-i18n="popup.inAppCopyUrl">📋 URL 복사하기</span>
         </button>
         <button id="inAppDismissBtn" class="btn-outline btn-full" data-i18n="popup.inAppDismiss">닫기</button>
@@ -3558,7 +3588,7 @@
         </div>
         <h3 id="confirmPopupTitle" class="maru-section-title" style="font-size:18px;margin:0 0 4px;text-align:center">정말 나가시겠어요?</h3>
         <p id="confirmPopupMsg" style="font-size:13px;color:var(--muted);margin:0 0 16px;text-align:center">게임방을 나가면 다시 들어올 수 없을 수도 있어요 🐾</p>
-        <button id="confirmPopupOk" class="btn-danger btn-full" style="margin-bottom:8px">나가기</button>
+        <button id="confirmPopupOk" class="btn-danger btn-full" style="margin-bottom:var(--action-gap)">나가기</button>
         <button id="confirmPopupCancel" class="btn-outline btn-full">취소</button>
       </div>
     </div>
@@ -3579,7 +3609,7 @@
         <p id="taggerPopupNames" style="font-size:16px;font-weight:700;color:var(--orange-deep);margin:0 0 16px;text-align:center"></p>
         <!-- Vincent 확정 지시 3: 매치 최종 팝업 — 역할별 문구("축하합니다! 승리하셨습니다!" / "다음에 힘내세요!" + 벌칙) -->
         <p id="taggerPopupMatchMsg" class="hidden" style="font-size:14px;font-weight:700;margin:-8px 0 16px;text-align:center;line-height:1.6"></p>
-        <button onclick="window.hideTaggerPopup()" class="btn-kparty" style="margin-top:4px">
+        <button onclick="window.hideTaggerPopup()" class="btn-kparty" style="margin-top:var(--action-gap)">
           <span data-i18n="popup.taggerClose">확인</span>
           <span class="go-pill">OK</span>
         </button>
@@ -13896,7 +13926,7 @@ function summarizeGameStats(rows) {
           <div style="display:flex;flex-direction:column;gap:8px">${historyHtml}</div>
         `;
       } catch (e) {
-        body.innerHTML = `<div class="participant stats-error"><strong>${t("account.loadFailed")}</strong><span>${escapeHtml(e?.message || String(e))}</span></div>`;
+        body.innerHTML = `<div class="participant stats-error"><strong>${t("account.loadFailed")}</strong><span>${escapeHtml(e?.code ? "[" + e.code + "] " : "")}${escapeHtml(e?.message || String(e))}</span></div>`;
       }
     }
 
