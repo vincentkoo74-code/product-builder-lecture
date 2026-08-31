@@ -512,6 +512,27 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
 
+### 2026-08-31 (2차) — JP-SYNC-INVITE-003: 초대 진입 어댑터 + Tokyo 프리플라이트 STOP
+
+상세: `docs/JP_E2E_INVITE_FLOW_2026-08-31.md`
+
+**Tokyo invite_token 배포 = STOP (배포하지 않음).** CEO 의 조건부 GO 규칙에 걸린다:
+Tokyo 라이브는 아직 `allow_all_rooms` / `allow_all_participants`(ALL/true/true)이고 인덱스는
+PK 4개뿐이다(2026-08-27 라이브 감사). 즉 **2026-08-27 보안/스키마 세트 5종이 미적용**이며,
+`supabase db push` 는 invite_token 과 함께 그것들까지 배포한다 → 의도치 않은 보안 마이그레이션 동반.
+부수적으로 Tokyo 접근 토큰도 없다(Seoul 자격증명만 존재하며 **혼용하지 않았다**).
+
+**어댑터 배선(플랫폼 중립, LIFF 없음)**:
+`openInviteEntry({inviteToken, selfId})` → 권위 조회 → `resolveInviteChallenge()` →
+`inviteIntentForState()` → `{action, screen, titleKey, descKey}`.
+DB 오류(스키마 미배포 42703 포함)는 **VALID 로 흘러가지 않고** INVALID_TOKEN 으로 흡수되며
+원시 DB 문구가 UI 의도에 노출되지 않는다.
+`issueChallengeInviteToken()` 은 스키마 미배포 시 **조용히 성공한 척하지 않는다**(reason 반환) —
+프로덕션 의존성을 격리한다.
+
+미구현: 실제 DOM 화면(`screenInviteUnavailable`) 생성과 `showScreen` 배선, 방 생성 경로에 대한
+토큰 발급 호출 연결. 둘 다 스키마 배포 이후에 의미가 생긴다.
+
 ### 2026-08-31 — JP-SYNC-INVITE-002: 대기 / host 부재 / 초대 해석
 
 상세: `docs/JP_WAITING_INVITE_RESOLUTION_2026-08-31.md`

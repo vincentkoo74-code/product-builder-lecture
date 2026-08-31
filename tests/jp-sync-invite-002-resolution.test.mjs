@@ -10,7 +10,9 @@ const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const slice = (a, b) => html.slice(html.indexOf(a), html.indexOf(b, html.indexOf(a)));
 
 const TOKEN_BLOCK = slice('    // ── CORE: 초대 토큰', '    // ── CORE: 초대 해석');
-const RESOLVE_BLOCK = slice('    // ── CORE: 초대 해석', '    // ── CORE: 방 시작 정책');
+// JP-SYNC-INVITE-003 에서 두 블록 사이에 JP 어댑터가 들어왔다. 여기서 검증하는 것은
+// **CORE 해석 로직**이므로 끝 마커를 어댑터 시작으로 좁힌다(범위 정정, 완화 아님).
+const RESOLVE_BLOCK = slice('    // ── CORE: 초대 해석', '    // ── JP 어댑터: 초대 진입');
 const POLICY_BLOCK = slice('    // ── CORE: 방 시작 정책', '    // Build23: "술래 선정이 완료됐는가"');
 const codeOnly = (b) => b.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n');
 

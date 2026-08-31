@@ -5579,6 +5579,86 @@
       return { state: 'VALID', roomCode: room.id };
     }
 
+    // ── JP 어댑터: 초대 진입 (JP-SYNC-INVITE-003) ───────────────────────────────
+    // 플랫폼 중립이다. LIFF/LINE SDK 를 참조하지 않는다 — 나중에 HIKARI 승인 후 LIFF 는
+    // **토큰을 이 경계로 넘겨주기만** 하면 된다(entryContext.inviteToken).
+    //
+    //   entryContext.inviteToken → openInviteEntry() → 권위 조회 → resolveInviteChallenge()
+    //                            → inviteIntentForState() → 화면/행동
+    //
+    // 토큰은 **인증이 아니다.** 백엔드 정책이 이미 허용한 범위의 "도전 조회/입장 자격"만 준다.
+
+    // 해석 결과 → 화면 의도(플랫폼 중립). 원시 DB 문구를 노출하지 않는다.
+    function inviteIntentForState(state) {
+      switch (state) {
+        case 'VALID':
+          return { action: 'join', screen: null };
+        case 'ALREADY_JOINED':
+          // 멱등 재개 — 새로 만들지 않고 기존 방 상태로 돌아간다.
+          return { action: 'resume', screen: null };
+        case 'HOST_GONE':
+          return { action: 'blocked', screen: 'screenInviteUnavailable',
+                   titleKey: 'invite.hostGone.title', descKey: 'invite.hostGone.desc' };
+        case 'ROOM_FULL':
+          return { action: 'blocked', screen: 'screenInviteUnavailable',
+                   titleKey: 'invite.roomFull.title', descKey: 'invite.unavailable.desc' };
+        case 'INVALID_TOKEN':
+          return { action: 'blocked', screen: 'screenInviteUnavailable',
+                   titleKey: 'invite.invalid.title', descKey: 'invite.invalid.desc' };
+        case 'UNAVAILABLE':
+        default:
+          return { action: 'blocked', screen: 'screenInviteUnavailable',
+                   titleKey: 'invite.unavailable.title', descKey: 'invite.unavailable.desc' };
+      }
+    }
+
+    // 권위 조회 + 해석. DB 오류는 UI 로 새어나가지 않고 정규화된 상태로 흡수된다.
+    async function openInviteEntry({ inviteToken, selfId, dbRef } = {}) {
+      const database = dbRef || (typeof db !== 'undefined' ? db : null);
+      if (!isValidInviteTokenFormat(inviteToken) || !database) {
+        return { state: 'INVALID_TOKEN', intent: inviteIntentForState('INVALID_TOKEN') };
+      }
+      let room = null;
+      let participants = [];
+      try {
+        const rRes = await database.from('rooms').select('*').eq('invite_token', inviteToken).single();
+        // 스키마 미배포(42703: column does not exist) 등 어떤 오류도 VALID 로 흘려보내지 않는다.
+        if (rRes && rRes.error) {
+          return { state: 'INVALID_TOKEN', intent: inviteIntentForState('INVALID_TOKEN'),
+                   lookupFailed: true };
+        }
+        room = rRes ? rRes.data : null;
+        if (room && room.id) {
+          const pRes = await database.from('participants').select('*').eq('room_id', room.id)
+            .order('created_at', { ascending: true });
+          if (pRes && pRes.error) {
+            return { state: 'INVALID_TOKEN', intent: inviteIntentForState('INVALID_TOKEN'),
+                     lookupFailed: true };
+          }
+          participants = (pRes && pRes.data) || [];
+        }
+      } catch (e) {
+        return { state: 'INVALID_TOKEN', intent: inviteIntentForState('INVALID_TOKEN'), lookupFailed: true };
+      }
+      const resolved = resolveInviteChallenge({ token: inviteToken, room, participants, selfId });
+      return { ...resolved, intent: inviteIntentForState(resolved.state) };
+    }
+
+    // 도전 생성 시 토큰 발급·영속. 새 도전은 항상 새 토큰이다.
+    // 스키마가 아직 배포되지 않은 환경에서는 **조용히 성공한 척하지 않는다** — 발급 실패를
+    // 그대로 돌려주고, 호출자가 초대 없이 진행할지 결정한다(프로덕션 의존성 격리).
+    async function issueChallengeInviteToken(roomCode, dbRef) {
+      const database = dbRef || (typeof db !== 'undefined' ? db : null);
+      if (!roomCode || !database) return { ok: false, reason: 'no_db' };
+      let token;
+      try { token = generateInviteToken(); } catch (e) { return { ok: false, reason: 'no_csprng' }; }
+      const res = await database.from('rooms').update({ invite_token: token }).eq('id', roomCode).select('id');
+      if (res && res.error) return { ok: false, reason: 'schema_unavailable' };
+      const rows = Array.isArray(res?.data) ? res.data : (res?.data ? [res.data] : []);
+      if (rows.length !== 1 || rows[0]?.id !== roomCode) return { ok: false, reason: 'zero_row' };
+      return { ok: true, token };
+    }
+
     // ── CORE: 방 시작 정책 (JP-SYNC-INVITE-001) ─────────────────────────────────
     // 시장별 분기(`if (market === 'JP')`)를 게임 로직 안에 두지 않는다. CORE 는 **값**만 읽고,
     // 그 값은 시장 레이어(MARKET_CONFIG)가 설정한다.
