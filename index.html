@@ -1531,10 +1531,12 @@
     .maru-notice strong{color:var(--maru-red)}
 
     .loser-count-box{
-      display:flex;
+      /* Build43: [라벨|셀렉트] 2열 grid — 술래숫자/게임 룰 두 행이 한 박스에 정렬된다 */
+      display:grid;
+      grid-template-columns:auto minmax(0,1fr);
       align-items:center;
-      justify-content:space-between;
-      gap:12px;
+      justify-items:end;
+      gap:8px 12px;
       min-height:46px;
       padding:9px 12px;
       border-radius:14px;
@@ -2920,6 +2922,11 @@
         <select id="loserCountSelect" onchange="window.onLoserCountChange(this.value)" class="loser-count-select">
           <option value="1">1명</option>
         </select>
+        <!-- Build43(UI수정룰2): 술래숫자와 같은 박스 안의 게임 룰(단판/삼세판/다섯판) -->
+        <span class="loser-count-label" data-i18n="hostRoom.matchRule">🕹️ 게임 룰</span>
+        <select id="matchRuleSelect" onchange="window.onMatchRuleChange(this.value)" class="loser-count-select">
+          <option value="single" data-i18n="matchRule.single">단판</option>
+        </select>
       </div>
       </div>
       <div class="c-foot">
@@ -3071,6 +3078,12 @@
         <span class="loser-count-label" data-i18n="hostRoom.loserCount">🎯 술래 숫자</span>
         <select id="lobbyLoserCountSelect" onchange="window.onLoserCountChange(this.value)" class="loser-count-select">
           <option value="1">1명</option>
+        </select>
+      </div>
+      <div id="lobbyMatchRuleBox" class="compact-loser-row hidden">
+        <span class="loser-count-label" data-i18n="hostRoom.matchRule">🕹️ 게임 룰</span>
+        <select id="lobbyMatchRuleSelect" onchange="window.onMatchRuleChange(this.value)" class="loser-count-select">
+          <option value="single" data-i18n="matchRule.single">단판</option>
         </select>
       </div>
       <div class="game-progress-card" data-round-progress></div>
@@ -3691,6 +3704,12 @@
         "hostRoom.lockedDesc": "방 정원이 가득 차서 더 이상 참여할 수 없습니다.",
         "hostRoom.participants": "참가자 목록",
         "hostRoom.loserCount": "🎯 술래 숫자",
+        "hostRoom.matchRule": "🕹️ 게임 룰",
+        "hostRoom.matchRuleLocked": "게임 룰은 첫 판 시작 전에만 바꿀 수 있어요.",
+        "matchRule.single": "단판",
+        "matchRule.best3": "삼세판",
+        "matchRule.best5": "다섯판",
+        "tag.matchLocked": "최종 술래",
         "hostRoom.loserCountOption": "{n}명",
         "hostRoom.startGameLabel": "🚀 게임 시작!",
         "hostRoom.prepareGameLabel": "🎮 게임 시작",
@@ -3795,6 +3814,11 @@
         "result.capDraw": "어라?",
         "result.capLost": "아이고~",
         "result.capWin": "야호~!",
+        "result.capMatchFinal": "최종 술래 확정!",
+        "result.titleMatchFinalLoser": "최종 술래!",
+        "result.msgMatchFinalLoser": "매치가 끝났어요. 벌칙을 수행하세요!",
+        "result.titleMatchFinalWin": "최종 결과!",
+        "result.msgMatchFinalWin": "{names} 님이 최종 술래예요!",
         "result.capSafe": "휴~ 다행",
         "result.titleWin": "승리!",
         "result.titleDraw": "무승부!",
@@ -4090,6 +4114,12 @@
         "hostRoom.lockedDesc": "This room is full — no one else can join.",
         "hostRoom.participants": "Players",
         "hostRoom.loserCount": "🎯 Number of losers",
+        "hostRoom.matchRule": "🕹️ Game rule",
+        "hostRoom.matchRuleLocked": "The game rule can only be changed before the first game starts.",
+        "matchRule.single": "Single game",
+        "matchRule.best3": "Best of 3",
+        "matchRule.best5": "Best of 5",
+        "tag.matchLocked": "Final tagger",
         "hostRoom.loserCountOption": "{n}",
         "hostRoom.startGameLabel": "🚀 Start game!",
         "hostRoom.prepareGameLabel": "🎮 Start game",
@@ -4186,6 +4216,11 @@
         "result.capDraw": "Huh?",
         "result.capLost": "Oh no...",
         "result.capWin": "Yay~!",
+        "result.capMatchFinal": "Final tagger decided!",
+        "result.titleMatchFinalLoser": "Final tagger!",
+        "result.msgMatchFinalLoser": "The match is over. Time for the penalty!",
+        "result.titleMatchFinalWin": "Final result!",
+        "result.msgMatchFinalWin": "{names} is the final tagger!",
         "result.capSafe": "Phew~",
         "result.titleWin": "Win!",
         "result.titleDraw": "Draw!",
@@ -4472,6 +4507,12 @@
         "hostRoom.lockedDesc": "部屋が満員のため、これ以上参加できません。",
         "hostRoom.participants": "参加者一覧",
         "hostRoom.loserCount": "🎯 鬼の人数",
+        "hostRoom.matchRule": "🕹️ ゲームルール",
+        "hostRoom.matchRuleLocked": "ゲームルールは最初のゲームが始まる前だけ変更できます。",
+        "matchRule.single": "一本勝負",
+        "matchRule.best3": "三本勝負",
+        "matchRule.best5": "五本勝負",
+        "tag.matchLocked": "最終鬼",
         "hostRoom.loserCountOption": "{n}人",
         "hostRoom.startGameLabel": "🚀 ゲーム開始！",
         "hostRoom.prepareGameLabel": "🎮 ゲーム開始",
@@ -4568,6 +4609,11 @@
         "result.capDraw": "あれ？",
         "result.capLost": "あらら...",
         "result.capWin": "やったー！",
+        "result.capMatchFinal": "最終鬼が決定！",
+        "result.titleMatchFinalLoser": "最終鬼！",
+        "result.msgMatchFinalLoser": "マッチ終了。罰ゲームの時間です！",
+        "result.titleMatchFinalWin": "最終結果！",
+        "result.msgMatchFinalWin": "最終鬼は {names} です！",
         "result.capSafe": "ふぅ〜",
         "result.titleWin": "勝ち！",
         "result.titleDraw": "あいこ！",
@@ -5104,6 +5150,7 @@
       confirmedSafeIds: [],
       confirmedLoserIds: [],
       targetLoserCount: 1,
+      matchRule: "single",
       gameRound: 1,
       lastStartedGameRound: 0,
       countdownStartAt: 0,
@@ -5192,6 +5239,17 @@
           choiceEndAt: toPositiveInt(raw.choiceEndAt, 0),
           phaseScheduledAt: toPositiveInt(raw.phaseScheduledAt, 0),
           phaseKind: raw.phaseKind || "",
+          // Build43: 매치 필드는 passthrough — 정규화/살균은 사용처(computeMatchState 등)가 한다.
+          // parsePenalty 는 다수의 레거시 테스트 샌드박스가 단독 추출하므로 새 함수 의존을 만들지 않는다.
+          matchRule: raw.matchRule,
+          matchTally: (raw.matchTally && typeof raw.matchTally === "object") ? raw.matchTally : {},
+          matchStats: (raw.matchStats && typeof raw.matchStats === "object") ? raw.matchStats : {},
+          matchTalliedGameNo: toPositiveInt(raw.matchTalliedGameNo, 0),
+          matchStatsGameNo: toPositiveInt(raw.matchStatsGameNo, 0),
+          matchNo: toPositiveInt(raw.matchNo, 1),
+          matchLockedIds: Array.isArray(raw.matchLockedIds) ? raw.matchLockedIds : [],
+          matchFinalTaggerIds: Array.isArray(raw.matchFinalTaggerIds) ? raw.matchFinalTaggerIds : [],
+          matchQualifiedIds: Array.isArray(raw.matchQualifiedIds) ? raw.matchQualifiedIds : [],
           continuation: parseContinuationEnvelope(raw.continuation),
         };
       }
@@ -5206,6 +5264,17 @@
             choiceEndAt: toPositiveInt(p.choiceEndAt, 0),
             phaseScheduledAt: toPositiveInt(p.phaseScheduledAt, 0),
             phaseKind: p.phaseKind || "",
+            // Build43: 매치 필드는 passthrough — 정규화/살균은 사용처(computeMatchState 등)가 한다.
+            // parsePenalty 는 다수의 레거시 테스트 샌드박스가 단독 추출하므로 새 함수 의존을 만들지 않는다.
+            matchRule: p.matchRule,
+            matchTally: (p.matchTally && typeof p.matchTally === "object") ? p.matchTally : {},
+            matchStats: (p.matchStats && typeof p.matchStats === "object") ? p.matchStats : {},
+            matchTalliedGameNo: toPositiveInt(p.matchTalliedGameNo, 0),
+            matchStatsGameNo: toPositiveInt(p.matchStatsGameNo, 0),
+            matchNo: toPositiveInt(p.matchNo, 1),
+            matchLockedIds: Array.isArray(p.matchLockedIds) ? p.matchLockedIds : [],
+            matchFinalTaggerIds: Array.isArray(p.matchFinalTaggerIds) ? p.matchFinalTaggerIds : [],
+            matchQualifiedIds: Array.isArray(p.matchQualifiedIds) ? p.matchQualifiedIds : [],
             continuation: parseContinuationEnvelope(p.continuation),
           };
         }
@@ -5271,7 +5340,15 @@
     function getPenaltyDisplayText(emptyKey = "participantWait.penaltyEmpty") {
       return getPenaltyText() || t(emptyKey);
     }
-    function getTargetLoserCount() { return parsePenalty(state.penalty).loserCount || state.targetLoserCount || 1; }
+    function getConfiguredTaggerCount() { return parsePenalty(state.penalty).loserCount || state.targetLoserCount || 1; }
+    function getTargetLoserCount() {
+      // Build43 EARLY LOCK(승인 계약): 비단판 매치의 "판당" 엔진 목표 = 시드된 locked + 신규 술래 1명.
+      // 설정 원본(매치 최종술래 수)은 getConfiguredTaggerCount() — 동기화/클램프/표시는 그걸 쓴다.
+      // typeof 폴백: 레거시 샌드박스 단독 추출 시 기존(설정값) 동작으로 축퇴 — 실경로는 build43 테스트가 고정.
+      if (typeof getMatchRule !== "function" || getMatchRule() === "single") return getConfiguredTaggerCount();
+      const locked = (typeof getMatchLockedIds === "function") ? getMatchLockedIds() : [];
+      return locked.length + 1;
+    }
     function getPenaltyGameRound(raw = state.penalty) { return toPositiveInt(parsePenalty(raw).gameRound, 0); }
     function getGameRound() {
       return Math.max(1, getPenaltyGameRound(), toPositiveInt(state.gameRound, 0));
@@ -5447,7 +5524,7 @@
         }
       } catch (e) {}
     }
-    function buildPenaltyValue({ text = getPenaltyText(), loserCount = state.targetLoserCount, gameRound = state.gameRound, countdownStartAt = 0, choiceEndAt = 0, phaseScheduledAt = 0, phaseKind = "", continuation = null } = {}) {
+    function buildPenaltyValue({ text = getPenaltyText(), loserCount = state.targetLoserCount, gameRound = state.gameRound, countdownStartAt = 0, choiceEndAt = 0, phaseScheduledAt = 0, phaseKind = "", continuation = null , matchRule = null, matchTally = null, matchStats = null, matchTalliedGameNo = 0, matchStatsGameNo = 0 , matchNo = 0, matchLockedIds = null, matchQualifiedIds = null, matchFinalTaggerIds = null, matchReset = false } = {}) {
       const value = {
         text: text || "",
         loserCount: clampLoserCount(loserCount || 1),
@@ -5465,6 +5542,35 @@
       // Build40 P0-1: continuation 은 gameNo/round 신원이 있을 때만 싣는다("0이면 생략" 규칙과 동일).
       const cont = parseContinuationEnvelope(continuation);
       if (cont) value.continuation = cont;
+      // Build43: 매치 필드 carry-forward — 명시 인자 > 로컬 선택 > 이전 envelope. matchRule 은 항상
+      // 싣는다(참가자/재접속이 확정값을 읽도록). tally/stats/원장은 비면 생략("0이면 생략" 규칙).
+      // 이 함수도 레거시 샌드박스가 단독 추출한다 — parsePenalty/매치 헬퍼를 부르지 않고 순수 JSON 만 쓴다.
+      let prevMatch = {};
+      try { const o = (state.penalty && typeof state.penalty === "object") ? state.penalty : JSON.parse(state.penalty || "{}"); if (o && typeof o === "object") prevMatch = o; } catch (e) {}
+      const mrRaw = matchRule || ((prevMatch.matchRule && prevMatch.matchRule !== "single") ? prevMatch.matchRule : state.matchRule) || "single";
+      // 규칙 집합 인라인 사본(MATCH_RULES 와 동일한 3키) — 샌드박스 독립성을 위한 최소 중복, build43 테스트가 둘을 함께 고정한다.
+      value.matchRule = (mrRaw === "best3" || mrRaw === "best5") ? mrRaw : "single";
+      const prevNo = toPositiveInt(prevMatch.matchNo, 1);
+      if (matchReset) {
+        // Build43 EARLY LOCK(한번더 = 새 매치, 승인 계약): matchNo 만 +1 하고 tally/stats/locked/qualified/
+        // final/원장은 전부 생략(=리셋). 방 설정(벌칙·룰·술래 수)은 위에서 그대로 실린다.
+        value.matchNo = prevNo + 1;
+      } else {
+        value.matchNo = toPositiveInt(matchNo, 0) || prevNo;
+        const mTally = matchTally || prevMatch.matchTally;
+        if (mTally && typeof mTally === "object" && Object.keys(mTally).length) value.matchTally = mTally;
+        const mStats = (matchStats && typeof matchStats === "object") ? matchStats : prevMatch.matchStats;
+        if (mStats && typeof mStats === "object" && Object.keys(mStats).length) value.matchStats = mStats;
+        const mtg = toPositiveInt(matchTalliedGameNo, 0) || toPositiveInt(prevMatch.matchTalliedGameNo, 0);
+        if (mtg) value.matchTalliedGameNo = mtg;
+        const msg = toPositiveInt(matchStatsGameNo, 0) || toPositiveInt(prevMatch.matchStatsGameNo, 0);
+        if (msg) value.matchStatsGameNo = msg;
+        // 배열 carry: 명시 인자([] 포함)가 오면 그대로(비면 생략=클리어), 없으면 이전 envelope 유지.
+        const arrCarry = (explicit, prevArr) => { const a = Array.isArray(explicit) ? explicit : (Array.isArray(prevArr) ? prevArr : []); return a.length ? a : null; };
+        const mLock = arrCarry(matchLockedIds, prevMatch.matchLockedIds); if (mLock) value.matchLockedIds = mLock;
+        const mQual = arrCarry(matchQualifiedIds, prevMatch.matchQualifiedIds); if (mQual) value.matchQualifiedIds = mQual;
+        const mFinal = arrCarry(matchFinalTaggerIds, prevMatch.matchFinalTaggerIds); if (mFinal) value.matchFinalTaggerIds = mFinal;
+      }
       return JSON.stringify(value);
     }
     // Build19: RESULT/GAME_OVER/NEXT_ROUND(ready) 전환 예정 시각 계산(countdown과 동일한 lead 패턴).
@@ -5754,6 +5860,8 @@
     // "한번더"(전체 참여자로 새 게임) 버튼을 노출/허용해도 되는가.
     // state model: A(선정 진행중)/B(부분 재경기 대기)에서는 false, C(선정 완료)에서만 true 가능.
     function canShowPlayAgainButton() {
+      // Build43 EARLY LOCK(승인 계약): 한번더 = 매치 진행 중이면 "다음 판", 매치 종료면 "새 매치"(원장 리셋).
+      // 어느 쪽이든 노출 조건은 동일 — 원형 유지.
       return state.role === "host" && isTaggerSelectionComplete();
     }
 
@@ -6225,7 +6333,13 @@
 	        resetTransientRoundUi();
 	        state.confirmedSafeIds = [];
 	        state.confirmedLoserIds = [];
-	        state.targetLoserCount = getTargetLoserCount();
+	        // Build43 EARLY LOCK(승인 계약): 매치 종료 직후의 한번더 = 새 매치(matchNo+1, 원장 리셋).
+	        // 매치 진행 중이면 locked 를 이번 판의 확정 술래로 시드해 기존 confirmed-loser 제외 경로를
+	        // 그대로 태운다(§4 — 제2의 제외 메커니즘 금지). 판당 엔진 목표는 getTargetLoserCount()=locked+1.
+	        const matchReset = (typeof isMatchComplete === "function") && isMatchComplete();
+	        const seededLockedIds = (!matchReset && typeof getMatchLockedIds === "function") ? getMatchLockedIds() : [];
+	        if (seededLockedIds.length) state.confirmedLoserIds = [...seededLockedIds];
+	        state.targetLoserCount = (typeof getConfiguredTaggerCount === "function") ? getConfiguredTaggerCount() : getTargetLoserCount();
 	        const baseGameRound = getGameRound();
 	        state.gameRound = increment ? baseGameRound + 1 : baseGameRound;
 	        state.countdownStartAt = status === "playing" ? getNextCountdownStartAt() : 0;
@@ -6249,7 +6363,8 @@
 	          gameRound: state.gameRound,
 	          countdownStartAt: state.countdownStartAt,
 	          phaseScheduledAt,
-	          phaseKind
+	          phaseKind,
+	          matchReset
 	        });
 	        state.round = 1;
 	        state.status = status;
@@ -6288,11 +6403,20 @@
 	        // 수용한다(아래 5371행대 self-heal 설계 참고).
 	        state.staleRoomUpdateSkipStreak = 0;
 	        resetLocalParticipantsForNewGameRound();
+	        // Build43 EARLY LOCK: locked 는 로컬 미러에도 __loser__ 마커 — computePlayerStatuses 단일 소스가 제외한다.
+	        if (seededLockedIds.length) {
+	          state.participants = (state.participants || []).map(p => seededLockedIds.includes(p.id) ? { ...p, choice: '__loser__', is_ready: true } : p);
+	        }
 
 	        if (getOnlineMode() && db && state.roomCode) {
 	          await db.from('participants')
 	            .update(getNewGameRoundParticipantPatch())
 	            .eq('room_id', state.roomCode);
+	          // Build43 EARLY LOCK: locked 참가자 행에 __loser__ 마커(기존 재대결 마커와 동일 패턴) —
+	          // 모든 클라이언트가 rows 만으로 동일하게 제외한다(§14: Host/Participant/reconnect/poll 동일).
+	          if (seededLockedIds.length) {
+	            await db.from('participants').update({ choice: '__loser__', is_ready: true }).in('id', seededLockedIds);
+	          }
 	          // Build39 계측: penalty(=countdownStartAt 운반체) write 의 시작/종료 시각과 결과.
 	          // 참가자가 4.4초간 null 을 읽던 창이 이 write 이전인지 이후인지를 이 두 이벤트로 가른다.
 	          const __cdTrace = (typeof qaNextTraceId === "function" ? qaNextTraceId('cdwrite') : 'cdwrite:0');
@@ -6903,7 +7027,7 @@
       state.staleRoomUpdateSkipStreak = 0;
 
       state.penalty = room.penalty;
-      state.targetLoserCount = getTargetLoserCount();
+      state.targetLoserCount = (typeof getConfiguredTaggerCount === "function") ? getConfiguredTaggerCount() : getTargetLoserCount();
       state.gameRound = getGameRound();
       state.countdownStartAt = getCountdownStartAt(room.penalty);
       // Build39 계측: 이 단말이 room row 로부터 countdownStartAt 을 처음 본 시점(중복 dedupe).
@@ -6952,11 +7076,15 @@
       if (room.round === 1 && state.confirmedIdsResetGameNo !== confirmedIdsResetKey) {
         state.confirmedSafeIds = [];
         state.confirmedLoserIds = [];
-        state.targetLoserCount = getTargetLoserCount();
+        // Build43 EARLY LOCK: 참가자도 envelope 의 locked 를 새 판 진입 시 시드한다(§14·16 — host 와 동일 계약,
+        // 독립 판정이 아니라 host 가 쓴 envelope 읽기). 매치가 끝났으면(final 존재) 시드하지 않는다.
+        const __seedLocked = (typeof getMatchLockedIds === "function" && !(typeof isMatchComplete === "function" && isMatchComplete())) ? getMatchLockedIds() : [];
+        if (__seedLocked.length) state.confirmedLoserIds = [...__seedLocked];
+        state.targetLoserCount = (typeof getConfiguredTaggerCount === "function") ? getConfiguredTaggerCount() : getTargetLoserCount();
         state.confirmedIdsResetGameNo = confirmedIdsResetKey;
-        // __safe__/__loser__ 마커만 로컬에서 제거 (isSafeParticipant 오탐 방지)
+        // __safe__/__loser__ 마커만 로컬에서 제거 (isSafeParticipant 오탐 방지) — locked 시드 마커는 남긴다.
         state.participants.forEach(p => {
-          if (isNonPlayingChoice(p.choice)) p.choice = null;
+          if (isNonPlayingChoice(p.choice) && !__seedLocked.includes(p.id)) p.choice = null;
         });
         // Build22-B: 새 게임 시작 시 waitForPhaseRender의 idempotency 키 맵도 함께 초기화
         // (장시간 세션에서 게임을 여러 번 반복해도 메모리에 무한 누적되지 않도록).
@@ -7312,6 +7440,117 @@
 
 	    // Build40 P0-1: host 의 권위 continuation 결정. resolveElimination() 이 이미 outcome 을
 	    // 계산하므로 그 결과를 mode 로 옮길 뿐, 판정 로직을 새로 만들지 않는다.
+	    // ── Build43 게임룰(매치) 순수 함수 시작 ─────────────────────────────────────
+	    // 단판/삼세판/다섯판: "판" = 술래 확정(gameOver)까지의 한 게임. winsNeeded(1/2/3)에 먼저 도달한
+	    // 사람이 최종술래이며, 최종술래 수가 술래숫자(targetLoserCount)를 채우면 매치 종료.
+	    // 기본 판수(1/3/5)는 안내용 개념이고 종료 조건은 오직 winsNeeded 도달 — 미달이면 충족까지 계속(사양).
+	    // 판정·실시간 로직과 분리된 순수 계산만 둔다(스키마 무변경, envelope 로만 공유).
+	    const MATCH_RULES = { single: { winsNeeded: 1, baseGames: 1 }, best3: { winsNeeded: 2, baseGames: 3 }, best5: { winsNeeded: 3, baseGames: 5 } };
+	    function normalizeMatchRule(v) { return (typeof v === "string" && Object.prototype.hasOwnProperty.call(MATCH_RULES, v)) ? v : "single"; }
+	    function matchWinsNeeded(rule) { return MATCH_RULES[normalizeMatchRule(rule)].winsNeeded; }
+	    function matchRuleBaseGames(rule) { return MATCH_RULES[normalizeMatchRule(rule)].baseGames; }
+	    function sanitizeMatchTally(t) {
+	      const out = {}; if (!t || typeof t !== "object") return out;
+	      for (const k of Object.keys(t)) { const n = Math.floor(Number(t[k])); if (Number.isFinite(n) && n > 0) out[k] = n; }
+	      return out;
+	    }
+	    function applyMatchGameResult(tally, loserIds) {
+	      const next = { ...sanitizeMatchTally(tally) };
+	      for (const id of (loserIds || [])) { if (!id) continue; next[id] = (next[id] || 0) + 1; }
+	      return next;
+	    }
+	    function computeMatchState({ rule, tally, targetLoserCount }) {
+	      const winsNeeded = matchWinsNeeded(rule); const clean = sanitizeMatchTally(tally);
+	      const finalTaggerIds = Object.keys(clean).filter(id => clean[id] >= winsNeeded).sort();
+	      const target = Math.max(1, parseInt(targetLoserCount, 10) || 1);
+	      return { rule: normalizeMatchRule(rule), winsNeeded, tally: clean, finalTaggerIds, complete: finalTaggerIds.length >= target };
+	    }
+	    // EARLY LOCK(승인 계약): qualification(1/2/3)=확정 후보(active 유지), earlyLock(1/3/5)=즉시 확정+제외.
+	    function matchQualificationThreshold(rule) { return MATCH_RULES[normalizeMatchRule(rule)].winsNeeded; }
+	    function matchEarlyLockThreshold(rule) { const r = normalizeMatchRule(rule); return r === "single" ? 1 : MATCH_RULES[r].baseGames; }
+	    // 호스트 전용 매치 판정(순수): locked/qualified 는 append-only(도달 순서 보존, 동판 동률은 id 정렬 =
+	    // 결정적 tie-break §5). 종료 = distinct(locked ∪ qualified) ≥ target — 그 순간 final 은 정확히 target 명
+	    // (locked 우선 → qualified 순). 예외: active(=참가자−locked) < 2 면 확보된 확정자 전원으로 강제 종료(§15).
+	    function computeMatchDecision({ rule, tally, lockedIds = [], qualifiedIds = [], targetTaggerCount, participantsCount }) {
+	      const r = normalizeMatchRule(rule);
+	      const clean = sanitizeMatchTally(tally);
+	      const qTh = matchQualificationThreshold(r), lTh = matchEarlyLockThreshold(r);
+	      const target = Math.max(1, parseInt(targetTaggerCount, 10) || 1);
+	      const locked = [...(lockedIds || [])];
+	      for (const id of Object.keys(clean).filter(id => clean[id] >= lTh && !locked.includes(id)).sort()) locked.push(id);
+	      const qualified = [...(qualifiedIds || [])];
+	      for (const id of Object.keys(clean).filter(id => clean[id] >= qTh && !qualified.includes(id)).sort()) qualified.push(id);
+	      const finalPool = [...locked];
+	      for (const id of qualified) if (!finalPool.includes(id)) finalPool.push(id);
+	      const insufficientPlayers = Number.isFinite(participantsCount) && (participantsCount - locked.length) < 2;
+	      const complete = finalPool.length >= target || (insufficientPlayers && finalPool.length > 0);
+	      const finalTaggerIds = complete ? finalPool.slice(0, Math.min(target, finalPool.length)) : [];
+	      return { rule: r, qualificationThreshold: qTh, earlyLockThreshold: lTh, lockedIds: locked, qualifiedIds: qualified, insufficientPlayers, complete, finalTaggerIds };
+	    }
+	    // ── Build43 게임룰(매치) 순수 함수 끝 ──────────────────────────────────────
+	    function getMatchRule() {
+	      const fromEnvelope = parsePenalty(state.penalty).matchRule;
+	      return (fromEnvelope && fromEnvelope !== "single") ? normalizeMatchRule(fromEnvelope) : normalizeMatchRule(state.matchRule || "single");
+	    }
+	    // Build43 EARLY LOCK: 매치 상태의 유일 소스 = rooms.penalty envelope(호스트만 쓴다). matchNo 신원
+	    // 가드(§17): 더 새 matchNo 를 본 뒤 도착한 이전 matchNo(stale) envelope 의 매치 필드는 무시한다.
+	    function getMatchEnvelope() {
+	      const p = parsePenalty(state.penalty);
+	      const no = toPositiveInt(p.matchNo, 1);
+	      if (no > (state.matchNoSeen || 0)) state.matchNoSeen = no;
+	      if (no < (state.matchNoSeen || 0)) {
+	        return { stale: true, matchNo: no, rule: getMatchRule(), tally: {}, stats: {}, lockedIds: [], qualifiedIds: [], finalTaggerIds: [], talliedGameNo: 0, statsGameNo: 0 };
+	      }
+	      return { stale: false, matchNo: no, rule: getMatchRule(), tally: p.matchTally, stats: p.matchStats,
+	        lockedIds: p.matchLockedIds || [], qualifiedIds: p.matchQualifiedIds || [], finalTaggerIds: p.matchFinalTaggerIds || [],
+	        talliedGameNo: p.matchTalliedGameNo, statsGameNo: p.matchStatsGameNo };
+	    }
+	    function getMatchLockedIds() { const m = getMatchEnvelope(); return (m.rule === "single") ? [] : m.lockedIds; }
+	    function getMatchState() {
+	      // 참가자는 독립 판정하지 않는다(§16·21) — host 가 hostComposeMatchUpdate 로 쓴 matchFinalTaggerIds 만 읽는다.
+	      const m = getMatchEnvelope();
+	      return { rule: m.rule, lockedIds: m.lockedIds, finalTaggerIds: m.finalTaggerIds, complete: (m.finalTaggerIds || []).length > 0 };
+	    }
+	    function isMatchComplete() { return getMatchState().complete; }
+	    // UI수정룰1: 전적 카드의 승/무/패 = 매치(정해진 게임) 진행전적 누계.
+	    // 지난 판 누계(envelope.matchStats, 호스트가 판 종료 시 기록) + 현재 판 진행분(참가자 행).
+	    // 이번 판이 이미 누계에 반영됐으면(matchStatsGameNo == 현재 판) 행 값을 다시 더하지 않는다(이중 집계 방지).
+	    function getMatchCumulativeStats(player) {
+	      const p = parsePenalty(state.penalty);
+	      const base = (player && p.matchStats && p.matchStats[player.id]) || { w: 0, d: 0, l: 0 };
+	      const live = (p.matchStatsGameNo === getGameRound()) ? { safeCount: 0, drawCount: 0, loserCount: 0 } : getPlayerRoundStats(player);
+	      const n = v => { const x = Number(v || 0); return Number.isFinite(x) && x > 0 ? x : 0; };
+	      return { safeCount: n(base.w) + live.safeCount, drawCount: n(base.d) + live.drawCount, loserCount: n(base.l) + live.loserCount };
+	    }
+	    // 호스트 전용: FINAL(그 판의 술래 확정) 발행에만 매치 원장을 갱신한다. matchTalliedGameNo(판 원장)로
+	    // 멱등 — publishHostRoundResult 재시도·중복 발행이 와도 같은 판을 두 번 세지 않는다. 판정 로직 무변경.
+	    // 호스트 전용(§16): FINAL(그 판의 술래 확정) 발행에서만 매치 원장 갱신. matchTalliedGameNo(판 원장)로
+	    // 멱등. 델타 계약(승인): resolveElimination 확정 집합은 시드된 locked 를 포함하므로 신규분만 tally 에 센다.
+	    function hostComposeMatchUpdate(continuation) {
+	      try {
+	        if (!continuation || continuation.mode !== "FINAL") return null;
+	        const m = getMatchEnvelope();
+	        const gameNo = toPositiveInt(continuation.gameNo, 0);
+	        if (!gameNo || m.talliedGameNo === gameNo) return null;
+	        const lockedPrev = m.lockedIds || [];
+	        const newlyConfirmed = (continuation.confirmedLoserIds || []).filter(id => id && !lockedPrev.includes(id));
+	        const matchTally = applyMatchGameResult(m.tally, newlyConfirmed);
+	        const matchStats = {};
+	        for (const p of (state.participants || [])) {
+	          const base = (m.stats && m.stats[p.id]) || { w: 0, d: 0, l: 0 };
+	          matchStats[p.id] = { w: Number(base.w || 0) + Number(p.wins || 0), d: Number(base.d || 0) + Number(p.draws || 0), l: Number(base.l || 0) + Number(p.losses || 0) };
+	        }
+	        const d = computeMatchDecision({ rule: m.rule, tally: matchTally, lockedIds: lockedPrev, qualifiedIds: m.qualifiedIds,
+	          targetTaggerCount: getConfiguredTaggerCount(), participantsCount: (state.participants || []).length });
+	        try { QA.emit('metric', Object.assign({ wrps: 'WRPS-B43', eventType: 'MATCH_DECISION', matchNo: m.matchNo, gameNo,
+	          newlyConfirmed: newlyConfirmed.slice(), lockedIds: d.lockedIds.slice(), qualifiedIds: d.qualifiedIds.slice(),
+	          complete: d.complete, finalTaggerIds: d.finalTaggerIds.slice(), insufficientPlayers: d.insufficientPlayers,
+	          localNow: Date.now() }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+	        return { matchTally, matchStats, matchTalliedGameNo: gameNo, matchStatsGameNo: gameNo, matchNo: m.matchNo,
+	          matchLockedIds: d.lockedIds, matchQualifiedIds: d.qualifiedIds,
+	          matchFinalTaggerIds: d.complete ? d.finalTaggerIds : [] };
+	      } catch (e) { return null; }
+	    }
 	    function hostDecideContinuation(roundResults, prevSafeIds, prevLoserIds) {
 	      try {
 	        const r = resolveElimination({ roundResults, prevLoserIds: prevLoserIds || [], prevSafeIds: prevSafeIds || [], targetLoserCount: getTargetLoserCount() });
@@ -7687,7 +7926,8 @@
       if (!db) return;
       if (isRoomClosingOrDestroyed()) return; // WRPS-083 2B(Tier 2, defense-in-depth)
       // Build40 P0-1: result 전이 write 에 host 의 권위 continuation 을 함께 싣는다.
-      const penalty = buildPenaltyValue({ gameRound: getGameRound(), phaseScheduledAt: getNextPhaseScheduledAt(), phaseKind, continuation });
+      const matchUpdate = (typeof hostComposeMatchUpdate === "function") ? hostComposeMatchUpdate(continuation) : null;
+      const penalty = buildPenaltyValue({ gameRound: getGameRound(), phaseScheduledAt: getNextPhaseScheduledAt(), phaseKind, continuation, ...(matchUpdate || {}) });
       state.penalty = penalty;
       if (continuation) {
         try { QA.emit('metric', Object.assign({ wrps: 'WRPS-P01', eventType: 'CONTINUATION_WRITE_BEGIN',
@@ -8007,6 +8247,7 @@
       refreshRoomUrl();
       renderQr();
       updateLoserCountDropdown();
+      updateMatchRuleDropdown();
       const penaltyBox = $("penaltyStatusBox");
       const penaltyTextEl = $("hostPenaltyText");
       const startBtn = $("startGameBtn");
@@ -8050,7 +8291,7 @@
       const selects = [$("loserCountSelect"), $("lobbyLoserCountSelect")].filter(Boolean);
       if (!selects.length) return;
       const max = getMaxLoserCount();
-      const current = clampLoserCount(state.targetLoserCount || getTargetLoserCount());
+      const current = clampLoserCount(state.targetLoserCount || ((typeof getConfiguredTaggerCount === "function") ? getConfiguredTaggerCount() : getTargetLoserCount()));
       state.targetLoserCount = current;
       // BLOCKER-001: renderAll()은 폴링(5초)·Realtime postgres_changes·presence sync에서
       // 빈번히 호출된다. 매번 sel.innerHTML을 비워 <option>을 재생성하면, iOS WKWebView에서
@@ -8078,14 +8319,57 @@
       });
     }
 
+    function isMatchRuleEditable() {
+      // 게임 룰은 매치(여러 판) 전체를 정의한다 — 1판째 시작 전(gameRound<=1)이고 아직 집계된 판이
+      // 없을 때만 편집 가능. 판이 하나라도 끝나면 매치가 끝날 때까지 잠긴다.
+      return isLoserCountEditable() && getGameRound() <= 1 && Object.keys(parsePenalty(state.penalty).matchTally).length === 0;
+    }
+    async function onMatchRuleChange(val) {
+      if (!isMatchRuleEditable()) {
+        updateMatchRuleDropdown();
+        showToast(t("hostRoom.matchRuleLocked"));
+        return;
+      }
+      state.matchRule = normalizeMatchRule(val);
+      updateMatchRuleDropdown();
+      if (getOnlineMode() && state.roomCode) {
+        state.penalty = buildPenaltyValue();
+        await db.from('rooms').update({ penalty: state.penalty }).eq('id', state.roomCode);
+      }
+    }
+    function updateMatchRuleDropdown() {
+      const selects = [$("matchRuleSelect"), $("lobbyMatchRuleSelect")].filter(Boolean);
+      if (!selects.length) return;
+      const current = getMatchRule();
+      // BLOCKER-001 과 동일 규칙: 열린 피커는 건드리지 않고, 옵션 집합은 로케일이 바뀔 때만 재생성.
+      const sig = "match|" + currentLocale;
+      selects.forEach(sel => {
+        if (document.activeElement === sel) return;
+        if (sel.dataset.optSig !== sig) {
+          sel.innerHTML = "";
+          for (const key of Object.keys(MATCH_RULES)) {
+            const opt = document.createElement("option");
+            opt.value = key;
+            opt.textContent = t("matchRule." + key);
+            sel.appendChild(opt);
+          }
+          sel.dataset.optSig = sig;
+        }
+        if (String(sel.value) !== String(current)) sel.value = String(current);
+        sel.disabled = !isMatchRuleEditable() || state.participants.length < 2;
+        sel.title = sel.disabled ? t("progress.locked") : "";
+      });
+    }
     async function onLoserCountChange(val) {
       if (!isLoserCountEditable()) {
         updateLoserCountDropdown();
+        updateMatchRuleDropdown();
         showToast("술래 숫자는 현재 게임이 끝난 뒤 다음 게임 설정에서 변경할 수 있어요.");
         return;
       }
       state.targetLoserCount = clampLoserCount(val);
       updateLoserCountDropdown();
+      updateMatchRuleDropdown();
       if (getOnlineMode() && state.roomCode) {
         state.penalty = buildPenaltyValue();
         await db.from('rooms').update({ penalty: state.penalty }).eq('id', state.roomCode);
@@ -11304,6 +11588,20 @@ function summarizeGameStats(rows) {
           setCap(t("result.capWin"));
           message.textContent = t("result.msgGameOverWin", { target: getTargetLoserCount() });
         }
+        // Build43: 매치(단판/삼세판/다섯판)가 이 판으로 끝났으면 최종술래 선언으로 덮는다.
+        // (미확정 개인결과는 renderPersonalResolving 그대로 — 확정 화면에서만 선언.)
+        if (!isResultUnresolved && typeof isMatchComplete === "function" && isMatchComplete()) {
+          const __ms = getMatchState();
+          const __names = __ms.finalTaggerIds.map(id => { const p = (state.participants || []).find(x => x.id === id); return p ? (p.name || id) : id; }).join(", ");
+          setCap(t("result.capMatchFinal"));
+          if (myResult === "lose" || iAmConfirmedLoser) {
+            title.textContent = t("result.titleMatchFinalLoser");
+            message.textContent = t("result.msgMatchFinalLoser");
+          } else {
+            title.textContent = t("result.titleMatchFinalWin");
+            message.textContent = t("result.msgMatchFinalWin", { names: __names });
+          }
+        }
         if (nextBtn) nextBtn.style.display = "none";
         if (actionsDiv) actionsDiv.style.display = "none";
         finalBtns.classList.remove("hidden");
@@ -11332,7 +11630,7 @@ function summarizeGameStats(rows) {
         // 2행(한번더 + 승률/나가기)과 라운드 진행 버튼 사이의 layout-jump 를 막는 예약이다. 참가자는 최종 결과에서
         // 1행(48px)뿐이라 그 예약이 56px 빈 띠로 남고 버튼이 바닥에서 떠 보인다. 게임이 끝난 참가자 화면은
         // 더 이상 상태 전환이 없으므로 예약을 풀어 내용 높이만 쓴다. 호스트(2행)는 그대로 예약을 유지한다.
-        $("verdictActionSlot")?.classList.toggle("slot-final", state.role !== "host");
+        $("verdictActionSlot")?.classList.toggle("slot-final", !canShowPlayAgainButton());
         // 나가기가 이 그룹으로 들어왔으므로 c-foot 의 정적 나가기 행은 중복이다.
         if (roundResultExitRow) roundResultExitRow.classList.add("hidden");
         if (myResult === "lose" && isNextHostPenalty) {
@@ -11969,14 +12267,18 @@ function summarizeGameStats(rows) {
     }
 
 	    function getRoundProgressData() {
-	      const target = getTargetLoserCount();
+	      const target = (typeof getConfiguredTaggerCount === "function") ? getConfiguredTaggerCount() : getTargetLoserCount(); // 카드의 술래 수 = 매치 최종술래 수(설정)
 	      const current = getCurrentParticipant();
-	      const { safeCount, drawCount, loserCount } = getPlayerRoundStats(current);
+	      // Build43(UI수정룰1): 승/무/패 = 이번 판이 아니라 매치(단판/삼세판/다섯판) 진행전적 누계.
+	      // typeof 폴백 = pre-Build43(이번 판만) — 레거시 샌드박스 단독 추출 전용, 실경로는 build43 테스트가 고정.
+	      const { safeCount, drawCount, loserCount } = (typeof getMatchCumulativeStats === "function")
+	        ? getMatchCumulativeStats(current) : getPlayerRoundStats(current);
 	      const round = Math.max(1, getGameRound());
 	      const rematchNo = Math.max(1, state.round || 1);
 	      const rematchText = rematchNo <= 1 ? t("progress.first") : t("progress.rematch", { n: rematchNo });
       const locked = !isLoserCountEditable() && target > 0;
-	      return { target, safeCount, drawCount, loserCount, round, rematchText, locked };
+	      return { target, safeCount, drawCount, loserCount, round, rematchText, locked,
+	        matchRuleLabel: t("matchRule." + ((typeof getMatchRule === "function") ? getMatchRule() : "single")) };
     }
 
     function renderRoundProgressCards() {
@@ -12119,6 +12421,7 @@ function summarizeGameStats(rows) {
         }
       }
 	      updateLoserCountDropdown();
+	      updateMatchRuleDropdown();
 	      // screenReady 벌칙 박스 동기화 (호스트가 벌칙 수정 시 참가자 화면에 반영되어야 함)
 	      renderInlinePenaltyBox($("readyPenaltyBox"));
       const lobbyScreen = $("screenLobby");
@@ -12151,6 +12454,10 @@ function summarizeGameStats(rows) {
     }
 
     function getParticipantBadge(p, options = {}) {
+      // Build43 EARLY LOCK(§19): 이미 최종술래로 확정(lock)된 참가자를 목록에서 표시한다.
+      if (typeof getMatchLockedIds === "function" && getMatchLockedIds().includes(p.id)) {
+        return `<span class="tag">🔒 ${t("tag.matchLocked")}</span>`;
+      }
       if (p.is_host) {
         const label = p.id === state.currentUserId ? t("tag.meHost") : t("tag.host");
         return `<span class="tag host">👑 ${label}</span>`;
@@ -15146,6 +15453,7 @@ function summarizeGameStats(rows) {
       const loserBox = $("lobbyLoserCountBox");
       if (loserBox) loserBox.classList.toggle("hidden", state.role !== "host");
       updateLoserCountDropdown();
+      updateMatchRuleDropdown();
 
       const btn = $("lobbyReadyBtn");
       const btnLabel = btn ? btn.querySelector("span:not(.go-pill)") : null;
@@ -15232,7 +15540,7 @@ function summarizeGameStats(rows) {
 	            state.round = currentRoom.round || state.round;
 	            state.gameRound = getGameRound();
 	          }
-	          state.targetLoserCount = clampLoserCount(state.targetLoserCount || getTargetLoserCount());
+	          state.targetLoserCount = clampLoserCount(state.targetLoserCount || ((typeof getConfiguredTaggerCount === "function") ? getConfiguredTaggerCount() : getTargetLoserCount()));
 	          const currentGameRound = getGameRound();
 	          const shouldAdvanceGameRound =
 	            !hasCurrentGameRoundActivity() &&
