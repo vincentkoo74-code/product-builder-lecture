@@ -18,7 +18,8 @@
 | JP-BL-008 | OPEN | Medium | LINE MINI App / LIFF 요구사항 조사 및 설계 | **예** |
 | JP-BL-009 | OPEN | Medium | `ENABLE_LINE_LOGIN` 활성화 + 관련 테스트 잠금 해제 | **예** |
 | JP-BL-010 | DONE | Medium | region-guard 를 release gate 에 연결 (출시 모드) | — |
-| JP-BL-011 | PARTIAL | Medium | `~/.rps_tokyo_env` 신설(0600, RPS_TOKYO_* 만). 기존 파일은 **미변경** — `SUPABASE_PROJECT_ID` 가 어느 브랜치와도 불일치해 소유 확인 필요 | 아니오 |
+| JP-BL-011 | DONE | Medium | `~/.rps_tokyo_env`(Tokyo 전용) / `~/.rps_seoul_env`(Seoul 전용) 분리 완료. 교차 ref 0건, 0600, 백업 보존 | — |
+| JP-REGION-ISOLATION-001 | OPEN | **High** | `feature/rps-kr-seoul-backend` 와 `main` 의 실행 상수가 Tokyo ref — **KR 소유, JP 프로젝트가 고치지 않는다** | 아니오(KR 측) |
 | JP-TOKYO-SECURITY-MIGRATION-GATE | OPEN | **High** | Tokyo 보안 5종(room_id 인덱스·grants·created_at 불변·target RLS·realtime publication) 배포 게이트 — NO-GO 유지 | **예** |
 | JP-BL-012 | OPEN | Low | JP 앱 식별자·딥링크 스킴 분리 검토 | 미정 |
 | JP-BL-014 | DONE | Medium | A5 device-matrix 타임아웃 → **Tokyo 복원으로 해소, 통과 확인** | — |
@@ -513,6 +514,37 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-09-01 — 리전 안전 감사 + JP-ENTRY-INVITE-001 (URL 부트스트랩)
+
+**리전 감사(실행 설정 실측)**
+
+| 브랜치 | SUPABASE_URL ref | 판정 |
+|---|---|---|
+| `dev/kr-build40` (2026-08-29) | sannrfmhevebqgfdqcps | ✅ KR Seoul |
+| `release/kr-build40-qa` | sannrfmhevebqgfdqcps | ✅ KR Seoul |
+| `release/kr-build39-qa` | sannrfmhevebqgfdqcps | ✅ KR Seoul |
+| `feature/rps-jp-line-miniapp` | cmfxhehpreanijwanwrr | ✅ JP Tokyo |
+| `feature/rps-kr-seoul-backend` (2026-08-11) | **cmfxhehpreanijwanwrr** | ⚠️ **REGION ISOLATION DEFECT** (index.html:4248, 실행 상수) |
+| `main` (2026-06-02) | **cmfxhehpreanijwanwrr** | ⚠️ 동일 (KR Seoul 전환 이전 상태) |
+
+**KR 프로덕션은 위험하지 않다** — 실제 출시 브랜치 3종이 모두 Seoul 을 가리킨다.
+결함 브랜치 2개는 stale 이며 **KR 소유**다. 거버넌스에 따라 JP 프로젝트는 고치지 않는다 →
+`JP-REGION-ISOLATION-001` 로 등록만 한다.
+
+**CI 는 설계상 안전하다**: `supabase-deploy.yml` 이 ref 를 하드코딩하지 않고
+`config/regions.json` 에서 국가별로 해석하며, 대상 ref 를 **그대로 타이핑해야** 진행된다.
+
+**JP-BL-011 완료**: `~/.rps_tokyo_env`(Tokyo 전용) / `~/.rps_seoul_env`(Seoul 전용) 분리.
+교차 리전 ref 0건, 권한 0600, `~/.rps_env_legacy_backup` 보존. 비밀값 미출력·미커밋.
+
+**JP-ENTRY-INVITE-001**: `?invite=<token>` → `parseInviteFromSearch` → `buildEntryContext`
+→ 기존 어댑터(`openInviteEntry` → `navigateFromInvite`). 부트스트랩은 **파싱·정규화만** 하고
+상태 판정을 복제하지 않는다(테스트로 고정). 형식 오류·중복 파라미터는 **DB 조회 없이** 거부한다.
+소비 후 `history.replaceState` 로 URL 에서 invite 를 제거하고 다른 파라미터는 보존한다.
+입장은 기존 `joinFromQrCode` 경로를 재사용한다 — 초대 전용 입장 로직을 만들지 않았다.
+
+Tokyo Realtime 검증 계획: `docs/JP_TOKYO_REALTIME_VALIDATION_PLAN.md` (준비만, 미실행).
 
 ### 2026-08-31 (4차) — JP-SYNC-INVITE-004: 방 생성 → 보안 토큰 → 대기
 

@@ -7,7 +7,9 @@ const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const slice = (a, b) => html.slice(html.indexOf(a), html.indexOf(b, html.indexOf(a)));
 const TOKEN_B = slice('    // ── CORE: 초대 토큰', '    // ── CORE: 초대 해석');
 const ADAPTER_B = slice('    // ── JP 어댑터: 초대 진입', '    // 토큰 발급 재시도.');
-const ISSUE_B = slice('    // 토큰 발급 재시도.', '    // 해석 의도를 실제 화면으로 렌더링한다');
+// JP-ENTRY-INVITE-001 에서 두 블록 사이에 URL 부트스트랩이 들어왔다.
+// 여기서 검증하는 것은 **토큰 발급 계층**이므로 끝 마커를 부트스트랩 시작으로 좁힌다(범위 정정).
+const ISSUE_B = slice('    // 토큰 발급 재시도.', '    // ── JP 부트스트랩: URL → entryContext');
 const WAIT_B = slice('    // JP-SYNC-INVITE-004: 호스트 방 생명주기', '    function showHostRoom() {');
 const codeOnly = (b) => b.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n');
 

@@ -5725,6 +5725,65 @@
       return `${base}${sep}invite=${encodeURIComponent(ref.token)}`;
     }
 
+    // ── JP 부트스트랩: URL → entryContext (JP-ENTRY-INVITE-001) ─────────────────
+    // **파싱·정규화만** 한다. 도전 유효성 판단은 전적으로 기존 어댑터(resolveInviteChallenge)가
+    // 갖는다 — 여기서 상태 로직을 복제하지 않는다.
+    // 나중에 LIFF 는 URL(또는 정규화된 entryContext)만 넘겨주면 되고, 이 아래는 그대로다.
+
+    // 여러 개의 invite 파라미터는 **조용히 추측하지 않는다** — 모호하면 거부한다.
+    function parseInviteFromSearch(search) {
+      let params;
+      try { params = new URLSearchParams(search || ''); } catch (e) { return { inviteToken: null, reason: 'unparsable' }; }
+      let all;
+      try { all = params.getAll('invite'); } catch (e) { return { inviteToken: null, reason: 'unparsable' }; }
+      if (!all || all.length === 0) return { inviteToken: null, reason: 'absent' };
+      if (all.length > 1) return { inviteToken: null, reason: 'ambiguous' };
+      const raw = all[0];
+      // 형식이 아니면 DB 를 두드리지 않는다.
+      if (!isValidInviteTokenFormat(raw)) return { inviteToken: null, reason: 'malformed' };
+      return { inviteToken: raw, reason: 'ok' };
+    }
+
+    function buildEntryContext(search) {
+      const parsed = parseInviteFromSearch(search);
+      return {
+        market: (typeof MARKET_CONFIG !== 'undefined' && MARKET_CONFIG) ? MARKET_CONFIG.market : null,
+        inviteToken: parsed.inviteToken,
+        inviteParse: parsed.reason,
+        hasInvite: parsed.reason !== 'absent',
+      };
+    }
+
+    // 소비된 토큰을 보이는 URL 에서 제거한다.
+    // 근거: 토큰은 인증이 아니지만 도전 조회 자격이다 — 주소창/공유/스크린샷으로 재유출될 이유가 없다.
+    // 다른 쿼리 파라미터는 보존한다. 새로고침 시에는 이미 방에 들어가 있으므로 재개는 방 상태가 담당한다.
+    function stripInviteFromUrl() {
+      try {
+        if (typeof history === 'undefined' || !history.replaceState) return false;
+        const u = new URL(location.href);
+        if (!u.searchParams.has('invite')) return false;
+        u.searchParams.delete('invite');
+        history.replaceState(null, '', u.pathname + (u.searchParams.toString() ? '?' + u.searchParams.toString() : '') + u.hash);
+        return true;
+      } catch (e) { return false; }
+    }
+
+    // 부트 진입점. 초대가 없으면 아무것도 하지 않고 일반 진입으로 돌려보낸다.
+    async function bootstrapInviteEntry(search, handlers = {}) {
+      const ctx = buildEntryContext(search);
+      if (!ctx.hasInvite) return { handled: false, entryContext: ctx };
+      if (!ctx.inviteToken) {
+        // malformed / ambiguous / unparsable — DB 조회 없이 전용 화면으로 보낸다.
+        const nav = await navigateFromInvite({ state: 'INVALID_TOKEN', intent: inviteIntentForState('INVALID_TOKEN') }, handlers);
+        stripInviteFromUrl();
+        return { handled: true, entryContext: ctx, state: 'INVALID_TOKEN', nav };
+      }
+      const resolved = await openInviteEntry({ inviteToken: ctx.inviteToken, selfId: state.currentUserId });
+      const nav = await navigateFromInvite(resolved, handlers);
+      stripInviteFromUrl();
+      return { handled: true, entryContext: ctx, state: resolved.state, nav };
+    }
+
     // 해석 의도를 실제 화면으로 렌더링한다(JP-SYNC-INVITE-003B).
     // 원시 DB 문구는 절대 표시하지 않는다 — i18n 키만 쓴다.
     function renderInviteUnavailable(intent) {
@@ -14831,6 +14890,31 @@ function summarizeGameStats(rows) {
         loadSettingsVersion();
         if (!ENABLE_LINE_LOGIN) $("snsBtnLine")?.classList.add("hidden");
         if (!ENABLE_GOOGLE_LOGIN) $("snsBtnGoogle")?.classList.add("hidden");
+
+        // JP-ENTRY-INVITE-001: `?invite=<token>` 진입. 초대가 없으면 아무것도 하지 않는다.
+        // 여기서는 파싱·위임만 한다 — 도전 유효성은 기존 어댑터가 판단한다.
+        // OAuth 콜백보다 뒤, 일반 진입(room 파라미터) 처리보다 앞에 둔다.
+        try {
+          // 입장은 기존 경로를 그대로 쓴다 — 초대 전용 입장 로직을 새로 만들지 않는다.
+          // joinFromQrCode 는 "코드로 참가" 의 정식 경로다(입력란 채움 → joinRoom()).
+          const enterRoom = async (roomCode) => {
+            if (!roomCode) return;
+            state.roomCode = String(roomCode).toUpperCase();
+            state.roomUrl = buildRoomUrl(state.roomCode);
+            await joinFromQrCode(state.roomCode);
+          };
+          const inviteBoot = await bootstrapInviteEntry(location.search, {
+            join: enterRoom,
+            resume: enterRoom,
+          });
+          if (inviteBoot && inviteBoot.handled) {
+            updateAuthTopbar();
+            return;
+          }
+        } catch (e) {
+          // 부트 실패가 앱 진입 자체를 막지 않는다.
+          console.warn("invite bootstrap failed:", e?.message || e);
+        }
 
         // Kakao OAuth callback 처리 (?provider=kakao&code=... 일 때만 동작)
         if (db?.auth && params.get("provider") === "kakao") {
