@@ -21,7 +21,8 @@
 | JP-BL-011 | OPEN | Low | `~/.rps_seoul_env` 파일명/내용 불일치 정리 | 아니오 |
 | JP-BL-012 | OPEN | Low | JP 앱 식별자·딥링크 스킴 분리 검토 | 미정 |
 | JP-BL-014 | DONE | Medium | A5 device-matrix 타임아웃 → **Tokyo 복원으로 해소, 통과 확인** | — |
-| JP-BL-015 | RE-VERIFIED | **High** | 로컬 clean bootstrap 실증: 9종 전부 0 실패 · 멱등 재적용 0 · 반복 재구축 0. 배포는 여전히 미승인 | **예** |
+| JP-BL-015 | RE-VERIFIED | **High** | 로컬 clean bootstrap 실증 완료. **보안 5종은 여전히 Tokyo 미적용**(별도 게이트) | **예** |
+| JP-TOKYO-MIG-INVITE-001 | DONE | **High** | `rooms.invite_token` 격리 배포 완료(2026-08-31). 보안 5종 미적용 유지, 원장 2행 | — |
 | JP-H1A-STRICT-CALIBRATION | OPEN | Medium | strict 권위 모드의 mutation 민감도 임계값 재보정(11 vs 12, 399.0 vs 400.7). **이번 슬라이스에서 건드리지 않았다** | 아니오 |
 | JP-INFRA-STALE-ROOM | OPEN | Medium | 물리적 stale row 정리(cron/TTL) — 별도 인프라 태스크. 도전 유효성 판정과 분리됨 | 아니오 |
 | JP-BL-016 | DECIDED | High | free plan 은 엔지니어링 기간 유지, 외부 베타 전 Pro 승격 (JP-PROD-GATE) | **예** |
@@ -511,6 +512,34 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-08-31 (3차) — Tokyo invite_token 격리 배포 + UI 배선 (003B)
+
+상세: `docs/JP_INVITE_UI_TOKYO_MIGRATION_2026-08-31.md`
+
+**Tokyo 격리 배포 완료.** `db push` 를 쓰지 않고 검토된 DDL 한 건만 직접 적용한 뒤,
+Supabase 지원 도구(`migration repair <version> --status applied`)로 **그 버전만** 표시했다.
+원장 위조(수동 INSERT)를 하지 않았다.
+
+배포 전/후 대조 (373 rooms / 543 participants):
+
+| 항목 | 전 | 후 |
+|---|---|---|
+| rooms_checksum | aff3416144c16636ee18564ee92d4ef5 | **동일** |
+| participants_checksum | 1c8c921535fcae9998f46794ef463b96 | **동일** |
+| policies | 7 | **7** |
+| grants(anon/rooms) | DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE | **동일** |
+| realtime publication | 2 | **2** |
+| indexes | 4 | 5 (invite_token 부분 unique 추가) |
+| `allow_all_*` 정책 | 2 | **2 (그대로 — 보안 세트 미적용 유지)** |
+| invite_token 컬럼 | 없음 | 있음, 기존 373행 전부 NULL |
+
+중복 non-null 토큰 insert 는 실제로 거부됨을 실증(트랜잭션 rollback, 행 수 373 불변).
+원장은 정확히 2행: `20260528205753`, `20260830010000`.
+
+**UI 배선(003B)**: `screenInviteUnavailable` 마크업 신설 + `hideAllScreens` 등록 +
+`renderInviteUnavailable()` / `navigateFromInvite()`. i18n 키로만 렌더하며 원시 DB 문구를
+표시하지 않는다. 약한 방 코드로의 fallback 이 없음을 테스트로 고정(§8).
 
 ### 2026-08-31 (2차) — JP-SYNC-INVITE-003: 초대 진입 어댑터 + Tokyo 프리플라이트 STOP
 

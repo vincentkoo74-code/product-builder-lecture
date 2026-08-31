@@ -2779,6 +2779,25 @@
 
     </section>
 
+    <!-- JP-SYNC-INVITE-003B: 초대 해석 실패 전용 화면. 토스트 하나로 끝내지 않는다.
+         제목/설명은 inviteIntentForState() 가 준 i18n 키로 런타임에 채운다. -->
+    <section class="card maru-card hidden" id="screenInviteUnavailable">
+      <div class="saekdong-v">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="c-head">
+        <div class="maru-corner maru-corner-lg">
+          <img src="ASSETS/rps/scenes/cat-ready-idea.png" alt="마루" />
+        </div>
+        <div class="vrshow-cap vrshow-cap-lg" id="inviteUnavailableTitle"></div>
+        <p class="maru-section-sub" style="margin-top:6px" id="inviteUnavailableDesc"></p>
+      </div>
+      <div class="c-foot">
+        <button class="btn-kparty" id="inviteNewChallengeBtn" data-i18n="invite.action.newChallenge">새로 도전 만들기</button>
+        <button class="btn-kparty btn-ghost" id="inviteHomeBtn" data-i18n="invite.action.home">홈으로</button>
+      </div>
+    </section>
+
     <section class="card maru-card hidden" id="screenHostRoom">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
@@ -5659,6 +5678,33 @@
       return { ok: true, token };
     }
 
+    // 해석 의도를 실제 화면으로 렌더링한다(JP-SYNC-INVITE-003B).
+    // 원시 DB 문구는 절대 표시하지 않는다 — i18n 키만 쓴다.
+    function renderInviteUnavailable(intent) {
+      const titleEl = $("inviteUnavailableTitle");
+      const descEl = $("inviteUnavailableDesc");
+      if (titleEl) titleEl.textContent = t(intent && intent.titleKey ? intent.titleKey : 'invite.unavailable.title');
+      if (descEl) descEl.textContent = t(intent && intent.descKey ? intent.descKey : 'invite.unavailable.desc');
+      showScreen("screenInviteUnavailable");
+    }
+
+    // 초대 진입의 단일 네비게이션 지점. 어댑터 결과를 받아 화면/행동으로 옮긴다.
+    // 반환값은 테스트가 관측할 수 있는 정규화된 네비게이션 결과다.
+    async function navigateFromInvite(result, handlers = {}) {
+      const intent = (result && result.intent) || inviteIntentForState(result && result.state);
+      if (intent.action === 'join') {
+        if (typeof handlers.join === 'function') await handlers.join(result.roomCode);
+        return { navigated: 'join', roomCode: result.roomCode };
+      }
+      if (intent.action === 'resume') {
+        if (typeof handlers.resume === 'function') await handlers.resume(result.roomCode);
+        return { navigated: 'resume', roomCode: result.roomCode };
+      }
+      renderInviteUnavailable(intent);
+      return { navigated: 'blocked', screen: 'screenInviteUnavailable',
+               titleKey: intent.titleKey, descKey: intent.descKey };
+    }
+
     // ── CORE: 방 시작 정책 (JP-SYNC-INVITE-001) ─────────────────────────────────
     // 시장별 분기(`if (market === 'JP')`)를 게임 로직 안에 두지 않는다. CORE 는 **값**만 읽고,
     // 그 값은 시장 레이어(MARKET_CONFIG)가 설정한다.
@@ -7663,8 +7709,9 @@
         "screenLoserWait",
         "screenStats",
         "screenLobby",
-        "screenSettings"
-      ].forEach(id => $(id).classList.add("hidden"));
+        "screenSettings",
+        "screenInviteUnavailable"
+      ].forEach(id => { const el = $(id); if (el) el.classList.add("hidden"); });
     }
 
     function showScreen(id) {

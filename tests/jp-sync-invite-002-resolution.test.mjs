@@ -154,9 +154,12 @@ describe('[002] §7 host-gone 복구 UI 문자열 (i18n 아키텍처 준수)', (
   const keys = ['invite.hostGone.title', 'invite.hostGone.desc', 'invite.unavailable.title',
     'invite.invalid.title', 'invite.roomFull.title', 'invite.action.newChallenge',
     'invite.action.home', 'invite.waiting.title'];
-  it('모든 키가 ko/ja/en 3개 로케일에 존재한다', () => {
+  it('모든 키가 ko/ja/en 3개 로케일에 **정의**돼 있다', () => {
+    // JP-SYNC-INVITE-003B 이후 마크업이 data-i18n="키" 로 같은 키를 참조한다.
+    // 여기서 세야 하는 것은 **정의부**(`"키": "값"`)이지 사용처가 아니다(범위 정정).
     for (const k of keys) {
-      expect((html.match(new RegExp(`"${k.replace(/\./g, '\\.')}"`, 'g')) || []).length, k).toBe(3);
+      const def = new RegExp(`"${k.replace(/\./g, '\\.')}"\\s*:\\s*"`, 'g');
+      expect((html.match(def) || []).length, k).toBe(3);
     }
   });
   it('일본어 host-gone 문구가 지정된 개념과 일치한다', () => {
