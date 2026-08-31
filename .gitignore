@@ -30,3 +30,6 @@ QA-index/
 # vitest Chrome geometry 하네스 임시 프로브 (실행 중 kill 시 잔류)
 _*.probe.html
 _*probe.test.html
+
+# Supabase local temporary files
+supabase/.temp/
