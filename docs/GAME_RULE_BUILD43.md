@@ -78,3 +78,4 @@ Build45의 "GAME → 최종형 결과 → 호스트 재시작" 모델을 폐지�
 - **핀 갱신(문서화)**: build23/build30-phase-e/build43-match-rule 의 구 원형(one-liner) 핀 → 새 게이트 형상으로 교체(단일 진실 소스 isTaggerSelectionComplete 단언 유지). finishRoundLocal 3곳은 Build30 autoSave 인접 계약 유지를 위해 popup→autoSave→schedule 순서.
 - **QA 이벤트**: `MATCH_AUTO_NEXT_SCHEDULED`(WRPS-B46).
 - **추가 UI 지시**: 홈 → "바로전 게임결과"(screenStats)의 "같은 방에서 다시 하기"(statsReplayBtn/inviteForReplay 진입 버튼) 삭제 — 처음으로만 유지(replayBtn 참조 2곳은 기존 null-guard, inviteForReplay 함수는 build29 계약 보존 위해 잔존).
+- **NO-TOUCH 게이트 보정(2026-09-01)**: 자동 판 전환을 `status:"ready"`(준비 정족수 areAllActivePlayersReady 의존 — 참가자 '준비' 탭 필요)에서 **`status:"playing"`+countdownStartAt 직행**(startGame 동일 계열)으로 교체. 판 사이 사용자 입력 0회: 참가자는 'playing' 수신 → runCountdownThenShowGame 자동 진입, host 는 begin 직후 enterPlayingStateFromRoomUpdate() 로컬 진입, locked 는 `__loser__` 마커 비참가. READY 는 판 내부(재대결 준비) 전용 상태로 남는다 — 판 간 경로에서 정족수/강제시작 완전 배제.

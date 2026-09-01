@@ -21,10 +21,9 @@ function fns() {
 const sliceFn = (name) => {
   const s = html.indexOf(`function ${name}`);
   if (s < 0) throw new Error(`function ${name} not found`);
-  const e = html.indexOf('\n\t    function ', s + 10);
-  const e2 = html.indexOf('\n    function ', s + 10);
-  const end = Math.min(...[e, e2].filter(x => x > 0));
-  return html.slice(s, end);
+  const ends = ['\n\t    function ', '\n    function ', '\n\t    async function ', '\n    async function ']
+    .map(m => html.indexOf(m, s + 10)).filter(x => x > 0);
+  return html.slice(s, Math.min(...ends));
 };
 
 // ── [A] 판정 시나리오: 미완료 판은 최종 없음, 임계 도달 순간 정확히 1회 완료 ──────────
@@ -90,11 +89,23 @@ describe('Build46 §TEST 5 — 자동 판 전환(호스트 재시작 불필요)'
     expect(s).toMatch(/"result"[\s\S]{0,40}"game_over"/);
     expect(s).toContain('getGameRound() !== forGame');
   });
-  it('전환은 beginNewGameRound({ status: "ready" — 대기실(lobby) 왕복 금지', () => {
+  it('[NO-TOUCH] 전환 = playing+countdownStartAt 직행 — lobby/ready 왕복 금지', () => {
     const s = src();
-    expect(s).toContain('beginNewGameRound({ status: "ready"');
+    expect(s).toContain('beginNewGameRound({ status: "playing"');
     expect(s).not.toContain('"lobby"');
+    expect(s).not.toContain('status: "ready"');
     expect(s).toContain('match_next_game');
+    expect(s).toContain('enterPlayingStateFromRoomUpdate()'); // host 로컬 카운트다운 즉시 진입(startGame 동일 계열)
+  });
+  it('[NO-TOUCH] 준비 정족수·수동 입력이 경로에 없다 — 참가자 준비/호스트 재시작/강제시작 0회', () => {
+    // 추출은 다음 함수의 선행 주석까지 포함하므로, 부정 단언은 함수 본문(첫 닫는 중괄호)으로 한정한다.
+    const s = src().slice(0, src().indexOf('\n    }\n') + 6);
+    expect(s).toContain('setTimeout');                   // 본문 슬라이스 자기검증
+    expect(s).not.toContain('areAllActivePlayersReady'); // READY 정족수 비관여
+    expect(s).not.toContain('is_ready');                 // 준비 플래그 대기 없음
+    expect(s).not.toContain('orceStart');                // 강제 시작 비관여
+    // beginNewGameRound(playing)는 countdownStartAt 을 서버시각으로 생성한다(동기 카운트다운)
+    expect(sliceFn('beginNewGameRound').slice(0, 4000)).toContain('status === "playing" ? getNextCountdownStartAt() : 0');
   });
   it('gameOver 5개 사이트(정상 3 + idempotent/echo 2) 전부에서 예약된다', () => {
     expect(html.split('scheduleMatchAutoNextGame(').length - 1).toBeGreaterThanOrEqual(6); // 정의 1 + 호출 5
@@ -170,9 +181,10 @@ describe('Build46 §UI — 미완료 판 결과 화면 계약', () => {
 
 // ── [G/H] 시드·동기 전환·재접속 — 기존 기제 재사용 핀(제2 권위 금지) ─────────────
 describe('Build46 §TEST 4/6 — WAITING 비차단·locked 시드·동기 전환 재사용', () => {
-  it('beginNewGameRound: ready 전환은 기존 phaseScheduledAt/phaseKind="ready" 동기 기제 사용', () => {
+  it('beginNewGameRound: 동기 전환 기제 2종(ready=phase 스케줄, playing=countdownStartAt) + locked 시드', () => {
     const s = sliceFn('beginNewGameRound').slice(0, 4000);
     expect(s).toContain('status === "ready" ? getNextPhaseScheduledAt() : 0');
+    expect(s).toContain('status === "playing" ? getNextCountdownStartAt() : 0');
     expect(s).toContain('seededLockedIds');
   });
   it('참가자 재접속/수신 경로는 phaseKind==="ready" 스케줄을 소비한다(기존 기제)', () => {
