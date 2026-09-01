@@ -5,23 +5,27 @@
 //   신원(게스트/SNS)이 생긴 뒤에야 권위 조회 → 입장 → URL 정리다.
 import { test, expect, chromium } from '@playwright/test';
 import fs from 'node:fs';
-import { startStaticServer, routeSupabase, resetDb, dbRooms, dbParticipants } from './harness.mjs';
+import { startStaticServer, routeSupabase, resetDb, dbRooms, dbParticipants, authHeaders } from './harness.mjs';
+import { anonToken } from './jwt-harness.mjs';
 
 const S = '/private/tmp/claude-501/-Users-vk/068eb9e5-39ce-42b9-adf4-8b07a5ef8b3e/scratchpad';
-const REST = `http://127.0.0.1:${fs.readFileSync(`${S}/e2e-restport`, 'utf8').trim()}`;
+// JP-E2E-JWT-FIDELITY: 보안 5종이 적용되고 JWT 를 실제로 검증하는 로컬 스택을 쓴다.
+const REST = `http://127.0.0.1:${fs.readFileSync(`${S}/sec-restport`, 'utf8').trim()}`;
+let TOKEN;
 
 let srv, browser;
 test.beforeAll(async () => {
+  TOKEN = await anonToken();   // 로컬 서명 anon 토큰 — 게스트 플레이의 프로덕션 롤을 그대로 유지한다
   srv = await startStaticServer();
   // 로컬에 playwright headless shell 이 없어 시스템 Chrome 채널을 쓴다(환경 제약, I1).
   browser = await chromium.launch({ channel: 'chrome' });
 });
 test.afterAll(async () => { await browser?.close(); srv?.server.close(); });
-test.beforeEach(async () => { await resetDb(REST); });
+test.beforeEach(() => { resetDb(); });
 
 async function newClient({ lang = 'ja' } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 420, height: 900 } });
-  await routeSupabase(ctx, REST);
+  await routeSupabase(ctx, REST, TOKEN);
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e.message)));
@@ -64,14 +68,14 @@ async function hostCreatesChallenge(c, nickname = 'ホスト') {
   await c.page.evaluate(() => window.createRoom());
   await waitScreen(c.page, 'screenHostRoom');
   const code = await c.page.evaluate(() => document.getElementById('roomCodeText')?.textContent?.trim() || null);
-  const rooms = await dbRooms(REST);
+  const rooms = await dbRooms(REST, TOKEN);
   const room = code ? rooms.find((r) => r.id === code) : rooms[rooms.length - 1];
   const inviteUrl = await c.page.evaluate(() => (typeof buildInviteUrl === 'function') ? buildInviteUrl() : null);
   return { roomCode: room?.id, inviteToken: room?.invite_token, inviteUrl };
 }
 
 const participantsOf = async (roomCode) =>
-  (await dbParticipants(REST)).filter((p) => p.room_id === roomCode);
+  (await dbParticipants(REST, TOKEN)).filter((p) => p.room_id === roomCode);
 
 // ───────────────────────────────────────────────────────────── 도전 생성 / 보안 초대
 
@@ -82,7 +86,7 @@ test.describe('[E2E] §4-1~3,24 도전 생성 + 보안 초대 + 대기 화면', 
     const info = await hostCreatesChallenge(A);
     expect(info.roomCode).toMatch(/^[A-Z0-9]{4}$/);
     expect(info.inviteToken).toMatch(/^[A-Za-z0-9_-]{22}$/);
-    const mine = (await dbRooms(REST)).filter((r) => r.id === info.roomCode);
+    const mine = (await dbRooms(REST, TOKEN)).filter((r) => r.id === info.roomCode);
     expect(mine).toHaveLength(1);
     expect(mine[0].invite_token).toBe(info.inviteToken);
     expect(info.inviteUrl).toContain(`invite=${info.inviteToken}`);
@@ -202,7 +206,7 @@ test.describe('[E2E] §10-8~11 새로고침 복구 · 멱등성', () => {
     await B.page.waitForTimeout(4000);
     const after = (await participantsOf(info.roomCode)).map((p) => p.id).sort();
     expect(after, '새로고침이 참가자를 늘리면 안 된다').toEqual(before);
-    expect((await dbRooms(REST)).filter((r) => r.id === info.roomCode)).toHaveLength(1);
+    expect((await dbRooms(REST, TOKEN)).filter((r) => r.id === info.roomCode)).toHaveLength(1);
     await A.ctx.close(); await B.ctx.close();
   });
 
@@ -278,7 +282,8 @@ test.describe('[E2E] §10-13~16 오류 경로', () => {
   test('15) host 가 떠난 도전 → 相手はもう待っていません', async () => {
     const A = await newClient(); await open(A);
     const info = await hostCreatesChallenge(A);
-    await fetch(`${REST}/participants?room_id=eq.${info.roomCode}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+    await fetch(`${REST}/participants?room_id=eq.${info.roomCode}`,
+      { method: 'DELETE', headers: { ...authHeaders(TOKEN), Prefer: 'return=minimal' } });
     await A.ctx.close();
     const r = await blocked(`invite=${info.inviteToken}`);
     expect(r.title).toContain('相手はもう待っていません');
@@ -290,7 +295,8 @@ test.describe('[E2E] §10-13~16 오류 경로', () => {
     const filler = Array.from({ length: 19 }, (_, i) => ({
       id: `zz_fill_${i}`, room_id: info.roomCode, name: `f${i}`, is_host: false }));
     await fetch(`${REST}/participants`, { method: 'POST',
-      headers: { 'content-type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(filler) });
+      headers: { ...authHeaders(TOKEN), 'content-type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify(filler) });
     await A.ctx.close();
     const r = await blocked(`invite=${info.inviteToken}`);
     expect(r.title).toBeTruthy();
@@ -315,7 +321,7 @@ test.describe('[E2E] §10-18~20 준비 → 카운트다운 → 첫 라운드', (
     await A.page.fill('#penaltyInput', 'コーヒーおごり');
     await A.page.evaluate(() => window.savePenalty());
     await expect.poll(async () =>
-      (await dbRooms(REST)).find((r) => r.id === info.roomCode)?.status, { timeout: 30000 }).toBe('ready');
+      (await dbRooms(REST, TOKEN)).find((r) => r.id === info.roomCode)?.status, { timeout: 30000 }).toBe('ready');
 
     // 18) 초대로 들어온 참가자가 준비 완료를 누른다.
     await waitScreen(B.page, 'screenReady', 40000);
@@ -328,7 +334,7 @@ test.describe('[E2E] §10-18~20 준비 → 카운트다운 → 첫 라운드', (
     await waitScreen(A.page, 'screenHostRoom', 40000).catch(() => {});
     await A.page.evaluate(() => window.startGame());
     await expect.poll(async () =>
-      (await dbRooms(REST)).find((r) => r.id === info.roomCode)?.status, { timeout: 30000 }).toBe('playing');
+      (await dbRooms(REST, TOKEN)).find((r) => r.id === info.roomCode)?.status, { timeout: 30000 }).toBe('playing');
     await waitScreen(B.page, 'screenGame', 40000);
 
     // 20) 실제 1라운드: 초대로 들어온 참가자가 진짜로 손을 낸다.
@@ -336,6 +342,18 @@ test.describe('[E2E] §10-18~20 준비 → 카운트다운 → 첫 라운드', (
     await expect.poll(async () =>
       (await participantsOf(info.roomCode)).filter((p) => !p.is_host && p.choice).length,
       { timeout: 20000 }).toBe(1);
+
+    // nextRound 까지 — 목표 GRANT/RLS 아래에서 다중 write 가 통과하는지 확인한다.
+    // (JP-BL-027-B 의 카디널리티 검증은 0행 write 를 실패로 만든다 — RLS 가 막으면 여기서 드러난다.)
+    await A.page.evaluate(() => window.selectChoice('rock')).catch(() => {});
+    await waitScreen(A.page, 'screenRoundResult', 45000);
+    await A.page.evaluate(() => window.nextRound());
+    await expect.poll(async () =>
+      (await dbRooms(REST, TOKEN)).find((r) => r.id === info.roomCode)?.round,
+      { timeout: 45000 }).toBe(2);
+    const reset = await participantsOf(info.roomCode);
+    expect(reset.every((p) => p.choice === null), 'nextRound 가 choice 를 리셋해야 한다').toBe(true);
+    expect(reset.every((p) => p.is_ready === false), 'nextRound 가 is_ready 를 리셋해야 한다').toBe(true);
 
     expect(A.errors, `A pageerror: ${A.errors[0]}`).toHaveLength(0);
     expect(B.errors, `B pageerror: ${B.errors[0]}`).toHaveLength(0);

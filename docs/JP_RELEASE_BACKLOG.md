@@ -24,7 +24,8 @@
 | JP-TOKYO-REALTIME-001 | DONE | **High** | 실제 Tokyo Realtime 두 클라이언트 검증 — A~H 전 시나리오 REALTIME 도달, 3라운드 완주, 과거 데이터 무변경 | — |
 | JP-CORE-DEFERRED-LEAVE-TIMING | OPEN | Medium | 결과 화면에서 누른 퇴장이 **한 라운드 더** 지연 실행된다(WRPS-084 설계). 1:1 대전에서 체감 큼 — **CORE, KR 공용** | 아니오 |
 | JP-RT-PRESUBSCRIBE-GAP | OPEN | Medium | 채널 구독 완료 **이전** 커밋 변경은 Realtime 이 재생하지 않는다 → 폴링이 안전망. 전송 특성(R1), 클라이언트 처리 사항 | 아니오 |
-| JP-E2E-JWT-FIDELITY | OPEN | **High** | 브라우저 E2E 하니스가 프로덕션 인증 헤더를 벗겨 로컬 PostgREST 에 넘긴다 → 실제 JWT 검증·최소권한 GRANT/RLS 강제력은 미검증. **Tokyo 보안 5종 배포 전에 해소 필수** | 아니오(보안 5종 게이트에 종속) |
+| JP-E2E-JWT-FIDELITY | DONE | **High** | 브라우저 게이트가 실제 JWT 검증 + 목표 GRANT/RLS 아래에서 돈다. 로컬 서명 토큰 치환(벗기기 폐기), 부정 경로·소유자 RLS·교차 차단 실증 | — |
+| JP-MIG-REPLICA-IDENTITY | DONE | **High** | Realtime publication 마이그레이션이 REPLICA IDENTITY 를 고정하지 않아 저장소만으로 세운 백엔드가 Tokyo(FULL)와 달라졌다 → 필터된 DELETE 이벤트 유실. 마이그레이션에서 수정(Tokyo 는 이미 FULL, no-op) | — |
 | JP-I18N-JOIN-DEFAULT | DONE | Medium | 기본 표시명을 시장 계층으로 옮김 — JP=`ゲスト`. 키 없는 시장(KR)은 기존 공용 기본값 유지(KR 무변경) | — |
 | JP-TOKYO-SECURITY-MIGRATION-GATE | OPEN | **High** | Tokyo 보안 5종(room_id 인덱스·grants·created_at 불변·target RLS·realtime publication) 배포 게이트 — NO-GO 유지 | **예** |
 | JP-BL-012 | OPEN | Low | JP 앱 식별자·딥링크 스킴 분리 검토 | 미정 |
@@ -520,6 +521,34 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-09-01 (5차) — JP-E2E-JWT-FIDELITY: 실제 JWT + 목표 보안 하의 인가 충실도
+
+**보안 5종 배포 직전 게이트.** Tokyo 에는 아무것도 배포하지 않았다.
+
+종전 브라우저 게이트는 앱이 보낸 프로덕션 anon JWT 를 로컬이 검증할 수 없어 **인증 헤더를
+통째로 벗겼다**. 그래서 JWT 검증·롤 해석·GRANT/RLS 강제력이 전혀 검증되지 않았다.
+이제 경계에서 **로컬 서명 토큰으로 치환**한다 — 롤 의미(anon)는 보존되고, 서명 검증과
+권한 강제는 전부 실제로 일어난다. 프로덕션 서명 재료는 복사하지 않는다(로컬 전용 비밀, 저장소 밖).
+
+깨끗한 로컬 환경에 **보안 5종 + invite_token 을 포함한 마이그레이션 10종**을 순차 적용해
+부트스트랩이 성공함을 확인하고, 그 위에서 게이트 전체를 돌렸다. **브라우저 E2E 39/39 통과**
+(초대 → 신원 → 합류 → 준비 → 카운트다운 → 1라운드 → nextRound 까지 목표 보안 아래에서 통과).
+
+**보안 계약에서 찾은 것 (JP-MIG-REPLICA-IDENTITY).**
+Realtime publication 마이그레이션이 publication 등록은 재현하면서 **REPLICA IDENTITY 는
+고정하지 않았다.** 라이브 Tokyo 는 FULL 인데 저장소만으로 세운 백엔드는 DEFAULT 가 된다.
+DEFAULT 면 DELETE 이벤트의 old tuple 에 기본키만 실려 앱이 쓰는 `room_id=eq.<code>` 필터가
+평가되지 않아 **참가자 삭제 이벤트가 방 채널로 전달되지 않는다.**
+CEO §11 지시대로 앱이 아니라 **마이그레이션을 고쳤다** — Tokyo 는 이미 FULL 이라 no-op 이다.
+publication 등록 자체가 대시보드 out-of-band 였던 것과 정확히 같은 부류의 누락이다.
+
+**목표 RLS 24시간 창 경계(의도된 계약, 결함 아님).** 24시간이 지난 방은 갱신·삭제가
+HTTP 200 + 0행이 된다. 앱은 이 0행을 조용히 넘기지 않는다 — JP-BL-027 계열 카디널리티
+검증이 오류로 세운다. 새 방 생성/합류는 정상이므로 사용자는 새 도전으로 진행할 수 있다.
+
+**created_at 불변성은 소유자에게도 적용된다** — 트리거가 INSERT/UPDATE 모두에서 고정하므로
+테이블 소유자 UPDATE 로도 바뀌지 않는다(시간 경과를 시뮬레이션하려면 트리거를 꺼야 했다).
 
 ### 2026-09-01 (4차) — JP-TOKYO-REALTIME-001: 실제 Tokyo Realtime 검증
 

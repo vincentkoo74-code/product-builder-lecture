@@ -41,8 +41,15 @@ npx vitest run tests/rc3-multiparticipant-sim.test.mjs
 ## 층 4 — JP 브라우저 E2E  ← **JP-ENTRY-INVITE-002 이후 공식 게이트**
 
 ```
-npm run test:e2e     # playwright test --config=playwright.config.mjs
+JP_E2E_JWT_SECRET="$(cat <로컬 비밀 파일>)" npm run test:e2e
 ```
+
+**JP-E2E-JWT-FIDELITY 이후 이 층은 실제 인가를 검증한다.** 인증 헤더를 벗기지 않는다 —
+경계에서 **로컬 서명 토큰으로 치환**하고, PostgREST 가 서명을 실제로 검증하며,
+목표 GRANT/RLS 가 강제된다. 비밀이 없으면 스위트가 **fail-closed 로 중단**한다
+(권한을 우회한 채 초록이 되는 경로를 남기지 않는다).
+
+⚠️ **프로덕션 서명 재료를 로컬에 복사하지 않는다.** 로컬 전용 비밀만 쓰고 저장소에 두지 않는다.
 
 실제 브라우저에서 **실제 앱 DOM/네비게이션**을 구동한다. 단위 테스트가 각 계층을 개별
 검증하며 전부 통과하는 동안에도 **계층 사이의 순서 결함**은 잡히지 않는다 —
@@ -56,15 +63,23 @@ JP-ENTRY-INVITE-002 가 정확히 그 사례였고, 이 층이 그것을 발견�
 새로고침 복구(소비 전/후), 멱등성(중복 참가자·중복 방 없음), 오류 4종, 그리고
 준비 → 카운트다운 → **실제 1라운드**.
 
-### 층 4 의 현재 한계 — JP-E2E-JWT-FIDELITY
+### 층 4 의 로컬 스택 (보안 5종 적용 상태)
 
-하니스는 프로덕션 anon JWT 서명을 로컬에서 검증할 수 없어 인증 헤더를 벗겨 `db-anon-role`
-로 처리한다. 따라서 이 층은 **앱 통합·DOM/네비게이션·초대 흐름·게임 경로**를 검증하지만
-**실제 JWT 검증과 최소권한 GRANT/RLS 강제력은 검증하지 않는다.**
+이 층은 **Tokyo 배포 예정인 보안 5종이 이미 적용된** 로컬 PostgreSQL/PostgREST 를 대상으로 한다.
+즉 게이트는 "지금의 Tokyo"가 아니라 **"보안 적용 후의 Tokyo"** 를 기준으로 앱을 검증한다.
 
-현재 Tokyo RLS 가 allow-all 이라 anon 권한이 게스트 플레이와 동등해 게임 검증에는 영향이
-없다. 그러나 **Tokyo 보안 5종이 배포되면 이 등가성이 깨진다** — 배포 전에
-`JP-E2E-JWT-FIDELITY` 를 해소하거나 별도 검증 경로를 확보해야 한다.
+구성:
+- PostgreSQL 17 (:55601), 데이터베이스 `jp_sec`
+- 플랫폼 재현 bootstrap(롤 anon/authenticated/service_role/authenticator, `auth` 스키마와
+  `auth.uid()/role()/jwt()` shim) → 저장소 마이그레이션 10종 순차 적용
+- PostgREST 16 (:55702), `jwt-secret` = 로컬 전용 비밀, `db-anon-role = anon`
+
+토큰 2종만 쓴다:
+- **anon** — JP 게스트 플레이의 프로덕션 롤을 그대로 유지한다(테스트 편의로 authenticated 로 바꾸지 않는다)
+- **authenticated** (`sub` = 소유자 uuid) — 통계/이력 소유자 범위 경로용
+
+DB 초기화는 관리자 경로(psql)로 한다 — 목표 GRANT 에서 `rooms` DELETE 는 클라이언트 롤에 없고,
+그걸 우회하려고 권한을 열지 않는다.
 
 ## 층 4-보조 — Tokyo Realtime 검증 (게이트 아님, 명시 승인 실행)
 

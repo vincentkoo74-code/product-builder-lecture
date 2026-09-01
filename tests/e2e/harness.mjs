@@ -8,6 +8,10 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
+
+// 로컬 테스트 DB 관리자 경로(환경 구성 전용).
+export const ADMIN_URI = process.env.JP_E2E_ADMIN_URI || 'postgres://postgres@127.0.0.1:55601/jp_sec';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const SUPABASE_HOST = 'https://cmfxhehpreanijwanwrr.supabase.co';
@@ -35,19 +39,25 @@ export function startStaticServer(port = 0) {
 }
 
 // Supabase 호출을 로컬 PostgREST 로 돌린다. auth/realtime 은 스텁으로 막는다
-// (이 슬라이스는 Realtime 전송이 아니라 브라우저 통합을 검증한다 — 앱은 2.6초 폴링으로 진행한다).
-export async function routeSupabase(context, restBase) {
+// (이 게이트는 Realtime 전송이 아니라 브라우저 통합을 검증한다 — 앱은 2.6초 폴링으로 진행한다.
+//  실제 Tokyo Realtime 전송은 tokyo-realtime.spec.mjs 가 따로 검증한다).
+//
+// **JP-E2E-JWT-FIDELITY 이후**: 인증 헤더를 벗기지 않는다.
+// 앱이 보내는 프로덕션 anon JWT 는 로컬 키로 검증할 수 없으므로(그리고 프로덕션 서명 재료를
+// 로컬에 복사하는 것은 금지다), 경계에서 **로컬 서명 토큰으로 치환**한다.
+// 롤 의미(anon)는 그대로 보존되고, 서명 검증·롤 해석·GRANT/RLS 강제는 전부 실제로 일어난다.
+export async function routeSupabase(context, restBase, localToken) {
+  if (!localToken) throw new Error('routeSupabase: 로컬 서명 토큰이 필요하다 — 인증을 우회하지 않는다.');
   await context.route(`${SUPABASE_HOST}/rest/v1/**`, async (route) => {
     const req = route.request();
     const u = new URL(req.url());
     const target = restBase + u.pathname.replace(/^\/rest\/v1/, '') + u.search;
     const headers = { ...req.headers() };
     delete headers.host; delete headers.origin; delete headers.referer;
-      // 앱은 **프로덕션 anon JWT** 를 보낸다. 로컬 PostgREST 는 그 서명을 검증할 수 없어
-      // "No suitable key or wrong key type" 로 거부한다. 인증 헤더를 벗겨 db-anon-role(anon)
-      // 로 처리하게 한다 — 이 슬라이스는 인증이 아니라 브라우저 통합을 검증하고,
-      // 프로덕션 RLS 가 현재 allow-all 이라 anon 권한이 게스트 플레이와 동등하다.
-      for (const k of ['authorization','Authorization','apikey','apiKey']) delete headers[k];
+    // 벗기지 않고 **치환**한다. 프로덕션 토큰은 로컬로 넘어가지 않는다.
+    for (const k of ['authorization', 'Authorization', 'apikey', 'apiKey']) delete headers[k];
+    headers.authorization = `Bearer ${localToken}`;
+    headers.apikey = localToken;
     try {
       const r = await fetch(target, { method: req.method(), headers, body: req.postData() || undefined });
       const body = await r.text();
@@ -67,14 +77,21 @@ export async function routeSupabase(context, restBase) {
   // auth: 게스트 플레이만 검증하므로 세션 없음으로 응답한다.
   await context.route(`${SUPABASE_HOST}/auth/v1/**`, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
-  // realtime: 이 슬라이스에서는 연결하지 않는다(폴링 경로로 진행).
+  // realtime: 이 게이트에서는 연결하지 않는다(폴링 경로로 진행).
   await context.route(`${SUPABASE_HOST}/realtime/v1/**`, (route) => route.abort());
 }
 
-export async function resetDb(restBase) {
-  for (const t of ['participants', 'rooms']) {
-    await fetch(`${restBase}/${t}?id=neq.__none__`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
-  }
+// 테스트 DB 초기화는 **환경 구성**이다 — 앱 권한 경로가 아니라 관리자 경로로 한다.
+// (목표 GRANT 에서 rooms DELETE 는 클라이언트 롤에 없다. 그걸 우회하려고 권한을 열지 않는다.)
+export function resetDb() {
+  execFileSync('psql', [ADMIN_URI, '-q', '-v', 'ON_ERROR_STOP=1', '-c',
+    'truncate table public.participants, public.rooms cascade;'],
+    { env: { ...process.env, PATH: `/opt/homebrew/opt/postgresql@17/bin:${process.env.PATH}` } });
 }
-export const dbRooms = (restBase) => fetch(`${restBase}/rooms?select=*`).then((r) => r.json());
-export const dbParticipants = (restBase) => fetch(`${restBase}/participants?select=*`).then((r) => r.json());
+
+export const dbRooms = (restBase, token) =>
+  fetch(`${restBase}/rooms?select=*`, { headers: authHeaders(token) }).then((r) => r.json());
+export const dbParticipants = (restBase, token) =>
+  fetch(`${restBase}/participants?select=*`, { headers: authHeaders(token) }).then((r) => r.json());
+export const authHeaders = (token) =>
+  token ? { apikey: token, authorization: `Bearer ${token}` } : {};
