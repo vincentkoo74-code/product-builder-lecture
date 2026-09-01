@@ -130,6 +130,7 @@ QA `…_SKIPPED_STALE`). 오프라인은 종전 로컬 동작 유지.
 - **D3(조기 '술래 확정' 카피)**: IMG_0117 실물 = `titleLoserConfirmedCount("술래 확정! (n/m명)")` 오노출.
   3-상태 의미론 — STATE A: **비단판 매치의 판 패배는 룰 자체로 분기**해 확정 카피 원천 불가(이번 판 패배 +
   누적 n/th + 자동 진행 안내), 확정 카피는 단판 전용. STATE B: 실제 잠금 전이당 정확히 1회
-  (`shouldShowTaggerConfirmOnce(matchNo,id)` 세션 원장; 에코/재렌더는 `titleTaggerWaiting` 대기 카피 —
-  재접속 후 최초 1회 재표시는 허용, 문서화). STATE C: MATCH_FINAL 에서만 최종 팝업/벌칙/한번더(기존 유지).
+    재접속/재시작은 GATE2 관측기(`observeMatchLockedTransitions` — envelope 채택 3지점에서 기존 잠금을 기저선 시드)로 재확정을 재생성하지 않음). STATE C: MATCH_FINAL 에서만 최종 팝업/벌칙/한번더(기존 유지).
 - 구계약 핀 갱신(문서화): build27(정족수 시 미노출→노출), build30-ready-force-start(토글 가드형·신정의).
+
+- **GATE2(2026-09-02)**: 확정 전이는 세션 내 관측(NOT_CONFIRMED→CONFIRMED)에서만 — 재접속/앱재시작/에코/폴링/재렌더는 확정 이벤트를 재생성할 수 없다(기저선 시드 + 1회성 원장, 결정적 회귀 4종).

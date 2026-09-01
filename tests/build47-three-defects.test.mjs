@@ -110,3 +110,46 @@ describe('D3 — 확정 문구는 실제 확정 전이에서만', () => {
     expect(fn(2, 'me')).toBe(true);   // 새 매치는 다시 1회
   });
 });
+
+// ═══ GATE 2 (2026-09-02) — 재접속/재시작은 확정 전이를 재생성하지 않는다 ═══
+describe('GATE2 — 확정은 세션 내 관측 전이에서만(재접속 재확정 금지)', () => {
+  function loadObserver() {
+    const s0 = html.indexOf('function observeMatchLockedTransitions');
+    expect(s0).toBeGreaterThan(-1);
+    const s1 = html.indexOf('function shouldShowTaggerConfirmOnce');
+    const e1 = html.indexOf('\n    function ', s1 + 10);
+    const src = html.slice(s0, html.indexOf('\n    function ', s0 + 10)) + '\n' + html.slice(s1, e1);
+    return (envRef, state) => new Function('state', 'getMatchEnvelope', 'QA',
+      src + '\nreturn { observeMatchLockedTransitions, shouldShowTaggerConfirmOnce };')(
+      state, () => envRef.v, { emit() {} });
+  }
+  it('재접속: 이미 잠긴 상태로 세션 시작 → 기저선 시드 → 확정 1회성은 false(상태 UI 전용)', () => {
+    const env = { v: { stale: false, matchNo: 1, lockedIds: ['me'] } };
+    const state = {};
+    const m = loadObserver()(env, state);
+    m.observeMatchLockedTransitions('join'); // 재접속 첫 envelope
+    expect(m.shouldShowTaggerConfirmOnce(1, 'me')).toBe(false);
+  });
+  it('세션 내 진짜 전이: 기저선(미잠금)→잠금 → 정확히 1회 발화, 에코 재관측은 무해', () => {
+    const env = { v: { stale: false, matchNo: 1, lockedIds: [] } };
+    const state = {};
+    const m = loadObserver()(env, state);
+    m.observeMatchLockedTransitions('join');           // 매치 시작 관측(잠금 없음)
+    env.v = { stale: false, matchNo: 1, lockedIds: ['me'] };
+    m.observeMatchLockedTransitions('room_update');    // 같은 matchNo — 시드 안 함
+    expect(m.shouldShowTaggerConfirmOnce(1, 'me')).toBe(true);   // 전이 1회
+    m.observeMatchLockedTransitions('room_update');    // 에코
+    expect(m.shouldShowTaggerConfirmOnce(1, 'me')).toBe(false);  // 재발화 금지
+  });
+  it('새 매치(matchNo 증가)는 기저선을 갱신 — 이월 잠금은 시드, 새 전이는 다시 1회', () => {
+    const env = { v: { stale: false, matchNo: 2, lockedIds: ['other'] } };
+    const state = { lockedBaselineMatchNo: 1, taggerConfirmShownKeys: { '1:me': true } };
+    const m = loadObserver()(env, state);
+    m.observeMatchLockedTransitions('room_update');
+    expect(m.shouldShowTaggerConfirmOnce(2, 'other')).toBe(false); // 세션이 전이를 못 봄 → 시드됨
+    expect(m.shouldShowTaggerConfirmOnce(2, 'me')).toBe(true);     // 새 매치의 새 전이는 1회
+  });
+  it('[소스] envelope 채택 3지점(room_update/join/rejoin)에서 관측기를 호출한다', () => {
+    expect(html.split('observeMatchLockedTransitions(').length - 1).toBeGreaterThanOrEqual(4); // 정의+3콜
+  });
+});

@@ -7130,6 +7130,7 @@
       state.staleRoomUpdateSkipStreak = 0;
 
       state.penalty = room.penalty;
+      if (typeof observeMatchLockedTransitions === "function") observeMatchLockedTransitions('room_update');
       state.targetLoserCount = (typeof getConfiguredTaggerCount === "function") ? getConfiguredTaggerCount() : getTargetLoserCount();
       state.gameRound = getGameRound();
       state.countdownStartAt = getCountdownStartAt(room.penalty);
@@ -8949,6 +8950,7 @@
             return;
           }
           state.penalty = room.penalty || "";
+          if (typeof observeMatchLockedTransitions === "function") observeMatchLockedTransitions('join');
           state.gameRound = getPenaltyGameRound(room.penalty) || 1;
           state.lastStartedGameRound = ["playing", "result", "game_over", "stats"].includes(room.status)
             ? state.gameRound
@@ -11965,6 +11967,26 @@ function summarizeGameStats(rows) {
       } catch (e) { return false; }
     }
 
+    // Build47-R2 GATE2: 확정 카피/이벤트는 "세션 내에서 관측된 NOT_CONFIRMED→CONFIRMED 전이"에서만
+    // 발화한다. 재접속/앱 재시작/최초 입장의 첫 envelope 에서 이미 잠겨 있던 id 는 기저선(기존 상태)으로
+    // 시드해 상태 UI(대기/확정됨)만 그리게 하고, 같은 matchNo 안에서 새로 등장한 잠금만 미시드로 남겨
+    // 1회 발화시킨다. 에코/폴링/재렌더는 diff 없음 = 무해. 새 매치(matchNo 변경)는 기저선을 재수립한다.
+    function observeMatchLockedTransitions(reason) {
+      try {
+        if (typeof getMatchEnvelope !== "function") return;
+        const m = getMatchEnvelope();
+        if (m.stale) return;
+        const mNo = m.matchNo || 1;
+        if (!state.taggerConfirmShownKeys) state.taggerConfirmShownKeys = {};
+        if (state.lockedBaselineMatchNo !== mNo) {
+          state.lockedBaselineMatchNo = mNo;
+          const pre = (m.lockedIds || []).slice();
+          for (const id of pre) state.taggerConfirmShownKeys[String(mNo) + ':' + String(id)] = true;
+          if (pre.length) { try { QA.emit('metric', { wrps: 'WRPS-B47', eventType: 'TAGGER_CONFIRM_BASELINE_SEEDED', matchNo: mNo, seeded: pre, reason: reason || '', localNow: Date.now() }); } catch (_) {} }
+        }
+      } catch (e) {}
+    }
+
     // Build47 D3(STATE B): (matchNo, playerId) 전이당 확정 카피 정확히 1회 — 에코/재렌더/replay 의
     // 반복 확정을 차단한다(세션 한정 원장; 재접속 후 최초 1회 재표시는 허용 — 문서화).
     function shouldShowTaggerConfirmOnce(matchNo, playerId) {
@@ -13020,6 +13042,7 @@ function summarizeGameStats(rows) {
             const { data: room } = await db.from('rooms').select('penalty,status').eq('id', state.roomCode).single();
             if (room?.penalty) {
               state.penalty = room.penalty;
+              if (typeof observeMatchLockedTransitions === "function") observeMatchLockedTransitions('rejoin');
               state.status = room.status || state.status;
             }
           } catch (e) {
