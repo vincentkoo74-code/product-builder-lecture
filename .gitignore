@@ -35,3 +35,6 @@ supabase/.temp/
 # Playwright E2E 산출물
 /test-results/
 /playwright-report/
+
+# 로컬 E2E 런타임(로컬 전용 비밀 포함) — 절대 커밋하지 않는다
+/.jp-e2e/

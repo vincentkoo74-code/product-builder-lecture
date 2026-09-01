@@ -41,8 +41,18 @@ npx vitest run tests/rc3-multiparticipant-sim.test.mjs
 ## 층 4 — JP 브라우저 E2E  ← **JP-ENTRY-INVITE-002 이후 공식 게이트**
 
 ```
-JP_E2E_JWT_SECRET="$(cat <로컬 비밀 파일>)" npm run test:e2e
+npm run jp:e2e:bootstrap     # 로컬 스택 구성(보안 5종 적용 + JWT 검증)
+npm run test:e2e             # 게이트 실행
+npm run jp:e2e:teardown      # 정리(로컬 전용 비밀 삭제). 전부 지우려면 -- --purge
 ```
+
+부트스트랩은 깨끗한 PostgreSQL 클러스터를 만들고, 플랫폼(롤/`auth` shim/publication)을
+재현한 뒤, 저장소 마이그레이션 전량을 적용하고, JWT 를 실제로 검증하는 PostgREST 를 띄운다.
+**서명 비밀과 DB 비밀번호는 실행 시점에 난수로 생성**되어 `.jp-e2e/`(gitignore)에만 존재하고,
+teardown 이 지운다. 프로덕션·Tokyo·Seoul 자격증명을 일절 쓰지 않는다.
+
+스택이 없으면 스위트는 **무엇을 해야 하는지 말하면서 fail-closed 로 멈춘다** —
+권한이 우회된 채 초록이 되는 경로를 만들지 않는다.
 
 **JP-E2E-JWT-FIDELITY 이후 이 층은 실제 인가를 검증한다.** 인증 헤더를 벗기지 않는다 —
 경계에서 **로컬 서명 토큰으로 치환**하고, PostgREST 가 서명을 실제로 검증하며,

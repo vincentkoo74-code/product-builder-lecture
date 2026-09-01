@@ -4,13 +4,13 @@
 //   파싱 ≠ 소비. 초대는 신원이 생길 때까지 보류되고 URL 에도 남는다.
 //   신원(게스트/SNS)이 생긴 뒤에야 권위 조회 → 입장 → URL 정리다.
 import { test, expect, chromium } from '@playwright/test';
-import fs from 'node:fs';
+import { REST_URL } from './local-env.mjs';
 import { startStaticServer, routeSupabase, resetDb, dbRooms, dbParticipants, authHeaders } from './harness.mjs';
 import { anonToken } from './jwt-harness.mjs';
 
-const S = '/private/tmp/claude-501/-Users-vk/068eb9e5-39ce-42b9-adf4-8b07a5ef8b3e/scratchpad';
 // JP-E2E-JWT-FIDELITY: 보안 5종이 적용되고 JWT 를 실제로 검증하는 로컬 스택을 쓴다.
-const REST = `http://127.0.0.1:${fs.readFileSync(`${S}/sec-restport`, 'utf8').trim()}`;
+// 스택 구성은 `npm run jp:e2e:bootstrap` 이 만든다.
+const REST = REST_URL();
 let TOKEN;
 
 let srv, browser;

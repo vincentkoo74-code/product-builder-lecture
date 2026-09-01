@@ -18,7 +18,9 @@
     "test:release-gate": "node scripts/run-release-gate.mjs",
     "gate:release": "node scripts/run-release-gate.mjs",
     "guard:region": "node scripts/region-guard.mjs",
-    "test:e2e": "playwright test --config=playwright.config.mjs"
+    "test:e2e": "playwright test --config=playwright.config.mjs",
+    "jp:e2e:bootstrap": "node scripts/jp-e2e-bootstrap.mjs",
+    "jp:e2e:teardown": "node scripts/jp-e2e-teardown.mjs"
   },
   "repository": {
     "type": "git",

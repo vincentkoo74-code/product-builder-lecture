@@ -9,16 +9,13 @@
 //   - 비밀은 저장소에 두지 않는다 — 환경변수로 받고, 없으면 fail-closed 로 중단한다.
 //   - 권한을 우회하지 않는다. 토큰은 롤을 **주장**할 뿐이고, 강제는 PostgREST + DB 가 한다.
 import { SignJWT } from 'jose';
+import { localEnv } from './local-env.mjs';
 
 const ISSUER = 'jp-e2e-local';
 
 function secretKey() {
-  const s = process.env.JP_E2E_JWT_SECRET;
-  if (!s || s.length < 32) {
-    throw new Error(
-      'JP_E2E_JWT_SECRET 이 없다(또는 32자 미만). 로컬 전용 서명 비밀을 환경변수로 넘겨라. ' +
-      '프로덕션 비밀을 쓰지 말 것.');
-  }
+  const s = localEnv().jwtSecret;   // .jp-e2e/env.json 또는 환경변수. 없으면 여기서 fail-closed.
+  if (!s || s.length < 32) throw new Error('로컬 서명 비밀이 유효하지 않다 — npm run jp:e2e:bootstrap');
   return new TextEncoder().encode(s);
 }
 

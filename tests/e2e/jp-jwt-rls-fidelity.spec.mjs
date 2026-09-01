@@ -10,8 +10,9 @@ import { execFileSync } from 'node:child_process';
 import { anonToken, authedToken, expiredToken, wrongSignatureToken,
          noRoleClaimToken, forgedRoleToken, bearer, claimShape } from './jwt-harness.mjs';
 
-const S = '/private/tmp/claude-501/-Users-vk/068eb9e5-39ce-42b9-adf4-8b07a5ef8b3e/scratchpad';
-const REST = `http://127.0.0.1:${fs.readFileSync(`${S}/sec-restport`, 'utf8').trim()}`;
+import { REST_URL, ADMIN_URI, PG_ENV } from './local-env.mjs';
+const REST = REST_URL();
+const RUN_DIR = new URL('../../.jp-e2e/', import.meta.url).pathname;
 
 let ANON, USER_A, USER_B, uidA, uidB;
 const report = { claimShapes: {}, matrix: {}, negative: {} };
@@ -27,12 +28,12 @@ test.beforeAll(async () => {
   };
   // auth.users 는 **플랫폼 테이블**이다(가입이 만드는 행). 테스트 소유자 2명을 심는 것은
   // 환경 구성이지 RLS 우회가 아니다 — 권한 검증은 전부 PostgREST + 토큰 경로로만 한다.
-  execFileSync('psql', [`postgres://postgres@127.0.0.1:55601/jp_sec`, '-q', '-v', 'ON_ERROR_STOP=1', '-c',
+  execFileSync('psql', [ADMIN_URI(), '-q', '-v', 'ON_ERROR_STOP=1', '-c',
     `insert into auth.users (id, email) values
        ('${uidA}','zz_${uidA.slice(0, 8)}@local.test'),
        ('${uidB}','zz_${uidB.slice(0, 8)}@local.test')
      on conflict (id) do nothing;`],
-    { env: { ...process.env, PATH: `/opt/homebrew/opt/postgresql@17/bin:${process.env.PATH}` } });
+    { env: PG_ENV() });
 });
 
 const req = (path, { token, method = 'GET', body = null, prefer = null } = {}) => {
@@ -223,9 +224,9 @@ test.describe('[JWT] §11 created_at 불변 · §12 invite token', () => {
     const room = mkRoom();
     await req('rooms', { token: ANON, method: 'POST', body: room });
     const before = (await (await req(`rooms?id=eq.${room.id}&select=created_at`, { token: ANON })).json())[0].created_at;
-    execFileSync('psql', [`postgres://postgres@127.0.0.1:55601/jp_sec`, '-q', '-c',
+    execFileSync('psql', [ADMIN_URI(), '-q', '-c',
       `update public.rooms set created_at = now() - interval '99 hours' where id = '${room.id}';`],
-      { env: { ...process.env, PATH: `/opt/homebrew/opt/postgresql@17/bin:${process.env.PATH}` } });
+      { env: PG_ENV() });
     const after = (await (await req(`rooms?id=eq.${room.id}&select=created_at`, { token: ANON })).json())[0].created_at;
     report.matrix.created_at_owner_update = { before, after, unchanged: before === after };
     expect(after, '소유자 권한으로도 created_at 이 바뀌면 안 된다').toBe(before);
@@ -267,14 +268,14 @@ test.describe('[JWT] §16 목표 RLS 24시간 창 경계', () => {
   // 로컬에서 트리거를 잠시 끄는 것 말고는 과거 시각을 만들 방법이 없다.
   // 이것은 "시간이 흘렀다"를 재현하는 환경 조작이지 권한 우회가 아니다 — 로컬 전용.
   const ageRoom = (id, interval) => execFileSync('psql',
-    [`postgres://postgres@127.0.0.1:55601/jp_sec`, '-q', '-v', 'ON_ERROR_STOP=1', '-c',
+    [ADMIN_URI(), '-q', '-v', 'ON_ERROR_STOP=1', '-c',
      `alter table public.rooms disable trigger jp_rooms_pin_created_at;
       alter table public.participants disable trigger jp_participants_pin_created_at;
       update public.rooms set created_at = now() - interval '${interval}' where id = '${id}';
       update public.participants set created_at = now() - interval '${interval}' where room_id = '${id}';
       alter table public.rooms enable trigger jp_rooms_pin_created_at;
       alter table public.participants enable trigger jp_participants_pin_created_at;`],
-    { env: { ...process.env, PATH: `/opt/homebrew/opt/postgresql@17/bin:${process.env.PATH}` } });
+    { env: PG_ENV() });
 
   test('창 안(23시간)의 방은 정상적으로 갱신·삭제된다', async () => {
     const room = mkRoom();
@@ -319,8 +320,8 @@ test.describe('[JWT] §16 목표 RLS 24시간 창 경계', () => {
 // ───────────────────────────────────────────── §17 Realtime 스키마 호환성
 test.describe('[JWT] §17 목표 보안 적용 후 Realtime 호환성', () => {
   const q = (sql) => execFileSync('psql',
-    [`postgres://postgres@127.0.0.1:55601/jp_sec`, '-At', '-c', sql],
-    { env: { ...process.env, PATH: `/opt/homebrew/opt/postgresql@17/bin:${process.env.PATH}` } })
+    [ADMIN_URI(), '-At', '-c', sql],
+    { env: PG_ENV() })
     .toString().trim();
 
   test('publication 에 rooms/participants 가 insert·update·delete 로 등록돼 있다', () => {
@@ -388,5 +389,6 @@ test.describe('[JWT] §9 브라우저 게이트가 진짜로 JWT 에 걸려 있�
 });
 
 test.afterAll(async () => {
-  fs.writeFileSync(`${S}/jwt-fidelity-report.json`, JSON.stringify(report, null, 2));
+  fs.mkdirSync(RUN_DIR, { recursive: true });
+  fs.writeFileSync(`${RUN_DIR}jwt-fidelity-report.json`, JSON.stringify(report, null, 2));
 });

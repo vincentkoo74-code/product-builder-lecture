@@ -8,7 +8,8 @@ import fs from 'node:fs';
 import { startStaticServer } from './harness.mjs';
 import { assertTokyo, TOKYO_REF, instrument, classifyDelivery, changesBetween, restGet, restDel, subscribedAt, waitSubscribed } from './tokyo-realtime-harness.mjs';
 
-const S = '/private/tmp/claude-501/-Users-vk/068eb9e5-39ce-42b9-adf4-8b07a5ef8b3e/scratchpad';
+// 측정 결과 출력 위치(저장소 로컬, gitignore 대상). 개인 경로에 의존하지 않는다.
+const S = new URL('../../.jp-e2e', import.meta.url).pathname;
 const TEST_ID = 'JPRT001';
 const MARK = `ZZ_${TEST_ID}`;
 
@@ -26,6 +27,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
+  fs.mkdirSync(S, { recursive: true });
   // 만든 행만 지운다. 실패로 중단돼도 반드시 실행된다.
   for (const rid of created.rooms) {
     const gone = await restDel(`participants?room_id=eq.${rid}`);

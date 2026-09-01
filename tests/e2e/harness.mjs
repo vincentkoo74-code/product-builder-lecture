@@ -9,9 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-
-// 로컬 테스트 DB 관리자 경로(환경 구성 전용).
-export const ADMIN_URI = process.env.JP_E2E_ADMIN_URI || 'postgres://postgres@127.0.0.1:55601/jp_sec';
+import { ADMIN_URI, PG_ENV } from './local-env.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const SUPABASE_HOST = 'https://cmfxhehpreanijwanwrr.supabase.co';
@@ -84,9 +82,8 @@ export async function routeSupabase(context, restBase, localToken) {
 // 테스트 DB 초기화는 **환경 구성**이다 — 앱 권한 경로가 아니라 관리자 경로로 한다.
 // (목표 GRANT 에서 rooms DELETE 는 클라이언트 롤에 없다. 그걸 우회하려고 권한을 열지 않는다.)
 export function resetDb() {
-  execFileSync('psql', [ADMIN_URI, '-q', '-v', 'ON_ERROR_STOP=1', '-c',
-    'truncate table public.participants, public.rooms cascade;'],
-    { env: { ...process.env, PATH: `/opt/homebrew/opt/postgresql@17/bin:${process.env.PATH}` } });
+  execFileSync('psql', [ADMIN_URI(), '-q', '-v', 'ON_ERROR_STOP=1', '-c',
+    'truncate table public.participants, public.rooms cascade;'], { env: PG_ENV() });
 }
 
 export const dbRooms = (restBase, token) =>
