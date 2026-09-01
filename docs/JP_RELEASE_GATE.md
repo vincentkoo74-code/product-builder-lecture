@@ -66,6 +66,26 @@ JP-ENTRY-INVITE-002 가 정확히 그 사례였고, 이 층이 그것을 발견�
 없다. 그러나 **Tokyo 보안 5종이 배포되면 이 등가성이 깨진다** — 배포 전에
 `JP-E2E-JWT-FIDELITY` 를 해소하거나 별도 검증 경로를 확보해야 한다.
 
+## 층 4-보조 — Tokyo Realtime 검증 (게이트 아님, 명시 승인 실행)
+
+```
+JP_TOKYO_REALTIME=1 npx playwright test --config=playwright.tokyo.config.mjs
+```
+
+⚠️ **실제 Tokyo 프로덕션에 일회용 행을 만든다.** 그래서 기본 게이트가 아니다 —
+env 가드와 설정(`testIgnore`) 이중으로 분리해 둔다.
+
+실행 규칙:
+- 일회용 마커만 만든다(참가자명 `zz_jprt_*`, 벌칙 `ZZ_<test-id>`), 만든 행만 지운다
+- 실행 전후로 psql 스냅샷(행 수·md5·정책 수·마이그레이션 원장·publication)을 대조한다
+- 과거 행, `user_game_stats`, `user_game_history`, `auth.users` 는 읽지도 쓰지도 않는다
+
+측정 규율: **채널이 PostgreSQL 구독을 마친 뒤에 써야** 전송 성능을 측정한다.
+구독 완료 이전 커밋은 Realtime 이 재생하지 않으므로(전송 특성), 그 구간을 섞으면
+전송이 아니라 경합을 측정하게 된다.
+
+보안 5종 배포 후에는 이 검증을 **동등하게 다시** 수행해야 한다(현재는 PRE-SECURITY 기준선).
+
 ## 보고 형식
 
 각 층의 **정확한 수치**(파일 수 / 통과 / 실패 / 스킵 / 소요 시간)를 그대로 기재한다.
