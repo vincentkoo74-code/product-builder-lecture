@@ -11897,8 +11897,11 @@ function summarizeGameStats(rows) {
     }
 
     // Build46: 미완료 판 gameOver → 호스트가 자동으로 다음 판을 예약한다(판 사이 호스트 재시작·
-    // 대기실 왕복 금지). 전환은 기존 phaseScheduledAt/phaseKind="ready" 동기 기제(beginNewGameRound
-    // status:"ready")를 그대로 재사용 — 제2의 클라이언트 로컬 전환 권위를 만들지 않는다.
+    // 대기실 왕복 금지). NO-TOUCH 게이트(승인 계약): 전환은 startGame 과 동일 계열인
+    // status:"playing" + countdownStartAt(서버시각 동기) 직행 — READY 준비 정족수
+    // (areAllActivePlayersReady, 참가자 '준비' 탭)를 경로에서 완전히 배제한다. 참가자는
+    // handleRoomUpdate 'playing' 수신 → runCountdownThenShowGame 으로 자동 진입하고, locked 는
+    // __loser__ 마커로 비참가(관전) 처리된다. 제2의 클라이언트 로컬 전환 권위를 만들지 않는다.
     // echo/중복 렌더 재진입은 타이머 덮어쓰기 + 콜백 재검증(gameRound/상태/미완료)으로 멱등.
     function scheduleMatchAutoNextGame(delayMs = 3000) {
       if (state.role !== "host" || !getOnlineMode()) return;
@@ -11907,13 +11910,15 @@ function summarizeGameStats(rows) {
       const forGame = getGameRound();
       try { QA.emit('metric', Object.assign({ wrps: 'WRPS-B46', eventType: 'MATCH_AUTO_NEXT_SCHEDULED',
         gameNo: forGame, delayMs, localNow: Date.now() }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
-      state.matchNextGameTimer = setTimeout(() => {
+      state.matchNextGameTimer = setTimeout(async () => {
         state.matchNextGameTimer = null;
         if (state.role !== "host") return;
         if (!["result", "game_over"].includes(state.status)) return;
         if (getGameRound() !== forGame) return;
         if (!matchNeedsNextGame()) return;
-        beginNewGameRound({ status: "ready", increment: true, reason: "match_next_game" });
+        await beginNewGameRound({ status: "playing", increment: true, reason: "match_next_game" });
+        // NO-TOUCH: startGame 과 동일하게 host 도 즉시 로컬 카운트다운에 진입한다(버튼/탭 불요).
+        await enterPlayingStateFromRoomUpdate();
       }, delayMs);
     }
 
