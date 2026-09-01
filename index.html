@@ -2059,7 +2059,7 @@
     }
 	    .game-progress-stats{
 	      display:grid;
-	      grid-template-columns:repeat(4,minmax(0,1fr));
+	      grid-template-columns:repeat(2,minmax(0,1fr));
 	      gap:8px;
 	      text-align:center;
 	    }
@@ -7584,9 +7584,9 @@
 	    function getMatchCumulativeStats(player) {
 	      const p = parsePenalty(state.penalty);
 	      const base = (player && p.matchStats && p.matchStats[player.id]) || { w: 0, d: 0, l: 0 };
-	      const live = (p.matchStatsGameNo === getGameRound()) ? { safeCount: 0, drawCount: 0, loserCount: 0 } : getPlayerRoundStats(player);
+	      // 판-최종 집계(2026-09-01): 판 완료 시에만 갱신 — 진행 중 손내기 live 카운터는 합산하지 않는다.
 	      const n = v => { const x = Number(v || 0); return Number.isFinite(x) && x > 0 ? x : 0; };
-	      return { safeCount: n(base.w) + live.safeCount, drawCount: n(base.d) + live.drawCount, loserCount: n(base.l) + live.loserCount };
+	      return { safeCount: n(base.w), drawCount: 0, loserCount: n(base.l) };
 	    }
 	    // 호스트 전용: FINAL(그 판의 술래 확정) 발행에만 매치 원장을 갱신한다. matchTalliedGameNo(판 원장)로
 	    // 멱등 — publishHostRoundResult 재시도·중복 발행이 와도 같은 판을 두 번 세지 않는다. 판정 로직 무변경.
@@ -7601,10 +7601,15 @@
 	        const lockedPrev = m.lockedIds || [];
 	        const newlyConfirmed = (continuation.confirmedLoserIds || []).filter(id => id && !lockedPrev.includes(id));
 	        const matchTally = applyMatchGameResult(m.tally, newlyConfirmed);
+	        // Vincent 판정 렌더 지시(2026-09-01): 손내기 카운터가 아니라 "판의 최종 결과"만 누적한다.
+	        // 이 판의 확정 패자(newlyConfirmed)=패+1, 그 외 active(=lockedPrev 제외)=승+1. 예: 3인·술래1 → 패1·승2.
+	        // locked 참가자는 동결(시드 마커는 어느 쪽도 늘리지 않음). d 는 envelope wire 형태 호환용 0 고정.
 	        const matchStats = {};
 	        for (const p of (state.participants || [])) {
 	          const base = (m.stats && m.stats[p.id]) || { w: 0, d: 0, l: 0 };
-	          matchStats[p.id] = { w: Number(base.w || 0) + Number(p.wins || 0), d: Number(base.d || 0) + Number(p.draws || 0), l: Number(base.l || 0) + Number(p.losses || 0) };
+	          if (lockedPrev.includes(p.id)) { matchStats[p.id] = { w: Number(base.w || 0), d: 0, l: Number(base.l || 0) }; continue; }
+	          const lost = newlyConfirmed.includes(p.id);
+	          matchStats[p.id] = { w: Number(base.w || 0) + (lost ? 0 : 1), d: 0, l: Number(base.l || 0) + (lost ? 1 : 0) };
 	        }
 	        const d = computeMatchDecision({ rule: m.rule, tally: matchTally, lockedIds: lockedPrev, qualifiedIds: m.qualifiedIds,
 	          targetTaggerCount: getConfiguredTaggerCount(), participantsCount: (state.participants || []).length });
@@ -12376,9 +12381,7 @@ function summarizeGameStats(rows) {
         </div>
 	        <div class="game-progress-stats">
 	          <div class="game-progress-stat safe"><strong>${info.safeCount}</strong><span>${t("progress.safe")}</span></div>
-	          <div class="game-progress-stat draw"><strong>${info.drawCount}</strong><span>${t("progress.draw")}</span></div>
-	          <div class="game-progress-stat"><strong>${info.loserCount}</strong><span>${t("progress.loser")}</span></div>
-	          <div class="game-progress-stat loser" style="display:flex;align-items:center;justify-content:center"><span style="font-size:16px;font-weight:900;line-height:1.2">${t("progress.targetLoserCount", { n: info.target })}</span></div>
+		          <div class="game-progress-stat"><strong>${info.loserCount}</strong><span>${t("progress.loser")}</span></div>
         </div>
         <div class="game-progress-lock">${lockText}</div>
       `;
