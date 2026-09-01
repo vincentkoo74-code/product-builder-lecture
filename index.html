@@ -3454,7 +3454,6 @@
           <span data-i18n="account.close">닫기</span>
           <span class="go-pill">OK</span>
         </button>
-        <button onclick="window.deleteAccountWithConfirm()" class="btn-outline btn-full" style="margin-top:var(--action-gap);color:#b91c1c;border-color:#fecaca" data-i18n="account.deleteBtn">계정 삭제</button>
       </div>
     </div>
 
@@ -9312,10 +9311,17 @@
       // (participant가 선택 종료시각을 잃고 로컬 5초 폴백으로 튐). getChoiceEndAt()으로 현재
       // 알려진 값을 읽어 그대로 보존한다(merge write — clear-write와 구분되는 별도 케이스).
       const preservedChoiceEndAt = getChoiceEndAt();
-      state.penalty = buildPenaltyValue({ gameRound: getGameRound(), countdownStartAt: state.countdownStartAt, choiceEndAt: preservedChoiceEndAt });
+      // FIELD RACE #3 동류 보강: 사전 빌드 스냅샷을 무조건 로컬/DB에 반영하던 것을 →
+      // playing 조건부 쓰기 + 적용 확인 후 로컬 반영으로 교체(오프라인은 종전대로 로컬만).
+      const __rp = buildPenaltyValue({ gameRound: getGameRound(), countdownStartAt: state.countdownStartAt, choiceEndAt: preservedChoiceEndAt });
       try {
         if (getOnlineMode() && db && state.roomCode) {
-          await db.from('rooms').update({ penalty: state.penalty }).eq('id', state.roomCode);
+          const { data: __rows } = await db.from('rooms').update({ penalty: __rp })
+            .eq('id', state.roomCode).eq('status', 'playing').select('id');
+          if (Array.isArray(__rows) && __rows.length) state.penalty = __rp;
+          else { try { QA.emit('metric', { wrps: 'WRPS-B46R3', eventType: 'COUNTDOWN_REPUBLISH_SKIPPED_STALE', roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round }); } catch (_) {} }
+        } else {
+          state.penalty = __rp;
         }
       } catch (e) {}
       try { QA.emit('metric', { wrps: 'WRPS-036-B22', eventType: 'COUNTDOWN_SERVER_TS_REPUBLISHED', round: state.round, countdownStartAt: state.countdownStartAt }); } catch (e) {}
@@ -9620,9 +9626,20 @@
         // getCountdownStartAt()으로 현재 알려진 값을 읽어 그대로 보존한다.
         const preservedCountdownStartAt = getCountdownStartAt();
         const penalty = buildPenaltyValue({ gameRound: getGameRound(), choiceEndAt, countdownStartAt: preservedCountdownStartAt });
-        const { error } = await db.from('rooms').update({ penalty }).eq('id', state.roomCode);
+        // FIELD RACE #3(2026-09-01, run-alt.json G2 실증): 이 write 는 사전에 빌드한 penalty 스냅샷이다.
+        // 라운드가 이미 result/game_over 로 넘어간 뒤 늦게 착지하면 FINAL 원장(tally/tGNo/continuation)을
+        // 통째로 구본으로 덮고, 아래 로컬 반영이 host 까지 오염시켜 그 판이 영구 증발했다(필드: 누적
+        // 불가·무한 매치). 선택창 시각은 playing 에서만 의미 → status 조건부 쓰기 + 실제 적용된
+        // 행이 있을 때만 로컬 반영한다(0행 = 레이스 패배 → 명시적 no-op).
+        const { data: __rows, error } = await db.from('rooms').update({ penalty })
+          .eq('id', state.roomCode).eq('status', 'playing').select('id');
         if (error) throw new Error('choiceEndAt publish failed: ' + (error.message || error));
-        state.penalty = penalty;
+        if (Array.isArray(__rows) && __rows.length) {
+          state.penalty = penalty;
+        } else {
+          try { QA.emit('metric', { wrps: 'WRPS-B46R3', eventType: 'CHOICE_END_PUBLISH_SKIPPED_STALE', roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round }); } catch (_) {}
+          return;
+        }
         if (preservedCountdownStartAt > 0) {
           try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'PENALTY_MERGE_PRESERVED', roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round, callSite: 'publishChoiceWindowEnd', preservedField: 'countdownStartAt', preservedValue: preservedCountdownStartAt }); } catch (_) {}
         }
