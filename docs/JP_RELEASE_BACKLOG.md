@@ -12,6 +12,8 @@
 | JP-BL-002 | DONE | High | JP 빌드에서 Kakao 인증 표면 제거 — 시장 계층 경계. KR 공개 키가 source/dist 에서 사라짐(JPX-001 범위 축소) | — |
 | JP-BL-003 | DONE | High | JP 브랜치를 origin 에 push → 539e0de | — |
 | JP-BL-004 | DONE | High | GitHub Environments `supabase-KR`/`supabase-JP` 구성 | — |
+| JP-BL-010 | DONE | **High** | 온라인 백엔드 실패를 조용한 로컬 강등으로 덮지 않는다 — 시장 계층 정책 + 전용 실패 화면 | — |
+| JP-WEB-ASSET-SELFHOST | OPEN | Low | Google Fonts 외부 의존(요청 52건). 리전 격리 결함 아님 — 장래 self-host/subset 최적화 | 아니오 |
 | JP-BL-005 | DONE | High | JP 런타임 리전 격리 실증 — 백엔드 선택 지점 1곳, 런타임 입력으로 변경 불가, 라이브 목적지 Tokyo 단일, fallback 6종 Seoul 무접촉 | — |
 | JP-BL-006 | OPEN | Medium | 네이티브 산출물(ios/android public) JP 재생성 — CEO 지시로 보류 중 | **예** |
 | JP-BL-007 | DONE | Medium | Tokyo 백엔드 실물 점검 → **삭제 아님, INACTIVE(일시정지)** | — |
@@ -522,6 +524,28 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-09-02 (2차) — JP-BL-010: 온라인 백엔드 실패 UX
+
+JP-BL-005 가 남긴 문제: Tokyo REST 가 죽으면 JP 가 **조용히 로컬로 강등**돼 작동하는
+온라인 도전처럼 보였다. 리전 유출은 없었지만 제품 계약 위반이다.
+
+**근본 원인은 한 곳뿐이었다.** `createRoom` 의 catch 가 가짜 host 참가자를 만들고
+`showHostRoom()` 으로 떨어졌다. 나머지 실패 경로(startGame·selectChoice·nextRound·joinRoom)는
+이미 명시적으로 실패하고 가짜 상태를 만들지 않는다(전수 조사 확인).
+
+**계약.** 의도적 로컬 = 백엔드 클라이언트 부재. 온라인 실패 = 클라이언트는 있는데 요청 실패.
+시장 계층이 정한다 — `allowOfflineFallbackOnBackendFailure: false`(JP).
+키 미선언 시장(KR)은 true 라 기존 동작 그대로다. 로컬 모드를 전역에서 없애지 않았다.
+
+**Realtime ≠ REST.** Realtime 실패는 백엔드 실패가 아니다. 2.6초 Tokyo 폴링 안전망 유지.
+브라우저 실측으로 Realtime 만 끊으면 온라인 도전이 정상 생성됨을 확인했다.
+
+**UX.** 초대 불가 화면과 분리된 전용 화면. 원시 백엔드 오류 미노출.
+ja「通信できませんでした / ネットワークを確認して、もう一度お試しください。」 + ko/en.
+재시도·홈. 렌더링만으로 방을 다시 만들지 않는다.
+
+검증: 단위 17건 + 브라우저 7건 신규, 전 시나리오 Seoul/KR/Kakao 요청 0.
 
 ### 2026-09-02 — JP-BL-005: JP 매치메이킹 / 백엔드 리전 격리 최종 검증
 
