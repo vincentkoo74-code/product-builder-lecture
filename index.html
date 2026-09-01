@@ -3850,6 +3850,7 @@
         "result.midMatchNotice": "잠시 후 다음 판이 자동으로 시작됩니다.",
         "result.capTaggerLocked": "술래확정!",
         "result.titleTaggerLocked": "술래확정",
+        "result.titleTaggerWaiting": "술래 대기 중",
         "result.msgTaggerLocked": "이번 매치에서 술래로 확정됐어요. 남은 게임 동안 대기합니다.",
         "popup.matchFinalTitle": "최종술래 {names}",
         "popup.matchFinalWin": "축하합니다! 승리하셨습니다!",
@@ -4015,6 +4016,7 @@
         "guide.host.setPenalty": "1단계: 벌칙을 정해주세요.",
         "guide.host.waitParticipants": "2단계: 참가자를 기다리는 중입니다.",
         "guide.host.waitReady": "참가자들이 준비 버튼을 누를 때까지 기다려주세요.",
+        "guide.host.forceStartRematch": "재대결 준비 중 — 강제 시작을 눌러 다음 라운드를 시작하세요.",
         "guide.host.startGame": "3단계: 게임 시작 버튼을 눌러 첫 대결을 시작하세요.",
         "guide.host.checkResult": "결과를 확인하세요.",
         "guide.host.drawReplay": "무승부입니다. 다시 대결하세요.",
@@ -4264,6 +4266,7 @@
         "result.midMatchNotice": "The next game starts automatically in a moment.",
         "result.capTaggerLocked": "Tagger locked!",
         "result.titleTaggerLocked": "You are a final tagger",
+        "result.titleTaggerWaiting": "Waiting as tagger",
         "result.msgTaggerLocked": "You are confirmed as a tagger for this match. Please wait out the remaining games.",
         "popup.matchFinalTitle": "Final tagger: {names}",
         "popup.matchFinalWin": "Congratulations! You won!",
@@ -4423,6 +4426,7 @@
         "guide.host.setPenalty": "Step 1: Set the penalty.",
         "guide.host.waitParticipants": "Step 2: Waiting for participants to join.",
         "guide.host.waitReady": "Wait until everyone taps Ready.",
+        "guide.host.forceStartRematch": "Rematch — press Force Start to begin the next round.",
         "guide.host.startGame": "Step 3: Tap Start to begin the first match.",
         "guide.host.checkResult": "Check the result.",
         "guide.host.drawReplay": "It's a draw. Play again.",
@@ -4669,6 +4673,7 @@
         "result.midMatchNotice": "まもなく次の戦が自動で始まります。",
         "result.capTaggerLocked": "鬼確定！",
         "result.titleTaggerLocked": "鬼確定",
+        "result.titleTaggerWaiting": "鬼として待機中",
         "result.msgTaggerLocked": "このマッチの鬼に確定しました。残りのゲームの間は待機します。",
         "popup.matchFinalTitle": "最終鬼 {names}",
         "popup.matchFinalWin": "おめでとうございます！勝ちました！",
@@ -4828,6 +4833,7 @@
         "guide.host.setPenalty": "ステップ1：罰ゲームを決めてください。",
         "guide.host.waitParticipants": "ステップ2：参加者を待っています。",
         "guide.host.waitReady": "全員が準備ボタンを押すまでお待ちください。",
+        "guide.host.forceStartRematch": "再戦の準備中 — 強制スタートで次のラウンドを開始してください。",
         "guide.host.startGame": "ステップ3：開始ボタンで最初の対戦を始めましょう。",
         "guide.host.checkResult": "結果を確認してください。",
         "guide.host.drawReplay": "引き分けです。もう一度対戦しましょう。",
@@ -7651,6 +7657,11 @@
 	        try { QA.emit('metric', Object.assign({ wrps: 'WRPS-B43', eventType: 'MATCH_DECISION', matchNo: m.matchNo, gameNo,
 	          newlyConfirmed: newlyConfirmed.slice(), lockedIds: d.lockedIds.slice(), qualifiedIds: d.qualifiedIds.slice(),
 	          complete: d.complete, finalTaggerIds: d.finalTaggerIds.slice(), insufficientPlayers: d.insufficientPlayers,
+	          // Build47 D1(QA 계측 자족성): Y12R 진단이 추론 없이 가능하도록 권위 상태를 함께 싣는다.
+	          cumulativeLossTally: matchTally, gameTallied: true, matchTalliedGameNoPrev: m.talliedGameNo, matchTalliedGameNo: gameNo,
+	          configuredLossThreshold: (typeof matchQualificationThreshold === "function") ? matchQualificationThreshold(m.rule) : 0,
+	          requiredTaggerCount: (typeof getConfiguredTaggerCount === "function") ? getConfiguredTaggerCount() : 0,
+	          newlyConfirmedTaggerIds: d.lockedIds.filter(id => !lockedPrev.includes(id)),
 	          localNow: Date.now() }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
 	        return { matchTally, matchStats, matchTalliedGameNo: gameNo, matchStatsGameNo: gameNo, matchNo: m.matchNo,
 	          matchLockedIds: d.lockedIds, matchQualifiedIds: d.qualifiedIds,
@@ -11711,18 +11722,29 @@ function summarizeGameStats(rows) {
           const __lockedMe = (typeof getMatchLockedIds === "function") && getMatchLockedIds().includes(state.currentUserId) &&
             !(typeof isMatchComplete === "function" && isMatchComplete());
           const __midMatch = (typeof matchNeedsNextGame === "function") && matchNeedsNextGame();
+          const __nonSingleMatch = (typeof getMatchRule === "function") && getMatchRule() !== "single";
           if (__lockedMe) {
-            title.textContent = t("result.titleTaggerLocked");
-            setCap(t("result.capTaggerLocked"));
-            message.textContent = t("result.msgTaggerLocked");
-          } else if (__midMatch) {
-            // Build46 §UI: 미완료 판 — "이번 판 패배 + 누적 패배 + 자동 진행 안내"만(최종형 금지).
+            // Build47 D3(STATE B): 확정 카피는 실제 확정 전이당 정확히 1회 — 이후 에코/재렌더는 대기 카피.
+            const __mNo = (typeof getMatchEnvelope === "function") ? getMatchEnvelope().matchNo : 1;
+            if ((typeof shouldShowTaggerConfirmOnce === "function") ? shouldShowTaggerConfirmOnce(__mNo, state.currentUserId) : true) {
+              title.textContent = t("result.titleTaggerLocked");
+              setCap(t("result.capTaggerLocked"));
+              message.textContent = t("result.msgTaggerLocked");
+            } else {
+              title.textContent = t("result.titleTaggerWaiting");
+              setCap(t("result.capLost"));
+              message.textContent = t("result.msgTaggerLocked");
+            }
+          } else if (__nonSingleMatch) {
+            // Build47 D3(STATE A, 물리 QA IMG_0117 "술래 확정! (1/1명)" 오노출 봉인): 비단판 매치의
+            // 판 패배는 어떤 평가 경로로도 확정 카피가 될 수 없다 — 룰 자체로 분기(§UI SOURCE OF TRUTH).
             const __tally = ((typeof parsePenalty === "function") ? ((parsePenalty(state.penalty).matchTally || {})[state.currentUserId] || 0) : 0);
             const __th = (typeof matchQualificationThreshold === "function" && typeof getMatchRule === "function") ? matchQualificationThreshold(getMatchRule()) : 0;
             title.textContent = t("result.titleGameLose");
             setCap(t("result.capLost"));
             message.textContent = t("result.msgGameLoseCumulative", { n: __tally, th: __th });
           } else {
+            // 단판(getMatchRule() === "single") 전용 확정 카피 — 1판=매치라 즉시 확정이 옳다.
             title.textContent = t("result.titleLoserConfirmedCount", { done: state.confirmedLoserIds.length, target: getTargetLoserCount() });
             setCap(t("result.capLost"));
             message.textContent = t("result.msgGameOverLose");
@@ -11941,6 +11963,16 @@ function summarizeGameStats(rows) {
         if (typeof isMatchComplete === "function" && isMatchComplete()) return false;
         return true;
       } catch (e) { return false; }
+    }
+
+    // Build47 D3(STATE B): (matchNo, playerId) 전이당 확정 카피 정확히 1회 — 에코/재렌더/replay 의
+    // 반복 확정을 차단한다(세션 한정 원장; 재접속 후 최초 1회 재표시는 허용 — 문서화).
+    function shouldShowTaggerConfirmOnce(matchNo, playerId) {
+      if (!state.taggerConfirmShownKeys) state.taggerConfirmShownKeys = {};
+      const k = String(matchNo || 1) + ':' + String(playerId || '');
+      if (state.taggerConfirmShownKeys[k]) return false;
+      state.taggerConfirmShownKeys[k] = true;
+      return true;
     }
 
     // Build46: 미완료 판 gameOver → 호스트가 자동으로 다음 판을 예약한다(판 사이 호스트 재시작·
@@ -12573,8 +12605,12 @@ function summarizeGameStats(rows) {
 
       if (isScreenActive("screenReady")) {
         let msg;
-        if (isHost) msg = areAllActivePlayersReady() ? t("guide.host.startGame") : t("guide.host.waitReady");
-        else msg = (me && me.is_ready) ? t("guide.guest.waitHost") : t("guide.guest.pressReady");
+        // Build47 D2: 내부 재대결에서는 준비 정족수가 없다 — 호스트=강제시작 안내, 참가자=대기 안내.
+        const __rematchReady = (typeof isInternalRematchReadyPhase === "function") && isInternalRematchReadyPhase();
+        if (isHost) msg = __rematchReady ? t("guide.host.forceStartRematch")
+          : (areAllActivePlayersReady() ? t("guide.host.startGame") : t("guide.host.waitReady"));
+        else msg = __rematchReady ? t("guide.guest.waitHost")
+          : ((me && me.is_ready) ? t("guide.guest.waitHost") : t("guide.guest.pressReady"));
         setGuideText("readyGuide", msg);
       }
 
@@ -12842,7 +12878,7 @@ function summarizeGameStats(rows) {
       // canShowForceStartReplayButton()이 round>1을 요구하므로 이 분기의 영향을 받지 않고
       // myReadyBtn이 그대로 노출된다. 반드시 canShowForceStartReplayButton() 단일 진실 소스로만
       // 분기한다(별개 조건 2개를 만들면 양쪽 다 숨는 deadlock이 생길 수 있다 — CEO 회귀조건).
-      $("myReadyBtn").classList.toggle("hidden", canShowForceStartReplayButton());
+      $("myReadyBtn").classList.toggle("hidden", (typeof isInternalRematchReadyPhase === "function") ? isInternalRematchReadyPhase() : canShowForceStartReplayButton());
       $("editPenaltyBtn").classList.toggle("hidden", state.role !== "host");
       updateActionGridLayouts();
       updateGuides();
@@ -12876,7 +12912,7 @@ function summarizeGameStats(rows) {
         btn.disabled = true;
         btn.className = "btn-light btn-full";
         // Build30-R2 Phase D(WRPS-078): 아래 참고 — className 재대입 뒤에도 반드시 hidden을 재적용.
-        btn.classList.toggle("hidden", canShowForceStartReplayButton());
+        btn.classList.toggle("hidden", (typeof isInternalRematchReadyPhase === "function") ? isInternalRematchReadyPhase() : canShowForceStartReplayButton());
         return;
       }
       if (me && me.is_ready) {
@@ -12895,7 +12931,7 @@ function summarizeGameStats(rows) {
       // canShowForceStartReplayButton()(호출만, 수정 금지)을 "매 렌더"마다 재적용해 className
       // 재대입 이후에도 hidden 상태가 유지되게 한다. round1(canShowForceStartReplayButton이
       // round<=1이면 항상 false)에서는 이 토글이 아무 영향을 주지 않아 정상 노출을 그대로 유지한다.
-      btn.classList.toggle("hidden", canShowForceStartReplayButton());
+      btn.classList.toggle("hidden", (typeof isInternalRematchReadyPhase === "function") ? isInternalRematchReadyPhase() : canShowForceStartReplayButton());
     }
 
     function updateHostStartButton() {
@@ -12919,12 +12955,17 @@ function summarizeGameStats(rows) {
     // state.round <= 1에서는 어떤 역할에게도 절대 노출/동작하지 않는다(라운드1은 전원 Ready 사양 유지).
     // 호스트가 이미 확정 안전/술래라 screenWinnerWait/screenLoserWait에 있어도 동일하게 노출된다
     // (세 화면 모두 같은 클래스의 버튼을 두고 renderReadyList()가 일괄 갱신).
+    // Build47 D2: 내부 재대결(round>1) 준비 단계 — 참가자 '게임 준비'는 초기 매치 시작(round 1)에만
+    // 존재한다. round>1 은 호스트 '강제 시작' 단독 제어이며 숨은 준비 정족수는 없다(IMG_0109 증거).
+    function isInternalRematchReadyPhase() {
+      return state.status === "ready" && (state.round || 1) > 1;
+    }
     function canShowForceStartReplayButton() {
+      // Build47 D2: 준비 정족수와 무관하게 — round>1 준비 단계면 항상 노출(정족수 조건 제거).
       return state.role === "host" &&
         state.status === "ready" &&
         (state.round || 1) > 1 &&
-        getActivePlayers().length > 0 &&
-        !areAllActivePlayersReady();
+        getActivePlayers().length > 0;
     }
 
     function updateForceStartReplayButtons() {
@@ -13032,6 +13073,12 @@ function summarizeGameStats(rows) {
     }
 
     async function markReady() {
+      // Build47 D2(벨트): 내부 재대결(round>1)에서는 참가자 준비 액션 자체가 무효 — 버튼 렌더
+      // 1틱 잔상 등 어떤 경로로 호출돼도 no-op(정족수도 없고 상태도 쓰지 않는다).
+      if ((typeof isInternalRematchReadyPhase === "function") && isInternalRematchReadyPhase()) {
+        try { QA.emit('metric', { wrps: 'WRPS-B47', eventType: 'READY_TAP_IGNORED_REMATCH', round: state.round || 1, localNow: Date.now() }); } catch (_) {}
+        return;
+      }
       if (!isCurrentRoundParticipant()) {
         if (isSafeParticipant()) showScreen("screenWinnerWait");
         else if (isConfirmedLoser()) showLoserWaitScreen();
