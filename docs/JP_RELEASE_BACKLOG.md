@@ -9,7 +9,7 @@
 |---|---|---|---|---|
 | JP-BL-013 | DONE | **Blocker** | JP 백엔드 확보 → **기존 Tokyo 복원(Option A′), ACTIVE_HEALTHY** | — |
 | JP-BL-001 | OPEN | High | region-guard 메커니즘을 KR 브랜치로 백포트 | 아니오 (KR 측 위험) |
-| JP-BL-002 | OPEN | High | JP 빌드에서 Kakao 로그인 경로 제거 (JPX-001 해소) | **예** |
+| JP-BL-002 | DONE | High | JP 빌드에서 Kakao 인증 표면 제거 — 시장 계층 경계. KR 공개 키가 source/dist 에서 사라짐(JPX-001 범위 축소) | — |
 | JP-BL-003 | DONE | High | JP 브랜치를 origin 에 push → 539e0de | — |
 | JP-BL-004 | DONE | High | GitHub Environments `supabase-KR`/`supabase-JP` 구성 | — |
 | JP-BL-005 | OPEN | High | 서버측 매치메이킹 리전 검증 (KR↔JP 크로스매칭 차단) | **예** |
@@ -522,6 +522,30 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-09-01 (7차) — JP-BL-002: JP 빌드에서 Kakao 인증 표면 제거
+
+공유 기능을 전역에서 제거하지 않았다. **시장 프로필이 인증 표면을 소유**하게 했다 —
+`disabledAuthProviders: ['kakao']`, `kakaoRestApiKey: null`. 목록을 선언하지 않는 시장(KR)은
+`ENABLE_KAKAO_LOGIN === true` 라 동작이 완전히 같고, Kakao 구현 코드도 그대로 남아 있다.
+
+차단 지점 5곳: UI 버튼 **DOM 제거**(CSS 숨김 아님) · loginWithSns(요청 이전 반환) ·
+handleKakaoCallback(최상단 반환, edge function 미호출) · 네이티브 딥링크 · initFromUrl 콜백 분기.
+
+**예전 Kakao 콜백**으로 들어오면 인증을 시도하지 않고 원시 OAuth 파라미터만 지운 뒤
+평소 진입으로 보낸다. 정리 대상에 `invite` 를 넣지 않아 초대 연속성과 충돌하지 않으며,
+부트 순서상 정리는 `beginInviteEntry` 이후다. 무관한 파라미터도 보존한다.
+
+**JPX-001**: KR 공개 키가 source/dist 에서 사라졌다(region-guard 실측). 남은 검출은
+아직 재생성하지 않은 네이티브 산출물뿐이라 예외를 삭제하지 않고 범위를 사실대로 축소했다 —
+출시 차단 유지(JP-BL-006 종속).
+
+`kakao-auth` edge function 은 JP 런타임에서 **도달 불가**가 됐다(두 호출부 모두 게이트,
+함수 본문도 최상단 반환). CEO §9 대로 클라우드 자원은 건드리지 않았다 —
+**DEPLOYED LEGACY / UNUSED** 로 보고만 한다.
+
+검증: 단위 23건 신규 + 브라우저 46/46(Kakao 격리 7건 신규) + 전체 1644 통과.
+비공허성: 시장 목록에서 'kakao' 를 빼면 실패한다.
 
 ### 2026-09-01 (6차) — JP-TOKYO-SECURITY-DEPLOY-001: 보안 5종 Tokyo 배포
 
