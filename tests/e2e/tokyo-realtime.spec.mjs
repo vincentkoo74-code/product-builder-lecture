@@ -29,10 +29,31 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   fs.mkdirSync(S, { recursive: true });
   // 만든 행만 지운다. 실패로 중단돼도 반드시 실행된다.
+  //
+  // ⚠️ 보안 5종 배포(2026-09-01) 이후 anon 은 rooms DELETE 권한이 없다 — 설계상 그렇다.
+  //    참가자는 anon 경로로 지우고, 방 행은 관리자 경로로 지운다.
+  //    관리자 접속 문자열은 **저장소에 두지 않는다** — JP_TOKYO_ADMIN_URI 로 주입한다.
+  //    주입되지 않으면 남은 방 id 를 리포트에 남겨 수동 정리할 수 있게 한다.
   for (const rid of created.rooms) {
     const gone = await restDel(`participants?room_id=eq.${rid}`);
     if (Array.isArray(gone)) gone.forEach((p) => created.participants.add(p.id));
-    await restDel(`rooms?id=eq.${rid}`);
+    await restDel(`rooms?id=eq.${rid}`);   // 이제 거부된다(기대된 동작)
+  }
+  const admin = process.env.JP_TOKYO_ADMIN_URI;
+  const left = [];
+  for (const rid of created.rooms) {
+    const rows = await restGet(`rooms?id=eq.${rid}&select=id`).catch(() => []);
+    if (Array.isArray(rows) && rows.length > 0) left.push(rid);
+  }
+  if (left.length && admin) {
+    const { execFileSync } = await import('node:child_process');
+    execFileSync('psql', [admin, '-q', '-v', 'ON_ERROR_STOP=1', '-c',
+      `delete from public.participants where room_id in (${left.map((r) => `'${r}'`).join(',')});
+       delete from public.rooms where id in (${left.map((r) => `'${r}'`).join(',')});`],
+      { env: { ...process.env, PATH: `/opt/homebrew/opt/postgresql@17/bin:${process.env.PATH}` } });
+    report.adminCleanup = left;
+  } else if (left.length) {
+    report.manualCleanupRequired = left;
   }
   report.cleanup = { rooms: [...created.rooms], participants: [...created.participants] };
   fs.writeFileSync(`${S}/tokyo-realtime-report.json`, JSON.stringify(report, null, 2));
