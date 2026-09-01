@@ -3,7 +3,7 @@
 //    실행: JP_TOKYO_REALTIME=1 npx playwright test --config=playwright.tokyo.config.mjs
 export default {
   testDir: './tests/e2e',
-  testMatch: /tokyo-realtime\.spec\.mjs/,
+  testMatch: /(tokyo-realtime|jp-region-isolation-live)\.spec\.mjs/,
   timeout: 600000,
   actionTimeout: 20000,   // 무한 actionability 대기 방지
   workers: 1,
