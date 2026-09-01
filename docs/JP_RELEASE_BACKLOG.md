@@ -21,6 +21,9 @@
 | JP-BL-011 | DONE | Medium | `~/.rps_tokyo_env`(Tokyo 전용) / `~/.rps_seoul_env`(Seoul 전용) 분리 완료. 교차 ref 0건, 0600, 백업 보존 | — |
 | JP-REGION-ISOLATION-001 | OPEN | **High** | `feature/rps-kr-seoul-backend` 와 `main` 의 실행 상수가 Tokyo ref — **KR 소유, JP 프로젝트가 고치지 않는다** | 아니오(KR 측) |
 | JP-ENTRY-INVITE-002 | DONE | **High** | 보류 초대(pending invite) 도입 — 초대는 신원 확립까지 보류되고 URL 에 남는다. 브라우저 E2E 15/15 로 실증(1라운드 진행 포함) | — |
+| JP-TOKYO-REALTIME-001 | DONE | **High** | 실제 Tokyo Realtime 두 클라이언트 검증 — A~H 전 시나리오 REALTIME 도달, 3라운드 완주, 과거 데이터 무변경 | — |
+| JP-CORE-DEFERRED-LEAVE-TIMING | OPEN | Medium | 결과 화면에서 누른 퇴장이 **한 라운드 더** 지연 실행된다(WRPS-084 설계). 1:1 대전에서 체감 큼 — **CORE, KR 공용** | 아니오 |
+| JP-RT-PRESUBSCRIBE-GAP | OPEN | Medium | 채널 구독 완료 **이전** 커밋 변경은 Realtime 이 재생하지 않는다 → 폴링이 안전망. 전송 특성(R1), 클라이언트 처리 사항 | 아니오 |
 | JP-E2E-JWT-FIDELITY | OPEN | **High** | 브라우저 E2E 하니스가 프로덕션 인증 헤더를 벗겨 로컬 PostgREST 에 넘긴다 → 실제 JWT 검증·최소권한 GRANT/RLS 강제력은 미검증. **Tokyo 보안 5종 배포 전에 해소 필수** | 아니오(보안 5종 게이트에 종속) |
 | JP-I18N-JOIN-DEFAULT | OPEN | Medium | 초대 합류 시 기본 닉네임이 한국어 상수 `"참가자"` — JP 세션에도 그대로 노출(`getInlineJoinNickname`). CORE 공용 기본값이라 별도 슬라이스로 분리 | 아니오 |
 | JP-TOKYO-SECURITY-MIGRATION-GATE | OPEN | **High** | Tokyo 보안 5종(room_id 인덱스·grants·created_at 불변·target RLS·realtime publication) 배포 게이트 — NO-GO 유지 | **예** |
@@ -517,6 +520,27 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-09-01 (4차) — JP-TOKYO-REALTIME-001: 실제 Tokyo Realtime 검증
+
+로컬 대역이 아니라 **실제 Tokyo 프로덕션**(`cmfxhehpreanijwanwrr`)에 두 브라우저를 붙여
+전송과 애플리케이션 수렴을 함께 검증했다. 일회용 방 1개, 참가자 2명만 만들고 전부 회수했다.
+
+전 시나리오 **REALTIME 도달**(폴링 구제 0건). 3라운드 완주. 과거 데이터·스키마·정책·원장·
+publication **완전 무변경**(사전/사후 md5 동일).
+
+**하니스 결함 2건을 먼저 잡았다(H1).** 이것을 못 잡았으면 정반대 결론을 보고할 뻔했다.
+- supabase-js 는 **vsn=2.0.0** 을 쓴다 — Phoenix 프레임이 객체가 아니라 배열이다.
+  v1 객체로 파싱하니 모든 Realtime 도달이 "미도달"로 집계됐다. 노드/브라우저 직접 프로브로
+  Tokyo Realtime 이 정상임을 먼저 확인한 뒤 디코더를 고쳤다.
+- Playwright 기본 action timeout 은 무제한이라, 활성화되지 않는 버튼 클릭이 영원히 매달렸다.
+
+**Realtime 특성 2건(R1/CORE, 결함 아님 — 기록 목적).**
+- 채널이 PostgreSQL 구독을 마치기 전(약 2.2~3.7초)에 커밋된 변경은 재생되지 않는다.
+  이 구간은 2.6초 폴링이 안전망이다. 측정 시에는 구독 완료를 기다린 뒤 써야 한다.
+- 결과 화면에서 누른 퇴장은 **다음 라운드가 확정될 때** 실행된다(WRPS-084 Deferred Leave).
+  `processDeferredLeaves()` 호출부가 라운드 확정 지점 1곳뿐이기 때문이다. 예약 자체는
+  400ms 내에 기록되고(`leave_after_round=true`), 한 라운드 뒤 실제 삭제까지 실증했다.
 
 ### 2026-09-01 (3차) — JP-ENTRY-INVITE-002: 신원 부트스트랩을 가로지르는 보류 초대
 
