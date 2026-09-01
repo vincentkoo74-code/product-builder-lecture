@@ -13,11 +13,12 @@
     "cap:open:ios": "npx cap open ios",
     "cap:open:android": "npx cap open android",
     "sync:logic": "node scripts/sync-game-logic.mjs",
-    "test": "vitest run",
+    "test": "vitest run --exclude 'tests/e2e/**'",
     "test:syntax": "node scripts/check-html-syntax.mjs",
     "test:release-gate": "node scripts/run-release-gate.mjs",
     "gate:release": "node scripts/run-release-gate.mjs",
-    "guard:region": "node scripts/region-guard.mjs"
+    "guard:region": "node scripts/region-guard.mjs",
+    "test:e2e": "playwright test --config=playwright.config.mjs"
   },
   "repository": {
     "type": "git",
@@ -46,6 +47,7 @@
     "@capacitor/cli": "^7.0.0",
     "@capacitor/core": "^7.0.0",
     "@capacitor/ios": "^7.0.0",
+    "@playwright/test": "^1.56.0",
     "typescript": "^6.0.3",
     "vitest": "^2.1.8"
   }

@@ -20,6 +20,7 @@
 | JP-BL-010 | DONE | Medium | region-guard 를 release gate 에 연결 (출시 모드) | — |
 | JP-BL-011 | DONE | Medium | `~/.rps_tokyo_env`(Tokyo 전용) / `~/.rps_seoul_env`(Seoul 전용) 분리 완료. 교차 ref 0건, 0600, 백업 보존 | — |
 | JP-REGION-ISOLATION-001 | OPEN | **High** | `feature/rps-kr-seoul-backend` 와 `main` 의 실행 상수가 Tokyo ref — **KR 소유, JP 프로젝트가 고치지 않는다** | 아니오(KR 측) |
+| JP-ENTRY-INVITE-002 | OPEN | **High** | **초대 부트스트랩이 세션 확인보다 먼저 실행**돼 신규 초대자가 신원 없이 초대를 소비·소실 → 합류 미완료. 브라우저 E2E 가 발견 | **예** |
 | JP-TOKYO-SECURITY-MIGRATION-GATE | OPEN | **High** | Tokyo 보안 5종(room_id 인덱스·grants·created_at 불변·target RLS·realtime publication) 배포 게이트 — NO-GO 유지 | **예** |
 | JP-BL-012 | OPEN | Low | JP 앱 식별자·딥링크 스킴 분리 검토 | 미정 |
 | JP-BL-014 | DONE | Medium | A5 device-matrix 타임아웃 → **Tokyo 복원으로 해소, 통과 확인** | — |
@@ -514,6 +515,30 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-09-01 (2차) — JP-E2E-INVITE-001: 두 클라이언트 브라우저 E2E
+
+Playwright + 로컬 백엔드(PostgreSQL 17 + PostgREST 16.2)로 **실제 앱 DOM/네비게이션**을 구동했다.
+프로덕션 소스는 수정하지 않았다 — SUPABASE_URL 이 하드코딩 상수라 라우트 가로채기로 로컬에 붙였다.
+
+**E2E 10/10 통과** (알려진 결함 3건은 `test.fail()` 로 명시 표기 — 고쳐지면 표시가 실패한다).
+
+실제 브라우저에서 검증된 것:
+- 도전 생성 → 보안 토큰 발급·영속(권위 DB 대조) → 대기 화면 + 초대 액션 노출
+- 짧은 방 코드가 초대 URL 에 자격증명으로 들어가지 않음
+- 오류 경로 4종: 알 수 없는 토큰 / 형식 오류 / **host 퇴장(相手はもう待っていません)** / 정원 초과
+- 소비 후 URL 에서 invite 제거, 무관한 파라미터 보존
+
+**E2E 가 발견한 실제 결함 (JP-ENTRY-INVITE-002, P1/JP)**
+신규 초대자는 인증 화면이 먼저 뜬다. 그런데 초대 부트스트랩이 **세션 확인보다 앞서** 실행되어
+신원이 생기기 전에 초대를 소비하고 URL 에서 지운다 → 합류가 완료되지 않는다.
+단위·하니스 테스트는 각 계층을 개별 검증했기 때문에 이 순서 문제를 잡지 못했다.
+**브라우저 E2E 를 도입한 목적이 그대로 달성된 사례다.**
+
+환경 제약(I1): playwright headless shell 다운로드가 반복 실패해 시스템 Chrome 채널을 쓴다.
+Realtime 은 이 슬라이스에서 연결하지 않는다(폴링 경로로 진행) — JP-TOKYO-REALTIME-001 로 분리.
+
+`npm test` 는 E2E 를 제외하고, E2E 는 `npm run test:e2e` 로 분리했다(GX-7 배선 기록도 함께 갱신).
 
 ### 2026-09-01 — 리전 안전 감사 + JP-ENTRY-INVITE-001 (URL 부트스트랩)
 

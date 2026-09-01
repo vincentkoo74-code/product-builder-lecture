@@ -31,3 +31,7 @@ QA-index/
 # 서로 다른 project 를 가리키므로 추적하면 브랜치 전환 시 잘못된 프로젝트로 링크된
 # 상태가 상속된다 — 오배포 경로이므로 git 추적하지 않는다.
 supabase/.temp/
+
+# Playwright E2E 산출물
+/test-results/
+/playwright-report/

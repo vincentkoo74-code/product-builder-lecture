@@ -1449,7 +1449,9 @@ export const GATE_EXECUTION_PLAN = Object.freeze({
   // 현재 저장소 사실(설계 판단 근거). tests/release-gate-wiring.test.mjs의 [GX-7]/[GX-9]가
   // 실물과 대조하므로 거짓이면 RED가 된다(이 상수 자체는 파일을 읽지 않는 순수 데이터다).
   currentRepoFacts: Object.freeze({
-    npmTestScript: 'vitest run',
+    // JP-E2E-INVITE-001: Playwright E2E 를 vitest 실행에서 분리했다(`npm run test:e2e`).
+    // 이 필드는 저장소의 **실제** package.json 값과 일치해야 한다(GX-7 이 대조한다).
+    npmTestScript: "vitest run --exclude 'tests/e2e/**'",
     ceoGateStrictSetAnywhere: true,
     ciWorkflowsRunningNpmTest: Object.freeze(['release-gate.yml']),
     existingWorkflows: Object.freeze(['production-smoke.yml', 'release-gate.yml', 'supabase-deploy.yml']),
