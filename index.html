@@ -5411,13 +5411,38 @@
       return getPenaltyText() || t(emptyKey);
     }
     function getConfiguredTaggerCount() { return parsePenalty(state.penalty).loserCount || state.targetLoserCount || 1; }
-    function getTargetLoserCount() {
-      // Build43 EARLY LOCK(승인 계약): 비단판 매치의 "판당" 엔진 목표 = 시드된 locked + 신규 술래 1명.
-      // 설정 원본(매치 최종술래 수)은 getConfiguredTaggerCount() — 동기화/클램프/표시는 그걸 쓴다.
-      // typeof 폴백: 레거시 샌드박스 단독 추출 시 기존(설정값) 동작으로 축퇴 — 실경로는 build43 테스트가 고정.
+    // ── Build46 RECOVERY(STAGE 2 승인 계약): MATCH 목표와 GAME 종결 목표는 별개 개념 ──
+    // 근본원인: 종전 getTargetLoserCount = matchLockedIds.length+1 은 "판의 집계 순간" 자라는 매치 값을
+    // 같은 판의 종결 조건에 소급 주입했다 — 실서버 재현(t2, 방 DBL7 계열): G2 확정→locked 기록→자기 에코가
+    // 새 목표(2)로 G2 를 미완으로 재해석→유령 재대결·패배 유실. GAME_RESULT 의 결과로 쓰인 상태는
+    // 그 GAME_RESULT 의 판정 조건을 바꿀 수 없다(불변 계약).
+    // MATCH 술래 목표(매치 종료 판정 전용 — 판 종결 조건에 사용 금지):
+    function getRequiredMatchTaggerCount() { return getConfiguredTaggerCount(); }
+    // GAME 종결 목표(판 수명 동안 불변): "판 시작 시드"(행의 '__loser__' 마커 — beginNewGameRound/
+    // startGame 이 판 시작에만 기록, 판 진행 중 불변)에서 유도. 목표 = 시드 수 + 신규 술래 1명.
+    // envelope 의 matchLockedIds 는 판 도중(집계 순간) 자라므로 여기서 절대 읽지 않는다.
+    function getGameResolutionTarget() {
       if (typeof getMatchRule !== "function" || getMatchRule() === "single") return getConfiguredTaggerCount();
-      const locked = (typeof getMatchLockedIds === "function") ? getMatchLockedIds() : [];
-      return locked.length + 1;
+      const seeded = (state.participants || []).filter(p => p && p.choice === '__loser__').length;
+      return seeded + 1;
+    }
+    function getTargetLoserCount() {
+      // 위임: 판정/가드/판 UI 전 소비처의 단일 의미 = GAME 종결 목표(§6 감사: 22개 호출부 전부 A-분류,
+      // 매치측은 getConfiguredTaggerCount/getRequiredMatchTaggerCount 를 쓴다). 레거시 샌드박스 단독
+      // 추출 시 설정값으로 축퇴(pre-B43 동작) — 실경로는 build46 RECOVERY 테스트가 고정.
+      if (typeof getGameResolutionTarget === "function") return getGameResolutionTarget();
+      return state.targetLoserCount || 1;
+    }
+    // 원장 최종성: 이 판이 이미 집계됐으면(matchTalliedGameNo === 현재 판) 그 판은 영구 종결 —
+    // 에코/지연 재평가/예약 콜백 어느 것도 재대결·재판정·재집계를 열 수 없다(멱등 하드 가드).
+    function isCurrentGameTallied() {
+      try {
+        if (typeof getMatchRule !== "function" || getMatchRule() === "single") return false;
+        if (typeof getMatchEnvelope !== "function") return false;
+        const m = getMatchEnvelope();
+        const t = toPositiveInt(m.talliedGameNo, 0);
+        return !m.stale && t > 0 && t === getGameRound();
+      } catch (e) { return false; }
     }
     function getPenaltyGameRound(raw = state.penalty) { return toPositiveInt(parsePenalty(raw).gameRound, 0); }
     function getGameRound() {
@@ -11882,6 +11907,8 @@ function summarizeGameStats(rows) {
       if (state.rematchAdvanceTimer) clearTimeout(state.rematchAdvanceTimer);
       state.rematchAdvanceTimer = setTimeout(() => {
         state.rematchAdvanceTimer = null;
+        // Build46 RECOVERY: 집계된 판(영구 종결)에서는 재대결을 열지 않는다 — isCurrentGameTallied 하드 가드.
+        if ((typeof isCurrentGameTallied === "function") && isCurrentGameTallied()) return;
         if (state.status === "result" && !state.advancingRound) nextRound();
       }, delayMs);
     }
@@ -12022,7 +12049,7 @@ function summarizeGameStats(rows) {
       if (state.advancingRound) return; // 자동/수동 이중 호출 방지
       const safeIds = state.confirmedSafeIds || [];
       const loserIds = state.confirmedLoserIds || [];
-      if (loserIds.length >= getTargetLoserCount() || state.status === "game_over") {
+      if (loserIds.length >= getTargetLoserCount() || state.status === "game_over" || ((typeof isCurrentGameTallied === "function") && isCurrentGameTallied())) {
         showToast(t("voice.gameOver"));
         renderRoundResult("gameOver", 0, 0);
         showScreen("screenRoundResult");
