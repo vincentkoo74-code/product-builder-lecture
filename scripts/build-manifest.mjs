@@ -19,7 +19,7 @@ export function readBuildNumber(pbxproj) {
 // 종전 manifest에는 platform 필드가 아예 없어 dist 하나를 ios/android가 공유해도 구분이 불가능했다.
 export const KR_BACKEND_REF = "sannrfmhevebqgfdqcps";   // Seoul (ap-northeast-2)
 export const JP_BACKEND_REF = "cmfxhehpreanijwanwrr";   // Tokyo — KR 산출물에 등장하면 위반
-export const RELEASE_LABEL = "KR-B45";                  // 플랫폼 공통 추적 키(버전 필드와 별개)
+export const RELEASE_LABEL = "KR-B46";                  // 플랫폼 공통 추적 키(버전 필드와 별개)
 export const VALID_PLATFORMS = ["web", "ios", "android"];
 
 // 필수 필드 스키마로 manifest 객체 생성(순수 함수).

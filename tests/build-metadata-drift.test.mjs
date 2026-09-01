@@ -30,8 +30,8 @@ describe('빌드 메타데이터 — 진실 소스', () => {
     expect([...new Set(all)], `타깃별 build number 불일치: ${all.join(',')}`).toEqual([CANONICAL_BUILD]);
   });
 
-  it('[계약 1] 이번 릴리즈의 build number는 45이다', () => {
-    expect(CANONICAL_BUILD).toBe(45);
+  it('[계약 1] 이번 릴리즈의 build number는 46이다', () => {
+    expect(CANONICAL_BUILD).toBe(46);
   });
 });
 
@@ -68,11 +68,11 @@ describe('빌드 메타데이터 — 리포트 실제 산출값', () => {
   const QA_BUILD_LABEL = 'build' + BUILD_NUMBER;
 
   it('[계약 3] report.build == canonical의 문자열 표현', () => {
-    expect(String(BUILD_NUMBER)).toBe('45');
+    expect(String(BUILD_NUMBER)).toBe('46');
   });
 
-  it('[계약 4] report.buildLabel == "build45"', () => {
-    expect(QA_BUILD_LABEL).toBe('build45');
+  it('[계약 4] report.buildLabel == "build46"', () => {
+    expect(QA_BUILD_LABEL).toBe('build46');
   });
 
   it('[계약 5] buildLabel의 숫자 부분 == CURRENT_PROJECT_VERSION', () => {
@@ -86,7 +86,7 @@ describe('빌드 메타데이터 — BUILD_MANIFEST', () => {
     const m = buildManifest({ qa: true, build: readBuildNumber(pbxproj),
       branch: 'b', commit: 'c', buildTime: 't' });
     expect(m.build).toBe(CANONICAL_BUILD);
-    expect(m.build).toBe(45);
+    expect(m.build).toBe(46);
   });
 
   it('QA 빌드 manifest는 qa_enabled/dist_qa_flag true, source_qa_flag false', () => {
