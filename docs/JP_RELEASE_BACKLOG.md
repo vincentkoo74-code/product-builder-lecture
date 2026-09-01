@@ -20,7 +20,9 @@
 | JP-BL-010 | DONE | Medium | region-guard 를 release gate 에 연결 (출시 모드) | — |
 | JP-BL-011 | DONE | Medium | `~/.rps_tokyo_env`(Tokyo 전용) / `~/.rps_seoul_env`(Seoul 전용) 분리 완료. 교차 ref 0건, 0600, 백업 보존 | — |
 | JP-REGION-ISOLATION-001 | OPEN | **High** | `feature/rps-kr-seoul-backend` 와 `main` 의 실행 상수가 Tokyo ref — **KR 소유, JP 프로젝트가 고치지 않는다** | 아니오(KR 측) |
-| JP-ENTRY-INVITE-002 | OPEN | **High** | **초대 부트스트랩이 세션 확인보다 먼저 실행**돼 신규 초대자가 신원 없이 초대를 소비·소실 → 합류 미완료. 브라우저 E2E 가 발견 | **예** |
+| JP-ENTRY-INVITE-002 | DONE | **High** | 보류 초대(pending invite) 도입 — 초대는 신원 확립까지 보류되고 URL 에 남는다. 브라우저 E2E 15/15 로 실증(1라운드 진행 포함) | — |
+| JP-E2E-JWT-FIDELITY | OPEN | **High** | 브라우저 E2E 하니스가 프로덕션 인증 헤더를 벗겨 로컬 PostgREST 에 넘긴다 → 실제 JWT 검증·최소권한 GRANT/RLS 강제력은 미검증. **Tokyo 보안 5종 배포 전에 해소 필수** | 아니오(보안 5종 게이트에 종속) |
+| JP-I18N-JOIN-DEFAULT | OPEN | Medium | 초대 합류 시 기본 닉네임이 한국어 상수 `"참가자"` — JP 세션에도 그대로 노출(`getInlineJoinNickname`). CORE 공용 기본값이라 별도 슬라이스로 분리 | 아니오 |
 | JP-TOKYO-SECURITY-MIGRATION-GATE | OPEN | **High** | Tokyo 보안 5종(room_id 인덱스·grants·created_at 불변·target RLS·realtime publication) 배포 게이트 — NO-GO 유지 | **예** |
 | JP-BL-012 | OPEN | Low | JP 앱 식별자·딥링크 스킴 분리 검토 | 미정 |
 | JP-BL-014 | DONE | Medium | A5 device-matrix 타임아웃 → **Tokyo 복원으로 해소, 통과 확인** | — |
@@ -515,6 +517,43 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-09-01 (3차) — JP-ENTRY-INVITE-002: 신원 부트스트랩을 가로지르는 보류 초대
+
+**근본 원인(확정).** 파서/해석기 결함이 아니다. **앱 부트 순서와 상태 보존** 결함이다.
+초대가 *파싱되었다는 이유만으로* 소비되고 URL 에서 지워졌다. 그 시점에 신규 초대자는
+아직 신원이 없어(게스트/SNS 미확정) 권위 조회의 selfId 도 입장 권한도 없었다.
+
+**설계(CEO 지정 B안 — PENDING INVITE CONTEXT).**
+
+```
+URL → 파싱 → 형식 검증 → pendingInviteContext 생성
+    → 신원 부트스트랩을 가로질러 보존 → 사용 가능한 신원 확립
+    → 소비 → 권위 room/participant 조회 → resolveInviteChallenge()
+    → 합류/재개/네비게이션 → 성공 후에야 URL 에서 invite 제거
+```
+
+상태: `PARSED → WAITING_FOR_IDENTITY → RESOLVING → CONSUMED | FAILED` (5개, 그 이상 만들지 않았다).
+
+**소비 규칙(확정).**
+- 소비 **아님**: URL 파싱 / 인증 화면 표시 / 게스트 신원 요청 / 세션 조회 중
+- 소비: 신원이 있고 **또한** 초대가 권위 해석·네비게이션에 넘겨진 뒤
+- 종결 상태(INVALID_TOKEN·HOST_GONE·ROOM_FULL·UNAVAILABLE)는 **화면 확정 후** URL 정리
+- 형식 오류는 신원과 무관하게 즉시 종결한다(DB 도 신원도 필요 없다)
+- **일시적 조회 실패는 종결이 아니다** → `FAILED`, URL 유지, 새로고침으로 복구
+
+**이 슬라이스가 추가로 찾은 것.** `openInviteEntry` 가 "결과 없음"과 "조회 실패"를 모두
+INVALID_TOKEN 으로 묶어 처리하고 있어, **일시적 네트워크 실패가 초대를 영구 파기**했다.
+E2E 케이스 12 가 이걸 잡았다. PostgREST `PGRST116`/406(결과 없음)만 종결로 보고
+나머지는 `lookupFailed` 로 남겨 URL 을 지키게 했다. VALID 로 흘려보내는 경로는 여전히 없다.
+
+**검증.** 단위 30건(전이·소비규칙·새로고침·멱등성·경계·부트 순서 고정) + 브라우저 E2E **15/15**.
+E2E 는 신원 없는 실제 두 번째 브라우저가 초대 URL → 인증 화면 → 게스트 → 합류 →
+준비 → 카운트다운 → **실제 1라운드 손 내기**까지 진행하는 것을 관측한다.
+
+단위 스위트 비공허성은 결함 재주입으로 확인했다(부트 순서 되돌리면 2건 실패, 복원 시 30/30).
+
+**릴리스 게이트.** JP 브라우저 E2E 는 이제 공식 JP 출시 준비 게이트다 — `docs/JP_RELEASE_GATE.md` 참조.
 
 ### 2026-09-01 (2차) — JP-E2E-INVITE-001: 두 클라이언트 브라우저 E2E
 

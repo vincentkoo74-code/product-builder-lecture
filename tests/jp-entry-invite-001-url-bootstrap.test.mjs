@@ -8,7 +8,7 @@ import { webcrypto } from 'node:crypto';
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const slice = (a, b) => html.slice(html.indexOf(a), html.indexOf(b, html.indexOf(a)));
 const TOKEN_B = slice('    // ── CORE: 초대 토큰', '    // ── CORE: 초대 해석');
-const BOOT_B = slice('    // ── JP 부트스트랩: URL → entryContext', '    // 해석 의도를 실제 화면으로 렌더링한다');
+const BOOT_B = slice('    // ── JP 부트스트랩: URL → entryContext', '    // ── JP 초대 연속성:');
 const codeOnly = (b) => b.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n');
 
 function load({ resolved = { state: 'VALID', roomCode: 'R1' }, href = 'https://x.test/app?invite=' + 'T'.repeat(22), currentUserId = 'ME' } = {}) {
@@ -173,8 +173,12 @@ describe('[ENTRY] §7 경계 — LINE 로직 없음 / 상태 로직 미복제', 
     expect(c).not.toMatch(/params\.get\('room'\)|getAll\('room'\)/);
   });
   it('부트 시퀀스가 기존 입장 경로를 재사용한다 (초대 전용 입장 로직 없음)', () => {
-    const boot = slice('// JP-ENTRY-INVITE-001: `?invite=<token>` 진입', 'updateAuthTopbar();');
-    expect(boot).toContain('joinFromQrCode');
-    expect(boot).toContain('bootstrapInviteEntry(location.search');
+    // JP-ENTRY-INVITE-002 이후: 입장 핸들러는 makeInviteEntryHandlers 로 옮겨졌고
+    // 여전히 기존 joinFromQrCode 경로를 그대로 쓴다.
+    const handlers = slice('function makeInviteEntryHandlers()', 'async function resumePendingInviteAfterIdentity');
+    expect(handlers).toContain('joinFromQrCode');
+    expect(handlers).not.toMatch(/from\('participants'\)|from\('rooms'\)/);  // 초대 전용 입장 로직 없음
+    const boot = slice('// JP-ENTRY-INVITE-001/002: `?invite=<token>` 진입', 'updateAuthTopbar();');
+    expect(boot).toContain('beginInviteEntry(location.search');
   });
 });

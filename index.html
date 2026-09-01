@@ -5660,9 +5660,13 @@
       try {
         const rRes = await database.from('rooms').select('*').eq('invite_token', inviteToken).single();
         // 스키마 미배포(42703: column does not exist) 등 어떤 오류도 VALID 로 흘려보내지 않는다.
+        // 다만 **결과 없음**(PostgREST PGRST116 / 406)과 **조회 실패**(네트워크·권한·스키마)는 다르다.
+        // 앞은 종결(초대가 실제로 없다), 뒤는 일시적 — 일시적 실패로 초대를 파기해서는 안 된다
+        // (JP-ENTRY-INVITE-002 §6: 소비 전 초대는 복구 가능해야 한다).
         if (rRes && rRes.error) {
+          const notFound = rRes.error.code === 'PGRST116' || rRes.status === 406;
           return { state: 'INVALID_TOKEN', intent: inviteIntentForState('INVALID_TOKEN'),
-                   lookupFailed: true };
+                   lookupFailed: !notFound };
         }
         room = rRes ? rRes.data : null;
         if (room && room.id) {
@@ -5780,8 +5784,133 @@
       }
       const resolved = await openInviteEntry({ inviteToken: ctx.inviteToken, selfId: state.currentUserId });
       const nav = await navigateFromInvite(resolved, handlers);
-      stripInviteFromUrl();
-      return { handled: true, entryContext: ctx, state: resolved.state, nav };
+      // 조회 자체가 실패했다면 종결이 아니다 — 초대를 URL 에서 지우지 않는다(새로고침으로 복구).
+      if (!resolved.lookupFailed) stripInviteFromUrl();
+      return { handled: true, entryContext: ctx, state: resolved.state, nav,
+               lookupFailed: !!resolved.lookupFailed };
+    }
+
+    // ── JP 초대 연속성: 신원 부트스트랩을 가로지르는 보류 초대 (JP-ENTRY-INVITE-002) ──────
+    //
+    // 결함: 초대가 **파싱되었다는 이유만으로** 소비되고 URL 에서 지워졌다. 신규 초대자는
+    // 그 시점에 아직 신원이 없어(게스트/SNS 미확정) 권위 조회의 selfId 도, 입장 권한도 없다.
+    // 그래서 초대는 사라지고 합류는 완료되지 않았다.
+    //
+    // 원칙: **파싱 ≠ 소비.** 초대는 신원이 생길 때까지 메모리에 보류되고, URL 에도 그대로 남는다
+    // (= 새로고침 복구원). 신원이 생긴 뒤에야 권위 조회 → 네비게이션 → 그 다음에 URL 정리다.
+    //
+    // 상태 전이(이것만 있으면 된다 — 일반 워크플로 엔진을 만들지 않는다):
+    //   PARSED ─┬─(신원 있음)─> RESOLVING ─┬─> CONSUMED
+    //           │                          └─> FAILED ─(재시도/새로고침)─> RESOLVING
+    //           └─(신원 없음)─> WAITING_FOR_IDENTITY ─(신원 생성)─> RESOLVING
+    //
+    // 형식 오류(malformed/ambiguous)는 이 보류를 타지 않는다 — 신원과 무관하게 거부 가능하고
+    // DB 도 신원도 필요 없다. 신원이 필요한 것은 **권위 조회와 입장**뿐이다.
+    const PENDING_INVITE_STATUS = {
+      PARSED: 'PARSED',
+      WAITING_FOR_IDENTITY: 'WAITING_FOR_IDENTITY',
+      RESOLVING: 'RESOLVING',
+      CONSUMED: 'CONSUMED',
+      FAILED: 'FAILED',
+    };
+
+    let pendingInviteContext = null;
+
+    // 사용 가능한 신원 = 이 앱에서 방에 들어갈 수 있는 상태(게스트 확정 또는 SNS 인증 완료).
+    // Supabase 세션 유무가 아니라 앱의 진입 권한 상태가 기준이다 — 게스트도 정당한 신원이다.
+    function hasUsableIdentity() {
+      try { return !!getAuthState(); } catch (e) { return false; }
+    }
+
+    function getPendingInviteContext() { return pendingInviteContext; }
+
+    // 아직 소비되지 않았고, 소비를 시도할 수 있는 상태인가.
+    function hasPendingInvite() {
+      const p = pendingInviteContext;
+      if (!p) return false;
+      return p.status === PENDING_INVITE_STATUS.PARSED
+          || p.status === PENDING_INVITE_STATUS.WAITING_FOR_IDENTITY
+          || p.status === PENDING_INVITE_STATUS.FAILED;
+    }
+
+    function markInviteWaitingForIdentity() {
+      const p = pendingInviteContext;
+      if (!p) return null;
+      if (p.status === PENDING_INVITE_STATUS.PARSED || p.status === PENDING_INVITE_STATUS.FAILED) {
+        p.status = PENDING_INVITE_STATUS.WAITING_FOR_IDENTITY;
+      }
+      return p.status;
+    }
+
+    // 부트 1단계: URL 을 읽어 보류 컨텍스트를 만든다. **권위 조회도, URL 정리도 하지 않는다.**
+    // 원본 search 를 함께 보관하는 이유: 이후 다른 부트 단계(OAuth 콜백 정리 등)가
+    // history.replaceState 로 주소를 갈아엎어도 초대는 메모리에서 살아남아야 하기 때문이다.
+    async function beginInviteEntry(search, handlers = {}) {
+      const ctx = buildEntryContext(search);
+      if (!ctx.hasInvite) {
+        pendingInviteContext = null;
+        return { handled: false, pending: false, entryContext: ctx };
+      }
+      if (!ctx.inviteToken) {
+        // 형식 오류 — 신원도 DB 도 필요 없이 즉시 종결한다.
+        pendingInviteContext = { token: null, source: 'url', status: PENDING_INVITE_STATUS.RESOLVING, search };
+        const nav = await navigateFromInvite(
+          { state: 'INVALID_TOKEN', intent: inviteIntentForState('INVALID_TOKEN') }, handlers);
+        stripInviteFromUrl();
+        pendingInviteContext.status = PENDING_INVITE_STATUS.CONSUMED;
+        return { handled: true, pending: false, entryContext: ctx, state: 'INVALID_TOKEN', nav };
+      }
+      pendingInviteContext = {
+        token: ctx.inviteToken, source: 'url', status: PENDING_INVITE_STATUS.PARSED, search,
+      };
+      return { handled: false, pending: true, entryContext: ctx };
+    }
+
+    // 부트 2단계: 신원이 생긴 뒤에만 호출된다. 여기서 비로소 권위 조회 → 네비게이션 → URL 정리다.
+    // 소비 정의: **신원이 있고 + 초대가 권위 해석/네비게이션에 넘겨졌을 때**만 소비다.
+    //   소비 아님: URL 파싱 / 인증 화면 표시 / 게스트 신원 요청 / 세션 조회 중
+    // 실패(예외)는 FAILED 로 남기고 URL 을 건드리지 않는다 — 새로고침으로 복구 가능해야 한다.
+    async function consumePendingInvite(handlers = {}) {
+      const p = pendingInviteContext;
+      if (!p) return { consumed: false, reason: 'absent' };
+      if (p.status === PENDING_INVITE_STATUS.RESOLVING) return { consumed: false, reason: 'in_progress' };
+      if (p.status === PENDING_INVITE_STATUS.CONSUMED) return { consumed: false, reason: 'already_consumed' };
+      if (!hasUsableIdentity()) {
+        markInviteWaitingForIdentity();
+        return { consumed: false, reason: 'no_identity', status: p.status };
+      }
+      p.status = PENDING_INVITE_STATUS.RESOLVING;
+      try {
+        const boot = await bootstrapInviteEntry(p.search, handlers);
+        if (boot && boot.lookupFailed) {
+          // 권위 조회에 도달하지 못했다 = 소비가 아니다. 초대는 URL 에 남아 재시도 가능하다.
+          p.status = PENDING_INVITE_STATUS.FAILED;
+          return { consumed: false, reason: 'lookup_failed', state: boot.state, nav: boot.nav };
+        }
+        p.status = PENDING_INVITE_STATUS.CONSUMED;
+        return { consumed: true, state: boot.state, nav: boot.nav, entryContext: boot.entryContext };
+      } catch (e) {
+        p.status = PENDING_INVITE_STATUS.FAILED;
+        p.error = (e && e.message) ? e.message : String(e);
+        return { consumed: false, reason: 'failed', error: p.error };
+      }
+    }
+
+    // 초대 입장은 **기존 입장 경로**를 그대로 쓴다 — 초대 전용 입장 로직을 새로 만들지 않는다.
+    function makeInviteEntryHandlers() {
+      const enterRoom = async (roomCode) => {
+        if (!roomCode) return;
+        state.roomCode = String(roomCode).toUpperCase();
+        state.roomUrl = buildRoomUrl(state.roomCode);
+        await joinFromQrCode(state.roomCode);
+      };
+      return { join: enterRoom, resume: enterRoom };
+    }
+
+    // 신원이 방금 생겼을 때(게스트 확정 / SNS 로그인 완료) 보류 초대를 이어붙인다.
+    async function resumePendingInviteAfterIdentity() {
+      if (!hasPendingInvite()) return { consumed: false, reason: 'absent' };
+      return await consumePendingInvite(makeInviteEntryHandlers());
     }
 
     // 해석 의도를 실제 화면으로 렌더링한다(JP-SYNC-INVITE-003B).
@@ -14843,13 +14972,21 @@ function summarizeGameStats(rows) {
     window.handleKakaoCallback = handleKakaoCallback;
     window.handleLineCallback = handleLineCallback;
 
-    function playAsGuest() {
+    async function playAsGuest() {
       setAuthState("guest");
       showToast("게스트 모드로 게임을 시작합니다 🎮");
       const savedNickname = loadNickname();
       if (savedNickname) {
         $("homeNickname").value = savedNickname;
         $("joinName").value = savedNickname;
+      }
+      // JP-ENTRY-INVITE-002: 게스트 신원이 방금 생겼다 → 보류 중이던 초대를 여기서 이어받는다.
+      // 초대가 없으면 아무 일도 일어나지 않는다(KR/QR 경로 무영향).
+      if (hasPendingInvite()) {
+        const consumed = await resumePendingInviteAfterIdentity();
+        // 소비됐거나, 소비되지 않았더라도 초대 흐름이 화면을 확정했다면 여기서 끝낸다.
+        if (consumed && (consumed.consumed || consumed.nav)) return;
+        // 그 외에는 아래 일반 진입으로 떨어진다 — 초대는 URL 에 남아 새로고침으로 복구된다.
       }
       // QR 코드로 진입한 경우 join 화면으로
       if (state.roomCode) {
@@ -14891,23 +15028,15 @@ function summarizeGameStats(rows) {
         if (!ENABLE_LINE_LOGIN) $("snsBtnLine")?.classList.add("hidden");
         if (!ENABLE_GOOGLE_LOGIN) $("snsBtnGoogle")?.classList.add("hidden");
 
-        // JP-ENTRY-INVITE-001: `?invite=<token>` 진입. 초대가 없으면 아무것도 하지 않는다.
-        // 여기서는 파싱·위임만 한다 — 도전 유효성은 기존 어댑터가 판단한다.
-        // OAuth 콜백보다 뒤, 일반 진입(room 파라미터) 처리보다 앞에 둔다.
+        // JP-ENTRY-INVITE-001/002: `?invite=<token>` 진입 — **1단계: 파싱·보류만 한다.**
+        // 권위 조회도 입장도 URL 정리도 여기서 하지 않는다. 신원이 아직 없을 수 있기 때문이다.
+        // 여기서 미리 읽어 두는 이유는 아래 OAuth 정리 코드가 주소를 갈아엎어도
+        // 초대가 메모리에서 살아남게 하기 위해서다.
+        // 실제 소비는 세션/신원 확립 **이후** 아래 2단계에서 일어난다.
         try {
-          // 입장은 기존 경로를 그대로 쓴다 — 초대 전용 입장 로직을 새로 만들지 않는다.
-          // joinFromQrCode 는 "코드로 참가" 의 정식 경로다(입력란 채움 → joinRoom()).
-          const enterRoom = async (roomCode) => {
-            if (!roomCode) return;
-            state.roomCode = String(roomCode).toUpperCase();
-            state.roomUrl = buildRoomUrl(state.roomCode);
-            await joinFromQrCode(state.roomCode);
-          };
-          const inviteBoot = await bootstrapInviteEntry(location.search, {
-            join: enterRoom,
-            resume: enterRoom,
-          });
-          if (inviteBoot && inviteBoot.handled) {
+          const inviteBegin = await beginInviteEntry(location.search, makeInviteEntryHandlers());
+          if (inviteBegin && inviteBegin.handled) {
+            // 형식 오류처럼 신원 없이 종결 가능한 경우만 여기서 끝난다.
             updateAuthTopbar();
             return;
           }
@@ -14959,6 +15088,12 @@ function summarizeGameStats(rows) {
                 const meta = sess.user.user_metadata || {};
                 const oauthName = meta.full_name || meta.name || meta.preferred_username || "";
                 if (oauthName && !loadNickname()) saveNickname(oauthName);
+                // JP-ENTRY-INVITE-002: SNS 신원이 방금 생겼다 → 보류 중이던 초대를 이어받는다.
+                if (hasPendingInvite()) {
+                  resumePendingInviteAfterIdentity().catch((err) =>
+                    console.warn("pending invite resume failed:", err?.message || err));
+                  return;
+                }
                 setTimeout(showFirstGameGuideAfterLogin, 350);
               }
               if (event === "SIGNED_OUT") {
@@ -14981,6 +15116,27 @@ function summarizeGameStats(rows) {
         startGlobalInviteMonitor();
 
         const authState = getAuthState();
+
+        // JP-ENTRY-INVITE-002 **2단계: 신원 확립 이후에만 초대를 소비한다.**
+        // 이 지점은 OAuth 콜백 / getSession / setAuthState / loadState /
+        // discardInProgressRoomSession 이 모두 끝난 뒤다 — 즉 여기서 얻는 신원은 실제로 쓸 수 있고,
+        // 이후 인증 경계 리셋이 방금 만든 입장 상태를 되감을 위험도 없다.
+        if (hasPendingInvite()) {
+          if (!authState) {
+            // 신원이 없다 → 인증 화면. 초대는 소비하지 않고 URL 에도 그대로 둔다(새로고침 복구원).
+            // 게스트/SNS 로 신원이 생기는 순간 resumePendingInviteAfterIdentity() 가 이어받는다.
+            markInviteWaitingForIdentity();
+            showAuthScreen();
+            return;
+          }
+          const consumed = await consumePendingInvite(makeInviteEntryHandlers());
+          // 소비되지 않았더라도 초대 흐름이 이미 화면을 확정했다면(안내 화면 등)
+          // 일반 진입이 그 위에 덮어쓰지 않는다. 초대는 URL 에 남아 새로고침으로 복구된다.
+          if (consumed && (consumed.consumed || consumed.nav)) {
+            updateAuthTopbar();
+            return;
+          }
+        }
 
         if (room) {
           state.roomCode = room.toUpperCase();
