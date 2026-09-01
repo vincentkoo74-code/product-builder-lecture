@@ -115,10 +115,12 @@ describe('B43 필드 결함(호스트 QR 미생성·게임룰 고정) — parseP
 });
 
 describe('소스 계약 — 판당 목표·시드·델타·envelope·한번더 (유지)', () => {
-  it('판당 엔진 목표 = 비단판이면 확정자+1, 설정 원본은 getConfiguredTaggerCount', () => {
+  it('판당 엔진 목표 = 판 시작 시드(__loser__ 행)+1 [STAGE 2 RECOVERY 대체], 설정 원본은 getConfiguredTaggerCount', () => {
+    // 종전 locked+1 은 집계 순간 자라는 매치 값이 같은 판의 종결 조건을 소급 오염(실서버 재현) — 폐지.
     expect(html).toContain('function getConfiguredTaggerCount()');
-    const s = html.indexOf('function getTargetLoserCount()'); const body = html.slice(s, s + 700);
-    expect(body).toContain('getMatchLockedIds'); expect(body).toMatch(/\+\s*1/);
+    const s = html.indexOf('function getGameResolutionTarget()'); const body = html.slice(s, s + 700);
+    expect(body).toContain("p.choice === '__loser__'"); expect(body).toMatch(/seeded \+ 1/);
+    expect(html.slice(html.indexOf('function getTargetLoserCount()'), html.indexOf('function getTargetLoserCount()') + 700)).not.toContain('getMatchLockedIds');
   });
   it('판 시작 시드 + __loser__ 마커 (열외 = 기존 confirmed-loser 경로)', () => {
     const s = html.indexOf('async function beginNewGameRound'); const body = html.slice(s, s + 9000);

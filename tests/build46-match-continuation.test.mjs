@@ -203,3 +203,90 @@ describe('Build46 — 바로전 게임결과: 같은 방에서 다시하기 삭�
     expect(seg).toContain('common.home');
   });
 });
+
+// ═══ STAGE 2 RECOVERY (승인 계약): GAME 종결 목표 ≠ MATCH 술래 목표 — 소급 오염 금지 ═══
+describe('RECOVERY — 게임 종결 목표의 불변성(판 시작 시드 유도)', () => {
+  function loadTargets({ participants, rule, configured }) {
+    const src = sliceFn('getRequiredMatchTaggerCount') + '\n' + sliceFn('getGameResolutionTarget') + '\n' + sliceFn('getTargetLoserCount');
+    return new Function('state', 'getMatchRule', 'getConfiguredTaggerCount',
+      src + '\nreturn { getRequiredMatchTaggerCount, getGameResolutionTarget, getTargetLoserCount };')(
+      { participants, targetLoserCount: configured }, () => rule, () => configured);
+  }
+  const P = (id, choice) => ({ id, name: id, choice });
+  it('[불변] 게임 목표 = 시드(__loser__ 행) + 1 — envelope locked 성장과 무관', () => {
+    // G2 시작: 시드 0 (아직 아무도 잠기지 않음) → 목표 1. 판정 후 locked 가 [B] 로 자라도
+    // 시드 행은 판 중 불변이므로 목표는 1 그대로 — 에코 재평가가 판을 되살릴 수 없다.
+    const t = loadTargets({ participants: [P('h', 'rock|win'), P('a', 'rock|win'), P('b', 'scissors|lose')], rule: 'best3', configured: 2 });
+    expect(t.getGameResolutionTarget()).toBe(1);
+    expect(t.getTargetLoserCount()).toBe(1);
+    expect(t.getRequiredMatchTaggerCount()).toBe(2); // MATCH 목표는 별개(설정값)
+  });
+  it('[불변] 다음 판(시드 1)에서는 목표 2 — 시드 수만이 판 목표를 정한다', () => {
+    const t = loadTargets({ participants: [P('h', null), P('a', null), P('b', '__loser__')], rule: 'best3', configured: 2 });
+    expect(t.getGameResolutionTarget()).toBe(2);
+  });
+  it('[불변] 단판은 종전대로 설정값', () => {
+    const t = loadTargets({ participants: [P('h', null), P('a', null)], rule: 'single', configured: 2 });
+    expect(t.getGameResolutionTarget()).toBe(2);
+  });
+  it('[소스] getTargetLoserCount 는 더 이상 matchLockedIds 를 참조하지 않는다(오염원 제거)', () => {
+    const s = sliceFn('getTargetLoserCount');
+    expect(s).not.toContain('getMatchLockedIds');
+  });
+});
+
+describe('RECOVERY — 원장 최종성 가드(집계된 판은 영구 종결)', () => {
+  function loadTallied({ rule, talliedGameNo, gameRound }) {
+    const src = sliceFn('isCurrentGameTallied');
+    return new Function('getMatchRule', 'getMatchEnvelope', 'getGameRound', 'toPositiveInt',
+      src + '\nreturn isCurrentGameTallied;')(
+      () => rule, () => ({ stale: false, talliedGameNo }), () => gameRound,
+      (v, f = 0) => { const n = parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : f; });
+  }
+  it('talliedGameNo === 현재 판 → true / 다른 판·단판 → false', () => {
+    expect(loadTallied({ rule: 'best3', talliedGameNo: 2, gameRound: 2 })()).toBe(true);
+    expect(loadTallied({ rule: 'best3', talliedGameNo: 1, gameRound: 2 })()).toBe(false);
+    expect(loadTallied({ rule: 'single', talliedGameNo: 2, gameRound: 2 })()).toBe(false);
+  });
+  it('[소스] nextRound gameOver 가드에 최종성 단락이 있다', () => {
+    expect(html).toMatch(/loserIds\.length >= getTargetLoserCount\(\) \|\| state\.status === "game_over" \|\| \(\(typeof isCurrentGameTallied === "function"\) && isCurrentGameTallied\(\)\)/);
+  });
+  it('[소스] scheduleRematchAutoAdvance 콜백도 집계된 판에서는 재대결을 열지 않는다', () => {
+    const s = sliceFn('scheduleRematchAutoAdvance');
+    expect(s).toContain('isCurrentGameTallied');
+  });
+});
+
+describe('RECOVERY — §5 정본 재현(tagger=2, G2 에코): 판정 결정론', () => {
+  it('G2 확정 직후 locked=[B] 로 자라도: 판은 종결 유지(목표 불변) + 매치는 미완료(계속)', () => {
+    const M = fns();
+    // G2 판정 완료 상태: 시드 0, confirmed=[b], tally b:2 → locked [b]
+    const d = M.computeMatchDecision({ rule: 'best3', tally: { b: 2 }, lockedIds: [], qualifiedIds: [], targetTaggerCount: 2, participantsCount: 3 });
+    expect(d.lockedIds).toEqual(['b']);
+    expect(d.complete).toBe(false); // required 2 — 매치는 계속(G3), G2 재개는 불가(위 불변+가드)
+    expect(d.finalTaggerIds).toEqual([]);
+    // G3(시드 [b]) 이후 h 2패 도달 → 그때만 완료
+    const d2 = M.computeMatchDecision({ rule: 'best3', tally: { b: 2, h: 2 }, lockedIds: ['b'], qualifiedIds: ['b'], targetTaggerCount: 2, participantsCount: 3 });
+    expect(d2.complete).toBe(true);
+    expect(d2.finalTaggerIds.sort()).toEqual(['b', 'h']);
+  });
+  it('[§8] best3/best5 × tagger1/2 매트릭스 — required 는 매치 길이만 바꾼다', () => {
+    const M = fns();
+    for (const [rule, th] of [['best3', 2], ['best5', 3]]) {
+      for (const req of [1, 2]) {
+        let tally = {}, locked = [], qualified = [];
+        let completions = 0;
+        const order = ['b', 'h'];
+        for (let gi = 0; gi < th * req; gi++) {
+          const loser = order[Math.floor(gi / th)];
+          tally = M.applyMatchGameResult(tally, locked.includes(loser) ? [] : [loser]);
+          const d = M.computeMatchDecision({ rule, tally, lockedIds: locked, qualifiedIds: qualified, targetTaggerCount: req, participantsCount: 3 });
+          locked = d.lockedIds; qualified = d.qualifiedIds;
+          if (d.complete) completions++;
+        }
+        expect(completions, rule + ' req' + req).toBe(1);
+        expect(locked.length, rule + ' req' + req).toBe(req);
+      }
+    }
+  });
+});

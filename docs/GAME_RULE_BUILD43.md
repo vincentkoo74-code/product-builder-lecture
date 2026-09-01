@@ -79,3 +79,22 @@ Build45의 "GAME → 최종형 결과 → 호스트 재시작" 모델을 폐지�
 - **QA 이벤트**: `MATCH_AUTO_NEXT_SCHEDULED`(WRPS-B46).
 - **추가 UI 지시**: 홈 → "바로전 게임결과"(screenStats)의 "같은 방에서 다시 하기"(statsReplayBtn/inviteForReplay 진입 버튼) 삭제 — 처음으로만 유지(replayBtn 참조 2곳은 기존 null-guard, inviteForReplay 함수는 build29 계약 보존 위해 잔존).
 - **NO-TOUCH 게이트 보정(2026-09-01)**: 자동 판 전환을 `status:"ready"`(준비 정족수 areAllActivePlayersReady 의존 — 참가자 '준비' 탭 필요)에서 **`status:"playing"`+countdownStartAt 직행**(startGame 동일 계열)으로 교체. 판 사이 사용자 입력 0회: 참가자는 'playing' 수신 → runCountdownThenShowGame 자동 진입, host 는 begin 직후 enterPlayingStateFromRoomUpdate() 로컬 진입, locked 는 `__loser__` 마커 비참가. READY 는 판 내부(재대결 준비) 전용 상태로 남는다 — 판 간 경로에서 정족수/강제시작 완전 배제.
+
+## 🔴→🟢 Build46 판정 인시던트 RECOVERY (2026-09-01, STAGE 2 승인 계약)
+**근본원인(실서버 재현·확정)**: 종전 `getTargetLoserCount() = matchLockedIds.length + 1` — 판의 집계 순간
+자라는 **매치 값**이 같은 판의 **종결 조건**에 소급 주입됨. tagger≥2 에서 잠금 발생 판(G2)의 FINAL 직후
+host 자기 에코가 새 목표(2)로 그 판을 미완으로 재해석 → `nextRound()` 유령 재대결(round 2) → 오토픽
+패배가 tally 에 무기록(멱등 원장) → 확정 목록 오염. Build43 잠재 결함을 Build46 자동 연속이 노출.
+**수리(불변 계약)**:
+- `getRequiredMatchTaggerCount()` = 설정값 — **매치 종료 판정 전용**(판 종결 조건 사용 금지).
+- `getGameResolutionTarget()` = 단판이면 설정값, 비단판이면 **판 시작 시드('__loser__' 행 수) + 1** —
+  시드는 판 시작에만 기록되고 판 중 불변이므로 "판 시작 시점 고정" 계약이 신규 상태 없이 성립.
+  matchLockedIds 는 판 종결 목표에서 **절대 읽지 않는다**.
+- `getTargetLoserCount()` = getGameResolutionTarget 위임(§6 감사: 22개 호출부 전부 게임-판정 분류,
+  매치측은 전부 configured/required 경유 — 모호 사용 0).
+- **원장 최종성 가드** `isCurrentGameTallied()`(matchTalliedGameNo === 현재 판): `nextRound()` gameOver
+  가드와 `scheduleRematchAutoAdvance` 콜백에 하드 단락 — 집계된 판은 에코/지연/예약 어떤 경로로도
+  재대결·재집계 불가(목표 불변과 별개의 이중 방어, 둘 다 필수).
+**검증**: RECOVERY 테스트 7 RED→GREEN + §5 정본(tagger=2 G2 에코) 결정론 + §8 매트릭스(best3/5 × req1/2
+완료 정확히 1회). **라이브 Seoul**: best3·tagger2 — G2 유령 round2/오토픽/패 유실 소멸, B 열외, H 2패에서만
+MATCH_FINAL(run-t2-fixed.json); best5·tagger2 동일 클린(run-b5t2.json). before 증적 run-t2b.json.
