@@ -4974,6 +4974,10 @@
     const MARKET_CONFIG = {
       market: 'JP',
       minParticipantsToStart: 2,
+      // JP-I18N-JOIN-DEFAULT: 닉네임 없이 초대로 합류할 때의 기본 표시명.
+      // 공용 기본값은 한국어 상수라 JP 세션에 그대로 노출됐다. 시장 계층에서만 덮어쓴다 —
+      // 이 키가 없는 시장(KR)은 기존 기본값을 그대로 쓴다(KR 동작 무변경).
+      defaultJoinNickname: 'ゲスト',
     };
 
     // V1.0_JP: 일본 빌드는 Tokyo(ap-northeast-1) Supabase 를 가리킨다.
@@ -8722,8 +8726,17 @@
       input.value = input.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 8);
     }
 
+    // 기본 표시명은 시장 계층이 정한다(JP-I18N-JOIN-DEFAULT).
+    // MARKET_CONFIG 에 키가 없으면 기존 공용 기본값으로 떨어진다 — KR 경로는 그대로다.
+    // ⚠️ typeof 가드는 이 파일의 관례를 따른다(여러 테스트가 이 함수만 좁게 추출해 실행한다).
+    function getDefaultJoinNickname() {
+      const v = (typeof MARKET_CONFIG !== 'undefined' && MARKET_CONFIG)
+        ? MARKET_CONFIG.defaultJoinNickname : undefined;
+      return (typeof v === 'string' && v.trim()) ? v : "참가자";
+    }
+
     function getInlineJoinNickname() {
-      return ($("homeNickname")?.value || "").trim() || loadNickname() || "참가자";
+      return ($("homeNickname")?.value || "").trim() || loadNickname() || getDefaultJoinNickname();
     }
 
     async function joinFromQrCode(roomCode) {

@@ -25,7 +25,7 @@
 | JP-CORE-DEFERRED-LEAVE-TIMING | OPEN | Medium | 결과 화면에서 누른 퇴장이 **한 라운드 더** 지연 실행된다(WRPS-084 설계). 1:1 대전에서 체감 큼 — **CORE, KR 공용** | 아니오 |
 | JP-RT-PRESUBSCRIBE-GAP | OPEN | Medium | 채널 구독 완료 **이전** 커밋 변경은 Realtime 이 재생하지 않는다 → 폴링이 안전망. 전송 특성(R1), 클라이언트 처리 사항 | 아니오 |
 | JP-E2E-JWT-FIDELITY | OPEN | **High** | 브라우저 E2E 하니스가 프로덕션 인증 헤더를 벗겨 로컬 PostgREST 에 넘긴다 → 실제 JWT 검증·최소권한 GRANT/RLS 강제력은 미검증. **Tokyo 보안 5종 배포 전에 해소 필수** | 아니오(보안 5종 게이트에 종속) |
-| JP-I18N-JOIN-DEFAULT | OPEN | Medium | 초대 합류 시 기본 닉네임이 한국어 상수 `"참가자"` — JP 세션에도 그대로 노출(`getInlineJoinNickname`). CORE 공용 기본값이라 별도 슬라이스로 분리 | 아니오 |
+| JP-I18N-JOIN-DEFAULT | DONE | Medium | 기본 표시명을 시장 계층으로 옮김 — JP=`ゲスト`. 키 없는 시장(KR)은 기존 공용 기본값 유지(KR 무변경) | — |
 | JP-TOKYO-SECURITY-MIGRATION-GATE | OPEN | **High** | Tokyo 보안 5종(room_id 인덱스·grants·created_at 불변·target RLS·realtime publication) 배포 게이트 — NO-GO 유지 | **예** |
 | JP-BL-012 | OPEN | Low | JP 앱 식별자·딥링크 스킴 분리 검토 | 미정 |
 | JP-BL-014 | DONE | Medium | A5 device-matrix 타임아웃 → **Tokyo 복원으로 해소, 통과 확인** | — |
