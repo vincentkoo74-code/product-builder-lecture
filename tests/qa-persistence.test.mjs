@@ -59,7 +59,10 @@ function loadQA(shared) {
 const pbxproj = readFileSync(new URL('../ios/App/App.xcodeproj/project.pbxproj', import.meta.url), 'utf8');
 const CANONICAL_BUILD = readBuildNumber(pbxproj);
 if (!CANONICAL_BUILD) throw new Error('[qa-persistence] CURRENT_PROJECT_VERSION not found in project.pbxproj');
-const SOURCE_BUILD_LABEL = 'build' + CANONICAL_BUILD;
+// Build46-R2: 제품 라벨은 바이너리 번호(CANONICAL_BUILD=CPV)와 분리 — index.html 의
+// PRODUCT_BUILD_LABEL 에서 파생한다(드리프트 방지 원칙 유지: 하드코딩이 아니라 소스에서 추출).
+const PRODUCT_LABEL = (html.match(/const PRODUCT_BUILD_LABEL = '([^']+)';/) || [])[1] || String(CANONICAL_BUILD);
+const SOURCE_BUILD_LABEL = 'build' + PRODUCT_LABEL;
 
 describe('Build17 QA persistence (Layer 1) — 실코드', () => {
   let ctx;

@@ -98,3 +98,17 @@ host 자기 에코가 새 목표(2)로 그 판을 미완으로 재해석 → `ne
 **검증**: RECOVERY 테스트 7 RED→GREEN + §5 정본(tagger=2 G2 에코) 결정론 + §8 매트릭스(best3/5 × req1/2
 완료 정확히 1회). **라이브 Seoul**: best3·tagger2 — G2 유령 round2/오토픽/패 유실 소멸, B 열외, H 2패에서만
 MATCH_FINAL(run-t2-fixed.json); best5·tagger2 동일 클린(run-b5t2.json). before 증적 run-t2b.json.
+
+## 🔴→🟢 FIELD RACE #3 — playing-phase penalty writer 의 원장 덮어쓰기 (2026-09-01)
+**필드 증상**: 삼세판/다섯판에서 승/패 누적이 쌓이지 않아 매치 무한 반복.
+**근본원인(라이브 유기 재현 run-alt.json G2 + 코드 의미론 확정)**: `publishChoiceWindowEnd`(선택창 시각)와
+`republishCountdownStartAsHost`(카운트다운 재발행)가 ① 사전 빌드한 pre-FINAL penalty 스냅샷을
+② 무조건(penalty-only)으로 DB에 쓰고 ③ 성공 시 host 로컬 state.penalty 까지 그 구본으로 되돌렸다.
+FINAL write(tally 병합·matchTalliedGameNo·continuation)와 착지 순서가 뒤집히면(실기기 RTT/지터에서 상시)
+그 판의 원장이 DB·로컬 양쪽에서 증발 — 임계 도달 불가. Build30-R2 잠재 → 매치 원장(B43)+자동 연속(B46)으로 치명화.
+**수리(§I 단일 질서 정합)**: 두 writer 모두 — `.eq('status','playing')` 조건부 쓰기(선택창/카운트다운 시각은
+playing 에서만 의미) + `.select('id')` 적용 행 확인 후에만 로컬 반영(0행 = 레이스 패배 → 명시적 no-op +
+QA `…_SKIPPED_STALE`). 오프라인은 종전 로컬 동작 유지.
+**검증**: RED 3→GREEN(조건부 소스 핀 2 + 기능 no-op 샌드박스) · 교대 패자 라이브 5회 연속 클린 ·
+정본 t2 클린 유지. 잔여: 유기 레이스 재현률이 낮아(랩 12회 중 1회) 물리 필드 QA 가 최종 확증 지점.
+- **UI 지시 반영**: 내기록(accountStatsPopup)의 "계정 삭제" 버튼 제거(닫기만 유지 — deleteAccountWithConfirm 함수는 존치).

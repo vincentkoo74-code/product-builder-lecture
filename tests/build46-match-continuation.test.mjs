@@ -290,3 +290,50 @@ describe('RECOVERY — §5 정본 재현(tagger=2, G2 에코): 판정 결정론'
     }
   });
 });
+
+// ═══ FIELD RACE #3 (2026-09-01): 선택창 publisher 의 stale penalty 가 FINAL 원장을 덮음 ═══
+// 재현: run-alt.json G2 — publishChoiceWindowEnd 의 in-flight 쓰기가 FINAL(tally 병합·tGNo·continuation)
+// 직후 착지 → DB·host 로컬 모두 pre-FINAL 구본으로 롤백 → 그 판 원장 증발 → 누적 불가·무한 매치(필드 증상).
+describe('FIELD RACE #3 — playing-phase penalty writer 의 조건부 쓰기', () => {
+  it('[소스] publishChoiceWindowEnd: status=playing 조건부 + 적용 행 확인 후에만 로컬 반영', () => {
+    const s = sliceFn('publishChoiceWindowEnd');
+    expect(s).toContain(".eq('status', 'playing')");
+    expect(s).toContain(".select('id')");
+    expect(s).toMatch(/__rows\.length[\s\S]{0,160}state\.penalty = penalty/);
+    // 로컬 반영은 정확히 1곳(적용 확인 분기 안)만 — 무조건 반영 라인이 남아있으면 2곳 이상이 된다.
+    expect(s.split('state.penalty = penalty;').length - 1).toBe(1);
+  });
+  it('[기능] 판이 이미 result 로 넘어간 뒤 도착한 publish 는 no-op — 로컬 penalty 미오염', async () => {
+    const src = sliceFn('publishChoiceWindowEnd');
+    function makeDb(rows) {
+      return { from: () => ({ update: () => ({ eq: () => ({ eq: () => ({ select: async () => ({ data: rows, error: null }) }) }) }) }) };
+    }
+    async function run(rows) {
+      const state = { role: 'host', roomCode: 'R', penalty: 'FINAL-ENVELOPE', round: 1 };
+      const asyncSrc = src.startsWith('async') ? src : 'async ' + src; // sliceFn 이 async 접두를 잘라냄
+      const fn = new Function('state', 'getOnlineMode', 'db', 'getCountdownStartAt', 'buildPenaltyValue', 'getGameRound', 'QA', 'console',
+        asyncSrc + '\nreturn publishChoiceWindowEnd;')(
+        state, () => true, makeDb(rows), () => 0, () => 'STALE-SNAPSHOT', () => 2, { emit() {} }, { warn() {} });
+      await fn(12345);
+      return state.penalty;
+    }
+    expect(await run([])).toBe('FINAL-ENVELOPE');        // 0행 적용(레이스 패배) → 로컬 보존
+    expect(await run([{ id: 'R' }])).toBe('STALE-SNAPSHOT'); // 정상 적용 시에만 로컬 반영
+  });
+  it('[소스] 카운트다운 republish(동류 playing-phase writer)도 status=playing 조건부', () => {
+    const i = html.indexOf('COUNTDOWN_SERVER_TS_REPUBLISHED');
+    const seg = html.slice(i - 1200, i);
+    expect(seg).toContain(".eq('status', 'playing')");
+  });
+});
+
+// ═══ Vincent UI 지시(2026-09-01): 내기록 화면의 "계정삭제" 메뉴 삭제 ═══
+describe('내기록 — 계정삭제 메뉴 삭제', () => {
+  it('accountStatsPopup 에 계정삭제 버튼이 없다(닫기 버튼은 유지)', () => {
+    const s = html.indexOf('id="accountStatsPopup"');
+    const seg = html.slice(s, html.indexOf('</div>\n    </div>', s) + 20);
+    expect(seg).not.toContain('deleteAccountWithConfirm');
+    expect(seg).not.toContain('account.deleteBtn');
+    expect(seg).toContain('closeAccountStatsPopup');
+  });
+});

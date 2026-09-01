@@ -46,16 +46,24 @@ describe('Build30-R2 Phase2(WRPS-078) Part A — penalty merge preserve(CONFIRME
 
   function buildEnv({ state, dbUpdateImpl = () => ({ error: null }), getOnlineModeFn = () => true }) {
     const calls = { dbUpdate: [], qaMetrics: [] };
+    // FIELD RACE #3(2026-09-01) 이후 두 writer 는 조건부 체인 update→eq('id')→eq('status','playing')→select('id')
+    // 를 쓴다. 스텁을 체인 호환으로 보강 — 기록/단언 의미는 동일(첫 eq 에서 payload 캡처),
+    // select 는 "적용 1행"을 돌려 성공 경로를 재현한다. 구형(await eq) 호환 thenable 유지.
     const db = {
       from(table) {
         return {
           update(payload) {
-            return {
+            let captured = false;
+            const result = () => Promise.resolve({ data: [{ id: state.roomCode || 'R' }], ...dbUpdateImpl(payload) });
+            const chain = {
               eq(col, val) {
-                calls.dbUpdate.push({ table, payload, col, val });
-                return Promise.resolve(dbUpdateImpl(payload));
+                if (!captured) { captured = true; calls.dbUpdate.push({ table, payload, col, val }); }
+                return chain;
               },
+              select: () => result(),
+              then: (...args) => result().then(...args),
             };
+            return chain;
           },
         };
       },
@@ -139,7 +147,12 @@ describe('Build30-R2 Phase2(WRPS-078) Part A — penalty merge preserve(CONFIRME
       countdownStartAt: 777000,
     };
     const calls = { dbUpdate: [] };
-    const db = { from: () => ({ update: (payload) => ({ eq: () => { calls.dbUpdate.push({ payload }); return Promise.resolve({ error: null }); } }) }) };
+    // FIELD RACE #3(2026-09-01) 이후 publisher 는 조건부 체인(update→eq→eq('status','playing')→select('id'))을 쓴다 —
+    // 스텁을 체인 호환 + 적용 1행 반환으로 보강(단언·의미 무변경: payload 캡처는 update 시점 그대로).
+    const db = { from: () => ({ update: (payload) => { calls.dbUpdate.push({ payload });
+      const done = Promise.resolve({ data: [{ id: 'ROOM-A1' }], error: null });
+      const chain = { eq: () => chain, select: () => done, then: done.then.bind(done) };
+      return chain; } }) };
     const QA = { emit: () => {} };
     const factory = new Function(
       'state', 'toPositiveInt', 'clampLoserCount', 'db', 'QA', 'getOnlineMode',
