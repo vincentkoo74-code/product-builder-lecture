@@ -168,8 +168,74 @@ describe('UI 확정 지시 1·3 — 카드 셀·개인 술래확정·최종 팝�
     expect(html).toContain('"popup.matchFinalPenalty": "벌칙 {penalty}"');
     for (const k of ['"popup.matchFinalTitle"', '"popup.matchFinalWin"', '"popup.matchFinalLose"', '"popup.matchFinalPenalty"']) expect(html.split(k).length - 1, k).toBeGreaterThanOrEqual(3);
   });
-  it('[2=2-A] 승/무/패 매치 누계 유지(getMatchCumulativeStats 무변경)', () => {
+  it('[2-B] 카드 전적은 매치 누계 경로(getMatchCumulativeStats)를 유지한다', () => {
     const s = html.indexOf('function getRoundProgressData'); const body = html.slice(s, html.indexOf('function renderRoundProgressCards'));
     expect(body).toContain('getMatchCumulativeStats');
+  });
+});
+
+// ── Vincent 판정 렌더 지시(2026-09-01): 진행 중 게임 카드 전적은 "승/패만", 집계는 손내기별이 아니라
+//    "판의 최종 결과만"(예: 3인·술래1 → 그 판 = 패1·승2). 삼세판/다섯판은 판별 최종 결과의 누적.
+describe('판-최종 승/패 집계 (Vincent 2026-09-01)', () => {
+  function loadHostCompose({ envelope, participants, target = 1 }) {
+    const M = fns();
+    const s0 = html.indexOf('function hostComposeMatchUpdate');
+    const s1 = html.indexOf('\n\t    function ', s0 + 10);
+    const src = html.slice(s0, s1);
+    const state = { participants };
+    const toPositiveInt = (v, f = 0) => { const n = parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : f; };
+    const factory = new Function('state', 'getMatchEnvelope', 'getConfiguredTaggerCount', 'QA', 'qaRoundCtx', 'toPositiveInt', 'applyMatchGameResult', 'computeMatchDecision',
+      src + '\nreturn hostComposeMatchUpdate;');
+    return factory(state, () => envelope, () => target, { emit() {} }, undefined, toPositiveInt, M.applyMatchGameResult, M.computeMatchDecision);
+  }
+  const P = (id) => ({ id, name: id, wins: 5, draws: 2, losses: 3 }); // 손내기 카운터는 무시되어야 한다(정크 주입)
+  const baseEnv = (over) => Object.assign({ stale: false, matchNo: 1, rule: 'best3', tally: {}, stats: {}, lockedIds: [], qualifiedIds: [], finalTaggerIds: [], talliedGameNo: 0, statsGameNo: 0 }, over);
+
+  it('판1 확정 [a] → a=패1, h/b=승1 (손내기 wins/draws/losses 는 무시, d=0)', () => {
+    const f = loadHostCompose({ envelope: baseEnv(), participants: [P('h'), P('a'), P('b')], target: 1 });
+    const u = f({ mode: 'FINAL', gameNo: 1, confirmedLoserIds: ['a'] });
+    expect(u.matchStats.a).toMatchObject({ w: 0, l: 1 });
+    expect(u.matchStats.h).toMatchObject({ w: 1, l: 0 });
+    expect(u.matchStats.b).toMatchObject({ w: 1, l: 0 });
+    expect(Number(u.matchStats.a.d || 0)).toBe(0);
+  });
+  it('판2 확정 [h] → 누적: h=1승1패, a=1승1패, b=2승', () => {
+    const prev = { a: { w: 0, d: 0, l: 1 }, h: { w: 1, d: 0, l: 0 }, b: { w: 1, d: 0, l: 0 } };
+    const f = loadHostCompose({ envelope: baseEnv({ tally: { a: 1 }, stats: prev, talliedGameNo: 1 }), participants: [P('h'), P('a'), P('b')], target: 1 });
+    const u = f({ mode: 'FINAL', gameNo: 2, confirmedLoserIds: ['h'] });
+    expect(u.matchStats.h).toMatchObject({ w: 1, l: 1 });
+    expect(u.matchStats.a).toMatchObject({ w: 1, l: 1 });
+    expect(u.matchStats.b).toMatchObject({ w: 2, l: 0 });
+  });
+  it('확정(locked) 참가자의 전적은 동결 — 시드된 패자 마커는 승/패 어느 쪽도 늘리지 않는다', () => {
+    const prev = { a: { w: 0, d: 0, l: 2 }, h: { w: 1, d: 0, l: 1 }, b: { w: 2, d: 0, l: 0 } };
+    const f = loadHostCompose({ envelope: baseEnv({ tally: { a: 2, h: 1 }, stats: prev, lockedIds: ['a'], qualifiedIds: ['a'], talliedGameNo: 2 }), participants: [P('h'), P('a'), P('b')], target: 2 });
+    const u = f({ mode: 'FINAL', gameNo: 3, confirmedLoserIds: ['a', 'h'] }); // a 는 시드 마커
+    expect(u.matchStats.a).toMatchObject({ w: 0, l: 2 }); // 동결
+    expect(u.matchStats.h).toMatchObject({ w: 1, l: 2 });
+    expect(u.matchStats.b).toMatchObject({ w: 3, l: 0 });
+  });
+  it('[소스] 집계는 손내기 카운터 합산(p.wins/p.draws/p.losses)을 쓰지 않는다', () => {
+    const s0 = html.indexOf('function hostComposeMatchUpdate');
+    const seg = html.slice(s0, html.indexOf('\n\t    function ', s0 + 10));
+    expect(seg).not.toContain('Number(p.wins || 0)');
+    expect(seg).not.toContain('Number(p.draws || 0)');
+  });
+  it('[UI] 카드 전적은 승/패만 — 무 셀·붉은 술래칩 없음, 그리드 2열 (Vincent 2026-09-01 삭제 지시)', () => {
+    const s = html.indexOf('<div class="game-progress-stats">');
+    const seg = html.slice(s, html.indexOf('game-progress-lock', s));
+    expect(seg).toContain('progress.safe');
+    expect(seg).toContain('progress.loser');
+    expect(seg).not.toContain('progress.draw');
+    expect(seg).not.toContain('progress.targetLoserCount'); // 검정 카드 안 붉은 "술래 N명" 박스 삭제
+    expect(seg).not.toContain('game-progress-stat loser');
+    expect(html).toMatch(/\.game-progress-stats\{[^}]*grid-template-columns:repeat\(2,/);
+    // 준비 화면 상단의 별도 술래 칩([data-tagger-chip])은 유지된다
+    expect(html).toContain('data-tagger-chip');
+  });
+  it('[UI] 카드 전적은 판 완료 시에만 갱신 — 진행 중 손내기 live 카운터 미합산', () => {
+    const s = html.indexOf('function getMatchCumulativeStats');
+    const seg = html.slice(s, html.indexOf('\n\t    function ', s + 10));
+    expect(seg).not.toContain('getPlayerRoundStats');
   });
 });

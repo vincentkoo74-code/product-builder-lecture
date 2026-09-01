@@ -59,3 +59,13 @@ Vincent 의 확정 지시가 종전 EARLY LOCK 계약의 이중 임계(자격 1/
 - **UI 3-개인**: gameOver 패배 분기에서 내가 `matchLockedIds` 에 포함 + 매치 미완료면 cap/title/msg 를 `result.capTaggerLocked("술래확정!")` / `result.titleTaggerLocked("술래확정")` / `result.msgTaggerLocked` 로 교체(벌칙 박스·마루 이미지 유지). 매치 완료 시엔 기존 최종 선언 블록이 우선.
 - **UI 3-팝업**: 술래확정자 수가 목표 도달(=`getMatchState().complete`) 시 `showTaggerPopup` 이 매치 최종 모드로 전환 — 제목 `popup.matchFinalTitle` = `"최종술래 {names}"`(finalTaggerIds 닉네임, textContent 로 안전 주입), 본문 `#taggerPopupMatchMsg`: 승자 `"축하합니다! 승리하셨습니다!"` / 패자 `"다음에 힘내세요!"` + 줄바꿈 `"벌칙 {penalty}"`. 비최종 판은 종전 팝업 동작 그대로(제목 원복 + matchMsg hidden).
 - **테스트**: `tests/build43-early-lock.test.mjs` 전면 개정(즉시-확정 매트릭스 + UI 핀 + parsePenalty fallback 회귀 + [2-A] 무변경 핀) — RED 8 → GREEN. build43-match-rule 18/18 · build38/41/42/35 영향 스위트 85/85 유지.
+
+## 전적 집계 개정 — 판-최종 승/패 (2026-09-01, Vincent 판정 렌더 지시 · Build46 후보)
+종전 2-A(손내기별 w/d/l 매치 누계)를 대체한다.
+- **표시**: 진행 중 게임 카드의 전적은 **승/패만** 렌더(무 셀 제거, 그리드 4→3열). i18n 키(progress.draw)는 다른 화면 호환 위해 유지.
+- **집계 단위**: 손내기(라운드 내 재대결)가 아니라 **판의 최종 결과만** — 판 종료(FINAL) 시 그 판의 확정 패자(newlyConfirmed)는 패+1, 나머지 active 참가자는 승+1. 예: 3인·술래1 → 그 판 = 패1·승2.
+- **누적**: 삼세판=3판(조기 종료 시 그 시점까지), 다섯판=5판 동일 방식으로 판별 결과 누적.
+- **동결**: 술래확정(locked)된 참가자의 전적은 확정 시점에 동결 — 이후 판의 시드 마커는 승/패 어느 쪽도 늘리지 않는다.
+- **갱신 시점**: 판 완료 시에만(host 멱등 원장 matchStatsGameNo) — 진행 중 손내기 live 카운터는 카드에 합산하지 않는다.
+- envelope 형태(matchStats {w,d,l}) 유지: d 는 항상 0 (wire 호환, parsePenalty 3분기 무변경).
+- **카드 술래칩 삭제(2026-09-01 추가 지시)**: 게임 진행 카드(검정 박스) 안의 붉은 "술래 {n}명" 셀(`.game-progress-stat.loser`, #ff2d55) 제거 — 카드 전적 그리드는 승/패 2열. 술래 수 노출은 준비 화면 상단 칩(`[data-tagger-chip]`)만 유지. 선택지 3칸 그리드(#screenGame .choice-buttons)는 무관·무변경.
