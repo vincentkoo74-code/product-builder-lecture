@@ -3371,10 +3371,6 @@
       </div>
       <div class="c-foot">
         <div class="footer-actions">
-        <button id="statsReplayBtn" class="btn-kparty" onclick="window.inviteForReplay()">
-          <span data-i18n="stats.replayBtn">같은 방에서 다시 하기</span>
-          <span class="go-pill">AGAIN</span>
-        </button>
         <button class="btn-outline btn-full" onclick="window.goHome()" data-i18n="common.home">처음으로</button>
       </div>
       </div>
@@ -3849,6 +3845,10 @@
         "result.capLost": "아이고~",
         "result.capWin": "야호~!",
         "result.capMatchFinal": "최종 술래 확정!",
+        "result.titleGameWin": "이번 판 승리!",
+        "result.titleGameLose": "이번 판 패배",
+        "result.msgGameLoseCumulative": "누적 패배 {n}회 — {th}회가 되면 술래로 확정돼요. 잠시 후 다음 판이 자동으로 시작됩니다.",
+        "result.midMatchNotice": "잠시 후 다음 판이 자동으로 시작됩니다.",
         "result.capTaggerLocked": "술래확정!",
         "result.titleTaggerLocked": "술래확정",
         "result.msgTaggerLocked": "이번 매치에서 술래로 확정됐어요. 남은 게임 동안 대기합니다.",
@@ -4259,6 +4259,10 @@
         "result.capLost": "Oh no...",
         "result.capWin": "Yay~!",
         "result.capMatchFinal": "Final tagger decided!",
+        "result.titleGameWin": "Won this game!",
+        "result.titleGameLose": "Lost this game",
+        "result.msgGameLoseCumulative": "Cumulative losses: {n} — at {th} you become the tagger. The next game starts automatically.",
+        "result.midMatchNotice": "The next game starts automatically in a moment.",
         "result.capTaggerLocked": "Tagger locked!",
         "result.titleTaggerLocked": "You are a final tagger",
         "result.msgTaggerLocked": "You are confirmed as a tagger for this match. Please wait out the remaining games.",
@@ -4660,6 +4664,10 @@
         "result.capLost": "あらら...",
         "result.capWin": "やったー！",
         "result.capMatchFinal": "最終鬼が決定！",
+        "result.titleGameWin": "この戦は勝ち！",
+        "result.titleGameLose": "この戦は負け",
+        "result.msgGameLoseCumulative": "累積負け {n}回 — {th}回で鬼に確定します。まもなく次の戦が自動で始まります。",
+        "result.midMatchNotice": "まもなく次の戦が自動で始まります。",
         "result.capTaggerLocked": "鬼確定！",
         "result.titleTaggerLocked": "鬼確定",
         "result.msgTaggerLocked": "このマッチの鬼に確定しました。残りのゲームの間は待機します。",
@@ -5922,9 +5930,12 @@
     // "한번더"(전체 참여자로 새 게임) 버튼을 노출/허용해도 되는가.
     // state model: A(선정 진행중)/B(부분 재경기 대기)에서는 false, C(선정 완료)에서만 true 가능.
     function canShowPlayAgainButton() {
-      // Build43 EARLY LOCK(승인 계약): 한번더 = 매치 진행 중이면 "다음 판", 매치 종료면 "새 매치"(원장 리셋).
-      // 어느 쪽이든 노출 조건은 동일 — 원형 유지.
-      return state.role === "host" && isTaggerSelectionComplete();
+      // Build46 연속 매치: 한번더 = 매치 "완료 후 새 매치" 전용. 미완료 판은 자동 진행이므로 버튼 금지.
+      // 단판(=1판 매치)과 레거시/오프라인(매치 헬퍼 부재)은 종전 동작 유지.
+      if (!(state.role === "host" && isTaggerSelectionComplete())) return false;
+      if (typeof getMatchRule === "function" && getMatchRule() !== "single" &&
+          typeof isMatchComplete === "function" && !isMatchComplete()) return false;
+      return true;
     }
 
     // Build23: returnToLobbyAfterGame/resetGameKeepRoom 공용 하드블록. 버튼 노출 조건
@@ -10178,6 +10189,7 @@
           showScreen("screenRoundResult");
           // Build30 Phase1(CEO 확정): idempotent 재렌더도 확정 gameOver이므로 동일하게 표시한다.
           showTaggerPopup();
+        if (typeof scheduleMatchAutoNextGame === "function") scheduleMatchAutoNextGame(); // Build46(레거시 샌드박스 격리: 모듈 경계 typeof-가드 관례)
         } else {
           // 이 경로엔 이번 라운드 activePlayers 계산이 없으므로(위 idempotent 조기 반환), 내 row의
           // choice 마커 유무로 "이번 라운드 참여 여부"를 대신 판별한다(마커 = 이전 라운드부터 이미
@@ -10637,8 +10649,9 @@
         // Build30 Phase1(CEO 확정): 확정 gameOver 렌더 직후(showScreen 이후, 그래야 showScreen
         // 진입부의 hideTaggerPopup()에 곧바로 지워지지 않는다) 확정 술래 이름 팝업을 표시한다.
         showTaggerPopup();
-        // Build30 Phase2(CEO 확정): confirmedLoserIds가 살아있는 이 시점에 이번 게임 결과를 자동 저장.
+                // Build30 Phase2(CEO 확정): confirmedLoserIds가 살아있는 이 시점에 이번 게임 결과를 자동 저장.
         autoSaveGameOverResultOnce();
+        if (typeof scheduleMatchAutoNextGame === "function") scheduleMatchAutoNextGame(); // Build46(레거시 샌드박스 격리: 모듈 경계 typeof-가드 관례)
         playResultSfxOnce(isConfirmedLoser() ? "lose" : "win");
         playResultVoiceOnce("taggerSelected", null, 1, 1, 2200);
         __engineV2ShadowCompare("gameOver");
@@ -10661,8 +10674,9 @@
         showScreen("screenRoundResult");
         // Build30 Phase1(CEO 확정): 확정 gameOver 렌더 직후 확정 술래 이름 팝업 표시.
         showTaggerPopup();
-        // Build30 Phase2(CEO 확정): confirmedLoserIds가 살아있는 이 시점에 이번 게임 결과를 자동 저장.
+                // Build30 Phase2(CEO 확정): confirmedLoserIds가 살아있는 이 시점에 이번 게임 결과를 자동 저장.
         autoSaveGameOverResultOnce();
+        if (typeof scheduleMatchAutoNextGame === "function") scheduleMatchAutoNextGame(); // Build46(레거시 샌드박스 격리: 모듈 경계 typeof-가드 관례)
         // 전원 술래 확정·종료: 본인이 술래면 패배음, 살아남았으면(이전 안전) 승리 팡파레(개인 신호=SFX 유지)
         playResultSfxOnce(isConfirmedLoser() ? "lose" : "win");
         // Build21: 술래 확정 그룹 공지(전원 동일, 승패 무관)
@@ -10710,8 +10724,9 @@
         showScreen("screenRoundResult");
         // Build30 Phase1(CEO 확정): 확정 gameOver 렌더 직후 확정 술래 이름 팝업 표시.
         showTaggerPopup();
-        // Build30 Phase2(CEO 확정): confirmedLoserIds가 살아있는 이 시점에 이번 게임 결과를 자동 저장.
+                // Build30 Phase2(CEO 확정): confirmedLoserIds가 살아있는 이 시점에 이번 게임 결과를 자동 저장.
         autoSaveGameOverResultOnce();
+        if (typeof scheduleMatchAutoNextGame === "function") scheduleMatchAutoNextGame(); // Build46(레거시 샌드박스 격리: 모듈 경계 typeof-가드 관례)
         // 게임 종료: 승자=arcade 팡파레, 패자(술래)=low-tone decay(개인 신호=SFX 유지)
         playResultSfxOnce(myResult === "win" ? "win" : "lose");
         // Build21: 술래 확정 그룹 공지(전원 동일, 승패 무관) / Build40 P0-1: 단일 mode
@@ -11650,10 +11665,18 @@ function summarizeGameStats(rows) {
           // 매치 종료 시에는 아래 최종 선언/전원 팝업이 덮는다.
           const __lockedMe = (typeof getMatchLockedIds === "function") && getMatchLockedIds().includes(state.currentUserId) &&
             !(typeof isMatchComplete === "function" && isMatchComplete());
+          const __midMatch = (typeof matchNeedsNextGame === "function") && matchNeedsNextGame();
           if (__lockedMe) {
             title.textContent = t("result.titleTaggerLocked");
             setCap(t("result.capTaggerLocked"));
             message.textContent = t("result.msgTaggerLocked");
+          } else if (__midMatch) {
+            // Build46 §UI: 미완료 판 — "이번 판 패배 + 누적 패배 + 자동 진행 안내"만(최종형 금지).
+            const __tally = ((typeof parsePenalty === "function") ? ((parsePenalty(state.penalty).matchTally || {})[state.currentUserId] || 0) : 0);
+            const __th = (typeof matchQualificationThreshold === "function" && typeof getMatchRule === "function") ? matchQualificationThreshold(getMatchRule()) : 0;
+            title.textContent = t("result.titleGameLose");
+            setCap(t("result.capLost"));
+            message.textContent = t("result.msgGameLoseCumulative", { n: __tally, th: __th });
           } else {
             title.textContent = t("result.titleLoserConfirmedCount", { done: state.confirmedLoserIds.length, target: getTargetLoserCount() });
             setCap(t("result.capLost"));
@@ -11661,8 +11684,20 @@ function summarizeGameStats(rows) {
           }
           title.classList.add("lose");
           setMaru("cat-lost-tired.png", "lose");
-          penaltyTextEl.textContent = penTxt || t("result.penaltyEmpty");
-          penaltyBox.classList.remove("hidden");
+          if (__midMatch) {
+            // Build46 §UI: 미완료 판에는 벌칙 확정 UI 금지 — 벌칙은 MATCH_FINAL 에서만.
+            penaltyBox.classList.add("hidden");
+          } else {
+            penaltyTextEl.textContent = penTxt || t("result.penaltyEmpty");
+            penaltyBox.classList.remove("hidden");
+          }
+        } else if ((typeof matchNeedsNextGame === "function") && matchNeedsNextGame()) {
+          // Build46 §UI: 미완료 판 승자 — "이번 판 승리" + 자동 진행 안내.
+          title.textContent = t("result.titleGameWin");
+          title.classList.add("win");
+          setMaru("cat-win-happy.png", "");
+          setCap(t("result.capWin"));
+          message.textContent = t("result.midMatchNotice");
         } else {
           title.textContent = t("result.titleSurvived");
           title.classList.add("win");
@@ -11687,7 +11722,13 @@ function summarizeGameStats(rows) {
         if (nextBtn) nextBtn.style.display = "none";
         if (actionsDiv) actionsDiv.style.display = "none";
         finalBtns.classList.remove("hidden");
+        // Build46 §UI: 미완료 판에는 터미널 액션 행(한번더/승률/나가기) 미노출 — 자동으로 다음 판이 시작된다.
+        const __midMatch = (typeof matchNeedsNextGame === "function") && matchNeedsNextGame();
+        // "다음 게임 호스트" 벌칙은 모든 locale에서 defaultPenalty.nextHost 값과 비교
+        const nextHostKeywords = [t("defaultPenalty.nextHost"), "호스트", "Host", "host", "ホスト"];
+        const isNextHostPenalty = nextHostKeywords.some(k => penTxt && penTxt.includes(k));
         let html = "";
+        if (!__midMatch) {
         // Build23: '한번더'(전체 참여자 새 게임) 버튼은 술래 선정이 실제로 완료된 경우에만 노출한다
         // (caseType==='gameOver' 분기 안이라 구조적으로 항상 true여야 하지만, 방어적으로 명시 —
         // 이 조건이 버튼 노출과 handler 하드블록 양쪽에서 쓰는 단일 진실 소스다).
@@ -11701,11 +11742,9 @@ function summarizeGameStats(rows) {
         }
         html += `<button class="btn-light btn-full" onclick="window.showStatsPopup()">${t("result.viewStatsBtn")}</button>`;
         html += `<button class="btn-outline btn-full" onclick="window.leaveRoom()">${t("common.leaveRoomShort")}</button>`;
-        // "다음 게임 호스트" 벌칙은 모든 locale에서 defaultPenalty.nextHost 값과 비교
-        const nextHostKeywords = [t("defaultPenalty.nextHost"), "호스트", "Host", "host", "ホスト"];
-        const isNextHostPenalty = nextHostKeywords.some(k => penTxt && penTxt.includes(k));
         if (myResult === "lose" && isNextHostPenalty) {
           html += `<button id="becomeNextHostBtn" class="btn-primary btn-full span-full" onclick="window.becomeNextHost()">${t("result.becomeNextHostBtn", { n: 5 })}</button>`;
+        }
         }
         finalBtns.innerHTML = html;
         // Build41 결함 A(필드 IMG_2011/2012/2014 D·E): #verdictActionSlot 의 min-height(104px)는 호스트의
@@ -11715,7 +11754,7 @@ function summarizeGameStats(rows) {
         $("verdictActionSlot")?.classList.toggle("slot-final", !canShowPlayAgainButton());
         // 나가기가 이 그룹으로 들어왔으므로 c-foot 의 정적 나가기 행은 중복이다.
         if (roundResultExitRow) roundResultExitRow.classList.add("hidden");
-        if (myResult === "lose" && isNextHostPenalty) {
+        if (!__midMatch && myResult === "lose" && isNextHostPenalty) {
           startGameOverCountdown(5);
         }
 
@@ -11847,6 +11886,37 @@ function summarizeGameStats(rows) {
       }, delayMs);
     }
 
+    // Build46 연속 매치: 이 판이 끝난 뒤 자동으로 다음 판이 필요한가 — 단판은 항상 아니오,
+    // 비단판은 매치 미완료일 때만 예. (매치당 호스트 시작 1회 계약의 판단 술어)
+    function matchNeedsNextGame() {
+      try {
+        if (typeof getMatchRule !== "function" || getMatchRule() === "single") return false;
+        if (typeof isMatchComplete === "function" && isMatchComplete()) return false;
+        return true;
+      } catch (e) { return false; }
+    }
+
+    // Build46: 미완료 판 gameOver → 호스트가 자동으로 다음 판을 예약한다(판 사이 호스트 재시작·
+    // 대기실 왕복 금지). 전환은 기존 phaseScheduledAt/phaseKind="ready" 동기 기제(beginNewGameRound
+    // status:"ready")를 그대로 재사용 — 제2의 클라이언트 로컬 전환 권위를 만들지 않는다.
+    // echo/중복 렌더 재진입은 타이머 덮어쓰기 + 콜백 재검증(gameRound/상태/미완료)으로 멱등.
+    function scheduleMatchAutoNextGame(delayMs = 3000) {
+      if (state.role !== "host" || !getOnlineMode()) return;
+      if (!matchNeedsNextGame()) return;
+      if (state.matchNextGameTimer) clearTimeout(state.matchNextGameTimer);
+      const forGame = getGameRound();
+      try { QA.emit('metric', Object.assign({ wrps: 'WRPS-B46', eventType: 'MATCH_AUTO_NEXT_SCHEDULED',
+        gameNo: forGame, delayMs, localNow: Date.now() }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+      state.matchNextGameTimer = setTimeout(() => {
+        state.matchNextGameTimer = null;
+        if (state.role !== "host") return;
+        if (!["result", "game_over"].includes(state.status)) return;
+        if (getGameRound() !== forGame) return;
+        if (!matchNeedsNextGame()) return;
+        beginNewGameRound({ status: "ready", increment: true, reason: "match_next_game" });
+      }, delayMs);
+    }
+
     // Build29 Round2(codex-critic VERDICT-3 HIGH-1, CEO 사양 확정): nextRound()의 순차 Supabase
     // write가 일시 오류(모바일 네트워크 전환/백그라운드 복귀 등)로 throw하면, 기존엔
     // advancingRound만 풀고 타이머를 재예약하지 않아 방 전체가 'result'에서 영구 정지했다(재예약
@@ -11953,6 +12023,7 @@ function summarizeGameStats(rows) {
         showScreen("screenRoundResult");
         // Build30 Phase1(CEO 확정): 이미 확정된 gameOver 재진입도 동일하게 표시한다.
         showTaggerPopup();
+        if (typeof scheduleMatchAutoNextGame === "function") scheduleMatchAutoNextGame(); // Build46(레거시 샌드박스 격리: 모듈 경계 typeof-가드 관례)
         return;
       }
       state.advancingRound = true;
@@ -13729,6 +13800,9 @@ function summarizeGameStats(rows) {
     function showTaggerPopup() {
       const popup = $("taggerPopup");
       if (!popup) return;
+      // Build46 연속 매치: 미완료 판에서는 최종형 팝업 금지(자동으로 다음 판) — 단판/레거시는 종전 동작.
+      if (typeof getMatchRule === "function" && getMatchRule() !== "single" &&
+          !(typeof isMatchComplete === "function" && isMatchComplete())) return;
       const namesEl = $("taggerPopupNames");
       const matchMsgEl = $("taggerPopupMatchMsg");
       const titleEl = popup.querySelector('[data-i18n="popup.taggerTitle"]');
