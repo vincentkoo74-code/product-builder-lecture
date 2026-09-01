@@ -12,7 +12,7 @@
 | JP-BL-002 | DONE | High | JP 빌드에서 Kakao 인증 표면 제거 — 시장 계층 경계. KR 공개 키가 source/dist 에서 사라짐(JPX-001 범위 축소) | — |
 | JP-BL-003 | DONE | High | JP 브랜치를 origin 에 push → 539e0de | — |
 | JP-BL-004 | DONE | High | GitHub Environments `supabase-KR`/`supabase-JP` 구성 | — |
-| JP-BL-005 | OPEN | High | 서버측 매치메이킹 리전 검증 (KR↔JP 크로스매칭 차단) | **예** |
+| JP-BL-005 | DONE | High | JP 런타임 리전 격리 실증 — 백엔드 선택 지점 1곳, 런타임 입력으로 변경 불가, 라이브 목적지 Tokyo 단일, fallback 6종 Seoul 무접촉 | — |
 | JP-BL-006 | OPEN | Medium | 네이티브 산출물(ios/android public) JP 재생성 — CEO 지시로 보류 중 | **예** |
 | JP-BL-007 | DONE | Medium | Tokyo 백엔드 실물 점검 → **삭제 아님, INACTIVE(일시정지)** | — |
 | JP-BL-008 | OPEN | Medium | LINE MINI App / LIFF 요구사항 조사 및 설계 | **예** |
@@ -522,6 +522,35 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-09-02 — JP-BL-005: JP 매치메이킹 / 백엔드 리전 격리 최종 검증
+
+프로덕션 소스 무변경. Seoul 에는 **쓰기 0건** — 국가 격리 증명이 KR 인프라를 건드릴 필요는 없다.
+
+**현재 매칭 모델(명시).** V1 에는 공개/랜덤 매치메이킹이 **없다**. 매칭 표면은
+보안 초대 → 방 해석 → 참가자 합류 하나뿐이다. 방 발견 경로도 하나 —
+자기 단말이 저장한 최근 방 코드 목록(`.in('id', recentRooms)`)이며 목록이 비면 조회 자체를 하지 않는다.
+
+**단일 권한 사슬.** supabase 호스트 리터럴 1개(JP ref) → `createClient` 1회 → 단일 `db`.
+REST·Realtime·auth·Edge Function 이 전부 그 하나에서 파생된다. anon key 의 `ref` 클레임도 JP다.
+쿼리(`ref`/`region`/`supabase_url`…)나 저장소(`supabaseUrl`/`rpsRegion`…)로 바꿀 수 없다.
+Supabase 세션 키가 `sb-<ref>-auth-token` 형태라 KR 세션은 JP 클라이언트에 읽히지 않는다.
+
+**KR/Seoul 참조 인벤토리.** 실행 JP 소스의 A 등급(활성 의존) **0건**.
+index.html/dist 의 유일한 매칭은 한국어 주석 1줄이다. 나머지는 네이티브 산출물(E, JP-BL-006 보류),
+리전 레지스트리(C), 문서/테스트(D), KR 소유(F).
+
+**라이브 실증(실제 Tokyo, 6/6).** 두 클라이언트 전 경로의 백엔드 목적지가 Tokyo 하나뿐이고
+websocket 2개도 전부 Tokyo. 서드파티 정적 자산(Google Fonts)은 백엔드가 아니라 분류해 기재.
+실패/fallback 6종(REST 불가·Realtime 불가·미지 초대·KR 주입·예전 Kakao 콜백) 전부 Seoul 무접촉.
+
+**계측 결함 2건을 먼저 잡았다.** 목적지를 URL 부분문자열로 판정하니 테스트가 스스로 심은
+KR ref 와 `?provider=kakao` 문서 요청까지 "유출"로 잡혔다 — host 기준으로 고쳤다.
+비공허성 점검에서 쿼리 어설션이 `new URLSearchParams(...).get("ref")` 를 놓치는 것도 드러나 확장했다.
+
+**CI 리전 가드.** 배포 워크플로는 수동 dispatch 전용, project ref 를 레지스트리에서 도출,
+대상 ref 타이핑 확인 + 환경 승인 게이트. region-guard 는 설정이 깨지거나 리전이 어긋나면
+**실행을 거부하거나 오류로 막는다**(세 가지 손상 형태로 실증).
 
 ### 2026-09-01 (7차) — JP-BL-002: JP 빌드에서 Kakao 인증 표면 제거
 
