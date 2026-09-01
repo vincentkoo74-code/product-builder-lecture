@@ -85,14 +85,16 @@ describe('Build30(WRPS-078) [Phase2] showReadyScreen — myReadyBtn / force-star
   });
 
   it('소스 계약: myReadyBtn 토글은 canShowForceStartReplayButton() 결과 그 자체를 인자로 쓴다(별개 조건 금지)', () => {
-    expect(html).toMatch(/\$\("myReadyBtn"\)\.classList\.toggle\("hidden", canShowForceStartReplayButton\(\)\);/);
+    expect(html).toMatch(/\$\("myReadyBtn"\)\.classList\.toggle\("hidden", \(typeof isInternalRematchReadyPhase === "function"\) \? isInternalRematchReadyPhase\(\) : canShowForceStartReplayButton\(\)\);/);
   });
 
-  it('canShowForceStartReplayButton() 함수 정의 자체는 무변경이다(호출만 추가)', () => {
-    expect(html).toContain('function canShowForceStartReplayButton() {');
-    expect(html).toMatch(/function canShowForceStartReplayButton\(\) \{\s*\n\s*return state\.role === "host" &&\s*\n\s*state\.status === "ready" &&\s*\n\s*\(state\.round \|\| 1\) > 1 &&\s*\n\s*getActivePlayers\(\)\.length > 0 &&\s*\n\s*!areAllActivePlayersReady\(\);\s*\n\s*\}/);
-  });
-});
+  it('[Build47 D2 갱신] canShowForceStartReplayButton 은 정족수 조건 없이 host/ready/round>1/active>0', () => {
+    const i0 = html.indexOf('function canShowForceStartReplayButton');
+    const body = html.slice(i0, i0 + 420);
+    expect(body).toContain('(state.round || 1) > 1');
+    expect(body).toContain('getActivePlayers().length > 0');
+    expect(body).not.toContain('areAllActivePlayersReady');
+  });});
 
 // Build30-R2 Phase D(WRPS-078, HIGH-B 재수정) — myReadyBtn 숨김이 realtime 재렌더 한 번에 원복되는
 // 회귀. 결함: showReadyScreen()이 myReadyBtn에 hidden을 추가해도, renderReadyList()→
@@ -166,8 +168,8 @@ describe('Build30-R2 Phase D(WRPS-078) updateMyReadyButton — className 재대�
   });
 
   it('소스 계약: updateMyReadyButton의 두 분기(비참가자/참가자) 모두 className 재대입 뒤에 canShowForceStartReplayButton()로 hidden을 재적용한다', () => {
-    expect(html).toMatch(/btn\.className = "btn-light btn-full";\s*\n\s*\/\/ Build30-R2 Phase D[\s\S]{0,120}btn\.classList\.toggle\("hidden", canShowForceStartReplayButton\(\)\);\s*\n\s*return;/);
-    expect(html).toMatch(/btn\.className = "btn-primary btn-full";\s*\n\s*\}[\s\S]{0,700}btn\.classList\.toggle\("hidden", canShowForceStartReplayButton\(\)\);\s*\n\s*\}/);
+    expect(html).toMatch(/btn\.className = "btn-light btn-full";\s*\n\s*\/\/ Build30-R2 Phase D[\s\S]{0,120}btn\.classList\.toggle\("hidden", \(typeof isInternalRematchReadyPhase === "function"\) \? isInternalRematchReadyPhase\(\) : canShowForceStartReplayButton\(\)\);\s*\n\s*return;/);
+    expect(html).toMatch(/btn\.className = "btn-primary btn-full";\s*\n\s*\}[\s\S]{0,700}btn\.classList\.toggle\("hidden", \(typeof isInternalRematchReadyPhase === "function"\) \? isInternalRematchReadyPhase\(\) : canShowForceStartReplayButton\(\)\);\s*\n\s*\}/);
   });
 
   // Build30 Phase3(테스트갭 D-a): 위 3개 재렌더 테스트는 전부 isCurrentRoundParticipant()가 함수

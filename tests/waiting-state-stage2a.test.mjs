@@ -456,8 +456,9 @@ describe('W16/W17/W19/W20 — 진행 게이트에서의 WAITING 제외(REAL 게�
     const { impl } = loadGuards({ participants: ACTIVE_AND_WAITING, status: 'ready', round: 2 });
     expect(impl.getActivePlayers().map((p) => p.id)).toEqual(['h', 'a']);
     expect(impl.getWaitingPlayers().map((p) => p.id)).toEqual(['w']);
-    // 활성 전원 준비 완료 → force start 버튼은 노출되지 않는다(=자동 시작이 정상 성립).
-    expect(impl.canShowForceStartReplayButton()).toBe(false);
+    // Build47 D2 갱신: 강제 시작은 준비 정족수와 무관한 호스트 단독 제어 — round>1 이면 노출.
+    // (W16 의 본래 검증인 WAITING 제외는 위 두 단언이 그대로 증명한다.)
+    expect(impl.canShowForceStartReplayButton()).toBe(true);
   });
 
   it('W17 — WAITING의 is_ready=false가 ACTIVE 참가자의 준비 완료를 막지 않는다', () => {

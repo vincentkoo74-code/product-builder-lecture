@@ -395,10 +395,10 @@ describe('Build27 Task2 — 강제 시작 버튼 노출 조건(canShowForceStart
     buttons.forEach((b) => expect(b.hidden).toBe(true));
   });
 
-  it('활성 전원이 이미 준비 완료면 노출되지 않는다(자동 시작 영역 침범 금지)', () => {
+  it('[Build47 D2 갱신] 활성 전원이 준비돼도 노출된다 — 강제 시작은 정족수와 무관한 단독 제어', () => {
     const state = partialReplayReadyState({ round: 2, p2Ready: true, p3Ready: true });
     const { api } = loadForceStart(state);
-    expect(api.canShowForceStartReplayButton()).toBe(false);
+    expect(api.canShowForceStartReplayButton()).toBe(true);
   });
 
   it("status가 'ready'가 아니면(playing/result/game_over/waiting) 노출되지 않는다", () => {

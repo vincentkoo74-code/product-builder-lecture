@@ -112,3 +112,24 @@ QA `…_SKIPPED_STALE`). 오프라인은 종전 로컬 동작 유지.
 **검증**: RED 3→GREEN(조건부 소스 핀 2 + 기능 no-op 샌드박스) · 교대 패자 라이브 5회 연속 클린 ·
 정본 t2 클린 유지. 잔여: 유기 레이스 재현률이 낮아(랩 12회 중 1회) 물리 필드 QA 가 최종 확증 지점.
 - **UI 지시 반영**: 내기록(accountStatsPopup)의 "계정 삭제" 버튼 제거(닫기만 유지 — deleteAccountWithConfirm 함수는 존치).
+
+## Build47 — 물리 QA 3-결함 교정 (2026-09-02, SCOPE LOCK)
+증거: Drive RPS-KR-QA qa-report-build46-r2(방 Y12R) + IMG_0117/IMG_0109.
+- **D1(P0, 무한 매치)**: Y12R G1~9 재구성 — 물리 패자 H,H,P,P,H,H,P,H,P 인데 MATCH_DECISION 이 매 판
+  newly=[그 판 패자]/locked=[]/qual=[]/complete=false, **첫 발산 = G2(H 물리누적 2)**. 매 판 시작의
+  `PENALTY_MERGE_PRESERVED site=publishChoiceWindowEnd` + G1/G5 이중 FINAL = **FIELD RACE #3 필드 발현 확정**
+  (가설 G 채택, A~F 기각). 코드 수정은 기수리(a22724d)로 종결 — 본 빌드에서 ①Y12R 결정론 재현+무한 매치
+  감지 회귀(물리누적≥임계인데 미확정이면 즉시 FAIL) ②MATCH_DECISION 계측 자족화(cumulativeLossTally/
+  matchTalliedGameNo(Prev)/configuredLossThreshold/requiredTaggerCount/newlyConfirmedTaggerIds/gameTallied) 추가.
+- **D2(내부 재대결 참가자 READY 제거)**: 준비 컨텍스트 2종 분리 — 초기 매치 시작(round 1)의 '게임 준비'만
+  유지. round>1(ALL/LOSERS/WINNERS 재대결)은 `isInternalRematchReadyPhase()` 단일 진실 소스로 참가자
+  myReadyBtn 전면 숨김 + `markReady()` no-op(READY_TAP_IGNORED_REMATCH 계측) + 호스트 '강제 시작'이
+  정족수 무관 단독 제어(`canShowForceStartReplayButton` 에서 areAllActivePlayersReady 제거) + 가이드 카피
+  (host=forceStartRematch, guest=waitHost). 판→판 자동 연속(playing 직행)은 무변경 — 두 메커니즘 구분 유지.
+  라이브 검증: 강제시작 단독으로 재대결 2회 진행·정상 종료.
+- **D3(조기 '술래 확정' 카피)**: IMG_0117 실물 = `titleLoserConfirmedCount("술래 확정! (n/m명)")` 오노출.
+  3-상태 의미론 — STATE A: **비단판 매치의 판 패배는 룰 자체로 분기**해 확정 카피 원천 불가(이번 판 패배 +
+  누적 n/th + 자동 진행 안내), 확정 카피는 단판 전용. STATE B: 실제 잠금 전이당 정확히 1회
+  (`shouldShowTaggerConfirmOnce(matchNo,id)` 세션 원장; 에코/재렌더는 `titleTaggerWaiting` 대기 카피 —
+  재접속 후 최초 1회 재표시는 허용, 문서화). STATE C: MATCH_FINAL 에서만 최종 팝업/벌칙/한번더(기존 유지).
+- 구계약 핀 갱신(문서화): build27(정족수 시 미노출→노출), build30-ready-force-start(토글 가드형·신정의).
