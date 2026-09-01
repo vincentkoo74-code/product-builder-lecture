@@ -27,7 +27,8 @@
 | JP-E2E-JWT-FIDELITY | DONE | **High** | 브라우저 게이트가 실제 JWT 검증 + 목표 GRANT/RLS 아래에서 돈다. 로컬 서명 토큰 치환(벗기기 폐기), 부정 경로·소유자 RLS·교차 차단 실증 | — |
 | JP-MIG-REPLICA-IDENTITY | DONE | **High** | Realtime publication 마이그레이션이 REPLICA IDENTITY 를 고정하지 않아 저장소만으로 세운 백엔드가 Tokyo(FULL)와 달라졌다 → 필터된 DELETE 이벤트 유실. 마이그레이션에서 수정(Tokyo 는 이미 FULL, no-op) | — |
 | JP-I18N-JOIN-DEFAULT | DONE | Medium | 기본 표시명을 시장 계층으로 옮김 — JP=`ゲスト`. 키 없는 시장(KR)은 기존 공용 기본값 유지(KR 무변경) | — |
-| JP-TOKYO-SECURITY-MIGRATION-GATE | OPEN | **High** | Tokyo 보안 5종(room_id 인덱스·grants·created_at 불변·target RLS·realtime publication) 배포 게이트 — NO-GO 유지 | **예** |
+| JP-TOKYO-SECURITY-MIGRATION-GATE | DONE | **High** | 보안 5종 Tokyo 배포 완료(2026-09-01). 원장 7행, 애플리케이션 데이터 무변경, 배포 후 Realtime·인가 전 검증 통과 | — |
+| JP-LEDGER-LEGACY-3 | DEFER | Low | 원장에 없는 legacy 3종(baseline·server_now·leave_after_round) — CEO 지시로 이번 슬라이스에서 다루지 않음 | 아니오 |
 | JP-BL-012 | OPEN | Low | JP 앱 식별자·딥링크 스킴 분리 검토 | 미정 |
 | JP-BL-014 | DONE | Medium | A5 device-matrix 타임아웃 → **Tokyo 복원으로 해소, 통과 확인** | — |
 | JP-BL-015 | RE-VERIFIED | **High** | 로컬 clean bootstrap 실증 완료. **보안 5종은 여전히 Tokyo 미적용**(별도 게이트) | **예** |
@@ -521,6 +522,40 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-09-01 (6차) — JP-TOKYO-SECURITY-DEPLOY-001: 보안 5종 Tokyo 배포
+
+**프로덕션 배포.** CEO 조건부 승인 하에 5종을 **한 번에 하나씩** 배포했다 —
+`db push` 를 쓰지 않고 검토된 SQL 을 psql 로 실행 → 효과 검증 → `migration repair` 로 기록,
+그 다음 것으로 진행. 실패 시 즉시 중단하도록 각 단계에 게이트를 뒀다(중단 사유 없이 완주).
+
+배포 전 게이트: 활성 백엔드 0 · idle-in-txn 0 · 최근 24시간 방 0 · 스키마·원장이 사전점검과 동일.
+
+| 마이그레이션 | 결과 |
+|---|---|
+| A room_id 인덱스 | 생성, participants 인덱스 2개(중복 없음) |
+| B 최소권한 GRANT | 12조합 전부 검토된 목표와 일치, 시퀀스 authenticated 만 |
+| C created_at 불변 | 함수 1 + 트리거 2, 기존 행 무변경, 일회용 행으로 불변성 실증 후 정리 |
+| D 목표 RLS | allow-all 2건 제거, jp_* 7건 생성, stats/history 5건 authenticated 로 재선언 |
+| E Realtime | **라이브 no-op** (publication·REPLICA IDENTITY 이미 목표 상태) |
+
+원장 2행 → **7행**. legacy 3종은 CEO 지시로 손대지 않았다(JP-LEDGER-LEGACY-3 = DEFER).
+
+**애플리케이션 데이터 무변경** — rooms/participants/stats/history 행 수와 md5, auth.users 수가
+배포 전과 모든 검증 후에 걸쳐 완전히 동일하다.
+
+**배포 후 검증(전부 통과).**
+- 라이브 스모크(anon): 방 SELECT/INSERT/UPDATE·참가자 CRUD 가능, **방 DELETE 거부**,
+  24시간 지난 방 UPDATE 0행(설계된 동결). 전부 트랜잭션 롤백으로 잔여 0.
+- 라이브 스모크(authenticated): 소유자 stats 1행·history 184행 조회, 소유자 UPDATE 1행,
+  **타 사용자 조회 0행·수정 0행**.
+- **Tokyo Realtime 재검증**: 전 시나리오 REALTIME 도달, **폴링 구제 0건**, 3라운드 완주,
+  초대 URL → 신원 → 합류 → 준비 → 카운트다운 → 라운드 → nextRound 전 경로 통과.
+  일회용 행 전량 회수(방 행은 anon DELETE 가 막히므로 관리자 경로로 정리 — 설계된 동작).
+- 로컬 JWT/RLS 브라우저 게이트 39/39.
+
+**보안 적용 후에도 nextRound 다중 write 가 0행 실패 없이 동작한다** — JP-BL-027-B 의
+카디널리티 검증이 켜져 있으므로 RLS 가 조용히 막았다면 즉시 드러났을 것이다.
 
 ### 2026-09-01 (5차) — JP-E2E-JWT-FIDELITY: 실제 JWT + 목표 보안 하의 인가 충실도
 
