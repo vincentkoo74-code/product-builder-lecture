@@ -14,10 +14,18 @@
       "id": "JPX-001",
       "identifier": "KAKAO_REST_API_KEY",
       "owner_region": "KR",
-      "reason": "KR HEAD(262ef5d)에서 분기하며 상속된 KR 전용 공개 REST 키. 일본판은 Kakao 로그인을 쓰지 않는다.",
-      "resolution": "Phase 2 로그인 작업에서 Kakao 경로를 JP 빌드에서 제거하고 이 예외를 삭제한다.",
+      "reason": "KR HEAD(262ef5d)에서 분기하며 상속된 KR 전용 공개 REST 키. 일본판은 Kakao 로그인을 쓰지 않는다. JP-BL-002(2026-09-01)로 **source/dist 에서는 해소됐다** — 키가 시장 프로필 소유가 되어 JP 프로필은 이 값을 갖지 않는다. 남은 검출은 아직 재생성하지 않은 네이티브 산출물(ios/android public)뿐이다.",
+      "resolution": "JP-BL-006(네이티브 산출물 JP 재생성)이 끝나면 ios/android 검출이 사라지고 이 예외를 삭제할 수 있다. 그 전까지는 출시 차단을 유지한다.",
       "backlog": "docs/JP_RELEASE_BACKLOG.md JP-BL-002",
-      "blocks_release": true
+      "blocks_release": true,
+      "scope": [
+        "ios",
+        "android"
+      ],
+      "resolved_scope": [
+        "source",
+        "dist"
+      ]
     }
   ]
 }

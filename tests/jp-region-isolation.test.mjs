@@ -302,8 +302,17 @@ describe('[JP-ISO-7] codex-critic 지적 사항 회귀 잠금', () => {
     expect(classify(r4, { releaseMode: true }).blocking).toHaveLength(1);
   });
 
-  it('M4: active-region.json 의 blocks_release 예외는 release 모드에서 실제로 차단된다', () => {
+  // JP-BL-002(2026-09-01): KR 공개 키가 **source/dist 에서 제거**됐다(시장 프로필 소유로 전환).
+  // 그래서 이 검증은 두 갈래로 나뉜다 — 둘 다 이전보다 강한 주장이다.
+  it('M4-a: source 층에는 이제 KR 공개 식별자가 없다 (JP-BL-002 결과)', () => {
     const { violations } = runGuard(ROOT, { layers: ['source'] });
+    const kakaoHits = violations.filter(v => v.rule === 'R4' && String(v.detail || '').includes('KAKAO_REST_API_KEY'));
+    expect(kakaoHits, 'JP 소스에 KR 공개 키가 다시 들어오면 안 된다').toHaveLength(0);
+  });
+
+  it('M4-b: active-region.json 의 blocks_release 예외는 release 모드에서 실제로 차단된다', () => {
+    // JPX-001 은 아직 재생성되지 않은 네이티브 산출물(ios/android)에 남아 있다 — 그 층에서 검증한다.
+    const { violations } = runGuard(ROOT);
     const waivedBlocking = violations.filter(v => v.severity === 'waived' && v.blocksRelease);
     expect(waivedBlocking.length, 'JPX-001 이 blocks_release 로 표시되어야 한다').toBeGreaterThan(0);
     expect(classify(violations, { releaseMode: true }).blocking.length).toBeGreaterThan(0);
