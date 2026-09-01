@@ -69,3 +69,12 @@ Vincent 의 확정 지시가 종전 EARLY LOCK 계약의 이중 임계(자격 1/
 - **갱신 시점**: 판 완료 시에만(host 멱등 원장 matchStatsGameNo) — 진행 중 손내기 live 카운터는 카드에 합산하지 않는다.
 - envelope 형태(matchStats {w,d,l}) 유지: d 는 항상 0 (wire 호환, parsePenalty 3분기 무변경).
 - **카드 술래칩 삭제(2026-09-01 추가 지시)**: 게임 진행 카드(검정 박스) 안의 붉은 "술래 {n}명" 셀(`.game-progress-stat.loser`, #ff2d55) 제거 — 카드 전적 그리드는 승/패 2열. 술래 수 노출은 준비 화면 상단 칩(`[data-tagger-chip]`)만 유지. 선택지 3칸 그리드(#screenGame .choice-buttons)는 무관·무변경.
+
+## Build46 — 연속 매치 진행 모델 (2026-09-01 승인 계약)
+Build45의 "GAME → 최종형 결과 → 호스트 재시작" 모델을 폐지한다. **호스트는 매치 시작을 1회만** 누른다.
+- **자동 판 전환**: 미완료 판의 gameOver 에서 host 가 `scheduleMatchAutoNextGame(3s)` 로 다음 판을 자동 예약 — `beginNewGameRound({status:"ready"})` = 기존 `phaseScheduledAt/phaseKind:"ready"` 동기 기제 재사용(제2 전환 권위 금지, 대기실 왕복 금지). echo/재렌더는 타이머 덮어쓰기 + 콜백 재검증(gameRound/상태/미완료)으로 멱등. locked 시드·WAITING(판 내부 winnerWait/loserWait) 비차단은 기존 경로 그대로.
+- **미완료 판 UI(§FINAL UI RULE)**: 허용 = 이번 판 승/패(titleGameWin/titleGameLose) + 누적 패배(msgGameLoseCumulative {n}/{th}) + 자동 진행 안내(midMatchNotice) + 술래확정자 대기 표기. 금지 = 최종술래 팝업(showTaggerPopup 미완료 가드)·벌칙 박스·한번더/승률/나가기 터미널 행(finalResultBtns 빈 값)·become-host 카운트다운.
+- **한번더**: `canShowPlayAgainButton` = host+술래확정 + **매치 완료 게이트** — 완료 후 "새 매치(matchReset)" 전용. 단판(=1판 매치)·레거시/오프라인은 종전 동작(게이트 우회).
+- **핀 갱신(문서화)**: build23/build30-phase-e/build43-match-rule 의 구 원형(one-liner) 핀 → 새 게이트 형상으로 교체(단일 진실 소스 isTaggerSelectionComplete 단언 유지). finishRoundLocal 3곳은 Build30 autoSave 인접 계약 유지를 위해 popup→autoSave→schedule 순서.
+- **QA 이벤트**: `MATCH_AUTO_NEXT_SCHEDULED`(WRPS-B46).
+- **추가 UI 지시**: 홈 → "바로전 게임결과"(screenStats)의 "같은 방에서 다시 하기"(statsReplayBtn/inviteForReplay 진입 버튼) 삭제 — 처음으로만 유지(replayBtn 참조 2곳은 기존 null-guard, inviteForReplay 함수는 build29 계약 보존 위해 잔존).

@@ -139,8 +139,9 @@ describe('Build30-R2 Phase E(WRPS-078) "한번더"(canShowPlayAgainButton) — �
     expect(els.finalResultBtns.innerHTML).toBe('');
   });
 
-  it('소스 계약: canShowPlayAgainButton() 은 원형(host+술래확정) — EARLY LOCK 계약에서 한번더 = 다음 판/새 매치', () => {
-    expect(html).toMatch(/return state\.role === "host" && isTaggerSelectionComplete\(\);/);
+  it('소스 계약: canShowPlayAgainButton() = host+술래확정 + Build46 매치완료 게이트(한번더=새 매치 전용)', () => {
+    expect(html).toMatch(/if \(!\(state\.role === "host" && isTaggerSelectionComplete\(\)\)\) return false;/);
+    expect(html).toMatch(/typeof isMatchComplete === "function" && !isMatchComplete\(\)\) return false;/);
   });
 });
 
@@ -153,7 +154,7 @@ describe('Build30-R2 Phase E(WRPS-078) gameOver 참가자 준비화면 억제 �
     // WRPS-083 2B(계약 갱신): nextRound 진입부에 destroyed 공통 가드가 한 줄 추가됐다.
     // Phase E의 원 계약("gameOver 시 status='ready'를 절대 쓰지 않고 즉시 반환")은 그대로다 —
     // 가드는 그 앞에서 종료된 방의 write를 막을 뿐 gameOver 분기 자체를 바꾸지 않는다.
-    expect(html).toMatch(/async function nextRound\(\) \{\s*\n\s*if \(isRoomClosingOrDestroyed\(\)\) return;[^\n]*\n\s*if \(state\.advancingRound\) return;[\s\S]{0,50}const safeIds = state\.confirmedSafeIds \|\| \[\];\s*\n\s*const loserIds = state\.confirmedLoserIds \|\| \[\];\s*\n\s*if \(loserIds\.length >= getTargetLoserCount\(\) \|\| state\.status === "game_over"\) \{\s*\n\s*showToast\(t\("voice\.gameOver"\)\);\s*\n\s*renderRoundResult\("gameOver", 0, 0\);\s*\n\s*showScreen\("screenRoundResult"\);[\s\S]{0,150}return;\s*\n\s*\}/);
+    expect(html).toMatch(/async function nextRound\(\) \{\s*\n\s*if \(isRoomClosingOrDestroyed\(\)\) return;[^\n]*\n\s*if \(state\.advancingRound\) return;[\s\S]{0,50}const safeIds = state\.confirmedSafeIds \|\| \[\];\s*\n\s*const loserIds = state\.confirmedLoserIds \|\| \[\];\s*\n\s*if \(loserIds\.length >= getTargetLoserCount\(\) \|\| state\.status === "game_over"\) \{\s*\n\s*showToast\(t\("voice\.gameOver"\)\);\s*\n\s*renderRoundResult\("gameOver", 0, 0\);\s*\n\s*showScreen\("screenRoundResult"\);[\s\S]{0,340}return;\s*\n\s*\}/);
   });
 
   it('status="ready"를 실제로 쓰는 db.update 지점은 nextRound()의 partial-replay write와 WRPS-083 2A의 C-2 복구 write 2곳뿐이다(전체 리셋 경로는 beginNewGameRound({status:"ready"}) 헬퍼를 통해서만 쓴다)', () => {

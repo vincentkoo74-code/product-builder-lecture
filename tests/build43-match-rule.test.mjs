@@ -100,9 +100,10 @@ describe('Build43 — envelope/집계 소스 계약 (스키마 무변경, 호스
     // updateRoomStatusScheduled 가 이 함수를 태운다
     expect(html).toContain('(typeof hostComposeMatchUpdate === "function") ? hostComposeMatchUpdate(continuation) : null');
   });
-  it('한번더는 원형 게이트(host+술래확정) — EARLY LOCK 계약에서 한번더 = 다음 판/새 매치', () => {
-    const s = html.indexOf('function canShowPlayAgainButton'); const body = html.slice(s, s + 500);
-    expect(body).toContain('return state.role === "host" && isTaggerSelectionComplete();');
+  it('한번더 게이트: host+술래확정 유지 + Build46 매치완료 게이트(미완료 판은 자동 진행)', () => {
+    const s = html.indexOf('function canShowPlayAgainButton'); const body = html.slice(s, s + 700);
+    expect(body).toContain('if (!(state.role === "host" && isTaggerSelectionComplete())) return false;');
+    expect(body).toContain('!isMatchComplete()) return false;');
   });
   it('게임룰은 매치 시작 전(1판째 시작 전)에만 편집 가능하다', () => {
     const s = html.indexOf('function isMatchRuleEditable'); expect(s).toBeGreaterThan(-1);
