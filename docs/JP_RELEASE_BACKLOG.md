@@ -7,9 +7,10 @@
 
 | ID | 상태 | 심각도 | 항목 | 출시 차단 |
 |---|---|---|---|---|
+| JP-BL-023 | OPEN | High | JP 문의 창구 미설정 — `JP_SUPPORT_CONFIG` 전 필드 null. 운영자 확정 후 주입 필요(현재 UI 안전 실패) | **예** |
 | JP-BL-020 | DONE | **Blocker** | JP 빌드가 한국어 개인정보 처리방침을 노출 → 로케일 라우팅 + ja 슬롯 도입, 마크업 하드코딩 제거(한국어 유출 경로 0) | — |
 | JP-BL-021 | OPEN | **High** | 일본어 개인정보 처리방침·이용약관 **문안 미확정** — ja 슬롯은 PENDING_HIKARI 상태 고지만 담고 있다 | **예** |
-| JP-BL-022 | OPEN | Medium | 계정 삭제 시 participants 행(닉네임 포함)이 잔존한다 — 일본 법령상 허용 여부 미확정 | 미정 |
+| JP-BL-022 | LEGAL DECISION REQUIRED | Medium | 계정 삭제 후 participants 행(닉네임) 잔존. **구현 보류** — retain/anonymize/delete 선택은 HIKARI 판단. 기술적 결과는 의존성 등록부에 기술 | 미정 |
 | JP-BL-013 | DONE | **Blocker** | JP 백엔드 확보 → **기존 Tokyo 복원(Option A′), ACTIVE_HEALTHY** | — |
 | JP-BL-001 | OPEN | High | region-guard 메커니즘을 KR 브랜치로 백포트 | 아니오 (KR 측 위험) |
 | JP-BL-002 | DONE | High | JP 빌드에서 Kakao 인증 표면 제거 — 시장 계층 경계. KR 공개 키가 source/dist 에서 사라짐(JPX-001 범위 축소) | — |
@@ -527,6 +528,36 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-09-02 (6차) — SPRINT JP-02B: JP 지원 / 운영 준비
+
+LINE SDK 미도입 · LIFF 미구현 · 네이티브 미재생성 · 일본어 법적 문언 미작성 ·
+JP-BL-022 정책 미선택 · third-party 분석 SDK 미도입 · 운영자 신원 미커밋 · KR 미변경.
+
+**지원 아키텍처** — `JP_SUPPORT_CONFIG`(email/privacyEmail/operatorContact) 전 필드 null.
+미설정이면 `isJpSupportConfigured()` 가 false 이고 어떤 분류로도 목적지가 나오지 않는다.
+**플레이스홀더 이메일을 만들지 않았다** — 빌드 전체에서 노출된 이메일 주소 0건(테스트로 잠금).
+응답 시간·24시간 대응을 약속하지 않는다. 문의 분류 7종, 라벨은 i18n 키로만 관리(3로케일).
+
+**오류 → 지원 라우팅** — 7개 상태(연결 실패·초대 불가·잘못된 초대·host 퇴장·정원 초과·
+삭제 실패·예기치 못한 오류)를 한 곳에 모으고 각각 retry/home/지원분류/기술상세노출을 명시했다.
+**technicalDetailExposed 는 전부 false** 이며, 실제 렌더러가 원시 오류 문자열을 쓰지 않음도 검사한다.
+
+**진단 참조 ID** — `JP-ERR-<8자>`. **난수에서만** 만든다(시각조차 섞지 않는다).
+사용자 id·방 코드·초대 토큰·닉네임·이메일 원천을 참조하지 않음을 소스 수준에서 잠갔다.
+중앙 로깅을 새로 만들지 않았다. 연결 오류·초대 불가 화면에 표시된다.
+
+**데이터 최소화** — 지원 컨텍스트는 화이트리스트다:
+market/locale/errorCategory/diagnosticRef/appVersion 5개뿐. 초대 토큰·방코드·닉네임·사용자
+id·URL 은 구조적으로 들어갈 수 없다.
+
+**분석 스키마(설계 전용)** — 퍼널 15개 이벤트 + 허용 차원 6개 + 금지 필드 목록.
+`buildAnalyticsPayload()` 가 금지 필드·허용목록 밖 필드·32자 초과 자유입력을 **버린다**.
+third-party SDK(GA/Firebase/Meta/LINE/amplitude/mixpanel) 미도입을 테스트로 잠갔다.
+
+**HIKARI 의존성 등록부** 신설(`docs/JP_HIKARI_DEPENDENCY_REGISTER.md`) —
+JP-BL-021(법무 문안 6문) · JP-BL-022(삭제 정책 4문 + 기술 선택지 A/B/C 결과) ·
+LINE(7문) · 지원(4문) · OPERATOR_DEPENDENCY 목록.
 
 ### 2026-09-02 (5차) — SPRINT JP-02: JP 출시 기반 / LINE 이전 하드닝
 

@@ -2791,6 +2791,7 @@
         </div>
         <div class="vrshow-cap vrshow-cap-lg" id="inviteUnavailableTitle"></div>
         <p class="maru-section-sub" style="margin-top:6px" id="inviteUnavailableDesc"></p>
+        <p class="maru-section-sub hidden" id="inviteUnavailableRef" style="margin-top:8px;font-size:12px"></p>
       </div>
       <div class="c-foot">
         <button class="btn-kparty" id="inviteNewChallengeBtn" data-i18n="invite.action.newChallenge">새로 도전 만들기</button>
@@ -2809,6 +2810,7 @@
         </div>
         <div class="vrshow-cap vrshow-cap-lg" id="connectionErrorTitle"></div>
         <p class="maru-section-sub" style="margin-top:6px" id="connectionErrorDesc"></p>
+        <p class="maru-section-sub hidden" id="connectionErrorRef" style="margin-top:8px;font-size:12px"></p>
       </div>
       <div class="c-foot">
         <button class="btn-kparty" id="connectionRetryBtn" data-i18n="conn.action.retry">다시 시도</button>
@@ -3869,6 +3871,21 @@
         "invite.invalid.title": "초대 링크가 올바르지 않아요",
         "invite.invalid.desc": "링크가 만료됐거나 잘못됐어요.",
         "invite.roomFull.title": "정원이 찼어요",
+        "support.title": "문의하기",
+        "support.pending": "문의 창구 준비 중이에요.",
+        "support.refLabel": "참조번호",
+        "support.refHint": "문의 시 이 번호를 알려주세요.",
+        "support.cat.connection": "게임에 접속되지 않아요",
+        "support.cat.invite": "초대가 동작하지 않아요",
+        "support.cat.accountData": "계정·데이터 삭제",
+        "support.cat.privacy": "개인정보 문의",
+        "support.cat.legal": "약관·법적 문의",
+        "support.cat.bug": "오류 신고",
+        "support.cat.other": "기타 문의",
+        "support.err.deleteFailed": "삭제하지 못했어요",
+        "support.err.deleteFailedDesc": "잠시 후 다시 시도해주세요.",
+        "support.err.unexpected": "예기치 못한 오류가 발생했어요",
+        "support.err.unexpectedDesc": "잠시 후 다시 시도해주세요.",
         "conn.title": "통신에 실패했어요",
         "conn.desc": "네트워크를 확인하고 다시 시도해주세요.",
         "conn.action.retry": "다시 시도",
@@ -4271,6 +4288,21 @@
         "invite.invalid.title": "This invite link isn't valid",
         "invite.invalid.desc": "The link may be expired or incorrect.",
         "invite.roomFull.title": "The room is full",
+        "support.title": "Contact us",
+        "support.pending": "Support channel is being prepared.",
+        "support.refLabel": "Reference",
+        "support.refHint": "Please share this number when you contact us.",
+        "support.cat.connection": "Can't connect to the game",
+        "support.cat.invite": "Invite isn't working",
+        "support.cat.accountData": "Account / data deletion",
+        "support.cat.privacy": "Privacy inquiry",
+        "support.cat.legal": "Terms / legal inquiry",
+        "support.cat.bug": "Report a bug",
+        "support.cat.other": "Other inquiry",
+        "support.err.deleteFailed": "Deletion failed",
+        "support.err.deleteFailedDesc": "Please try again in a moment.",
+        "support.err.unexpected": "Something went wrong",
+        "support.err.unexpectedDesc": "Please try again in a moment.",
         "conn.title": "Connection failed",
         "conn.desc": "Check your network and try again.",
         "conn.action.retry": "Try again",
@@ -4670,6 +4702,21 @@
         "invite.invalid.title": "招待リンクが正しくありません",
         "invite.invalid.desc": "リンクの有効期限が切れているか、間違っています。",
         "invite.roomFull.title": "定員に達しました",
+        "support.title": "お問い合わせ",
+        "support.pending": "お問い合わせ窓口は準備中です。",
+        "support.refLabel": "参照番号",
+        "support.refHint": "お問い合わせの際にこの番号をお伝えください。",
+        "support.cat.connection": "ゲームにつながらない",
+        "support.cat.invite": "招待がうまくいかない",
+        "support.cat.accountData": "アカウント・データの削除",
+        "support.cat.privacy": "プライバシーに関するお問い合わせ",
+        "support.cat.legal": "利用規約・法的なお問い合わせ",
+        "support.cat.bug": "不具合の報告",
+        "support.cat.other": "その他のお問い合わせ",
+        "support.err.deleteFailed": "削除できませんでした",
+        "support.err.deleteFailedDesc": "しばらくしてからもう一度お試しください。",
+        "support.err.unexpected": "予期しないエラーが発生しました",
+        "support.err.unexpectedDesc": "しばらくしてからもう一度お試しください。",
         "conn.title": "通信できませんでした",
         "conn.desc": "ネットワークを確認して、もう一度お試しください。",
         "conn.action.retry": "もう一度",
@@ -5002,6 +5049,141 @@
     //   마치면 1인 자동 시작이 발화하고 status 가 'playing' 이 되어 isJoinLocked() 가
     //   초대받은 친구의 입장을 막는다 — 초대 퍼널이 성립하지 않는다.
     //   KR(QR 로 한자리에 모이는 사용)은 이 값을 설정하지 않으므로 host 단독 시작이 유지된다.
+    // ── JP 지원 / 운영 (JP-02B) ──────────────────────────────────────────────
+    //
+    // 원칙:
+    //  1. **승인되지 않은 연락처를 지어내지 않는다.** 미설정은 null 이며, UI 는 안전하게 실패한다.
+    //  2. 플레이스홀더 이메일을 사용자에게 절대 노출하지 않는다.
+    //  3. 지원 흐름에 개인식별정보·토큰·방 상태를 자동으로 싣지 않는다(데이터 최소화).
+    //  4. 응답 시간·24시간 대응을 약속하지 않는다 — 승인된 바 없다.
+    const JP_SUPPORT_CONFIG = Object.freeze({
+      email: null,            // 일반 문의처 — 운영자 확정 후 배포 설정이 주입
+      privacyEmail: null,     // 개인정보 문의처(법령상 분리가 필요할 수 있다 — HIKARI 판단)
+      operatorContact: null,  // 운영자 문의 창구(URL 등)
+    });
+
+    // 문의 수단이 실제로 설정돼 있는가. false 면 액션을 노출하지 않고 「準備中」을 보여준다.
+    function isJpSupportConfigured() {
+      const c = JP_SUPPORT_CONFIG;
+      return Boolean(c && (c.email || c.operatorContact));
+    }
+    function jpSupportDestinationFor(category) {
+      const c = JP_SUPPORT_CONFIG;
+      if (!c) return null;
+      // 개인정보/법무 문의는 전용 창구가 있으면 그쪽으로, 없으면 일반 창구로.
+      if (category === 'privacy' || category === 'legal') return c.privacyEmail || c.email || c.operatorContact || null;
+      return c.email || c.operatorContact || null;
+    }
+
+    // 문의 분류. 라벨은 i18n 키로만 관리한다(하드코딩 문구 금지).
+    const JP_SUPPORT_CATEGORIES = Object.freeze([
+      Object.freeze({ id: 'connection',  labelKey: 'support.cat.connection' }),
+      Object.freeze({ id: 'invite',      labelKey: 'support.cat.invite' }),
+      Object.freeze({ id: 'accountData', labelKey: 'support.cat.accountData' }),
+      Object.freeze({ id: 'privacy',     labelKey: 'support.cat.privacy' }),
+      Object.freeze({ id: 'legal',       labelKey: 'support.cat.legal' }),
+      Object.freeze({ id: 'bug',         labelKey: 'support.cat.bug' }),
+      Object.freeze({ id: 'other',       labelKey: 'support.cat.other' }),
+    ]);
+
+    // ── 진단 참조 ID (JP-02B §9) ─────────────────────────────────────────────
+    //
+    // 사용자가 문의할 때 말할 수 있는 **상관관계용 짧은 식별자**다.
+    // 개인정보·토큰·방 정보를 일절 담지 않는다 — 난수에서만 만든다.
+    //   ❌ LINE user ID / Supabase UUID / invite token / auth token / email / 닉네임 / IP
+    // 중앙 로깅을 새로 만들지 않는다. 이 값은 화면 표시와 기존 QA 계측 상관용이다.
+    const JP_DIAG_REF_PREFIX = 'JP-ERR-';
+    function makeDiagnosticRef() {
+      // 난수만 쓴다. 시각조차 섞지 않는다(생성 시점 역추적 방지).
+      let raw = '';
+      try {
+        const b = new Uint8Array(5);
+        crypto.getRandomValues(b);
+        raw = Array.from(b).map((x) => x.toString(36).padStart(2, '0')).join('');
+      } catch (e) {
+        raw = Math.random().toString(36).slice(2, 12);
+      }
+      return JP_DIAG_REF_PREFIX + raw.replace(/[^a-z0-9]/gi, '').slice(0, 8).toUpperCase();
+    }
+
+    // ── 오류 → 지원 라우팅 (JP-02B §8) ───────────────────────────────────────
+    //
+    // 각 오류 상태의 사용자 대면 계약을 한 곳에 모은다.
+    // technicalDetailExposed 는 전부 false 여야 한다 — 원시 백엔드 오류를 노출하지 않는다.
+    const JP_ERROR_ROUTING = Object.freeze({
+      connectionFailure:   Object.freeze({ titleKey: 'conn.title', descKey: 'conn.desc',
+                              retryAllowed: true,  returnHome: true,  supportCategory: 'connection',  technicalDetailExposed: false }),
+      inviteUnavailable:   Object.freeze({ titleKey: 'invite.unavailable.title', descKey: 'invite.unavailable.desc',
+                              retryAllowed: false, returnHome: true,  supportCategory: 'invite',      technicalDetailExposed: false }),
+      inviteInvalid:       Object.freeze({ titleKey: 'invite.invalid.title', descKey: 'invite.invalid.desc',
+                              retryAllowed: false, returnHome: true,  supportCategory: 'invite',      technicalDetailExposed: false }),
+      hostGone:            Object.freeze({ titleKey: 'invite.hostGone.title', descKey: 'invite.hostGone.desc',
+                              retryAllowed: false, returnHome: true,  supportCategory: 'invite',      technicalDetailExposed: false }),
+      roomFull:            Object.freeze({ titleKey: 'invite.roomFull.title', descKey: 'invite.unavailable.desc',
+                              retryAllowed: false, returnHome: true,  supportCategory: 'invite',      technicalDetailExposed: false }),
+      accountDeleteFailed: Object.freeze({ titleKey: 'support.err.deleteFailed', descKey: 'support.err.deleteFailedDesc',
+                              retryAllowed: true,  returnHome: false, supportCategory: 'accountData', technicalDetailExposed: false }),
+      unexpected:          Object.freeze({ titleKey: 'support.err.unexpected', descKey: 'support.err.unexpectedDesc',
+                              retryAllowed: true,  returnHome: true,  supportCategory: 'other',       technicalDetailExposed: false }),
+    });
+
+    // 지원 문의에 실어도 되는 정보. **화이트리스트**다 — 여기 없는 것은 싣지 않는다.
+    // 방 코드·초대 토큰·닉네임·사용자 id·URL 은 의도적으로 제외했다(JP-02B §10).
+    function buildSupportContext(errorState, diagRef) {
+      const route = JP_ERROR_ROUTING[errorState] || null;
+      return {
+        market: 'JP',
+        locale: (typeof currentLocale !== 'undefined' ? currentLocale : 'ja'),
+        errorCategory: route ? route.supportCategory : 'other',
+        diagnosticRef: diagRef || null,
+        appVersion: '1.0',
+      };
+    }
+
+    // ── JP 분석 이벤트 스키마 (JP-02B §12) — **설계 전용, SDK 통합 없음** ─────────
+    //
+    // 여기 있는 것은 **스키마 선언**이다. 어떤 third-party SDK 도 붙이지 않는다
+    // (Google/Firebase/Meta/LINE analytics 전부 미도입). 전송 경로도 만들지 않는다.
+    // 나중에 전송을 붙일 때 이 스키마가 계약이 된다.
+    //
+    // 금지 필드(JP-02B §13) — 이벤트에 절대 싣지 않는다:
+    //   invite_token · LINE user ID · nickname · email · auth UUID · 자유입력 벌칙 내용 ·
+    //   자유입력 문의 내용 · 불필요한 room code
+    const JP_ANALYTICS_FORBIDDEN_FIELDS = Object.freeze([
+      'invite_token', 'inviteToken', 'line_user_id', 'lineUserId', 'nickname', 'name',
+      'email', 'user_id', 'userId', 'uuid', 'auth_token', 'accessToken',
+      'penalty_text', 'penaltyText', 'support_text', 'supportText', 'room_code', 'roomCode',
+    ]);
+
+    // 허용 차원. 개인을 식별하지 않는 범주형 값만 둔다.
+    const JP_ANALYTICS_DIMENSIONS = Object.freeze([
+      'market', 'locale', 'entry_type', 'result_type', 'error_category', 'round_number',
+    ]);
+
+    // JP 출시 퍼널 이벤트.
+    const JP_ANALYTICS_EVENTS = Object.freeze([
+      'app_open', 'guest_start', 'challenge_created', 'invite_action_opened',
+      'invite_join_started', 'invite_join_completed', 'ready_completed',
+      'round_started', 'round_completed', 'rematch_started',
+      'connection_error', 'invite_error',
+      'account_delete_started', 'account_delete_failed', 'account_delete_completed',
+    ]);
+
+    // 이벤트 페이로드를 만들 때 금지 필드를 구조적으로 걸러낸다.
+    // 전송을 붙이기 전이라도, 나중에 붙일 때 이 함수를 통과하도록 강제하기 위해 지금 둔다.
+    function buildAnalyticsPayload(eventName, dims = {}) {
+      if (!JP_ANALYTICS_EVENTS.includes(eventName)) return null;
+      const out = { event: eventName, market: 'JP',
+                    locale: (typeof currentLocale !== 'undefined' ? currentLocale : 'ja') };
+      for (const [k, v] of Object.entries(dims)) {
+        if (JP_ANALYTICS_FORBIDDEN_FIELDS.includes(k)) continue;   // 금지 필드는 조용히 버린다
+        if (!JP_ANALYTICS_DIMENSIONS.includes(k)) continue;        // 허용 목록 밖도 버린다
+        if (typeof v === 'string' && v.length > 32) continue;      // 자유입력 유입 차단
+        out[k] = v;
+      }
+      return out;
+    }
+
     // ── 법무 문서 라우팅 (JP-02, CEO §3) ─────────────────────────────────────
     //
     // 문제: JP 빌드가 **한국어 개인정보 처리방침**을 링크하고 있었다(JP_RELEASE_BLOCKER).
@@ -6108,11 +6290,23 @@
       const descEl = $("connectionErrorDesc");
       if (titleEl) titleEl.textContent = t("conn.title");
       if (descEl) descEl.textContent = t("conn.desc");
+      if (typeof renderDiagnosticRef === "function") renderDiagnosticRef("connectionErrorRef");
       const retry = $("connectionRetryBtn");
       const home = $("connectionHomeBtn");
       if (retry) retry.onclick = () => { if (context === 'createRoom') createRoom(); else goHome(); };
       if (home) home.onclick = () => goHome();
       showScreen("screenConnectionError");
+    }
+
+    // 오류 화면에 진단 참조번호를 표시한다(JP-02B §9).
+    // 이 값은 난수일 뿐이며 사용자/방/토큰 정보를 담지 않는다.
+    function renderDiagnosticRef(elId) {
+      const el = $(elId);
+      if (!el) return null;
+      const ref = makeDiagnosticRef();
+      el.textContent = `${t('support.refLabel')}: ${ref} — ${t('support.refHint')}`;
+      el.classList.remove('hidden');
+      return ref;
     }
 
     // 해석 의도를 실제 화면으로 렌더링한다(JP-SYNC-INVITE-003B).
@@ -6122,6 +6316,9 @@
       const descEl = $("inviteUnavailableDesc");
       if (titleEl) titleEl.textContent = t(intent && intent.titleKey ? intent.titleKey : 'invite.unavailable.title');
       if (descEl) descEl.textContent = t(intent && intent.descKey ? intent.descKey : 'invite.unavailable.desc');
+      // ⚠️ typeof 가드는 이 파일의 관례다 — 여러 테스트가 renderInviteUnavailable 만 좁게
+      // 추출해 독립 실행하며, 그 추출본에는 이 헬퍼 선언이 들어오지 않는다.
+      if (typeof renderDiagnosticRef === "function") renderDiagnosticRef("inviteUnavailableRef");
       showScreen("screenInviteUnavailable");
     }
 
