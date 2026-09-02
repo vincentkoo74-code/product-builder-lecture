@@ -35,7 +35,7 @@
 | JP-BL-014 | DONE | Medium | A5 device-matrix 타임아웃 → **Tokyo 복원으로 해소, 통과 확인** | — |
 | JP-BL-015 | RE-VERIFIED | **High** | 로컬 clean bootstrap 실증 완료. **보안 5종은 여전히 Tokyo 미적용**(별도 게이트) | **예** |
 | JP-TOKYO-MIG-INVITE-001 | DONE | **High** | `rooms.invite_token` 격리 배포 완료(2026-08-31). 보안 5종 미적용 유지, 원장 2행 | — |
-| JP-H1A-STRICT-CALIBRATION | DIAGNOSED | Medium | strict 잔여 10건을 개별 분류 완료 — 전량 H1(지연 레짐 모델이 실측 근거 없음), P1 0건. 임계값 미변경, CEO 승인 대기 | 아니오 |
+| JP-H1A-STRICT-CALIBRATION | DIAGNOSED | Medium | 잔여 10건 전량 H1 분류(P1 0건). 실측 데이터셋 확보 완료(JP-RC3-FIELD-LATENCY-001) — 레짐 변경은 CEO 승인 대기 | 아니오 |
 | JP-INFRA-STALE-ROOM | OPEN | Medium | 물리적 stale row 정리(cron/TTL) — 별도 인프라 태스크. **추가 케이스(2026-09-02)**: 온라인 도전 생성 중 rooms INSERT 성공 후 후속 단계 실패 시 참가자 없는 고아 방 행이 남을 수 있다(초대 토큰 미발급이라 외부 발견 불가) | 아니오 |
 | JP-BL-016 | DECIDED | High | free plan 은 엔지니어링 기간 유지, 외부 베타 전 Pro 승격 (JP-PROD-GATE) | **예** |
 | JP-BL-017 | OPEN | Medium | `SUPABASE_DB_PASSWORD` 리전별 분리 | 아니오 |
@@ -524,6 +524,26 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-09-02 (3차) — JP-RC3-FIELD-LATENCY-001: 실측 지연 데이터셋
+
+rc3 레짐을 근거 기반으로 재설계하기 위한 실측 수집. **임계값·레짐·프로덕션 로직 무변경.**
+
+**REAL 191 유효 전송 표본**(24 iteration, 실패 0): p50=974 · p90=1838 · p95=2339 · p99=4096 · max=7108ms.
+Realtime 도달률 99.04%(보정 후), 중복 0.53%, 순서역전 0, 소켓 종료 0.
+
+**직전 슬라이스의 40표본 결론을 이 데이터가 정정한다** — 당시 max 2609ms 로 보고했으나
+191표본에서는 7108ms 까지 관측된다. 소표본이었다.
+
+**레짐 적합도**: optimistic 92.7% 커버(14건 초과) · **moderate 99.5%**(1건 초과) ·
+pessimistic 100%(0건 초과이나 4~9s 구간에 3% 배정 vs 실측 1.0%).
+
+**구독 확립 공백**: N=52, p50=3108 · p90=4536 · max=8368ms — 종전 추정(2.2~3.7s)보다 크다.
+
+**네트워크 맥락의 한계**: 이 머신의 egress 가 VPN 터널(utun6, DNS 198.18.x 가로채기)이다.
+TLS 는 정상 Supabase(MITM 아님)이나 **일본 직결 경로가 아니다.** 다른 지리적 지점은 없다.
+
+SYNTHETIC(CDP +100/300/500/1000ms)은 REAL 과 **분리 기록**했다.
 
 ### 2026-09-02 (2차) — JP-BL-010: 온라인 백엔드 실패 UX
 

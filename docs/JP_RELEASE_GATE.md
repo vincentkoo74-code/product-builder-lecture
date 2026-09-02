@@ -26,17 +26,25 @@ JP 작업이 CORE 를 건드렸다면 이 층의 결과를 보고서에 **명시
 ## 층 3 — rc3 권위(strict) 스위트
 
 ```
-npx vitest run tests/rc3-multiparticipant-sim.test.mjs
+npm run test:rc3          # ← 공식 측정 명령 (직렬화 가드 포함)
 ```
 
-`strictFilters` 가 **권위·릴리스 게이팅 모드**다(JP-BL-027-D). legacy 는 과거 참조 전용이며
-게이트에 쓰지 않는다.
+`strictFilters` 가 **권위·릴리스 게이팅 모드**다(JP-BL-027-D). legacy 는 과거 참조 전용이다.
 
-**측정 규율:** rc3 는 타이밍 측정 스위트다. 다른 작업(다른 테스트 실행, 파일 편집, 빌드)과
-**동시에 돌리지 않는다.** 과거에 동시 실행으로 측정이 오염된 전례가 있다.
+⚠️ **`npx vitest run tests/rc3-multiparticipant-sim.test.mjs` 직접 호출은 디버깅 전용이며
+공식 릴리스 측정이 아니다.** 가드를 우회하기 때문이다(JP-RC3-FIELD-LATENCY-001 §15).
 
-판정 기준: 0행 오류 0건, 타임아웃 0건, 그리고 실패 건수가 확립된 기준선을 넘지 않을 것.
-현재 기준선의 잔여 실패는 `JP-H1A-STRICT-CALIBRATION` 으로 추적 중이다.
+가드(`scripts/rc3-measure.mjs`)가 하는 일:
+- 시작 전 `pgrep -f rc3-multiparticipant-sim` 로 경합 탐지 → 있으면 **fail-closed**
+- 머신 전역 락(워크트리가 달라도 감지) + 죽은 락 안전 회수
+- 피어·사용자 프로세스를 **절대 죽이지 않는다**
+- 종료 시 재확인 → 실행 중 경합이 있었으면 `INVALID — MACHINE CONTENTION`
+
+**경합 측정은 무효다.** 실측 대비: 동시 3개 = 11 실패/3591.95s/타임아웃 7,
+단독 = 10 실패/~2450s/타임아웃 0. 부하를 이유로 임계값을 낮추지 않는다.
+
+판정 기준: 0행 오류 0건, 타임아웃 0건, 실패 수가 확립된 기준선을 넘지 않을 것.
+현재 기준선의 잔여 실패 10건은 `JP-H1A-STRICT-CALIBRATION` 으로 추적한다(전량 H1 분류).
 
 ## 층 4 — JP 브라우저 E2E  ← **JP-ENTRY-INVITE-002 이후 공식 게이트**
 
