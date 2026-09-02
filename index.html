@@ -11564,10 +11564,10 @@ function summarizeGameStats(rows) {
         // 소스에서 역으로 읽거나('30') 못박아 둬서 드리프트를 잡지 못했다 — Build 33~36의 QA 리포트가
         // 전부 build32/'30'으로 기록돼 증적의 빌드 귀속이 어긋났다. 이제 라벨과 build 필드는
         // 이 상수 하나에서 파생된다.
-        const BUILD_NUMBER = 48;
-        // Build46-R2(§4 승인): Apple 바이너리 번호(=CPV, ASC에서 46 소진)와 제품 빌드 라벨을 분리.
-        // 제품 후보는 여전히 Build46 — 판정 인시던트 복구판(r2). 라벨은 여기서만 파생(하드코딩 금지 계약 유지).
-        const PRODUCT_BUILD_LABEL = '47-r2';
+        const BUILD_NUMBER = 49;
+        // Build47-Codex QA: ASC에서 47/48이 소진되어 Apple 바이너리는 49를 사용하되,
+        // 제품 후보 정체성은 Build47 Codex recovery로 유지한다. 라벨은 여기서만 파생한다.
+        const PRODUCT_BUILD_LABEL = '47-codex';
         const QA_BUILD_LABEL = 'build' + PRODUCT_BUILD_LABEL;
         function deviceInfo() {
           let platform = 'web', model = 'Web', osVersion = '';

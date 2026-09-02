@@ -142,11 +142,12 @@ maybe('산출물 manifest — 빌드 후에만 검사', () => {
     const vn = (/versionName\s+"([^"]+)"/.exec(gradle) || [])[1];
     const iosBuild = Number(AND_M().build);
     expect(vc, 'versionCode 를 못 읽었다').toBeGreaterThan(0);
-    expect(vn, 'versionName 을 못 읽었다').toMatch(/^1\.0-KR-B\d+$/);
+    expect(vn, 'versionName 을 못 읽었다').toBe(`1.0-${RELEASE_LABEL}`);
     expect(String(vc)).not.toBe(String(iosBuild));            // 같은 필드로 억지 공유 금지
     // versionCode 는 iOS build 번호에 01 을 붙인 규칙(3901 ← 39)이어야 한다 — 번호만 다르고 규칙은 고정
     expect(vc, `versionCode ${vc} 가 iOS build ${iosBuild} 에서 파생된 규칙(build*100+1)과 다르다`).toBe(iosBuild * 100 + 1);
-    expect(vn.endsWith('B' + iosBuild), `versionName ${vn} 이 iOS build ${iosBuild} 와 어긋난다`).toBe(true);
+    // 제품 라벨은 ASC 바이너리 번호와 독립적이다(Build47-Codex는 CPV 49 사용).
+    expect(vn).toBe('1.0-KR-B47-CODEX');
   });
 
   it('[T1] 어느 산출물에도 Tokyo ref 가 없다', () => {
