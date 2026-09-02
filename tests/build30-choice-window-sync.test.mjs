@@ -64,6 +64,7 @@ const TIMER_BLOCK_SRC = extractBlock(
   'function setRoundTimerText(v) {',
   'function stopRoundTimers() {'
 );
+const PENALTY_CAS_SRC = extractBlock('async function updateRoomPenaltyCas(', '// Build19: RESULT/READY');
 
 function toPositiveInt(value, fallback = 0) {
   const n = parseInt(value, 10);
@@ -100,12 +101,16 @@ function buildEnv({
     from(table) {
       return {
         update(payload) {
-          return {
-            eq(col, val) {
-              calls.dbUpdate.push({ table, payload, col, val });
-              return Promise.resolve(dbUpdateImpl(payload));
-            }
+          let captured = false;
+          const done = () => Promise.resolve({ data: [{ id: state.roomCode, status: state.status,
+            round: state.round, penalty: payload.penalty ?? state.penalty }], ...dbUpdateImpl(payload) });
+          const chain = {
+            eq(col, val) { if (!captured) { captured = true; calls.dbUpdate.push({ table, payload, col, val }); } return chain; },
+            or() { return chain; },
+            select() { return done(); },
+            then(resolve, reject) { return done().then(resolve, reject); },
           };
+          return chain;
         }
       };
     }
@@ -117,7 +122,7 @@ function buildEnv({
     'showScreen', 'showLoserWaitScreen', 'showNonPlayingRoundScreen',
     'runCountdown', 'stopRoundTimers', 'autoFillChoices',
     'updateSelectedCount', 'updateHostSelectedCount', 'isScreenActive',
-    PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + GENERATION_HELPER_BLOCK_SRC + '\n' + RUNCOUNTDOWN_BLOCK_SRC + '\n' + TIMER_BLOCK_SRC +
+    PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + PENALTY_CAS_SRC + '\n' + GENERATION_HELPER_BLOCK_SRC + '\n' + RUNCOUNTDOWN_BLOCK_SRC + '\n' + TIMER_BLOCK_SRC +
     '\nreturn { getChoiceEndAt, buildPenaltyValue, getGameRound, getCountdownStartAt, ' +
     'runCountdownThenShowGame, beginRoundTimer, resyncChoiceTimerOnResume, ' +
     'computeChoiceRemainingSeconds, captureAndPublishChoiceWindowNow, ' +

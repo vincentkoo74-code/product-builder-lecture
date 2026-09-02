@@ -35,11 +35,16 @@ function roomsDb(store, writes, beforeFirstUpdate = null) {
     return {
       update(payload) {
         const filters = [];
-        const q = { eq(key, value) { filters.push([key, value]); return q; }, async select() {
+        const q = { eq(key, value) { filters.push([key, value]); return q; }, or(expr) {
+          if (expr !== 'penalty.is.null,penalty.eq.') throw new Error(`unsupported or: ${expr}`);
+          filters.push(['__emptyPenalty', true]); return q;
+        }, async select() {
           if (updateCount++ === 0 && beforeFirstUpdate) beforeFirstUpdate(store);
-          if (!matches(filters)) return { data: [], error: null };
+          const ordinary = filters.filter(([key]) => key !== '__emptyPenalty');
+          const emptyOk = !filters.some(([key]) => key === '__emptyPenalty') || store.penalty == null || store.penalty === '';
+          if (!emptyOk || !matches(ordinary)) return { data: [], error: null };
           Object.assign(store, payload); writes.push({ ...payload });
-          return { data: [{ id: store.id, status: store.status, penalty: store.penalty }], error: null };
+          return { data: [{ id: store.id, status: store.status, round: store.round, penalty: store.penalty }], error: null };
         } };
         return q;
       },
@@ -62,6 +67,9 @@ function runtime(rule, beforeFirstUpdate = null) {
     participants: ['A', 'B', 'C'].map(id => ({ id, choice: 'rock' })) };
   const writes = [], events = [];
   const db = roomsDb(store, writes, beforeFirstUpdate);
+  const updatePenaltyCas = new Function('db', 'state', 'QA', 'qaRoundCtx',
+    `${sliceFn('updateRoomPenaltyCas')}\nreturn updateRoomPenaltyCas;`)(db, state,
+      { emit: (_kind, payload) => events.push(payload) }, undefined);
   const envelope = () => {
     const p = parse(state.penalty), stats = M.sanitizeMatchStats(p.matchStats, p.matchTally);
     return { stale: false, matchNo: positive(p.matchNo, 1), rule: p.matchRule || rule, stats,
@@ -101,7 +109,7 @@ function runtime(rule, beforeFirstUpdate = null) {
     store.status = 'playing'; store.penalty = JSON.stringify(p);
     state.status = 'playing'; state.gameRound = gameNo; state.penalty = JSON.stringify(JSON.parse(store.penalty));
   }
-  return { M, state, store, db, writes, events, hostCompose, commit, next };
+  return { M, state, store, db, writes, events, hostCompose, updatePenaltyCas, commit, next };
 }
 
 describe('Build47 recovery — persisted GAME result pipeline', () => {
@@ -153,12 +161,42 @@ describe('Build47 recovery — persisted GAME result pipeline', () => {
     await r.commit(1, 'A');
     const finalSnapshot = r.store.penalty;
     const publish = new Function('state', 'getOnlineMode', 'db', 'getCountdownStartAt', 'buildPenaltyValue',
-      'getGameRound', 'QA', 'console', `${sliceFn('publishChoiceWindowEnd')}\nreturn publishChoiceWindowEnd;`)(
+      'getGameRound', 'updateRoomPenaltyCas', 'QA', 'console', `${sliceFn('publishChoiceWindowEnd')}\nreturn publishChoiceWindowEnd;`)(
         { role: 'host', roomCode: 'ROOM', round: 1, penalty: finalSnapshot }, () => true, r.db, () => 0,
-        () => oldSnapshot, () => 1, { emit() {} }, { warn() {} });
+        () => oldSnapshot, () => 1, r.updatePenaltyCas, { emit: (_kind, payload) => r.events.push(payload) }, { warn() {} });
     await publish(999);
     expect(r.store.penalty).toBe(finalSnapshot);
     expect(parse(r.store.penalty).matchStats.A.losses).toBe(1);
+    expect(r.events.some(e => e.eventType === 'PENALTY_WRITE_SKIPPED_STALE')).toBe(true);
+    expect(r.events.some(e => e.eventType === 'CHOICE_END_PUBLISH_SKIPPED_STALE')).toBe(true);
+  });
+
+  it('generic penalty CAS accepts the historical NULL/empty initial envelope, then rejects an old snapshot', async () => {
+    const r = runtime('best3');
+    r.store.penalty = null; r.state.penalty = '';
+    const applied = await r.updatePenaltyCas({ penalty: 'P1' },
+      { expectedStatus: 'playing', expectedPenalty: '', source: 'empty-envelope-test' });
+    expect(applied.penalty).toBe('P1');
+    await expect(r.updatePenaltyCas({ penalty: 'ROLLBACK' },
+      { expectedStatus: 'playing', expectedPenalty: '', source: 'stale-envelope-test' })).rejects.toThrow('stale room compare-and-swap');
+    expect(r.store.penalty).toBe('P1');
+  });
+
+  it('countdown republish commits local timing only after CAS success and rolls back on stale conflict', async () => {
+    const r = runtime('best3', store => {
+      const newer = parse(store.penalty); newer.choiceEndAt = 777; store.penalty = JSON.stringify(newer);
+    });
+    const oldPenalty = r.state.penalty;
+    r.state.role = 'host'; r.state.round = 1; r.state.countdownStartAt = 111;
+    const republish = new Function('state', 'getNextCountdownStartAt', 'getChoiceEndAt', 'buildPenaltyValue',
+      'getOnlineMode', 'db', 'updateRoomPenaltyCas', 'getGameRound', 'QA',
+      `${sliceFn('republishCountdownStartAsHost')}\nreturn republishCountdownStartAsHost;`)(
+        r.state, () => 222, () => 0, () => 'P-CANDIDATE', () => true, r.db, r.updatePenaltyCas,
+        () => 1, { emit: (_kind, payload) => r.events.push(payload) });
+    await expect(republish()).rejects.toThrow('stale room compare-and-swap');
+    expect(r.state.penalty).toBe(oldPenalty);
+    expect(r.state.countdownStartAt).toBe(111);
+    expect(r.store.penalty).not.toBe(oldPenalty);
   });
 
   it('matchTalliedGameNo is monotonic: duplicate/older FINAL are blocked, legitimate N+1 is allowed', () => {

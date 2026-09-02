@@ -51,6 +51,9 @@ const PARSE_AND_SCHEDULE_SRC = extractBlock(
 const GET_ONLINE_MODE_SRC = extractBlock(
   'function getOnlineMode() {', 'function clearRealtime() {', 'getOnlineMode'
 );
+const UPDATE_ROOM_PENALTY_CAS_SRC = extractBlock(
+  'async function updateRoomPenaltyCas(', '// Build19: RESULT/READY', 'updateRoomPenaltyCas'
+);
 // isSafeParticipant부터 waitForPhaseRender 직전까지: choice 헬퍼 + hasCurrentGameRoundActivity +
 // shouldResetForParticipantChange + getNewGameRoundParticipantPatch + resetLocalParticipantsForNewGameRound +
 // archiveCurrentRoundStats(+통계 조회 헬퍼들) + beginNewGameRound 전부를 단일 연속 구간으로 포함한다.
@@ -73,7 +76,8 @@ const HANDLE_ROOM_UPDATE_SRC = extractBlock(
 );
 
 const COMBINED_FOR_HANDOVER = [
-  PARSE_AND_SCHEDULE_SRC, GET_ONLINE_MODE_SRC, ROUND_HELPERS_AND_BEGIN_NEW_GAME_ROUND_SRC,
+  PARSE_AND_SCHEDULE_SRC, GET_ONLINE_MODE_SRC, UPDATE_ROOM_PENALTY_CAS_SRC,
+  ROUND_HELPERS_AND_BEGIN_NEW_GAME_ROUND_SRC,
   HOST_SAFETY_HELPERS_SRC, BECOME_NEXT_HOST_SRC, HANDLE_ROOM_UPDATE_SRC,
 ].join('\n');
 
@@ -167,10 +171,17 @@ function makeConditionalRoomsDb(roomRow, { onWrite, participantRows } = {}) {
             const conditions = [];
             const builder = {
               eq(col, val) { conditions.push([col, val]); return builder; },
+              or(expression) {
+                if (expression === 'penalty.is.null,penalty.eq.') conditions.push(['__emptyPenalty', true]);
+                return builder;
+              },
+              select() { return exec(); },
               then(resolve, reject) { return exec().then(resolve, reject); },
             };
             async function exec() {
-              const matched = conditions.every(([col, val]) => roomRow[col] === val);
+              const matched = conditions.every(([col, val]) =>
+                col === '__emptyPenalty' ? (roomRow.penalty == null || roomRow.penalty === '') : roomRow[col] === val
+              );
               if (matched) Object.assign(roomRow, patch);
               if (onWrite) onWrite({ patch, conditions, matched, rowAfter: { ...roomRow } });
               return { data: matched ? [{ ...roomRow }] : [], error: null };

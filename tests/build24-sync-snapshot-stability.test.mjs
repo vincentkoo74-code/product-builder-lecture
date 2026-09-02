@@ -42,6 +42,9 @@ const BEGIN_NEW_GAME_ROUND_SRC = extractBlock(
   'async function beginNewGameRound({ status = "lobby"',
   '// Build19(WRPS-072-B19): result/game_over 전환 시 참가자 스냅샷 완결성 보장'
 );
+const UPDATE_ROOM_PENALTY_CAS_SRC = extractBlock(
+  'async function updateRoomPenaltyCas(', '// Build19: RESULT/READY'
+);
 // Build30-R2 Phase B(WRPS-078): getUnresolvedActiveParticipants가 fetchFreshParticipantsForResult
 // 내부 지역 함수(unresolvedOf)에서 모듈 스코프로 끌어올려졌다 — 실제 소스를 함께 추출한다.
 const GET_UNRESOLVED_ACTIVE_PARTICIPANTS_SRC = extractBlock(
@@ -70,12 +73,33 @@ function loadSchedulingHelpers(state) {
 
 function loadBeginNewGameRound(state, scheduling) {
   const dbCalls = [];
+  // Production always enters this transition from a persisted room phase. Older Build24 fixtures
+  // omitted it because their pre-CAS writer never compared status.
+  if (!state.status) state.status = 'lobby';
+  const roomRow = { id: state.roomCode, status: state.status, round: state.round, penalty: state.penalty };
   const db = {
-    from: (table) => ({
-      update: (payload) => ({
-        eq: (col, val) => { dbCalls.push({ table, payload, col, val }); return Promise.resolve({ data: null, error: null }); },
-      }),
-    }),
+    from: (table) => ({ update: (payload) => {
+      const filters = [];
+      const builder = {
+        eq(col, val) { filters.push([col, val]); return builder; },
+        or(expression) {
+          if (expression === 'penalty.is.null,penalty.eq.') filters.push(['__emptyPenalty', true]);
+          return builder;
+        },
+        select() { return execute(); },
+        then(resolve, reject) { return execute().then(resolve, reject); },
+      };
+      async function execute() {
+        dbCalls.push({ table, payload, filters: [...filters] });
+        if (table !== 'rooms') return { data: null, error: null };
+        const matched = filters.every(([col, val]) =>
+          col === '__emptyPenalty' ? (roomRow.penalty == null || roomRow.penalty === '') : roomRow[col] === val
+        );
+        if (matched) Object.assign(roomRow, payload);
+        return { data: matched ? [{ ...roomRow }] : [], error: null };
+      }
+      return builder;
+    } }),
   };
   const hasCurrentGameRoundActivity = () => false;
   const archiveCurrentRoundStats = () => {};
@@ -88,7 +112,7 @@ function loadBeginNewGameRound(state, scheduling) {
     'state', 'db', 'hasCurrentGameRoundActivity', 'archiveCurrentRoundStats', 'resetTransientRoundUi',
     'getTargetLoserCount', 'getGameRound', 'getNextCountdownStartAt', 'buildPenaltyValue', 'getNextPhaseScheduledAt',
     'resetLocalParticipantsForNewGameRound', 'getOnlineMode', 'getNewGameRoundParticipantPatch', 'saveState',
-    ROOM_GUARD_SRC + '\n' + BEGIN_NEW_GAME_ROUND_SRC + '\n; return beginNewGameRound;'
+    ROOM_GUARD_SRC + '\n' + UPDATE_ROOM_PENALTY_CAS_SRC + '\n' + BEGIN_NEW_GAME_ROUND_SRC + '\n; return beginNewGameRound;'
   );
   const beginNewGameRound = factory(
     state, db, hasCurrentGameRoundActivity, archiveCurrentRoundStats, resetTransientRoundUi,

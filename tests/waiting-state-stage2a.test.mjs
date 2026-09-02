@@ -66,6 +66,9 @@ const NEW_ROUND_PATCH_BLOCK = extractBlock(
 const FETCH_CLUSTER_BLOCK = extractBlock(
   'function scheduleFetchParticipants(roomCode', 'async function updateRoomStatus(status) {', 'fetchCluster'
 );
+const PENALTY_CAS_BLOCK = extractBlock(
+  'async function updateRoomPenaltyCas(', '// Build19: RESULT/READY', 'penaltyCas'
+);
 // C-2 writer 배선 line(프로덕션 원문 그대로). mutant는 이 한 줄만 제거한다.
 const RECOVERY_WIRING_CALL = 'try { await recoverRoundWhenAllPlayersWaiting(); } catch (e) {}';
 
@@ -82,14 +85,22 @@ function createFakeDb({ participants = [], rooms = [] } = {}) {
     const filters = [];
     const b = {
       _single: false,
+      _returnRows: false,
       eq(col, val) { filters.push([col, val]); return b; },
+      or(expr) {
+        if (expr !== 'penalty.is.null,penalty.eq.') throw new Error('[2A] unsupported or: ' + expr);
+        filters.push(['__emptyPenalty', true]); return b;
+      },
       in(col, vals) { filters.push([col, vals, 'in']); return b; },
+      select() { b._returnRows = true; return b; },
       order() { return b; },
       single() { b._single = true; return b; },
       then(resolve, reject) { return exec().then(resolve, reject); },
     };
     async function exec() {
-      const match = (r) => filters.every(([col, val, kind]) => (kind === 'in' ? val.includes(r[col]) : r[col] === val));
+      const match = (r) => filters.every(([col, val, kind]) => col === '__emptyPenalty'
+        ? (r.penalty == null || r.penalty === '')
+        : (kind === 'in' ? val.includes(r[col]) : r[col] === val));
       if (op === 'insert') {
         const rows = (Array.isArray(payload) ? payload : [payload]).map((r) => ({ ...r }));
         writeLog.push({ table, op, rows: rows.map((r) => ({ ...r })) });
@@ -100,7 +111,7 @@ function createFakeDb({ participants = [], rooms = [] } = {}) {
       if (op === 'update') {
         writeLog.push({ table, op, patch: { ...payload }, filters: filters.map((f) => [...f]), matched: rows.length });
         rows.forEach((r) => Object.assign(r, payload));
-        return { data: null, error: null };
+        return { data: b._returnRows ? rows.map((r) => ({ ...r })) : null, error: null };
       }
       if (op === 'delete') {
         writeLog.push({ table, op, filters: filters.map((f) => [...f]), matched: rows.length });
@@ -276,12 +287,12 @@ function loadRecovery({
     role, currentUserId, roomCode: 'R1', status, round,
     participants: participants.map((p) => ({ ...p })),
     confirmedSafeIds, confirmedLoserIds,
-    penalty: { text: '', loserCount: targetLoserCount },
+    penalty: db.tables.rooms.find((r) => r.id === 'R1')?.penalty ?? '',
     targetLoserCount, gameRound: 1,
     roomClosing, gameStarting, advancingRound,
   };
   const calls = { qa: [] };
-  const combined = `${ROOM_GUARD_SRC}\n${PENALTY_BLOCK}\n${GUARD_BLOCK}\n${HOST_HELPERS_BLOCK}\n` +
+  const combined = `${ROOM_GUARD_SRC}\n${PENALTY_BLOCK}\n${GUARD_BLOCK}\n${HOST_HELPERS_BLOCK}\n${PENALTY_CAS_BLOCK}\n` +
     `${recoverySrcOverride ?? ENSURE_AND_RECOVERY_BLOCK}`;
   const factory = new Function(
     'state', 'db', 'QA', 'getOnlineMode', 'computePlayerStatuses', 'PLAYER_STATUS',
@@ -305,7 +316,7 @@ function loadFetchTerminal({ db, currentUserId = 'H', status = 'result', fetchSr
   const state = {
     currentUserId, role: 'host', status, roomCode: 'R1', round: 2, gameRound: 1,
     participants: [],
-    penalty: { text: '', loserCount: 1 }, targetLoserCount: 1,
+    penalty: db.tables.rooms.find((r) => r.id === 'R1')?.penalty ?? '', targetLoserCount: 1,
     confirmedSafeIds: [], confirmedLoserIds: [],
     fetchParticipantsSeq: 0, fetchParticipantsBusy: false, fetchParticipantsPending: false,
     fetchParticipantsTimer: null,
@@ -314,7 +325,7 @@ function loadFetchTerminal({ db, currentUserId = 'H', status = 'result', fetchSr
     newRoundResetting: false,
   };
   const calls = { qa: [] };
-  const combined = `${ROOM_GUARD_SRC}\n${PENALTY_BLOCK}\n${GUARD_BLOCK}\n${HOST_HELPERS_BLOCK}\n` +
+  const combined = `${ROOM_GUARD_SRC}\n${PENALTY_BLOCK}\n${GUARD_BLOCK}\n${HOST_HELPERS_BLOCK}\n${PENALTY_CAS_BLOCK}\n` +
     `${ENSURE_AND_RECOVERY_BLOCK}\n${fetchSrcOverride ?? FETCH_CLUSTER_BLOCK}`;
   const factory = new Function(
     'state', 'db', 'QA', 'getOnlineMode', 'computePlayerStatuses', 'PLAYER_STATUS',
@@ -1017,7 +1028,7 @@ describe('W21~W24 + M6/M7 — C-2 자동 복구 writer(REAL)', () => {
     // QA 계측을 "완전 실패"로 대체해도 상태 전이가 같아야 한다.
     const factoryState = off.term.state;
     const dbOff = off.db;
-    const combined = `${ROOM_GUARD_SRC}\n${PENALTY_BLOCK}\n${GUARD_BLOCK}\n${HOST_HELPERS_BLOCK}\n${ENSURE_AND_RECOVERY_BLOCK}`;
+    const combined = `${ROOM_GUARD_SRC}\n${PENALTY_BLOCK}\n${GUARD_BLOCK}\n${HOST_HELPERS_BLOCK}\n${PENALTY_CAS_BLOCK}\n${ENSURE_AND_RECOVERY_BLOCK}`;
     const implOff = new Function(
       'state', 'db', 'QA', 'getOnlineMode', 'computePlayerStatuses', 'PLAYER_STATUS',
       'buildPenaltyValue', 'getNextPhaseScheduledAt',

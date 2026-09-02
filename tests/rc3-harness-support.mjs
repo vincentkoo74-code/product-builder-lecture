@@ -437,7 +437,9 @@ function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, re
     // Supabase filters are evaluated atomically with UPDATE. This matters for the production
     // playing-phase stale-writer guard and FINAL compare-and-swap: zero matching rows is a
     // successful no-op, and .select() must return an empty applied-row set.
-    const matches = filters.every(([col, value]) => roomStore.row[col] === value);
+    const matches = filters.every(([col, value]) => col === '__emptyPenalty'
+      ? (roomStore.row.penalty == null || roomStore.row.penalty === '')
+      : roomStore.row[col] === value);
     if (!matches) {
       await delay(ackDelay);
       return { data: returnRows ? [] : null, error: null };
@@ -501,6 +503,10 @@ function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, re
           const run = (returnRows) => execution || (execution = opRoomsUpdate(patch, filters, returnRows));
           const query = {
             eq: (col, value) => { filters.push([col, value]); return query; },
+            or: (expr) => {
+              if (expr !== 'penalty.is.null,penalty.eq.') throw new Error(`[rc3-harness] unsupported rooms.update or filter: ${expr}`);
+              filters.push(['__emptyPenalty', true]); return query;
+            },
             select: () => run(true),
             then: (resolve, reject) => run(false).then(resolve, reject),
             // thenable 완성(critic): 구 호출부는 .eq() 종단 반환값에 .catch()를 건다(fireAndAdvanceUntil).
@@ -1277,6 +1283,10 @@ export function createTrialWorld({ participantCount, seed, targetLoserCount = 1,
   //   호출할 뿐 손으로 인코딩을 재작성하지 않는다.
   const initialPenalty = devices[0].impl.buildPenaltyValue({ text: '', loserCount: targetLoserCount, gameRound: 1 });
   roomStore.row.penalty = initialPenalty;
+  // The real savePenalty response is also applied to the host, and its Realtime row converges all
+  // clients before startGame is enabled. Exact penalty CAS intentionally rejects a client that did
+  // not read that authoritative envelope, so model the already-documented save step completely.
+  for (const d of devices) d.impl.state.penalty = initialPenalty;
 
   // 접합부 ⓪(중요, 앞서 실측 버그로 발견): 실제 앱은 방 입장 직후 syncServerClock()을 1회 호출해
   // serverClockOffsetMs를 채운다(subscribeToRoom 계열 초기화 — DOM/채널 강결합이라 이 함수 자체는

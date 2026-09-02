@@ -131,7 +131,7 @@ describe('Build43 — UI수정룰2: 호스트 설정 박스 안 게임 룰 선�
   it('onMatchRuleChange / updateMatchRuleDropdown 이 존재하고 온라인이면 envelope 에 기록한다', () => {
     expect(html).toContain('function onMatchRuleChange'); expect(html).toContain('function updateMatchRuleDropdown');
     const s = html.indexOf('async function onMatchRuleChange'); const body = html.slice(s, s + 800);
-    expect(body).toContain('buildPenaltyValue'); expect(body).toContain("update({ penalty: state.penalty })");
+    expect(body).toContain('buildPenaltyValue'); expect(body).toContain("updateRoomPenaltyCas({ penalty: nextPenalty }");
   });
 });
 

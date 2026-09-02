@@ -297,22 +297,27 @@ describe('RECOVERY — §5 정본 재현(tagger=2, G2 에코): 판정 결정론'
 describe('FIELD RACE #3 — playing-phase penalty writer 의 조건부 쓰기', () => {
   it('[소스] publishChoiceWindowEnd: status=playing 조건부 + 적용 행 확인 후에만 로컬 반영', () => {
     const s = sliceFn('publishChoiceWindowEnd');
-    expect(s).toContain(".eq('status', 'playing')");
-    expect(s).toContain(".select('id')");
-    expect(s).toMatch(/__rows\.length[\s\S]{0,160}state\.penalty = penalty/);
-    // 로컬 반영은 정확히 1곳(적용 확인 분기 안)만 — 무조건 반영 라인이 남아있으면 2곳 이상이 된다.
-    expect(s.split('state.penalty = penalty;').length - 1).toBe(1);
+    expect(s).toContain("expectedStatus: 'playing'");
+    expect(s).toContain('expectedPenalty: __basePenalty');
+    expect(s).toContain('state.penalty = row.penalty');
   });
   it('[기능] 판이 이미 result 로 넘어간 뒤 도착한 publish 는 no-op — 로컬 penalty 미오염', async () => {
     const src = sliceFn('publishChoiceWindowEnd');
     function makeDb(rows) {
-      return { from: () => ({ update: () => ({ eq: () => ({ eq: () => ({ select: async () => ({ data: rows, error: null }) }) }) }) }) };
+      return { from: () => ({ update: (payload) => {
+        const q = { eq: () => q, or: () => q, select: async () => ({
+          data: rows.map(row => ({ ...row, status: 'playing', penalty: payload.penalty })), error: null,
+        }) };
+        return q;
+      } }) };
     }
     async function run(rows) {
       const state = { role: 'host', roomCode: 'R', penalty: 'FINAL-ENVELOPE', round: 1 };
       const asyncSrc = src.startsWith('async') ? src : 'async ' + src; // sliceFn 이 async 접두를 잘라냄
+      const casRaw = sliceFn('updateRoomPenaltyCas');
+      const casSrc = casRaw.startsWith('async') ? casRaw : 'async ' + casRaw;
       const fn = new Function('state', 'getOnlineMode', 'db', 'getCountdownStartAt', 'buildPenaltyValue', 'getGameRound', 'QA', 'console',
-        asyncSrc + '\nreturn publishChoiceWindowEnd;')(
+        casSrc + '\n' + asyncSrc + '\nreturn publishChoiceWindowEnd;')(
         state, () => true, makeDb(rows), () => 0, () => 'STALE-SNAPSHOT', () => 2, { emit() {} }, { warn() {} });
       await fn(12345);
       return state.penalty;
@@ -323,7 +328,8 @@ describe('FIELD RACE #3 — playing-phase penalty writer 의 조건부 쓰기', 
   it('[소스] 카운트다운 republish(동류 playing-phase writer)도 status=playing 조건부', () => {
     const i = html.indexOf('COUNTDOWN_SERVER_TS_REPUBLISHED');
     const seg = html.slice(i - 1200, i);
-    expect(seg).toContain(".eq('status', 'playing')");
+    expect(seg).toContain("expectedStatus: 'playing'");
+    expect(seg).toContain('expectedPenalty: __basePenalty');
   });
 });
 

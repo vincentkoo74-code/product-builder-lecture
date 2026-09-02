@@ -43,6 +43,7 @@ describe('Build30-R2 Phase2(WRPS-078) Part A — penalty merge preserve(CONFIRME
     'async function publishChoiceWindowEnd(choiceEndAt) {',
     'function captureAndPublishChoiceWindowNow() {'
   );
+  const PENALTY_CAS_SRC = extractBlock('async function updateRoomPenaltyCas(', '// Build19: RESULT/READY');
 
   function buildEnv({ state, dbUpdateImpl = () => ({ error: null }), getOnlineModeFn = () => true }) {
     const calls = { dbUpdate: [], qaMetrics: [] };
@@ -54,12 +55,14 @@ describe('Build30-R2 Phase2(WRPS-078) Part A — penalty merge preserve(CONFIRME
         return {
           update(payload) {
             let captured = false;
-            const result = () => Promise.resolve({ data: [{ id: state.roomCode || 'R' }], ...dbUpdateImpl(payload) });
+            const result = () => Promise.resolve({ data: [{ id: state.roomCode || 'R', status: payload.status ?? state.status,
+              round: payload.round ?? state.round, penalty: payload.penalty ?? state.penalty }], ...dbUpdateImpl(payload) });
             const chain = {
               eq(col, val) {
                 if (!captured) { captured = true; calls.dbUpdate.push({ table, payload, col, val }); }
                 return chain;
               },
+              or: () => chain,
               select: () => result(),
               then: (...args) => result().then(...args),
             };
@@ -71,7 +74,7 @@ describe('Build30-R2 Phase2(WRPS-078) Part A — penalty merge preserve(CONFIRME
     const QA = { emit: (kind, payload) => { calls.qaMetrics.push({ kind, payload }); } };
     const factory = new Function(
       'state', 'toPositiveInt', 'clampLoserCount', 'db', 'QA', 'getOnlineMode', 'getNextCountdownStartAt',
-      MATCH_FNS_SRC + '\n' + PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + REPUBLISH_SRC + '\n' + PUBLISH_CHOICE_END_SRC +
+      MATCH_FNS_SRC + '\n' + PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + PENALTY_CAS_SRC + '\n' + REPUBLISH_SRC + '\n' + PUBLISH_CHOICE_END_SRC +
       '\nreturn { buildPenaltyValue, getCountdownStartAt, getChoiceEndAt, republishCountdownStartAsHost, publishChoiceWindowEnd };'
     );
     const mod = factory(
@@ -150,13 +153,13 @@ describe('Build30-R2 Phase2(WRPS-078) Part A — penalty merge preserve(CONFIRME
     // FIELD RACE #3(2026-09-01) 이후 publisher 는 조건부 체인(update→eq→eq('status','playing')→select('id'))을 쓴다 —
     // 스텁을 체인 호환 + 적용 1행 반환으로 보강(단언·의미 무변경: payload 캡처는 update 시점 그대로).
     const db = { from: () => ({ update: (payload) => { calls.dbUpdate.push({ payload });
-      const done = Promise.resolve({ data: [{ id: 'ROOM-A1' }], error: null });
-      const chain = { eq: () => chain, select: () => done, then: done.then.bind(done) };
+      const done = Promise.resolve({ data: [{ id: 'ROOM-A1', status: state.status, round: state.round, penalty: payload.penalty }], error: null });
+      const chain = { eq: () => chain, or: () => chain, select: () => done, then: done.then.bind(done) };
       return chain; } }) };
     const QA = { emit: () => {} };
     const factory = new Function(
       'state', 'toPositiveInt', 'clampLoserCount', 'db', 'QA', 'getOnlineMode',
-      MATCH_FNS_SRC + '\n' + PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + brokenSrc +
+      MATCH_FNS_SRC + '\n' + PENALTY_BLOCK_SRC + '\n' + CHOICE_END_AT_BLOCK_SRC + '\n' + PENALTY_CAS_SRC + '\n' + brokenSrc +
       '\nreturn { publishChoiceWindowEnd };'
     );
     const mod = factory(state, toPositiveInt, (v) => Math.max(1, parseInt(v, 10) || 1), db, QA, () => true);

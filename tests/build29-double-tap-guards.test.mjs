@@ -25,6 +25,7 @@ function extractBlock(startMarker, endMarker, includeEndFirstChar = false) {
 const ROOM_GUARD_SRC = extractBlock(
   'function isRoomClosingOrDestroyed() {', 'function isJoinLocked('
 );
+const PENALTY_CAS_SRC = extractBlock('async function updateRoomPenaltyCas(', '// Build19: RESULT/READY');
 const CHOICE_HELPERS_BLOCK = extractBlock(
   'function isNonPlayingChoice(choice) {',
   'function getParticipantSignature('
@@ -39,10 +40,22 @@ function makeDb(overrides = {}) {
           single: async () => (overrides.single ? overrides.single(table) : { data: null, error: null }),
         }),
       }),
-      update: (payload) => ({
-        eq: (col, val) => { calls.push({ table, op: 'update', payload, col, val }); return overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null }); },
-        in: (col, val) => { calls.push({ table, op: 'update-in', payload, col, val }); return overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null }); },
-      }),
+      update: (payload) => {
+        let execution;
+        const run = async (returnRows = false) => {
+          if (!execution) {
+            calls.push({ table, op: 'update', payload });
+            execution = overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null });
+          }
+          const result = await execution;
+          return returnRows && table === 'rooms' && !result.error
+            ? { ...result, data: [{ id: 'R1', status: payload.status, round: payload.round, penalty: payload.penalty }] }
+            : result;
+        };
+        const q = { eq: () => q, in: () => q, or: () => q, select: () => run(true),
+          then: (resolve, reject) => run(false).then(resolve, reject) };
+        return q;
+      },
       delete: () => ({ eq: () => Promise.resolve({ data: null, error: null }) }),
     }),
   };
@@ -69,7 +82,7 @@ describe('Build29 [P4, F1, 최우선] goToReadyScreen — 연타 방어', () => 
     const factory = new Function(
       'state', 'db', 'getOnlineMode', 'getPenaltyText', 'ensurePenaltyValue', 'updateRoomStatus',
       'showToast', 't', 'showHostRoom', '$',
-      GO_TO_READY_SRC + '\n; return goToReadyScreen;'
+      PENALTY_CAS_SRC + '\n' + GO_TO_READY_SRC + '\n; return goToReadyScreen;'
     );
     const goToReadyScreen = factory(
       state, db, () => true, getPenaltyText || (() => 'text'), ensurePenaltyValue || (() => 'PENALTY'),
@@ -224,7 +237,7 @@ describe('Build29 [P4, F4] nextRound(온라인 분기) — catch에서만 advanc
       'state', 'getOnlineMode', 'getTargetLoserCount', 'showToast', 't', 'renderRoundResult', 'showScreen',
       'buildPenaltyValue', 'getGameRound', 'getNextPhaseScheduledAt', 'db', 'saveState', 'showReadyScreen',
       'scheduleRematchAdvanceRetryAfterFailure',
-      ROOM_GUARD_SRC + '\n' + NEXT_ROUND_SRC + '\n; return nextRound;'
+      ROOM_GUARD_SRC + '\n' + PENALTY_CAS_SRC + '\n' + NEXT_ROUND_SRC + '\n; return nextRound;'
     );
     const nextRound = factory(
       state, () => true, getTargetLoserCount || (() => 1),
@@ -271,7 +284,7 @@ describe('Build29 [P4, F4] nextRound(온라인 분기) — catch에서만 advanc
   });
 
   it('회귀 계약: catch 블록 밖(finally)에서 advancingRound를 해제하지 않는다(소스 구조 확인)', () => {
-    expect(NEXT_ROUND_SRC).toMatch(/catch \(e\) \{\s*\n\s*state\.advancingRound = false;/);
+    expect(NEXT_ROUND_SRC).toMatch(/catch \(e\) \{[\s\S]{0,220}state\.advancingRound = false;/);
     expect(NEXT_ROUND_SRC).not.toMatch(/\} finally \{\s*\n\s*state\.advancingRound = false;/);
   });
 });

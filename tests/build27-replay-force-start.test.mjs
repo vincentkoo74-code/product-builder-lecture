@@ -82,6 +82,7 @@ const START_GAME_SRC = extractBlock(
   'async function startGame(options = {}) {',
   'async function waitForValidCountdownStart('
 );
+const PENALTY_CAS_SRC = extractBlock('async function updateRoomPenaltyCas(', '// Build19: RESULT/READY');
 // 자동 시작 트리거(무변경 회귀 확인용).
 const TRIGGER_REPLAY_SRC = extractBlock(
   'async function triggerReplayIfLastReady() {',
@@ -166,10 +167,19 @@ function loadRealStartGame(state) {
   const dbCalls = [];
   const db = {
     from: (table) => ({
-      update: (payload) => ({
-        eq: (col, val) => { dbCalls.push({ table, payload, col, val }); return Promise.resolve({ data: null, error: null }); },
-        in: (col, vals) => { dbCalls.push({ table, payload, col, vals }); return Promise.resolve({ data: null, error: null }); },
-      }),
+      update: (payload) => {
+        let execution;
+        const run = async (returnRows = false) => {
+          if (!execution) { dbCalls.push({ table, payload, vals: q.vals }); execution = Promise.resolve({ data: null, error: null }); }
+          const result = await execution;
+          return returnRows && table === 'rooms'
+            ? { ...result, data: [{ id: state.roomCode, status: payload.status, round: payload.round, penalty: payload.penalty }] }
+            : result;
+        };
+        const q = { eq: () => q, in: (_col, vals) => { q.vals = vals; return q; }, or: () => q,
+          select: () => run(true), then: (resolve, reject) => run(false).then(resolve, reject) };
+        return q;
+      },
     }),
   };
   let enteredPlaying = 0;
@@ -177,7 +187,7 @@ function loadRealStartGame(state) {
     'state', 'db', '$', 'setBtnText', 't', 'getOnlineMode', 'getNextCountdownStartAt', 'buildPenaltyValue',
     'getGameRound', 'enterPlayingStateFromRoomUpdate', 'showToast', 'runCountdownThenShowGame', 'saveState',
     'isCurrentRoundParticipant',
-    ROOM_GUARD_SRC + '\n' + START_GAME_SRC + '\n; return startGame;'
+    ROOM_GUARD_SRC + '\n' + PENALTY_CAS_SRC + '\n' + START_GAME_SRC + '\n; return startGame;'
   );
   const startGame = factory(
     state, db, () => mockEl(), () => {}, (k) => k, () => true, () => Date.now() + 3000,

@@ -24,7 +24,8 @@ describe('Build22-A — invalid countdown server ts does not start countdown', (
 
   it('host는 invalid 시 새 예정시각을 republish해 자가복구하며 COUNTDOWN_START는 항상 유효한 시각으로만 방출된다', () => {
     expect(html).toContain('async function republishCountdownStartAsHost()');
-    expect(html).toContain('state.countdownStartAt = getNextCountdownStartAt();');
+    expect(html).toContain('const __nextCountdownStartAt = getNextCountdownStartAt();');
+    expect(html).toContain('state.countdownStartAt = __nextCountdownStartAt;');
     expect(html).toMatch(/scheduledStartAt = await republishCountdownStartAsHost\(\);/);
   });
 

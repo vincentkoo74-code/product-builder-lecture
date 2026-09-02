@@ -5741,8 +5741,7 @@
     function ensurePenaltyValue() {
       const text = getPenaltyText() || getVisiblePenaltyText();
       if (!text) return "";
-      state.penalty = buildPenaltyValue({ text });
-      return state.penalty;
+      return buildPenaltyValue({ text });
     }
     function getMaxLoserCount() {
       // WRPS-043(2026-06-22): 호스트도 가위바위보를 내는 플레이어 → 전체 참가자 수 기준.
@@ -6457,7 +6456,12 @@
 	      const __previousCanonicalTransition = {
 	        penalty: state.penalty,
 	        gameRound: state.gameRound,
-	        status: state.status
+	        status: state.status,
+	        round: state.round,
+	        countdownStartAt: state.countdownStartAt,
+	        confirmedSafeIds: [...(state.confirmedSafeIds || [])],
+	        confirmedLoserIds: [...(state.confirmedLoserIds || [])],
+	        participants: (state.participants || []).map(p => ({ ...p }))
 	      };
 	      try {
 	        // WRPS-056: 참가자 변경 경로는 priorParticipants(직전 구성)로 아카이빙해 세션 오귀속 방지.
@@ -6557,9 +6561,16 @@
 	            traceId: __cdTrace, value: state.countdownStartAt || 0, targetStatus: status,
 	            localNow: Date.now() }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
 	          const __cdT0 = Date.now();
-	          const { error: __cdErr } = await db.from('rooms')
-	            .update({ round: 1, status, penalty: __nextPenalty })
-	            .eq('id', state.roomCode);
+	          let __cdErr = null;
+	          let __committedRoom = null;
+	          try {
+	            __committedRoom = await updateRoomPenaltyCas(
+	              { round: 1, status, penalty: __nextPenalty },
+	              { expectedStatus: __previousCanonicalTransition.status,
+	                expectedPenalty: __previousCanonicalTransition.penalty,
+	                source: 'beginNewGameRound' }
+	            );
+	          } catch (e) { __cdErr = e; }
 	          try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'COUNTDOWN_STARTAT_WRITE_END',
 	            traceId: __cdTrace, success: !__cdErr, durationMs: Date.now() - __cdT0,
 	            errorCode: __cdErr ? (__cdErr.code || null) : null,
@@ -6573,11 +6584,23 @@
 	            state.status = __previousCanonicalTransition.status;
 	            throw new Error('beginNewGameRound rooms.update failed: ' + (__cdErr.message || __cdErr));
 	          }
-	          state.penalty = __nextPenalty;
+	          state.penalty = __committedRoom.penalty;
 	        } else {
 	          state.penalty = __nextPenalty;
 	          saveState();
 	        }
+	      } catch (e) {
+	        // The transition is not authoritative until the room CAS applies. Restore every local
+	        // progression field that could otherwise leave the host ahead of the server.
+	        state.penalty = __previousCanonicalTransition.penalty;
+	        state.gameRound = __previousCanonicalTransition.gameRound;
+	        state.status = __previousCanonicalTransition.status;
+	        state.round = __previousCanonicalTransition.round;
+	        state.countdownStartAt = __previousCanonicalTransition.countdownStartAt;
+	        state.confirmedSafeIds = __previousCanonicalTransition.confirmedSafeIds;
+	        state.confirmedLoserIds = __previousCanonicalTransition.confirmedLoserIds;
+	        state.participants = __previousCanonicalTransition.participants;
+	        throw e;
 	      } finally {
 	        state.newRoundResetting = false;
 	      }
@@ -8141,6 +8164,30 @@
       if (isRoomClosingOrDestroyed()) return; // WRPS-083 2B(Tier 2, defense-in-depth)
       await db.from('rooms').update({ status }).eq('id', state.roomCode);
     }
+    // Build47 second review: every writer that replaces penalty must compare against the exact
+    // room envelope it read. Status-only writes cannot drop canonical MATCH fields; penalty writes
+    // can, so they all use this applied-row check. Callers update local state only from the returned row.
+    async function updateRoomPenaltyCas(patch, { expectedStatus = state.status, expectedPenalty = state.penalty, source = "penalty_writer" } = {}) {
+      if (!db || !state.roomCode) throw new Error(source + ': room unavailable');
+      let query = db.from('rooms').update(patch)
+        .eq('id', state.roomCode)
+        .eq('status', expectedStatus);
+      // A just-created room historically stores no penalty as either NULL (schema default) or
+      // an empty string (new inserts). They are the same empty authoritative envelope, so accept
+      // either without weakening comparisons once a serialized MATCH state exists.
+      query = (expectedPenalty == null || expectedPenalty === '')
+        ? query.or('penalty.is.null,penalty.eq.')
+        : query.eq('penalty', expectedPenalty);
+      const result = await query.select('id,status,round,penalty');
+      if (result.error) throw new Error(source + ': ' + (result.error.message || result.error));
+      const row = Array.isArray(result.data) ? result.data[0] : null;
+      if (!row) {
+        try { QA.emit('metric', Object.assign({ wrps: 'WRPS-P01', eventType: 'PENALTY_WRITE_SKIPPED_STALE', source,
+          expectedStatus, localNow: Date.now() }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (_) {}
+        throw new Error(source + ': stale room compare-and-swap');
+      }
+      return row;
+    }
     // Build19: RESULT/READY 전환 시 서버 예정 시각을 penalty에 함께 기록(countdown과 동일 패턴,
     // DB 스키마 무변경) — 모든 클라이언트가 같은 서버 시각에 화면을 표시하도록 한다.
     async function updateRoomStatusScheduled(status, phaseKind, continuation = null) {
@@ -8450,7 +8497,7 @@
           let insertedRoom = false;
           for (let attempt = 0; attempt < MAX_ROOM_CODE_ATTEMPTS; attempt++) {
             const { error } = await withTimeout(
-              db.from('rooms').insert([{ id: code, status: 'waiting' }]),
+              db.from('rooms').insert([{ id: code, status: 'waiting', penalty: '' }]),
               5000
             );
             if (!error) { insertedRoom = true; break; }
@@ -8619,11 +8666,21 @@
         showToast(t("hostRoom.matchRuleLocked"));
         return;
       }
+      const previousRule = state.matchRule;
+      const basePenalty = state.penalty;
       state.matchRule = normalizeMatchRule(val);
       updateMatchRuleDropdown();
       if (getOnlineMode() && state.roomCode) {
-        state.penalty = buildPenaltyValue();
-        await db.from('rooms').update({ penalty: state.penalty }).eq('id', state.roomCode);
+        const nextPenalty = buildPenaltyValue();
+        try {
+          const row = await updateRoomPenaltyCas({ penalty: nextPenalty }, { expectedPenalty: basePenalty, source: 'onMatchRuleChange' });
+          state.penalty = row.penalty;
+        } catch (e) {
+          state.matchRule = previousRule;
+          state.penalty = basePenalty;
+          updateMatchRuleDropdown();
+          throw e;
+        }
       }
     }
     function updateMatchRuleDropdown() {
@@ -8656,12 +8713,22 @@
         showToast("술래 숫자는 현재 게임이 끝난 뒤 다음 게임 설정에서 변경할 수 있어요.");
         return;
       }
+      const previousLoserCount = state.targetLoserCount;
+      const basePenalty = state.penalty;
       state.targetLoserCount = clampLoserCount(val);
       updateLoserCountDropdown();
       updateMatchRuleDropdown();
       if (getOnlineMode() && state.roomCode) {
-        state.penalty = buildPenaltyValue();
-        await db.from('rooms').update({ penalty: state.penalty }).eq('id', state.roomCode);
+        const nextPenalty = buildPenaltyValue();
+        try {
+          const row = await updateRoomPenaltyCas({ penalty: nextPenalty }, { expectedPenalty: basePenalty, source: 'onLoserCountChange' });
+          state.penalty = row.penalty;
+        } catch (e) {
+          state.targetLoserCount = previousLoserCount;
+          state.penalty = basePenalty;
+          updateLoserCountDropdown();
+          throw e;
+        }
       }
     }
 
@@ -9323,23 +9390,28 @@
 
       const nextStatus = state.status === "lobby" ? "lobby" : "ready";
       let savedToServer = !getOnlineMode();
+      const basePenalty = state.penalty;
+      const baseStatus = state.status;
       try {
         // localStorage 쓰기(saveState 등)는 쿼터 초과 시 throw할 수 있으므로 try 안에서 처리해
         // 실패해도 finally가 버튼/화면 잠금을 반드시 해제하도록 한다.
-        state.penalty = value;
-        savePenaltyHistory(textVal);
-        saveState();
+	        savePenaltyHistory(textVal);
 
-        if (getOnlineMode()) {
-          const { error } = await withTimeout(
-            db.from('rooms').update({ penalty: value, status: nextStatus }).eq('id', state.roomCode),
-            8000,
-            "벌칙 저장"
-          );
-          if (error) throw error;
-          savedToServer = true;
-        }
-        state.status = nextStatus;
+	        if (getOnlineMode()) {
+	          const row = await withTimeout(
+	            updateRoomPenaltyCas({ penalty: value, status: nextStatus },
+	              { expectedStatus: baseStatus, expectedPenalty: basePenalty, source: 'savePenalty' }),
+	            8000,
+	            "벌칙 저장"
+	          );
+	          state.penalty = row.penalty;
+	          state.status = row.status;
+	          savedToServer = true;
+	        } else {
+	          state.penalty = value;
+	          state.status = nextStatus;
+	        }
+	        saveState();
         setBtnText(btn, t("penalty.saved"));
         setPenaltySaveStatus(t("penalty.saved"), "success");
         renderAll();
@@ -9351,6 +9423,8 @@
           showHostRoom();
         }
       } catch (e) {
+	        state.penalty = basePenalty;
+	        state.status = baseStatus;
         console.error("벌칙 저장 오류:", e?.message || e);
         setPenaltySaveStatus(t("penalty.saveFailedLocal"), "error");
         showToast(t("toast.saveError", { msg: e?.message || String(e) }), 5000);
@@ -9375,6 +9449,9 @@
       if (roomBtn) { roomBtn.disabled = true; setBtnText(roomBtn, t("common.starting")); }
 
       if (getOnlineMode()) {
+        const basePenalty = state.penalty;
+        const baseStatus = state.status;
+        const baseCountdownStartAt = state.countdownStartAt;
         try {
           const safeIds = state.confirmedSafeIds || [];
           const loserIds = state.confirmedLoserIds || [];
@@ -9391,22 +9468,28 @@
           if (loserIds.length > 0) {
             await db.from('participants').update({ choice: '__loser__', is_ready: true }).in('id', loserIds);
           }
-          state.countdownStartAt = getNextCountdownStartAt();
-          state.penalty = buildPenaltyValue({
+          const nextCountdownStartAt = getNextCountdownStartAt();
+          const nextPenalty = buildPenaltyValue({
             gameRound: getGameRound(),
-            countdownStartAt: state.countdownStartAt
+            countdownStartAt: nextCountdownStartAt
           });
           // gameStarting을 playing 상태 업데이트 전에 false로 리셋
           // → Realtime이 'playing'을 감지할 때 gameStarting=false가 보장되어
           //   호스트/참가자 모두 runCountdownThenShowGame()이 정상 실행됨
           state.gameStarting = false;
-          await Promise.race([
-            db.from('rooms').update({ status: 'playing', penalty: state.penalty }).eq('id', state.roomCode),
+          const roomRow = await Promise.race([
+            updateRoomPenaltyCas({ status: 'playing', penalty: nextPenalty },
+              { expectedStatus: baseStatus, expectedPenalty: basePenalty, source: 'startGame' }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
           ]);
-          state.status = "playing";
+          state.penalty = roomRow.penalty;
+          state.status = roomRow.status;
+          state.countdownStartAt = nextCountdownStartAt;
           await enterPlayingStateFromRoomUpdate();
         } catch (e) {
+          state.penalty = basePenalty;
+          state.status = baseStatus;
+          state.countdownStartAt = baseCountdownStartAt;
           showToast('게임 시작 오류: ' + e.message);
           if (btn) { btn.disabled = false; setBtnText(btn, t("ready.hostStart")); }
           if (roomBtn) { roomBtn.disabled = false; roomBtn.textContent = "🚀 게임 시작!"; }
@@ -9488,7 +9571,9 @@
       return !choiceWindowOpen && !hasAnyCommittedChoice();
     }
     async function republishCountdownStartAsHost() {
-      state.countdownStartAt = getNextCountdownStartAt();
+      const __basePenalty = state.penalty;
+      const __baseCountdownStartAt = state.countdownStartAt;
+      const __nextCountdownStartAt = getNextCountdownStartAt();
       // Build30-R2 Phase2(WRPS-078, CONFIRMED ROOT CAUSE 수정): 이 republish는 countdownStartAt만
       // 새로 쓰기 위한 것이지만, buildPenaltyValue는 명시적으로 넘기지 않은 필드를 0(생략)으로
       // 취급한다 — choiceEndAt을 넘기지 않으면 이미 발행돼있던 choiceEndAt이 이 write로 유실된다
@@ -9497,17 +9582,25 @@
       const preservedChoiceEndAt = getChoiceEndAt();
       // FIELD RACE #3 동류 보강: 사전 빌드 스냅샷을 무조건 로컬/DB에 반영하던 것을 →
       // playing 조건부 쓰기 + 적용 확인 후 로컬 반영으로 교체(오프라인은 종전대로 로컬만).
-      const __rp = buildPenaltyValue({ gameRound: getGameRound(), countdownStartAt: state.countdownStartAt, choiceEndAt: preservedChoiceEndAt });
+      const __rp = buildPenaltyValue({ gameRound: getGameRound(), countdownStartAt: __nextCountdownStartAt, choiceEndAt: preservedChoiceEndAt });
       try {
         if (getOnlineMode() && db && state.roomCode) {
-          const { data: __rows } = await db.from('rooms').update({ penalty: __rp })
-            .eq('id', state.roomCode).eq('status', 'playing').select('id');
-          if (Array.isArray(__rows) && __rows.length) state.penalty = __rp;
-          else { try { QA.emit('metric', { wrps: 'WRPS-B46R3', eventType: 'COUNTDOWN_REPUBLISH_SKIPPED_STALE', roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round }); } catch (_) {} }
+          const row = await updateRoomPenaltyCas({ penalty: __rp },
+            { expectedStatus: 'playing', expectedPenalty: __basePenalty, source: 'republishCountdownStartAsHost' });
+          state.penalty = row.penalty;
+          state.countdownStartAt = __nextCountdownStartAt;
         } else {
           state.penalty = __rp;
+          state.countdownStartAt = __nextCountdownStartAt;
         }
-      } catch (e) {}
+      } catch (e) {
+        state.penalty = __basePenalty;
+        state.countdownStartAt = __baseCountdownStartAt;
+        if (String(e && e.message || e).includes('stale room compare-and-swap')) {
+          try { QA.emit('metric', { wrps: 'WRPS-B46R3', eventType: 'COUNTDOWN_REPUBLISH_SKIPPED_STALE', roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round }); } catch (_) {}
+        }
+        throw e;
+      }
       try { QA.emit('metric', { wrps: 'WRPS-036-B22', eventType: 'COUNTDOWN_SERVER_TS_REPUBLISHED', round: state.round, countdownStartAt: state.countdownStartAt }); } catch (e) {}
       if (preservedChoiceEndAt > 0) {
         try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'PENALTY_MERGE_PRESERVED', roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round, callSite: 'republishCountdownStartAsHost', preservedField: 'choiceEndAt', preservedValue: preservedChoiceEndAt }); } catch (e) {}
@@ -9817,6 +9910,7 @@
     async function publishChoiceWindowEnd(choiceEndAt) {
       if (state.role !== "host" || !getOnlineMode() || !db || !state.roomCode) return;
       try {
+        const __basePenalty = state.penalty;
         // Build30-R2 Phase2(WRPS-078, CONFIRMED ROOT CAUSE 수정): countdownStartAt을 명시하지
         // 않으면 buildPenaltyValue가 이 필드를 0(생략)으로 취급해, 이미 발행된 countdownStartAt이
         // 이 write로 유실된다(다른 기기가 뒤늦게 republish/재조회 시 카운트다운 시각을 잃음).
@@ -9828,20 +9922,17 @@
         // 통째로 구본으로 덮고, 아래 로컬 반영이 host 까지 오염시켜 그 판이 영구 증발했다(필드: 누적
         // 불가·무한 매치). 선택창 시각은 playing 에서만 의미 → status 조건부 쓰기 + 실제 적용된
         // 행이 있을 때만 로컬 반영한다(0행 = 레이스 패배 → 명시적 no-op).
-        const { data: __rows, error } = await db.from('rooms').update({ penalty })
-          .eq('id', state.roomCode).eq('status', 'playing').select('id');
-        if (error) throw new Error('choiceEndAt publish failed: ' + (error.message || error));
-        if (Array.isArray(__rows) && __rows.length) {
-          state.penalty = penalty;
-        } else {
-          try { QA.emit('metric', { wrps: 'WRPS-B46R3', eventType: 'CHOICE_END_PUBLISH_SKIPPED_STALE', roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round }); } catch (_) {}
-          return;
-        }
+        const row = await updateRoomPenaltyCas({ penalty },
+          { expectedStatus: 'playing', expectedPenalty: __basePenalty, source: 'publishChoiceWindowEnd' });
+        state.penalty = row.penalty;
         if (preservedCountdownStartAt > 0) {
           try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'PENALTY_MERGE_PRESERVED', roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round, callSite: 'publishChoiceWindowEnd', preservedField: 'countdownStartAt', preservedValue: preservedCountdownStartAt }); } catch (_) {}
         }
       } catch (e) {
         console.warn("publishChoiceWindowEnd failed:", e?.message || e);
+        if (String(e && e.message || e).includes('stale room compare-and-swap')) {
+          try { QA.emit('metric', { wrps: 'WRPS-B46R3', eventType: 'CHOICE_END_PUBLISH_SKIPPED_STALE', roomCode: state.roomCode || null, gameNo: getGameRound(), round: state.round }); } catch (_) {}
+        }
         try { QA.emit('metric', { wrps: 'WRPS-078', eventType: 'CHOICE_END_PUBLISH_FAILED', message: String(e?.message || e), roomId: state.roomCode || null }); } catch (_) {}
       }
     }
@@ -12154,21 +12245,31 @@ function summarizeGameStats(rows) {
       const nextRoundNo = (state.round || 1) + 1;
 
       if (getOnlineMode()) {
+        const basePenalty = state.penalty;
+        const baseStatus = state.status;
+        const baseCountdownStartAt = state.countdownStartAt;
         try {
           await db.from('participants')
             .update({ choice: null, is_ready: false })
             .eq('room_id', state.roomCode);
-          state.countdownStartAt = getNextCountdownStartAt();
-          state.penalty = buildPenaltyValue({
+          const nextCountdownStartAt = getNextCountdownStartAt();
+          const nextPenalty = buildPenaltyValue({
             gameRound: getGameRound(),
-            countdownStartAt: state.countdownStartAt
+            countdownStartAt: nextCountdownStartAt
           });
-          await db.from('rooms')
-            .update({ round: nextRoundNo, status: 'playing', penalty: state.penalty })
-            .eq('id', state.roomCode);
+          const roomRow = await updateRoomPenaltyCas(
+            { round: nextRoundNo, status: 'playing', penalty: nextPenalty },
+            { expectedStatus: baseStatus, expectedPenalty: basePenalty, source: 'autoStartDrawRematch' }
+          );
+          state.penalty = roomRow.penalty;
+          state.status = roomRow.status;
+          state.countdownStartAt = nextCountdownStartAt;
           state.round = nextRoundNo;
           await runCountdownThenShowGame();
         } catch (e) {
+          state.penalty = basePenalty;
+          state.status = baseStatus;
+          state.countdownStartAt = baseCountdownStartAt;
           showToast(t("toast.startError", { msg: e.message || String(e) }));
           state.gameStarting = false;
         }
@@ -12376,6 +12477,8 @@ function summarizeGameStats(rows) {
       state.advancingRound = true;
       if (state.rematchAdvanceTimer) { clearTimeout(state.rematchAdvanceTimer); state.rematchAdvanceTimer = null; }
       if (getOnlineMode()) {
+        const basePenalty = state.penalty;
+        const baseStatus = state.status;
         // Build29(WRPS-076) [P4, F4]: 실패 시에만 advancingRound를 해제한다 — 성공 경로에서는
         // 해제하지 않는다(해제는 finishRoundLocal(recordRoundResolution 이후)/
         // enterPlayingStateFromRoomUpdate가 담당 — 여기서 finally로 풀면 이중 전환 방지 뮤텍스가
@@ -12400,9 +12503,11 @@ function summarizeGameStats(rows) {
           }
           // Build19: 다음 라운드 준비화면도 모든 기기가 같은 서버 시각에 표시하도록 예정 시각 동봉.
           const readyPenalty = buildPenaltyValue({ gameRound: getGameRound(), phaseScheduledAt: getNextPhaseScheduledAt(), phaseKind: "ready" });
-          state.penalty = readyPenalty;
-          const { error: eAdvanceRoom } = await db.from('rooms').update({ round: state.round + 1, status: 'ready', penalty: readyPenalty }).eq('id', state.roomCode);
-          if (eAdvanceRoom) throw new Error('nextRound rooms.advance failed: ' + (eAdvanceRoom.message || eAdvanceRoom));
+          const roomRow = await updateRoomPenaltyCas(
+            { round: state.round + 1, status: 'ready', penalty: readyPenalty },
+            { expectedStatus: baseStatus, expectedPenalty: basePenalty, source: 'nextRound' }
+          );
+          state.penalty = roomRow.penalty;
           // Build29 Round2(CEO 확정 사양): 성공 시 이 라운드의 재시도 카운터를 지운다 — "성공 시
           // counter clear" 요구사항. try 블록 맨 끝(모든 write가 실제로 성공한 뒤)에 있어, 위
           // 어느 await라도 throw하면 catch로 빠져 이 줄에 도달하지 않는다(부분 실패는 절대
@@ -12419,6 +12524,8 @@ function summarizeGameStats(rows) {
           // 카운트다운 중복은 아래 countdownRenderedKey 원장 + 세대 발급 시 stopRoundTimers()로
           // 막는다 — 라운드 번호 회계에는 손대지 않는다.
         } catch (e) {
+          state.penalty = basePenalty;
+          state.status = baseStatus;
           state.advancingRound = false;
           console.warn("nextRound (online) failed:", e?.message || e);
           showToast(t("common.syncError"));
@@ -13290,6 +13397,8 @@ function summarizeGameStats(rows) {
             console.warn("Penalty refresh before ready failed:", e?.message || e);
           }
         }
+        const basePenalty = state.penalty;
+        const baseStatus = state.status;
         const penaltyValue = ensurePenaltyValue();
         if (!penaltyValue) {
           showToast(t("toast.penaltyNotSet"));
@@ -13297,25 +13406,31 @@ function summarizeGameStats(rows) {
           return;
         }
         if (getOnlineMode()) {
+          let roomCommitted = false;
           try {
-            await Promise.race([
-              db.from('rooms').update({ penalty: penaltyValue }).eq('id', state.roomCode),
+            const roomRow = await Promise.race([
+              updateRoomPenaltyCas({ penalty: penaltyValue, status: 'ready' },
+                { expectedStatus: baseStatus, expectedPenalty: basePenalty, source: 'goToReadyScreen' }),
               new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
             ]);
+            state.penalty = roomRow.penalty;
+            state.status = roomRow.status;
+            roomCommitted = true;
             await Promise.race([
               db.from('participants').update({ is_ready: false }).eq('room_id', state.roomCode),
               new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
             ]);
-            await Promise.race([
-              updateRoomStatus('ready'),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-            ]);
           } catch (e) {
+            if (!roomCommitted) {
+              state.penalty = basePenalty;
+              state.status = baseStatus;
+            }
             showToast("오류: " + e.message);
             if (startBtn) startBtn.disabled = false;
             return;
           }
         } else {
+          state.penalty = penaltyValue;
           state.participants.forEach(p => p.is_ready = false);
         }
         state.status = "ready";
@@ -13386,6 +13501,9 @@ function summarizeGameStats(rows) {
       const btn = $("nextRoundBtn");
       if (btn) { btn.disabled = true; btn.textContent = t("common.starting"); }
       if (getOnlineMode()) {
+        const basePenalty = state.penalty;
+        const baseStatus = state.status;
+        const baseCountdownStartAt = state.countdownStartAt;
         const safeIds = state.confirmedSafeIds || [];
         const loserIds = state.confirmedLoserIds || [];
         const nonActiveIds = [...new Set([...safeIds, ...loserIds])];
@@ -13393,13 +13511,26 @@ function summarizeGameStats(rows) {
         if (nonActiveIds.length > 0) {
           await db.from('participants').update({ is_ready: true }).in('id', nonActiveIds);
         }
-        state.countdownStartAt = getNextCountdownStartAt();
-        state.penalty = buildPenaltyValue({
+        const nextCountdownStartAt = getNextCountdownStartAt();
+        const nextPenalty = buildPenaltyValue({
           gameRound: getGameRound(),
-          countdownStartAt: state.countdownStartAt
+          countdownStartAt: nextCountdownStartAt
         });
-        await db.from('rooms').update({ round: state.round + 1, status: 'playing', penalty: state.penalty }).eq('id', state.roomCode);
-        state.gameStarting = false;
+        try {
+          const roomRow = await updateRoomPenaltyCas(
+            { round: state.round + 1, status: 'playing', penalty: nextPenalty },
+            { expectedStatus: baseStatus, expectedPenalty: basePenalty, source: 'directStartGame' }
+          );
+          state.penalty = roomRow.penalty;
+          state.status = roomRow.status;
+          state.countdownStartAt = nextCountdownStartAt;
+          state.gameStarting = false;
+        } catch (e) {
+          state.penalty = basePenalty;
+          state.status = baseStatus;
+          state.countdownStartAt = baseCountdownStartAt;
+          throw e;
+        }
       } else {
         state.round += 1;
         state.participants.forEach(p => { p.choice = null; p.is_ready = true; });
@@ -16265,19 +16396,25 @@ function summarizeGameStats(rows) {
           }
         }
         // 모든 단말이 같은 서버 시각에 ready로 수렴하도록 기존 ready penalty 경로를 그대로 쓴다.
+        const basePenalty = state.penalty;
+        const baseStatus = state.status;
         const readyPenalty = buildPenaltyValue({
           gameRound: getGameRound(),
           phaseScheduledAt: getNextPhaseScheduledAt(),
           phaseKind: "ready"
         });
-        const { error: eRoom } = await db.from('rooms')
-          .update({ status: 'ready', penalty: readyPenalty })
-          .eq('id', state.roomCode);
-        if (eRoom) {
+        let roomRow = null;
+        try {
+          roomRow = await updateRoomPenaltyCas(
+            { status: 'ready', penalty: readyPenalty },
+            { expectedStatus: baseStatus, expectedPenalty: basePenalty, source: 'recoverAllWaitingState' }
+          );
+        } catch (eRoom) {
           try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ALL_WAITING_RECOVERY_FAILED', stage: 'room', message: eRoom.message || String(eRoom) }); } catch (e) {}
           return;
         }
-        state.penalty = readyPenalty;
+        state.penalty = roomRow.penalty;
+        state.status = roomRow.status;
         state.allWaitingObservationStreak = 0;
         try { QA.emit('lobby', { wrps: 'WRPS-083', eventType: 'ALL_WAITING_RECOVERED', round: state.round, waitingCount }); } catch (e) {}
       } finally {

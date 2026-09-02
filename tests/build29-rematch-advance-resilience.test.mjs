@@ -53,6 +53,7 @@ const ROOM_GUARD_SRC = extractBlock(
   'function isJoinLocked('
 );
 const NEXT_ROUND_SRC = extractBlock('async function nextRound() {', 'async function endGame() {');
+const PENALTY_CAS_SRC = extractBlock('async function updateRoomPenaltyCas(', '// Build19: RESULT/READY');
 const DISCARD_IN_PROGRESS_SRC = extractBlock(
   'function discardInProgressRoomSession() {',
   'function resetRoomLocalState({ keepRoomCode = "" } = {}) {'
@@ -69,12 +70,23 @@ const BEGIN_NEW_GAME_ROUND_SRC = extractBlock(
 function makeDb(overrides = {}) {
   const calls = [];
   const db = {
-    from: (table) => ({
-      update: (payload) => ({
-        eq: (col, val) => { calls.push({ table, payload, col, val }); return overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null }); },
-        in: (col, val) => { calls.push({ table, op: 'update-in', payload, col, val }); return overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null }); },
-      }),
-    }),
+    from: (table) => ({ update: (payload) => {
+      const filters = []; let execution;
+      const run = async (returnRows = false) => {
+        if (!execution) {
+          calls.push({ table, payload, filters: [...filters] });
+          execution = overrides.update ? overrides.update(table, payload) : Promise.resolve({ data: null, error: null });
+        }
+        const result = await execution;
+        if (returnRows && table === 'rooms' && !result.error && !Array.isArray(result.data)) {
+          return { ...result, data: [{ id: 'R', status: payload.status, round: payload.round, penalty: payload.penalty }] };
+        }
+        return result;
+      };
+      const q = { eq(col, val) { filters.push([col, val]); return q; }, in(col, val) { filters.push([col, val, 'in']); return q; },
+        or(expr) { filters.push(['or', expr]); return q; }, select() { return run(true); }, then(resolve, reject) { return run(false).then(resolve, reject); } };
+      return q;
+    } }),
   };
   return { db, calls };
 }
@@ -99,12 +111,17 @@ function makeResolveDb({ failIndexes = [], errorMessage = 'FetchError: failed to
       : { data: null, error: null });
   };
   const db = {
-    from: (table) => ({
-      update: (payload) => ({
-        eq: (col, val) => respond(table, payload),
-        in: (col, val) => respond(table, payload),
-      }),
-    }),
+    from: (table) => ({ update: (payload) => {
+      let execution;
+      const run = async (returnRows = false) => {
+        if (!execution) execution = respond(table, payload);
+        const result = await execution;
+        if (returnRows && table === 'rooms' && !result.error) return { ...result, data: [{ id: 'R', status: payload.status, round: payload.round, penalty: payload.penalty }] };
+        return result;
+      };
+      const q = { eq: () => q, in: () => q, or: () => q, select: () => run(true), then: (resolve, reject) => run(false).then(resolve, reject) };
+      return q;
+    } }),
   };
   return { db, calls };
 }
@@ -118,7 +135,7 @@ function loadRematchAdvanceCluster({ state, db, QA, buildPenaltyValue, getNextPh
     'state', 'getOnlineMode', 'getGameRound', 'getTargetLoserCount', 'QA', 'showToast', 't',
     'renderRoundResult', 'showScreen', 'buildPenaltyValue', 'getNextPhaseScheduledAt', 'db', 'saveState', 'showReadyScreen',
     'getActivePlayers', 'showTaggerPopup',
-    ROOM_GUARD_SRC + '\n' + REMATCH_HELPERS_SRC + '\n' + NEXT_ROUND_SRC +
+    ROOM_GUARD_SRC + '\n' + PENALTY_CAS_SRC + '\n' + REMATCH_HELPERS_SRC + '\n' + NEXT_ROUND_SRC +
       '\n; return { scheduleRematchAutoAdvance, scheduleRematchAdvanceRetryAfterFailure, maybeRecoverStalledRematchAdvance, nextRound, getRematchAdvanceRetryKey, getRematchAdvanceRetryAttempts, buildAutoAdvanceMetricPayload };'
   );
   const bundle = factory(
@@ -208,11 +225,14 @@ function loadResetRoomLocalState(state) {
 function loadBeginNewGameRound(state) {
   const dbCalls = [];
   const db = {
-    from: (table) => ({
-      update: (payload) => ({
-        eq: (col, val) => { dbCalls.push({ table, payload, col, val }); return Promise.resolve({ data: null, error: null }); },
-      }),
-    }),
+    from: (table) => ({ update: (payload) => {
+      let recorded = false;
+      const record = () => { if (!recorded) { recorded = true; dbCalls.push({ table, payload }); } };
+      const q = { eq: () => q, in: () => q, or: () => q,
+        select: async () => { record(); return { data: [{ id: state.roomCode, status: payload.status, round: payload.round, penalty: payload.penalty }], error: null }; },
+        then: (resolve) => { record(); return Promise.resolve({ data: null, error: null }).then(resolve); } };
+      return q;
+    } }),
   };
   const hasCurrentGameRoundActivity = () => false;
   const archiveCurrentRoundStats = () => {};
@@ -230,7 +250,7 @@ function loadBeginNewGameRound(state) {
     'state', 'db', 'hasCurrentGameRoundActivity', 'archiveCurrentRoundStats', 'resetTransientRoundUi',
     'getTargetLoserCount', 'getGameRound', 'getNextCountdownStartAt', 'buildPenaltyValue', 'getNextPhaseScheduledAt',
     'resetLocalParticipantsForNewGameRound', 'getOnlineMode', 'getNewGameRoundParticipantPatch', 'saveState',
-    ROOM_GUARD_SRC + '\n' + BEGIN_NEW_GAME_ROUND_SRC + '\n; return beginNewGameRound;'
+    ROOM_GUARD_SRC + '\n' + PENALTY_CAS_SRC + '\n' + BEGIN_NEW_GAME_ROUND_SRC + '\n; return beginNewGameRound;'
   );
   const beginNewGameRound = factory(
     state, db, hasCurrentGameRoundActivity, archiveCurrentRoundStats, resetTransientRoundUi,
@@ -443,7 +463,7 @@ describe('Build29 Round3 [HIGH-1 재발 방지] nextRound() write들이 { error 
     { idx: 1, label: 'participants.reset(전체 초기화)', messageFragment: 'participants.reset' },
     { idx: 2, label: 'participants.markSafe(안전자 마커)', messageFragment: 'participants.markSafe' },
     { idx: 3, label: 'participants.markLoser(술래 마커)', messageFragment: 'participants.markLoser' },
-    { idx: 4, label: 'rooms.advance(라운드 전진)', messageFragment: 'rooms.advance' },
+    { idx: 4, label: 'rooms.advance(라운드 전진)', messageFragment: 'nextRound' },
   ];
 
   for (const { idx, label, messageFragment } of writeCases) {

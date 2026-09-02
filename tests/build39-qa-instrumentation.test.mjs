@@ -70,7 +70,8 @@ describe('Build39 계측 — countdown 추적', () => {
   });
 
   it('write 결과를 실제로 관측한다 (에러를 버리지 않는다)', () => {
-    expect(begin).toMatch(/const \{ error: __cdErr \} = await db\.from\('rooms'\)/);
+    expect(begin).toContain('__committedRoom = await updateRoomPenaltyCas(');
+    expect(begin).toContain('if (__cdErr)');
     expect(begin).toContain('success: !__cdErr');
   });
 

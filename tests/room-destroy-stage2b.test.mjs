@@ -58,6 +58,9 @@ const JOIN_ROOM_SRC = extractBlock(
 const CREATE_ROOM_SRC = extractBlock(
   'async function createRoom() {', 'function createParticipant(', 'createRoom'
 );
+const PENALTY_CAS_SRC = extractBlock(
+  'async function updateRoomPenaltyCas(', '// Build19: RESULT/READY', 'penaltyCas'
+);
 
 // ── 결정적 fake supabase ─────────────────────────────────────────────────────
 function createFakeDb({ participants = [], rooms = [], failRoomUpdate = false,
@@ -70,14 +73,22 @@ function createFakeDb({ participants = [], rooms = [], failRoomUpdate = false,
     const filters = [];
     const b = {
       _single: false,
+      _returnRows: false,
       eq(c, v) { filters.push([c, v]); return b; },
+      or(expr) {
+        if (expr !== 'penalty.is.null,penalty.eq.') throw new Error('[2B] unsupported or: ' + expr);
+        filters.push(['__emptyPenalty', true]); return b;
+      },
       in(c, v) { filters.push([c, v, 'in']); return b; },
+      select() { b._returnRows = true; return b; },
       order() { return b; },
       single() { b._single = true; return b; },
       then(res, rej) { return exec().then(res, rej); },
     };
     async function exec() {
-      const match = r => filters.every(([c, v, k]) => (k === 'in' ? v.includes(r[c]) : r[c] === v));
+      const match = r => filters.every(([c, v, k]) => c === '__emptyPenalty'
+        ? (r.penalty == null || r.penalty === '')
+        : (k === 'in' ? v.includes(r[c]) : r[c] === v));
       if (op === 'insert') {
         const rows = (Array.isArray(payload) ? payload : [payload]).map(r => ({ ...r }));
         if (table === 'rooms' && dupes.has(rows[0].id)) {
@@ -94,7 +105,7 @@ function createFakeDb({ participants = [], rooms = [], failRoomUpdate = false,
         if (failRoomUpdate && table === 'rooms') return { data: null, error: { message: '[injected] rooms update failed' } };
         if (roomUpdateNoop && table === 'rooms') return { data: null, error: null }; // error 없이 0-row no-op
         rows.forEach(r => Object.assign(r, payload));
-        return { data: null, error: null };
+        return { data: b._returnRows ? rows.map(r => ({ ...r })) : null, error: null };
       }
       if (op === 'delete') {
         writeLog.push({ table, op, filters: filters.map(f => [...f]), matched: rows.length });
@@ -885,13 +896,13 @@ describe('D21~D25, D32, D44 + N4~N7/N13 — destroyed 공통 가드', () => {
         { id: 'w1', is_host: false, choice: '__waiting__', created_at: T0 },
         { id: 'w2', is_host: false, choice: '__waiting__', created_at: T5 },
       ],
-      confirmedSafeIds: [], confirmedLoserIds: [], penalty: { text: '', loserCount: 1 },
+      confirmedSafeIds: [], confirmedLoserIds: [], penalty: db.tables.rooms.find(r => r.id === 'R1')?.penalty ?? '',
       targetLoserCount: 1, roomClosing, hostTransferInFlight: false, leavingProcessing: false,
       gameStarting: false, advancingRound: false, hostZeroObservationStreak: 1,
       allWaitingObservationStreak: 1, ensuringHostExists: false, recoveringAllWaiting: false,
     };
     const calls = { qa: [] };
-    const combined = `${GUARD_HELPER_SRC}\n${HOST_HELPERS_SRC}\n${srcOverride ?? ENSURE_RECOVERY_SRC}`;
+    const combined = `${GUARD_HELPER_SRC}\n${HOST_HELPERS_SRC}\n${PENALTY_CAS_SRC}\n${srcOverride ?? ENSURE_RECOVERY_SRC}`;
     const factory = new Function(
       'state', 'db', 'QA', 'getOnlineMode', 'computePlayerStatuses', 'PLAYER_STATUS',
       'buildPenaltyValue', 'getNextPhaseScheduledAt', 'getGameRound', 'getTargetLoserCount',
@@ -963,7 +974,7 @@ describe('D21~D25, D32, D44 + N4~N7/N13 — destroyed 공통 가드', () => {
     const bng = extractBlock('async function beginNewGameRound({', 'async function waitForPhaseRender(', 'bng');
     expect(bng).toContain('if (isRoomClosingOrDestroyed()) return;');
     const guardIdx = bng.indexOf('isRoomClosingOrDestroyed');
-    const writeIdx = bng.indexOf("db.from('rooms')");
+    const writeIdx = bng.indexOf('updateRoomPenaltyCas');
     expect(guardIdx).toBeLessThan(writeIdx); // 가드가 write보다 앞
   });
 
@@ -1066,12 +1077,12 @@ function loadNextRound({ db, status = 'destroyed', srcOverride = null }) {
   const state = {
     role: 'host', currentUserId: 'H', roomCode: 'R1', status, round: 2, gameRound: 1,
     participants: [], confirmedSafeIds: [], confirmedLoserIds: [],
-    penalty: { text: '', loserCount: 1 }, targetLoserCount: 1,
+    penalty: db.tables.rooms.find(r => r.id === 'R1')?.penalty ?? '', targetLoserCount: 1,
     roomClosing: false, advancingRound: false, rematchAdvanceTimer: null,
     rematchAdvanceRetryAttempts: {},
   };
   const calls = { qa: [], toast: [] };
-  const combined = `${GUARD_HELPER_SRC}\n${srcOverride ?? NEXT_ROUND_SRC}`;
+  const combined = `${GUARD_HELPER_SRC}\n${PENALTY_CAS_SRC}\n${srcOverride ?? NEXT_ROUND_SRC}`;
   const factory = new Function(
     'state', 'db', 'QA', 'getOnlineMode', 'getTargetLoserCount', 'getGameRound',
     'getNextPhaseScheduledAt', 'buildPenaltyValue', 'showToast', 't', 'renderRoundResult',

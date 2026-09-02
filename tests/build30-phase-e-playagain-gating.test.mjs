@@ -157,15 +157,16 @@ describe('Build30-R2 Phase E(WRPS-078) gameOver 참가자 준비화면 억제 �
     expect(html).toMatch(/async function nextRound\(\) \{\s*\n\s*if \(isRoomClosingOrDestroyed\(\)\) return;[^\n]*\n\s*if \(state\.advancingRound\) return;[\s\S]{0,50}const safeIds = state\.confirmedSafeIds \|\| \[\];\s*\n\s*const loserIds = state\.confirmedLoserIds \|\| \[\];\s*\n\s*if \(loserIds\.length >= getTargetLoserCount\(\) \|\| state\.status === "game_over" \|\| \(\(typeof isCurrentGameTallied === "function"\) && isCurrentGameTallied\(\)\)\) \{\s*\n\s*showToast\(t\("voice\.gameOver"\)\);\s*\n\s*renderRoundResult\("gameOver", 0, 0\);\s*\n\s*showScreen\("screenRoundResult"\);[\s\S]{0,340}return;\s*\n\s*\}/);
   });
 
-  it('status="ready"를 실제로 쓰는 db.update 지점은 nextRound()의 partial-replay write와 WRPS-083 2A의 C-2 복구 write 2곳뿐이다(전체 리셋 경로는 beginNewGameRound({status:"ready"}) 헬퍼를 통해서만 쓴다)', () => {
+  it('status="ready" penalty 전이는 nextRound/C-2/goToReady 3곳이며 모두 exact penalty CAS를 쓴다', () => {
     const directWrites = (html.match(/status: 'ready'/g) || []).length;
     // WRPS-083 2A(계약 갱신): C-2(ACTIVE=0 · WAITING>0 · 술래 미달)는 방이 영구 정지하는 상태라
     // 같은 round를 ready로 다시 여는 두 번째 직접 writer가 필요하다. Phase E의 원 계약("전체 리셋은
     // beginNewGameRound 헬퍼로만")은 그대로다 — 이 writer도 round를 증가시키지 않고, 8조건
     // (host/ACTIVE=0/WAITING>0/술래 미달/!roomClosing/!gameStarting/!advancingRound/2회 연속 관측)을
     // 모두 만족할 때만 발화한다(tests/waiting-state-stage2a.test.mjs가 실제 실행으로 검증).
-    expect(directWrites).toBe(2);
-    expect(html).toContain("await db.from('rooms')\n          .update({ status: 'ready', penalty: readyPenalty })");
+    expect(directWrites).toBe(3);
+    expect(html).toMatch(/updateRoomPenaltyCas\(\s*\{\s*status: 'ready', penalty: readyPenalty \}/);
+    expect(html).toContain("updateRoomPenaltyCas({ penalty: penaltyValue, status: 'ready' }");
     // gameOver(C-1)에서는 이 writer가 발화하지 않는다는 한정자가 소스에 그대로 있어야 한다.
     expect(html).toContain('confirmedLoserCount < targetLoserCount');
   });
