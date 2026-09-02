@@ -321,18 +321,18 @@ describe.skipIf(!hasChrome)('Build47 정정 항목3 — geometry (iPhone16 + 타
   it('iPhone16(393×852): 본문 시작 ≤118px(회수 전 130) · 중앙 미리보기 ≥125px(회수 전 111)', () => {
     const r = rows.find(r => r.dev === 'iPhone16');
     expect(r.cheadTop).toBeLessThanOrEqual(118);
-    expect(r.choiceAnim.natH).toBeGreaterThanOrEqual(122); // 852-63-34-630=125
+    expect(r.choiceAnim.natH).toBeGreaterThanOrEqual(125); // 852-63-34-630=125
   });
-  it('iPhone16-field(393×818, 필드 webview): 미리보기 ≥110px(회수 전 93)', () => {
+  it('iPhone16-field(393×818, 필드 webview): 미리보기 ≥107px(회수 전 93)', () => {
     const r = rows.find(r => r.dev === 'iPhone16-field');
-    expect(r.choiceAnim.natH).toBeGreaterThanOrEqual(105); // 818-63-18-630=107
+    expect(r.choiceAnim.natH).toBeGreaterThanOrEqual(107); // 818-63-18-630=107
   });
   it('짧은 뷰포트(iPhoneSE 667): 미리보기 최소 64px(예산 하한) + 오버플로 없음(위 공통 계약이 보증)', () => {
     const r = rows.find(r => r.dev === 'iPhoneSE');
     expect(r.choiceAnim.natH).toBe(64);
   });
-  it('Android(360×732): 미리보기 ≥70px(회수 전 56 최소치에서 해제)', () => {
+  it('Android(360×732): 미리보기 ≥66px(회수 전 56 최소치에서 해제)', () => {
     const r = rows.find(r => r.dev === 'And360x732');
-    expect(r.choiceAnim.natH).toBeGreaterThanOrEqual(65); // 732-18-18-630=66
+    expect(r.choiceAnim.natH).toBeGreaterThanOrEqual(66); // 732-18-18-630=66
   });
 });
