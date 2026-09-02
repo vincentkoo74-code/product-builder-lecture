@@ -61,19 +61,19 @@ const SCRIPTS = {
     { filename: 'ko_replay_winners_only.mp3', text: '승자끼리 다시 합니다!' },
     { filename: 'ko_tagger_selected.mp3', text: '술래가 정해졌습니다!' },
     { filename: 'ko_game_over.mp3', text: '게임 끝!' },
-    { filename: 'ko_maru_rps.mp3', text: '마루 가위바위보!' }, // Build47 항목2: ko 카운트다운 2박자 교체본
-    // Build47 필드QA 정정(항목 2): GAME 순번 안내 11종 — 현재 자산은 macOS say 임시본, 키 확보 시 이 스크립트로 재생성
-    { filename: 'ko_game_start_1.mp3', text: '첫 번째 판 시작합니다. 준비하세요.' },
-    { filename: 'ko_game_start_2.mp3', text: '두 번째 판 갑니다.' },
-    { filename: 'ko_game_start_3.mp3', text: '세 번째 판 갑니다.' },
-    { filename: 'ko_game_start_4.mp3', text: '네 번째 판 갑니다.' },
-    { filename: 'ko_game_start_5.mp3', text: '다섯 번째 판 갑니다.' },
-    { filename: 'ko_game_start_6.mp3', text: '여섯 번째 판 갑니다.' },
-    { filename: 'ko_game_start_7.mp3', text: '일곱 번째 판 갑니다.' },
-    { filename: 'ko_game_start_8.mp3', text: '여덟 번째 판 갑니다.' },
-    { filename: 'ko_game_start_9.mp3', text: '아홉 번째 판 갑니다.' },
-    { filename: 'ko_game_start_10.mp3', text: '열 번째 판 갑니다.' },
-    { filename: 'ko_game_start_next.mp3', text: '다음 판 갑니다.' },
+    // Build47 cumulative-score/voice recovery: short GAME prefix only. The unchanged core RPS
+    // phrase is the existing ko_countdown_rps.mp3 immediately following these clips.
+    { filename: 'ko_game_start_1.mp3', text: '시작합니다' },
+    { filename: 'ko_game_start_2.mp3', text: '둘째판' },
+    { filename: 'ko_game_start_3.mp3', text: '셋째판' },
+    { filename: 'ko_game_start_4.mp3', text: '넷째판' },
+    { filename: 'ko_game_start_5.mp3', text: '다섯째판' },
+    { filename: 'ko_game_start_6.mp3', text: '여섯째판' },
+    { filename: 'ko_game_start_7.mp3', text: '일곱째판' },
+    { filename: 'ko_game_start_8.mp3', text: '여덟째판' },
+    { filename: 'ko_game_start_9.mp3', text: '아홉째판' },
+    { filename: 'ko_game_start_10.mp3', text: '열째판' },
+    { filename: 'ko_game_start_next.mp3', text: '다음판' },
   ],
   ja: [
     { filename: 'ja_ready.mp3', text: '準備してね！' },

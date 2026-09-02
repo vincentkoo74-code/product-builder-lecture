@@ -5,10 +5,10 @@
 //            canonical 원장(losses 투영 deriveMatchLossTally)을 읽는다. FINAL 쓰기는 CAS
 //            (.eq(status).eq(penalty) + .select 적용확인 + 읽기 재검증 + 1회 rebase 재시도)로
 //            "적용 확인 후에만 로컬 권위 전진"을 보장하고, 미적용은 FINAL_WRITE_NOT_APPLIED 로 남는다.
-// 항목 2: GAME 순번 음성 안내 — G1 "첫 번째 판 시작합니다. 준비하세요."(ready 대체), G2+
-//            "N 번째 판 갑니다."(상한 없음, 10 초과는 "다음 판"). (roomCode, matchNo, gameRound)당
+// 항목 2: GAME 순번 음성 안내 — G1 "시작합니다", G2+ "둘째판/셋째판/...".
+//            10 초과는 "다음판". (roomCode, matchNo, gameRound)당
 //            1회 멱등(localStorage 벨트). 내부 재대결(round>1)은 안내하지 않는다.
-//            카운트다운 2박자는 "마루 가위바위보"(ko_maru_rps.mp3, 화면 텍스트 voice.go1/go2 정렬).
+//            카운트다운 2박자는 기존 "안 내면 술래! 가위바위보!"를 복원한다.
 // 항목 3: iPhone16 세로 — 상단 사공간 회수(--safe-top inset+4, topbar 10/6,
 //            #screenGame padding-top 예산화), 회수분을 중앙 렌더 영역 예산으로
 //            (choice-anim 56/640/120→64/620/132, result-maru 40/620→48/600). 페이지 스크롤 없음.
@@ -179,11 +179,17 @@ describe('Build47 정정 항목2 — GAME 순번 음성 안내', () => {
       expect(existsSync(resolve(ROOT, `ASSETS/rps/voice/${loc}/${loc}_game_start_next.mp3`))).toBe(true);
     }
   });
-  it('ko 카운트다운 2박자는 "마루 가위바위보" — 클립 자산 존재 + 화면 텍스트(voice.go1/go2) 정렬', () => {
-    expect(html).toContain('countdownRps: "ko/ko_maru_rps.mp3"');
-    expect(existsSync(resolve(ROOT, 'ASSETS/rps/voice/ko/ko_maru_rps.mp3'))).toBe(true);
-    expect(html).toContain('"voice.go1": "마루"');
-    expect(html).toContain('"voice.go2": "가위바위보"');
+  it('ko GAME 접두어 자산은 빈/헤더-only 파일이 아니라 실제 디코딩 가능한 크기다', () => {
+    for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 'next']) {
+      const bytes = readFileSync(resolve(ROOT, `ASSETS/rps/voice/ko/ko_game_start_${n}.mp3`));
+      expect(bytes.length, `ko prefix ${n}`).toBeGreaterThan(10_000);
+    }
+  });
+  it('ko 카운트다운 2박자는 기존 "안 내면 술래! 가위바위보!!" — 클립 자산 + 화면 텍스트 정렬', () => {
+    expect(html).toContain('countdownRps: "ko/ko_countdown_rps.mp3"');
+    expect(existsSync(resolve(ROOT, 'ASSETS/rps/voice/ko/ko_countdown_rps.mp3'))).toBe(true);
+    expect(html).toContain('"voice.go1": "안 내면 술래!"');
+    expect(html).toContain('"voice.go2": "가위바위보!!"');
   });
   it('[기능] 서수 매핑: 1→gameStart1, 10→gameStart10, 11+→gameStartNext(상한 3 아님 — 캡 없음)', () => {
     const { gameStartVoiceKey: fn } = evalFns(['gameStartVoiceKey']);
@@ -207,7 +213,7 @@ describe('Build47 정정 항목2 — GAME 순번 음성 안내', () => {
   function mkConsume(state, matchRule, env, store = {}) {
     const events = [];
     const { sanitizeMatchStats } = evalFns(['sanitizeMatchStats', 'matchStatCount']);
-    const src = [sliceFn('getMatchGameOrdinal'), sliceFn('gameStartVoiceKey'), sliceFn('consumeGameStartAnnouncement')].join('\n');
+    const src = [sliceFn('getMatchGameOrdinal'), sliceFn('gameStartVoiceKey'), sliceFn('gameStartVoicePhraseKo'), sliceFn('consumeGameStartAnnouncement')].join('\n');
     const ctx = {
       state, parsePenalty: () => env, sanitizeMatchStats,
       getMatchRule: () => matchRule,
@@ -221,7 +227,7 @@ describe('Build47 정정 항목2 — GAME 순번 음성 안내', () => {
   }
   it('[기능] 비단판 G1(round=1): {gameStart1, ordinal 1} — 두 번째 호출(에코/폴링/재렌더)은 null (멱등)', () => {
     const h = mkConsume({ round: 1, gameRound: 1, roomCode: 'AB' }, 'best3', { matchNo: 1 });
-    expect(h.call()).toEqual({ key: 'gameStart1', ordinal: 1 });
+    expect(h.call()).toEqual({ key: 'gameStart1', ordinal: 1, phraseKo: '시작합니다' });
     expect(h.call()).toBeNull();
     expect(h.events.some(e => e.eventType === 'GAME_NO_VOICE')).toBe(true);
     expect(h.events.some(e => e.eventType === 'GAME_NO_VOICE_SKIPPED_DUP')).toBe(true);
@@ -237,23 +243,34 @@ describe('Build47 정정 항목2 — GAME 순번 음성 안내', () => {
   it('[기능] 내부 재대결(round>1)은 안내하지 않는다(순번 미증가 계약)', () => {
     expect(mkConsume({ round: 2, gameRound: 1, roomCode: 'AB' }, 'best3', { matchNo: 1 }).call()).toBeNull();
   });
-  it('[기능] 단판(single)도 GAME 1 계약대로 첫 번째 판 안내를 1회 재생한다', () => {
+  it('[기능] 단판(single)도 GAME 1 계약대로 "시작합니다"를 1회 재생한다', () => {
     const h = mkConsume({ round: 1, gameRound: 1, roomCode: 'AB' }, 'single', { matchNo: 1 });
-    expect(h.call()).toEqual({ key: 'gameStart1', ordinal: 1 });
+    expect(h.call()).toEqual({ key: 'gameStart1', ordinal: 1, phraseKo: '시작합니다' });
     expect(h.call()).toBeNull();
   });
-  it('[기능] 새 MATCH(한번더, matchNo+1·matchStats 리셋)는 다시 "첫 번째 판"부터', () => {
+  it('[기능] 새 MATCH(한번더, matchNo+1·matchStats 리셋)는 다시 "시작합니다"부터', () => {
     const store = {};
     const h1 = mkConsume({ round: 1, gameRound: 1, roomCode: 'AB' }, 'best3', { matchNo: 1 }, store);
     h1.call();
     const h2 = mkConsume({ round: 1, gameRound: 3, roomCode: 'AB' }, 'best3', { matchNo: 2 }, store);
-    expect(h2.call()).toEqual({ key: 'gameStart1', ordinal: 1 });
+    expect(h2.call()).toEqual({ key: 'gameStart1', ordinal: 1, phraseKo: '시작합니다' });
   });
   it('[기능] 2판째(1판 완료·gameRound 전진): gameStart2 — 같은 판 재호출은 null', () => {
     const store = {};
     const h = mkConsume({ round: 1, gameRound: 2, roomCode: 'AB' }, 'best3', { matchNo: 1, matchStats: { a: { losses: 1 }, b: { wins: 1 } } }, store);
-    expect(h.call()).toEqual({ key: 'gameStart2', ordinal: 2 });
+    expect(h.call()).toEqual({ key: 'gameStart2', ordinal: 2, phraseKo: '둘째판' });
     expect(h.call()).toBeNull();
+  });
+  it('[기능] GAME1→5 접두어 의미가 요청 순서이며 각 GAME은 독립 once-key를 쓴다', () => {
+    const store = {};
+    const phrases = ['시작합니다', '둘째판', '셋째판', '넷째판', '다섯째판'];
+    for (let n = 1; n <= 5; n++) {
+      const completed = n - 1;
+      const env = { matchNo: 1, matchStats: { a: { wins: completed, losses: 0 } } };
+      const h = mkConsume({ round: 1, gameRound: n, roomCode: 'AB' }, 'best5', env, store);
+      expect(h.call()).toEqual({ key: `gameStart${n}`, ordinal: n, phraseKo: phrases[n - 1] });
+      expect(h.call()).toBeNull();
+    }
   });
   it('카운트다운 1박자가 안내로 대체되고(없으면 ready), 타이밍 테이블(3로케일 first/next)이 존재한다', () => {
     expect(html).toContain('void playVoiceClip(__gameAnnounce ? __gameAnnounce.key : "ready");');

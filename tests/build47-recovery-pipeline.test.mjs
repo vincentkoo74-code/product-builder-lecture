@@ -31,6 +31,14 @@ function roomsDb(store, writes, beforeFirstUpdate = null) {
   let updateCount = 0;
   const matches = filters => filters.every(([key, value]) => store[key] === value);
   return { from(table) {
+    if (table === 'participants') {
+      return {
+        update() {
+          const q = { eq() { return q; }, in() { return Promise.resolve({ data: [], error: null }); }, then(resolve) { return Promise.resolve({ data: [], error: null }).then(resolve); } };
+          return q;
+        },
+      };
+    }
     if (table !== 'rooms') throw new Error(`unsupported ${table}`);
     return {
       update(payload) {
@@ -91,6 +99,23 @@ function runtime(rule, beforeFirstUpdate = null) {
       () => positive(parse(state.penalty).gameRound, 1), () => 123456, parse, M.sanitizeMatchStats);
   const card = new Function('state', 'parsePenalty', 'sanitizeMatchStats',
     `${sliceFn('getMatchCumulativeStats')}\nreturn getMatchCumulativeStats;`)(state, parse, M.sanitizeMatchStats);
+  const beginNewGameRound = new Function(
+    'state', 'isRoomClosingOrDestroyed', 'hasCurrentGameRoundActivity', 'archiveCurrentRoundStats',
+    'resetTransientRoundUi', 'isMatchComplete', 'getMatchLockedIds', 'getConfiguredTaggerCount',
+    'getTargetLoserCount', 'getGameRound', 'getNextCountdownStartAt', 'serverNow', 'serverClockOffsetMs',
+    'QA', 'qaRoundCtx', 'getNextPhaseScheduledAt', 'buildPenaltyValue', 'resetLocalParticipantsForNewGameRound',
+    'getOnlineMode', 'db', 'getNewGameRoundParticipantPatch', 'qaNextTraceId', 'updateRoomPenaltyCas', 'saveState',
+    `${sliceFn('beginNewGameRound')}\nreturn beginNewGameRound;`,
+  )(
+    state, () => false, () => true, () => {}, () => {},
+    () => Boolean(envelope().finalTaggerIds.length), () => envelope().lockedIds,
+    () => 1, () => 1, () => positive(parse(state.penalty).gameRound, state.gameRound || 1),
+    () => 123456, () => Date.now(), 0, { emit: (_kind, payload) => events.push(payload) }, undefined,
+    () => 123456, buildPenalty, () => {
+      state.participants = state.participants.map(p => ({ ...p, choice: null, wins: 0, losses: 0, draws: 0, is_ready: false }));
+    }, () => true, db, () => ({ choice: null, wins: 0, losses: 0, draws: 0, penalties: 0, is_ready: false }),
+    prefix => `${prefix}:test`, updatePenaltyCas, () => {},
+  );
 
   async function commit(gameNo, loserId) {
     await scheduled('result', 'result', { mode: 'FINAL', gameNo, round: 1, confirmedLoserIds: [loserId] });
@@ -103,30 +128,45 @@ function runtime(rule, beforeFirstUpdate = null) {
       cards: Object.fromEntries(state.participants.map(player => [player.id, card(player)])),
       locked: p.matchLockedIds || [], final: p.matchFinalTaggerIds || [], tallied: p.matchTalliedGameNo };
   }
-  function next(gameNo) {
-    const p = parse(store.penalty); p.gameRound = gameNo;
-    delete p.phaseScheduledAt; delete p.phaseKind; delete p.continuation;
-    store.status = 'playing'; store.penalty = JSON.stringify(p);
-    state.status = 'playing'; state.gameRound = gameNo; state.penalty = JSON.stringify(JSON.parse(store.penalty));
+  async function next(gameNo) {
+    state.penalty = JSON.stringify(JSON.parse(store.penalty));
+    state.status = store.status;
+    state.gameRound = positive(parse(state.penalty).gameRound, gameNo - 1);
+    await beginNewGameRound({ status: 'playing', increment: true, reason: 'behavioral-test-next-game' });
+    // Authoritative reload, exactly as poll/reconnect replaces local room state.
+    state.penalty = JSON.stringify(JSON.parse(store.penalty));
+    state.status = store.status;
+    state.gameRound = positive(parse(state.penalty).gameRound, gameNo);
+    expect(state.gameRound).toBe(gameNo);
   }
-  return { M, state, store, db, writes, events, hostCompose, updatePenaltyCas, commit, next };
+  return { M, state, store, db, writes, events, hostCompose, buildPenaltyValue: buildPenalty, updatePenaltyCas, commit, next };
 }
 
 describe('Build47 recovery — persisted GAME result pipeline', () => {
   it('BEST3 A/B/A: persisted == score card == threshold after every reload; A locks/finalizes once; no G4', async () => {
     const r = runtime('best3');
+    // Physical-device reproduction: this app process previously observed matchNo=2 in another
+    // room. Room-local matchNo restarts at 1; the old global watermark used to erase the base
+    // ledger on every FINAL composition in this new room.
+    r.state.matchNoSeen = 2;
+    r.state.matchNoSeenRoomCode = 'PREVIOUS_ROOM';
     const g1 = await r.commit(1, 'A');
     expect([g1.persisted.A.losses, g1.cards.A.loserCount, g1.threshold.A]).toEqual([1, 1, 1]);
-    r.next(2);
+    expect({ A: g1.persisted.A.wins, B: g1.persisted.B.wins, C: g1.persisted.C.wins }).toEqual({ A: 0, B: 1, C: 1 });
+    await r.next(2);
     const g2 = await r.commit(2, 'B');
     expect({ A: g2.persisted.A.losses, B: g2.persisted.B.losses }).toEqual({ A: 1, B: 1 });
     expect({ A: g2.cards.A.loserCount, B: g2.cards.B.loserCount }).toEqual({ A: 1, B: 1 });
     expect(g2.threshold).toMatchObject({ A: 1, B: 1 });
-    r.next(3);
+    expect({ A: g2.persisted.A.wins, B: g2.persisted.B.wins, C: g2.persisted.C.wins }).toEqual({ A: 1, B: 1, C: 2 });
+    expect({ A: g2.cards.A.safeCount, B: g2.cards.B.safeCount, C: g2.cards.C.safeCount }).toEqual({ A: 1, B: 1, C: 2 });
+    await r.next(3);
     const g3 = await r.commit(3, 'A');
     expect({ A: g3.persisted.A.losses, B: g3.persisted.B.losses }).toEqual({ A: 2, B: 1 });
     expect({ A: g3.cards.A.loserCount, B: g3.cards.B.loserCount }).toEqual({ A: 2, B: 1 });
     expect(g3.threshold).toMatchObject({ A: 2, B: 1 });
+    expect({ A: g3.persisted.A.wins, B: g3.persisted.B.wins, C: g3.persisted.C.wins }).toEqual({ A: 1, B: 2, C: 3 });
+    expect({ A: g3.cards.A.safeCount, B: g3.cards.B.safeCount, C: g3.cards.C.safeCount }).toEqual({ A: 1, B: 2, C: 3 });
     expect(g3.locked).toEqual(['A']); expect(g3.final).toEqual(['A']); expect(g3.tallied).toBe(3);
     const timeline = [g1, g2, g3];
     expect(timeline.filter((x, i) => x.locked.includes('A') && (i === 0 || !timeline[i - 1].locked.includes('A')))).toHaveLength(1);
@@ -139,13 +179,30 @@ describe('Build47 recovery — persisted GAME result pipeline', () => {
 
   it('BEST5 A/A/A: cumulative 1→2→3 and confirmation/final occur exactly at 3', async () => {
     const r = runtime('best5'), trace = [];
-    trace.push(await r.commit(1, 'A')); r.next(2);
-    trace.push(await r.commit(2, 'A')); r.next(3);
+    trace.push(await r.commit(1, 'A')); await r.next(2);
+    trace.push(await r.commit(2, 'A')); await r.next(3);
     trace.push(await r.commit(3, 'A'));
     expect(trace.map(x => x.persisted.A.losses)).toEqual([1, 2, 3]);
     expect(trace.map(x => x.cards.A.loserCount)).toEqual([1, 2, 3]);
     expect(trace.map(x => x.threshold.A)).toEqual([1, 2, 3]);
+    expect(trace.map(x => x.persisted.B.wins)).toEqual([1, 2, 3]);
+    expect(trace.map(x => x.persisted.C.wins)).toEqual([1, 2, 3]);
+    expect(trace.map(x => x.cards.B.safeCount)).toEqual([1, 2, 3]);
     expect(trace.map(x => x.final)).toEqual([[], [], ['A']]);
+  });
+
+  it('NEW MATCH resets canonical stats while NEXT GAME preserves them', async () => {
+    const r = runtime('best5');
+    const g1 = await r.commit(1, 'A');
+    expect(g1.persisted.A.losses).toBe(1);
+    await r.next(2);
+    expect(parse(r.store.penalty).matchStats.A.losses).toBe(1);
+    const reset = r.buildPenaltyValue({ gameRound: 3, matchReset: true });
+    const p = parse(reset);
+    expect(p.matchNo).toBe(2);
+    expect(p.matchStats).toBeUndefined();
+    expect(p.matchTally).toBeUndefined();
+    expect(p.matchTalliedGameNo).toBeUndefined();
   });
 
   it('CAS conflict with a late playing writer rebases once and preserves the FINAL canonical increment', async () => {
