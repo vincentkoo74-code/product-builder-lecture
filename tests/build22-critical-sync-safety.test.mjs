@@ -40,7 +40,8 @@ describe('Build22-A — invalid countdown does not play voice', () => {
     expect(html).toMatch(/showCountdownSyncError\(overlay, numEl, labelEl, async \(\) => \{ await runCountdownThenShowGame\(\); \}\);\s*\n\s*return false;\s*\n\s*\}/);
     // voice 재생 지점(ready/countdownRps)은 이 early-return보다 코드상 뒤에 위치한다.
     const earlyReturnIdx = html.indexOf('return false;\n        }\n      }\n      // 예정 시각은 서버 시간 도메인');
-    const readyVoiceIdx = html.indexOf('void playVoiceClip("ready")');
+    // Build47 항목2: 1박자 재생 라인이 GAME 순번 안내 조건식으로 확장됐다 — 계약(위치)은 동일.
+    const readyVoiceIdx = html.indexOf('void playVoiceClip(__gameAnnounce ? __gameAnnounce.key : "ready")');
     expect(readyVoiceIdx).toBeGreaterThan(-1);
     if (earlyReturnIdx > -1) expect(readyVoiceIdx).toBeGreaterThan(earlyReturnIdx);
   });

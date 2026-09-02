@@ -134,3 +134,19 @@ QA `…_SKIPPED_STALE`). 오프라인은 종전 로컬 동작 유지.
 - 구계약 핀 갱신(문서화): build27(정족수 시 미노출→노출), build30-ready-force-start(토글 가드형·신정의).
 
 - **GATE2(2026-09-02)**: 확정 전이는 세션 내 관측(NOT_CONFIRMED→CONFIRMED)에서만 — 재접속/앱재시작/에코/폴링/재렌더는 확정 이벤트를 재생성할 수 없다(기저선 시드 + 1회성 원장, 결정적 회귀 4종).
+
+## Build47 Codex recovery contract (2026-09-02)
+
+- `matchStats[playerId] = {wins, losses}` is the only mutable cumulative MATCH ledger. Score-card
+  rendering and threshold/decision logic both read this object. The retained `matchTally` field is a
+  wire-compatibility projection derived by `deriveMatchLossTally()`; it is never incremented independently.
+- Legacy rooms containing only `matchTally` migrate it into canonical losses once. When canonical stats
+  exist, legacy values cannot override them. FINAL writes use a status+penalty compare-and-swap, verify
+  the returned row, and rebase once only while the authoritative room remains in the same phase.
+- GAME ordinal voice is keyed by `(roomCode, matchNo, gameRound)` and only runs for internal round 1.
+  Realtime echoes, rerenders and reconnects therefore cannot replay it, and internal rematches cannot
+  advance it.
+- Compact gameplay layout keeps `env(safe-area-inset-top)` while reducing the extra top margin and
+  allocating the recovered height to choice/result visuals.
+- The account-delete control removed by the unrelated FIELD RACE #3 change is restored to its exact
+  pre-`a22724d` markup and existing handler.

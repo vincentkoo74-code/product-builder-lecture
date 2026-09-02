@@ -138,7 +138,7 @@
          이 변수만 읽는다. env() 는 오버라이드가 불가능해서 각자 읽으면 계측기가 실기기
          조건을 재현할 수 없다 — 실제로 A5 계측이 이 이유로 hero를 304px(실기기 223px)로
          잘못 쟀다. 단일 출처면 계측기도 이 변수 하나만 주입하면 된다. */
-      --safe-top: max(20px, calc(env(safe-area-inset-top, 0px) + 8px));
+      --safe-top: max(20px, calc(env(safe-area-inset-top, 0px) + 4px)); /* Build47 recovery: full safe inset + compact 4px breathing room */
       --safe-bottom: max(24px, env(safe-area-inset-bottom, 0px));
       --device-ui-bottom-fade-start: calc(100% - max(38px, calc(var(--safe-bottom) + 4px)));
       padding-top: var(--safe-top);
@@ -174,7 +174,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 16px;
+      margin-bottom: 10px; /* Build47 항목3: 16→10 — 헤더를 위로, 회수분은 게임 중앙 영역 예산으로 */
     }
 
     .brand {
@@ -878,7 +878,7 @@
     .choice-anim {
       /* Build42(§15): 미리보기 높이는 남는 예산으로 정한다(56~120px). 예산 640px = topbar·캡/제목/안내·요약·진행 카드·
          가위바위보 버튼·간격의 합. 짧은 기기에서 미리보기가 먼저 줄고, 요약·카드·버튼은 유지된다. */
-      --choice-anim-h: clamp(56px, calc(100dvh - var(--safe-top, 20px) - var(--safe-bottom, 24px) - 640px), 120px);
+      --choice-anim-h: clamp(64px, calc(100dvh - var(--safe-top, 20px) - var(--safe-bottom, 24px) - 630px), 132px); /* Build47 recovery+critic: old 56/640/120 → 64/630/132 — 620/624는 iPhone12/13·16 계측에서 ~1px 클립(실측 오버헤드 ~625), 여유 5px 두고 630 확정 */
       height: var(--choice-anim-h);
       margin-bottom: clamp(6px, 1.8dvh, 16px);
       display: grid;
@@ -930,7 +930,7 @@
          (상한 170px = 종전 정체성 크기, 하한 64px = 720px 미만 기기에서 fade 14px 밖에 꼬리가 남는 크기). */
       /* Build42 UI 방향(§9): 상한 220px — tall 기기에서 hero 가 남는 공간을 자연스럽게 쓴다. 예산 620px = 벌칙 큰 카드
          (≈95)까지 포함한 고정 콘텐츠 합. 하한 56px. 압축 순서: hero → 장식 간격 → 제목 크기 → 카드 패딩. */
-      --result-maru: clamp(40px, calc(100dvh - var(--safe-top, 20px) - var(--safe-bottom, 24px) - 620px), 220px);
+      --result-maru: clamp(48px, calc(100dvh - var(--safe-top, 20px) - var(--safe-bottom, 24px) - 600px), 220px); /* Build47 recovery: old 40/620 → 48/600 */
     }
     /* Build41 UI(필드픽스 RC-A1): hero 안의 메시지 간격은 hero 의 padding 이 책임진다 —
        본문 문단용 .lead 의 20px 하단 마진이 c-head 를 키워 c-body(결과 카드)를 밀어냈다. */
@@ -1958,6 +1958,7 @@
     .maru-guide::before{ content:"👉"; font-size:16px; flex:none; }
     .maru-guide:empty{ display:none; }
     /* Build42(§15 1단계): 플레이 화면 상단 장식 간격(부제·안내·카드 마진)은 높이 예산으로 먼저 압축된다 */
+    #screenGame{padding-top:clamp(6px, 1.2dvh, 15px)} /* Build47 항목3: 카드 상단 내부 여백도 예산화 */
     #screenGame .maru-section-sub{margin-bottom:clamp(4px, 1.6dvh, 14px)}
     #screenGame #roundTitle{margin-top:clamp(2px, 0.8dvh, 6px) !important}
     #screenGame .choice-button .maru-hand{height:clamp(44px, 8.4dvh, 64px);width:auto}
@@ -2093,7 +2094,7 @@
         width:calc(100vw - 8px);
         min-height:100dvh;
         max-width:none;
-        --safe-top: max(18px, calc(env(safe-area-inset-top, 0px) + 8px));
+        --safe-top: max(18px, calc(env(safe-area-inset-top, 0px) + 4px)); /* iOS inset preserved; Android keeps its prior 18px floor */
         --safe-bottom: max(18px, env(safe-area-inset-bottom, 0px));
         padding-top: var(--safe-top);
         padding-left:0;
@@ -2102,7 +2103,7 @@
       }
       .topbar{
         gap:6px;
-        margin-bottom:10px;
+        margin-bottom:6px; /* Build47 항목3: 10→6 */
         padding-right:2px;
         min-width:0;
       }
@@ -2115,10 +2116,10 @@
       body[data-locale="en"] .brand{font-size:17px}
       body[data-locale="ja"] .brand{font-size:14px}
       .brand-icon{
-        width:38px;
-        height:38px;
-        border-radius:13px;
-        font-size:20px;
+        width:36px;
+        height:36px;
+        border-radius:12px;
+        font-size:19px;
         flex:0 0 auto;
       }
       .topbar > div:last-child{
@@ -3454,6 +3455,7 @@
           <span data-i18n="account.close">닫기</span>
           <span class="go-pill">OK</span>
         </button>
+        <button onclick="window.deleteAccountWithConfirm()" class="btn-outline btn-full" style="margin-top:var(--action-gap);color:#b91c1c;border-color:#fecaca" data-i18n="account.deleteBtn">계정 삭제</button>
       </div>
     </div>
 
@@ -3679,8 +3681,8 @@
         "progress.editable": "게임 시작 전 술래 숫자를 변경할 수 있습니다.",
         // voice(Build21: 화면표시 텍스트 — 실제 재생은 mp3, TTS 아님)
         "voice.intro": "준비하세요!",
-        "voice.go1": "안 내면 술래!",
-        "voice.go2": "가위바위보!",
+        "voice.go1": "마루",
+        "voice.go2": "가위바위보",
         "voice.becameLoser": "아이고, 술래가 되셨습니다!",
         "voice.gameOver": "게임이 끝났습니다!",
         "voice.continue": "휴~ 다행이다. 계속 진행합니다!",
@@ -5642,8 +5644,8 @@
       // Build40 P0-1: continuation 은 gameNo/round 신원이 있을 때만 싣는다("0이면 생략" 규칙과 동일).
       const cont = parseContinuationEnvelope(continuation);
       if (cont) value.continuation = cont;
-      // Build43: 매치 필드 carry-forward — 명시 인자 > 로컬 선택 > 이전 envelope. matchRule 은 항상
-      // 싣는다(참가자/재접속이 확정값을 읽도록). tally/stats/원장은 비면 생략("0이면 생략" 규칙).
+      // Build43/Build47 recovery: matchStats is the sole mutable cumulative authority. matchTally
+      // remains on the wire only as a derived compatibility projection for older clients.
       // 이 함수도 레거시 샌드박스가 단독 추출한다 — parsePenalty/매치 헬퍼를 부르지 않고 순수 JSON 만 쓴다.
       let prevMatch = {};
       try { const o = (state.penalty && typeof state.penalty === "object") ? state.penalty : JSON.parse(state.penalty || "{}"); if (o && typeof o === "object") prevMatch = o; } catch (e) {}
@@ -5657,10 +5659,33 @@
         value.matchNo = prevNo + 1;
       } else {
         value.matchNo = toPositiveInt(matchNo, 0) || prevNo;
-        const mTally = matchTally || prevMatch.matchTally;
-        if (mTally && typeof mTally === "object" && Object.keys(mTally).length) value.matchTally = mTally;
-        const mStats = (matchStats && typeof matchStats === "object") ? matchStats : prevMatch.matchStats;
-        if (mStats && typeof mStats === "object" && Object.keys(mStats).length) value.matchStats = mStats;
+        const sourceStats = (matchStats && typeof matchStats === "object") ? matchStats : prevMatch.matchStats;
+        const legacyTally = (matchTally && typeof matchTally === "object") ? matchTally : prevMatch.matchTally;
+        const canonicalStats = {};
+        if (sourceStats && typeof sourceStats === "object") {
+          for (const id of Object.keys(sourceStats)) {
+            const row = sourceStats[id] || {};
+            const w = Math.floor(Number(row.wins !== undefined ? row.wins : row.w));
+            const l = Math.floor(Number(row.losses !== undefined ? row.losses : row.l));
+            canonicalStats[id] = {
+              wins: Number.isFinite(w) && w > 0 ? w : 0,
+              losses: Number.isFinite(l) && l > 0 ? l : 0,
+            };
+          }
+        }
+        // One-way migration for legacy envelopes that only contain matchTally.
+        if (!Object.keys(canonicalStats).length && legacyTally && typeof legacyTally === "object") {
+          for (const id of Object.keys(legacyTally)) {
+            const l = Math.floor(Number(legacyTally[id]));
+            canonicalStats[id] = { wins: 0, losses: Number.isFinite(l) && l > 0 ? l : 0 };
+          }
+        }
+        if (Object.keys(canonicalStats).length) {
+          value.matchStats = canonicalStats;
+          const derivedTally = {};
+          for (const id of Object.keys(canonicalStats)) if (canonicalStats[id].losses > 0) derivedTally[id] = canonicalStats[id].losses;
+          if (Object.keys(derivedTally).length) value.matchTally = derivedTally;
+        }
         const mtg = toPositiveInt(matchTalliedGameNo, 0) || toPositiveInt(prevMatch.matchTalliedGameNo, 0);
         if (mtg) value.matchTalliedGameNo = mtg;
         const msg = toPositiveInt(matchStatsGameNo, 0) || toPositiveInt(prevMatch.matchStatsGameNo, 0);
@@ -6429,6 +6454,11 @@
 	      if (isRoomClosingOrDestroyed()) return;
 	      if (state.newRoundResetting) return;
 	      state.newRoundResetting = true;
+	      const __previousCanonicalTransition = {
+	        penalty: state.penalty,
+	        gameRound: state.gameRound,
+	        status: state.status
+	      };
 	      try {
 	        // WRPS-056: 참가자 변경 경로는 priorParticipants(직전 구성)로 아카이빙해 세션 오귀속 방지.
 	        const archiveSource = (priorParticipants && priorParticipants.length) ? priorParticipants : state.participants;
@@ -6462,7 +6492,7 @@
 	        // 기존과 동일하게 phaseScheduledAt=0으로 유지해 buildPenaltyValue가 필드를 아예 넣지 않는다.
 	        const phaseScheduledAt = status === "ready" ? getNextPhaseScheduledAt() : 0;
 	        const phaseKind = status === "ready" ? "ready" : "";
-	        state.penalty = buildPenaltyValue({
+	        const __nextPenalty = buildPenaltyValue({
 	          gameRound: state.gameRound,
 	          countdownStartAt: state.countdownStartAt,
 	          phaseScheduledAt,
@@ -6528,14 +6558,24 @@
 	            localNow: Date.now() }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
 	          const __cdT0 = Date.now();
 	          const { error: __cdErr } = await db.from('rooms')
-	            .update({ round: 1, status, penalty: state.penalty })
+	            .update({ round: 1, status, penalty: __nextPenalty })
 	            .eq('id', state.roomCode);
 	          try { QA.emit('metric', Object.assign({ wrps: 'WRPS-QA-B39', eventType: 'COUNTDOWN_STARTAT_WRITE_END',
 	            traceId: __cdTrace, success: !__cdErr, durationMs: Date.now() - __cdT0,
 	            errorCode: __cdErr ? (__cdErr.code || null) : null,
 	            errorMessage: __cdErr ? String(__cdErr.message || __cdErr).slice(0, 160) : null,
 	            value: state.countdownStartAt || 0, localNow: Date.now() }, (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+	          if (__cdErr) {
+	            // Do not let an optimistic NEXT GAME transition replace the last confirmed
+	            // canonical MATCH ledger when its room write did not apply.
+	            state.penalty = __previousCanonicalTransition.penalty;
+	            state.gameRound = __previousCanonicalTransition.gameRound;
+	            state.status = __previousCanonicalTransition.status;
+	            throw new Error('beginNewGameRound rooms.update failed: ' + (__cdErr.message || __cdErr));
+	          }
+	          state.penalty = __nextPenalty;
 	        } else {
+	          state.penalty = __nextPenalty;
 	          saveState();
 	        }
 	      } finally {
@@ -7553,21 +7593,75 @@
 	    function normalizeMatchRule(v) { return (typeof v === "string" && Object.prototype.hasOwnProperty.call(MATCH_RULES, v)) ? v : "single"; }
 	    function matchWinsNeeded(rule) { return MATCH_RULES[normalizeMatchRule(rule)].winsNeeded; }
 	    function matchRuleBaseGames(rule) { return MATCH_RULES[normalizeMatchRule(rule)].baseGames; }
+	    function matchStatCount(value) {
+	      const n = Math.floor(Number(value));
+	      return Number.isFinite(n) && n > 0 ? n : 0;
+	    }
+	    // Build47 Codex recovery: the sole mutable cumulative MATCH result authority.
+	    // Legacy {w,l} values are accepted while reading, but every new write uses {wins,losses}.
+	    function sanitizeMatchStats(stats, legacyTally = null) {
+	      const out = {};
+	      if (stats && typeof stats === "object") {
+	        for (const id of Object.keys(stats)) {
+	          const v = stats[id] || {};
+	          out[id] = {
+	            wins: matchStatCount(v.wins !== undefined ? v.wins : v.w),
+	            losses: matchStatCount(v.losses !== undefined ? v.losses : v.l),
+	          };
+	        }
+	      }
+	      // Migration only: old rooms may have matchTally without matchStats. Once canonical stats
+	      // exist, legacyTally is ignored and can never override them.
+	      if (!Object.keys(out).length && legacyTally && typeof legacyTally === "object") {
+	        for (const id of Object.keys(legacyTally)) {
+	          out[id] = { wins: 0, losses: matchStatCount(legacyTally[id]) };
+	        }
+	      }
+	      return out;
+	    }
+	    function deriveMatchLossTally(stats) {
+	      const out = {};
+	      const clean = sanitizeMatchStats(stats);
+	      for (const id of Object.keys(clean)) if (clean[id].losses > 0) out[id] = clean[id].losses;
+	      return out;
+	    }
+	    // Compatibility helper retained for older isolated tests/callers. It derives canonical stats
+	    // and returns a loss-only projection; production commits never mutate this projection.
 	    function sanitizeMatchTally(t) {
 	      const out = {}; if (!t || typeof t !== "object") return out;
-	      for (const k of Object.keys(t)) { const n = Math.floor(Number(t[k])); if (Number.isFinite(n) && n > 0) out[k] = n; }
+	      for (const k of Object.keys(t)) { const n = matchStatCount(t[k]); if (n > 0) out[k] = n; }
 	      return out;
 	    }
 	    function applyMatchGameResult(tally, loserIds) {
-	      const next = { ...sanitizeMatchTally(tally) };
-	      for (const id of (loserIds || [])) { if (!id) continue; next[id] = (next[id] || 0) + 1; }
+	      const stats = sanitizeMatchStats(null, tally);
+	      for (const id of (loserIds || [])) {
+	        if (!id) continue;
+	        const base = stats[id] || { wins: 0, losses: 0 };
+	        stats[id] = { wins: base.wins, losses: base.losses + 1 };
+	      }
+	      return deriveMatchLossTally(stats);
+	    }
+	    function applyCompletedGameToMatchStats(stats, participantIds, loserIds, lockedIds = []) {
+	      const next = sanitizeMatchStats(stats);
+	      const losers = new Set((loserIds || []).filter(Boolean));
+	      const locked = new Set((lockedIds || []).filter(Boolean));
+	      for (const id of (participantIds || [])) {
+	        if (!id || locked.has(id)) continue;
+	        const base = next[id] || { wins: 0, losses: 0 };
+	        next[id] = {
+	          wins: base.wins + (losers.has(id) ? 0 : 1),
+	          losses: base.losses + (losers.has(id) ? 1 : 0),
+	        };
+	      }
 	      return next;
 	    }
-	    function computeMatchState({ rule, tally, targetLoserCount }) {
-	      const winsNeeded = matchWinsNeeded(rule); const clean = sanitizeMatchTally(tally);
-	      const finalTaggerIds = Object.keys(clean).filter(id => clean[id] >= winsNeeded).sort();
+	    function computeMatchState({ rule, stats = null, tally = null, targetLoserCount }) {
+	      const winsNeeded = matchWinsNeeded(rule);
+	      const canonicalStats = sanitizeMatchStats(stats, tally);
+	      const losses = deriveMatchLossTally(canonicalStats);
+	      const finalTaggerIds = Object.keys(losses).filter(id => losses[id] >= winsNeeded).sort();
 	      const target = Math.max(1, parseInt(targetLoserCount, 10) || 1);
-	      return { rule: normalizeMatchRule(rule), winsNeeded, tally: clean, finalTaggerIds, complete: finalTaggerIds.length >= target };
+	      return { rule: normalizeMatchRule(rule), winsNeeded, stats: canonicalStats, tally: losses, finalTaggerIds, complete: finalTaggerIds.length >= target };
 	    }
 	    // 정본 룰 모델(2026-08-31 확정): 단일 임계 즉시-확정 — 누적 패배 단판1/삼세판2/다섯판3 도달 즉시 술래확정+제외.
 	    // 종전 이중 임계(자격 1/2/3 · 잠금 1/3/5)는 폐지. qualified 는 locked 와 동일 임계로 퇴화(=항상 같은 집합),
@@ -7579,9 +7673,11 @@
 	    // 호스트 전용 매치 판정(순수): locked/qualified 는 append-only(도달 순서 보존, 동판 동률은 id 정렬 =
 	    // 결정적 tie-break §5). 종료 = distinct(locked ∪ qualified) ≥ target — 그 순간 final 은 정확히 target 명
 	    // (locked 우선 → qualified 순). 예외: active(=참가자−locked) < 2 면 확보된 확정자 전원으로 강제 종료(§15).
-	    function computeMatchDecision({ rule, tally, lockedIds = [], qualifiedIds = [], targetTaggerCount, participantsCount }) {
+	    function computeMatchDecision({ rule, stats = null, tally = null, lockedIds = [], qualifiedIds = [], targetTaggerCount, participantsCount }) {
 	      const r = normalizeMatchRule(rule);
-	      const clean = sanitizeMatchTally(tally);
+	      // Production passes stats. tally is read-only migration compatibility for old rooms/tests.
+	      const canonicalStats = sanitizeMatchStats(stats, tally);
+	      const clean = deriveMatchLossTally(canonicalStats);
 	      const qTh = matchQualificationThreshold(r), lTh = matchEarlyLockThreshold(r);
 	      const target = Math.max(1, parseInt(targetTaggerCount, 10) || 1);
 	      const locked = [...(lockedIds || [])];
@@ -7593,7 +7689,7 @@
 	      const insufficientPlayers = Number.isFinite(participantsCount) && (participantsCount - locked.length) < 2;
 	      const complete = finalPool.length >= target || (insufficientPlayers && finalPool.length > 0);
 	      const finalTaggerIds = complete ? finalPool.slice(0, Math.min(target, finalPool.length)) : [];
-	      return { rule: r, qualificationThreshold: qTh, earlyLockThreshold: lTh, lockedIds: locked, qualifiedIds: qualified, insufficientPlayers, complete, finalTaggerIds };
+	      return { rule: r, stats: canonicalStats, cumulativeLosses: clean, qualificationThreshold: qTh, earlyLockThreshold: lTh, lockedIds: locked, qualifiedIds: qualified, insufficientPlayers, complete, finalTaggerIds };
 	    }
 	    // ── Build43 게임룰(매치) 순수 함수 끝 ──────────────────────────────────────
 	    function getMatchRule() {
@@ -7609,7 +7705,8 @@
 	      if (no < (state.matchNoSeen || 0)) {
 	        return { stale: true, matchNo: no, rule: getMatchRule(), tally: {}, stats: {}, lockedIds: [], qualifiedIds: [], finalTaggerIds: [], talliedGameNo: 0, statsGameNo: 0 };
 	      }
-	      return { stale: false, matchNo: no, rule: getMatchRule(), tally: p.matchTally, stats: p.matchStats,
+	      const stats = sanitizeMatchStats(p.matchStats, p.matchTally);
+	      return { stale: false, matchNo: no, rule: getMatchRule(), stats, tally: deriveMatchLossTally(stats),
 	        lockedIds: p.matchLockedIds || [], qualifiedIds: p.matchQualifiedIds || [], finalTaggerIds: p.matchFinalTaggerIds || [],
 	        talliedGameNo: p.matchTalliedGameNo, statsGameNo: p.matchStatsGameNo };
 	    }
@@ -7625,10 +7722,11 @@
 	    // 이번 판이 이미 누계에 반영됐으면(matchStatsGameNo == 현재 판) 행 값을 다시 더하지 않는다(이중 집계 방지).
 	    function getMatchCumulativeStats(player) {
 	      const p = parsePenalty(state.penalty);
-	      const base = (player && p.matchStats && p.matchStats[player.id]) || { w: 0, d: 0, l: 0 };
+	      const stats = sanitizeMatchStats(p.matchStats, p.matchTally);
+	      const base = (player && stats[player.id]) || { wins: 0, losses: 0 };
 	      // 판-최종 집계(2026-09-01): 판 완료 시에만 갱신 — 진행 중 손내기 live 카운터는 합산하지 않는다.
 	      const n = v => { const x = Number(v || 0); return Number.isFinite(x) && x > 0 ? x : 0; };
-	      return { safeCount: n(base.w), drawCount: 0, loserCount: n(base.l) };
+	      return { safeCount: n(base.wins), drawCount: 0, loserCount: n(base.losses) };
 	    }
 	    // 호스트 전용: FINAL(그 판의 술래 확정) 발행에만 매치 원장을 갱신한다. matchTalliedGameNo(판 원장)로
 	    // 멱등 — publishHostRoundResult 재시도·중복 발행이 와도 같은 판을 두 번 세지 않는다. 판정 로직 무변경.
@@ -7639,21 +7737,19 @@
 	        if (!continuation || continuation.mode !== "FINAL") return null;
 	        const m = getMatchEnvelope();
 	        const gameNo = toPositiveInt(continuation.gameNo, 0);
-	        if (!gameNo || m.talliedGameNo === gameNo) return null;
+	        // Monotonic identity guard: duplicate FINAL(N) and a delayed older FINAL(N-1)
+	        // are both no-ops, while the legitimate next GAME(N+1) remains eligible.
+	        if (!gameNo || gameNo <= m.talliedGameNo) return null;
 	        const lockedPrev = m.lockedIds || [];
 	        const newlyConfirmed = (continuation.confirmedLoserIds || []).filter(id => id && !lockedPrev.includes(id));
-	        const matchTally = applyMatchGameResult(m.tally, newlyConfirmed);
-	        // Vincent 판정 렌더 지시(2026-09-01): 손내기 카운터가 아니라 "판의 최종 결과"만 누적한다.
-	        // 이 판의 확정 패자(newlyConfirmed)=패+1, 그 외 active(=lockedPrev 제외)=승+1. 예: 3인·술래1 → 패1·승2.
-	        // locked 참가자는 동결(시드 마커는 어느 쪽도 늘리지 않음). d 는 envelope wire 형태 호환용 0 고정.
-	        const matchStats = {};
-	        for (const p of (state.participants || [])) {
-	          const base = (m.stats && m.stats[p.id]) || { w: 0, d: 0, l: 0 };
-	          if (lockedPrev.includes(p.id)) { matchStats[p.id] = { w: Number(base.w || 0), d: 0, l: Number(base.l || 0) }; continue; }
-	          const lost = newlyConfirmed.includes(p.id);
-	          matchStats[p.id] = { w: Number(base.w || 0) + (lost ? 0 : 1), d: 0, l: Number(base.l || 0) + (lost ? 1 : 0) };
-	        }
-	        const d = computeMatchDecision({ rule: m.rule, tally: matchTally, lockedIds: lockedPrev, qualifiedIds: m.qualifiedIds,
+	        // Canonical commit: only matchStats mutates. matchTally below is a derived wire-compatibility projection.
+	        // Waiting joiners did not play this GAME and are excluded; prior locked players stay frozen.
+	        const eligibleIds = (state.participants || [])
+	          .filter(p => p && p.choice !== "__waiting__")
+	          .map(p => p.id);
+	        const matchStats = applyCompletedGameToMatchStats(m.stats, eligibleIds, newlyConfirmed, lockedPrev);
+	        const matchTally = deriveMatchLossTally(matchStats);
+	        const d = computeMatchDecision({ rule: m.rule, stats: matchStats, lockedIds: lockedPrev, qualifiedIds: m.qualifiedIds,
 	          targetTaggerCount: getConfiguredTaggerCount(), participantsCount: (state.participants || []).length });
 	        try { QA.emit('metric', Object.assign({ wrps: 'WRPS-B43', eventType: 'MATCH_DECISION', matchNo: m.matchNo, gameNo,
 	          newlyConfirmed: newlyConfirmed.slice(), lockedIds: d.lockedIds.slice(), qualifiedIds: d.qualifiedIds.slice(),
@@ -7751,6 +7847,13 @@
 	        renderAll();
 	        await updateRoomStatusScheduled("result", "result",
 	          (typeof hostDecideContinuation === "function" ? hostDecideContinuation : () => null)(active.map(p => ({ id: p.id, result: result[p.id] })), safeIds, loserIds));
+	      } catch (e) {
+	        // Build47 critic: updateRoomStatusScheduled 는 이제 CAS 미적용 시 throw 한다(설계 의도 —
+	        // 더 새로운 phase/GAME 을 절대 덮어쓰지 않음). 진 쪽 host 는 여기서 조용히 물러난다.
+	        // 원장 관점의 실패는 FINAL_WRITE_NOT_APPLIED 로 이미 계측됐다 — unhandled rejection 방지만 한다.
+	        try { QA.emit('metric', Object.assign({ wrps: 'WRPS-P01', eventType: 'HOST_PUBLISH_ABORTED',
+	          error: String(e && e.message || e).slice(0, 160), localNow: Date.now() },
+	          (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (_) {}
 	      } finally {
 	        state.publishingRoundResult = false;
 	      }
@@ -8043,10 +8146,6 @@
     async function updateRoomStatusScheduled(status, phaseKind, continuation = null) {
       if (!db) return;
       if (isRoomClosingOrDestroyed()) return; // WRPS-083 2B(Tier 2, defense-in-depth)
-      // Build40 P0-1: result 전이 write 에 host 의 권위 continuation 을 함께 싣는다.
-      const matchUpdate = (typeof hostComposeMatchUpdate === "function") ? hostComposeMatchUpdate(continuation) : null;
-      const penalty = buildPenaltyValue({ gameRound: getGameRound(), phaseScheduledAt: getNextPhaseScheduledAt(), phaseKind, continuation, ...(matchUpdate || {}) });
-      state.penalty = penalty;
       if (continuation) {
         try { QA.emit('metric', Object.assign({ wrps: 'WRPS-P01', eventType: 'CONTINUATION_WRITE_BEGIN',
           mode: continuation.mode, contGameNo: continuation.gameNo, contRound: continuation.round,
@@ -8054,14 +8153,86 @@
           (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
       }
       const __t0 = Date.now();
-      const { error } = await db.from('rooms').update({ status, penalty }).eq('id', state.roomCode);
+      // Build47 Codex recovery: FINAL is a compare-and-swap against the exact room snapshot
+      // used to compose it. A late timing/playing writer can win first, but then this update
+      // affects zero rows, reloads that newer snapshot, and recomposes once. A newer phase or
+      // GAME is never overwritten. Network ambiguity is resolved by reading back the row.
+      const __expectedStatus = state.status;
+      const __samePenalty = (a, b) => {
+        if (a === b) return true;
+        try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return false; }
+      };
+      let error = null;
+      let __applied = 0;
+      let __retried = false;
+      let __committedPenalty = null;
+      for (let __attempt = 0; __attempt < 2 && !__applied; __attempt++) {
+        const __basePenalty = state.penalty;
+        // Build40 P0-1: result 전이 write 에 host 의 권위 continuation 을 함께 싣는다.
+        const __matchUpdate = (typeof hostComposeMatchUpdate === "function") ? hostComposeMatchUpdate(continuation) : null;
+        const __penalty = buildPenaltyValue({ gameRound: getGameRound(), phaseScheduledAt: getNextPhaseScheduledAt(), phaseKind, continuation, ...(__matchUpdate || {}) });
+        const __verifyRow = row => {
+          if (!row || row.status !== status || row.penalty === undefined) return false;
+          if (!__matchUpdate) return __samePenalty(row.penalty, __penalty);
+          const got = parsePenalty(row.penalty);
+          const want = parsePenalty(__penalty);
+          return got.matchTalliedGameNo === want.matchTalliedGameNo &&
+            JSON.stringify(sanitizeMatchStats(got.matchStats, got.matchTally)) === JSON.stringify(sanitizeMatchStats(want.matchStats, want.matchTally));
+        };
+        const __write = await db.from('rooms').update({ status, penalty: __penalty })
+          .eq('id', state.roomCode).eq('status', __expectedStatus).eq('penalty', __basePenalty)
+          .select('id,status,penalty');
+        error = __write.error;
+        const __row = Array.isArray(__write.data) ? __write.data[0] : null;
+        if (!error && __verifyRow(__row)) {
+          __applied = 1;
+          __committedPenalty = __row.penalty;
+          break;
+        }
+
+        const __read = await db.from('rooms').select('id,status,penalty').eq('id', state.roomCode).limit(1);
+        const __current = Array.isArray(__read.data) ? __read.data[0] : null;
+        if (!__read.error && __verifyRow(__current)) {
+          // The first request may have committed even if its response was lost.
+          error = null;
+          __applied = 1;
+          __committedPenalty = __current.penalty;
+          break;
+        }
+        if (__attempt === 0 && !__read.error && __current && __current.status === __expectedStatus) {
+          __retried = true;
+          // Rebase only on the authoritative row while it is still the same phase. This preserves
+          // any timing fields from the writer that won the race and recomputes canonical stats.
+          state.penalty = __current.penalty;
+          try { QA.emit('metric', Object.assign({ wrps: 'WRPS-P01', eventType: 'FINAL_WRITE_RETRY',
+            statusArg: status, phaseKind, mode: continuation ? continuation.mode : null,
+            firstErrorCode: error ? (error.code || null) : null, firstApplied: 0, localNow: Date.now() },
+            (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+          continue;
+        }
+        error = error || __read.error || new Error('canonical room compare-and-swap conflict');
+        break;
+      }
+      if (error || __applied === 0) {
+        try { QA.emit('metric', Object.assign({ wrps: 'WRPS-P01', eventType: 'FINAL_WRITE_NOT_APPLIED',
+          statusArg: status, phaseKind, mode: continuation ? continuation.mode : null,
+          errorCode: error ? (error.code || null) : null, applied: __applied, localNow: Date.now() },
+          (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
+      }
       if (continuation) {
         try { QA.emit('metric', Object.assign({ wrps: 'WRPS-P01', eventType: 'CONTINUATION_WRITE_END',
           mode: continuation.mode, contGameNo: continuation.gameNo, contRound: continuation.round,
-          success: !error, durationMs: Date.now() - __t0,
+          success: !error && __applied > 0, durationMs: Date.now() - __t0,
+          rowsApplied: __applied, retried: __retried,
           errorCode: error ? (error.code || null) : null, localNow: Date.now() },
           (typeof qaRoundCtx === "function" ? qaRoundCtx() : {}))); } catch (e) {}
       }
+      if (error || __applied === 0) {
+        throw new Error('room status/canonical match write not applied' + (error ? ': ' + (error.message || error) : ''));
+      }
+      // Local authority advances only after the server returns the exact canonical stats/tallied GAME.
+      state.penalty = __committedPenalty;
+      return true;
     }
 
     async function updateParticipantChoice(choice) {
@@ -8440,7 +8611,7 @@
     function isMatchRuleEditable() {
       // 게임 룰은 매치(여러 판) 전체를 정의한다 — 1판째 시작 전(gameRound<=1)이고 아직 집계된 판이
       // 없을 때만 편집 가능. 판이 하나라도 끝나면 매치가 끝날 때까지 잠긴다.
-      return isLoserCountEditable() && getGameRound() <= 1 && Object.keys(parsePenalty(state.penalty).matchTally || {}).length === 0;
+      return isLoserCountEditable() && getGameRound() <= 1 && Object.keys(parsePenalty(state.penalty).matchStats || {}).length === 0;
     }
     async function onMatchRuleChange(val) {
       if (!isMatchRuleEditable()) {
@@ -9540,16 +9711,29 @@
         en: { readySleepMs: 1050, rpsSleepMs: 1800 },
       };
       const timing = COUNTDOWN_TIMING[currentLocale] || COUNTDOWN_TIMING.en;
+      // Build47 필드QA 정정(항목 2): GAME 순번 안내 클립의 재생 시간(측정 기반) — 1단계 sleep 을
+      // 클립 길이에 맞춘다. first = G1("첫 번째 판 시작합니다. 준비하세요."), next = G2+("N 번째 판 갑니다.").
+      const GAME_NO_ANNOUNCE_SLEEP = {
+        // ffprobe 실측(2026-09-02): ko G1 2.81s / ko G2+ ≤1.43s / ja G1 2.99s / ja G2+ ≤1.45s /
+        // en G1 1.41s / en G2+ ≤1.51s — 기존 ready(1.07s vs sleep 1250ms)와 같은 ~200-300ms 여유.
+        ko: { first: 3100, next: 1650 },
+        ja: { first: 3250, next: 1700 },
+        en: { first: 1700, next: 1750 },
+      };
+      const __announceTiming = GAME_NO_ANNOUNCE_SLEEP[currentLocale] || GAME_NO_ANNOUNCE_SLEEP.en;
+      // 비단판 매치의 판 시작(round 1)이면 GAME 순번 안내가 "준비하세요!"를 대체한다(멱등 — 헬퍼가
+      // once-원장 관리). null 이면 기존 "ready" 경로 그대로.
+      const __gameAnnounce = (typeof consumeGameStartAnnouncement === "function") ? consumeGameStartAnnouncement() : null;
 
-      // 1단계: 준비 ("준비하세요!" / "準備してね！" / "Get ready!")
+      // 1단계: 준비 ("준비하세요!" / "準備してね！" / "Get ready!") 또는 GAME 순번 안내
       numEl.className = "countdown-intro";
       numEl.style.fontSize = "";
       numEl.textContent = t("countdown.intro");
       labelEl.textContent = roundLabel;
       void numEl.offsetWidth;
       numEl.className = "count-anim countdown-intro";
-      void playVoiceClip("ready");
-      await sleep(timing.readySleepMs);
+      void playVoiceClip(__gameAnnounce ? __gameAnnounce.key : "ready");
+      await sleep(__gameAnnounce ? (__gameAnnounce.ordinal <= 1 ? __announceTiming.first : __announceTiming.next) : timing.readySleepMs);
       // Build30-R2 Phase2(WRPS-078) checkpoint 3/5: readyVoice sleep 반환 직후. 이어지는 오디오
       // 재생 요청("countdownRps" voice) 직전에 세대를 재확인한다.
       if (!isCountdownGenerationCurrent(myGen, "readyVoiceSleep")) return false;
@@ -10096,6 +10280,60 @@
         else if (kind === "lose") SoundManager.playLose();
         else if (kind === "draw") SoundManager.playDraw();
       }, delayMs);
+    }
+
+    // ── Build47 필드QA 정정(항목 2): GAME 순번 음성 안내 ─────────────────────────────
+    // 계약: MATCH 에서 판이 시작될 때(내부 재대결 round>1 제외) 그 판의 순번을 음성으로
+    // 알린다 — G1 "첫 번째 판 시작합니다. 준비하세요."(기존 "준비하세요!"를 대체), G2 이후
+    // "N 번째 판 갑니다."(서수 상한 없음 — 10판 초과는 "다음 판 갑니다."). 이어서 기존
+    // "마루 가위바위보" 카운트다운이 이어진다. 안내는 (roomCode, matchNo, canonical gameRound) 당
+    // 1회(멱등) — realtime 에코/2.6s 폴링/재렌더/재접속이 재생을 반복시키지 못한다.
+    //
+    // 판 순번(매치 내): gameNo(방 전역 누적)가 아니라 **이 매치에서 완료된 판 수 + 1**이다.
+    // 완료된 판 수는 권위 원장(envelope.matchStats — 판-최종 집계, FINAL 에서만 갱신)에서
+    // 참가자별 (wins+losses) 합의 최댓값으로 파생한다: 매치 시작부터 있던 참가자(호스트 포함)의 합이
+    // 곧 완료 판 수이고, 중도 참여자의 합은 그보다 작을 수만 있으므로 max 가 안전하다.
+    // 내부 재대결은 판을 소비하지 않으므로(FINAL 전 round++) 순번이 오르지 않는다 — 계약 그대로.
+    function getMatchGameOrdinal() {
+      const p = parsePenalty(state.penalty);
+      const st = sanitizeMatchStats(p.matchStats, p.matchTally);
+      let mx = 0;
+      for (const k in st) {
+        const v = st[k] || {};
+        const c = (Number(v.wins) || 0) + (Number(v.losses) || 0);
+        if (Number.isFinite(c) && c > mx) mx = c;
+      }
+      return mx + 1;
+    }
+    function gameStartVoiceKey(ordinal) {
+      const n = Number(ordinal) || 1;
+      if (n <= 1) return "gameStart1";
+      if (n <= 10) return "gameStart" + n;
+      return "gameStartNext"; // 상한 없는 서수 안내의 자산 한계 폴백: "다음 판 갑니다."
+    }
+    // 카운트다운 1단계에서 호출 — 안내해야 하면 {key, ordinal}을 돌려주고 멱등 원장에 기록,
+    // 아니면 null(호출부는 기존 "ready" 안내 유지). localStorage 벨트: webview 재생성/재접속
+    // 후에도 같은 (방, 매치, 판)에 대한 재안내를 막는다.
+    function consumeGameStartAnnouncement() {
+      if ((state.round || 1) !== 1) return null; // 내부 재대결: 순번 증가/재안내 없음
+      const p = parsePenalty(state.penalty);
+      const ordinal = getMatchGameOrdinal();
+      // gameRound가 실제 완료 GAME 전이에만 증가하는 canonical GAME identity다. ordinal은 안내 문구,
+      // gameRound는 echo/reconnect 멱등 키로 역할을 분리한다.
+      const gameIdentity = (typeof getGameRound === "function") ? getGameRound() : ordinal;
+      const onceKey = `${state.roomCode || "offline"}:m${p.matchNo || 1}:g${gameIdentity}`;
+      if (!state.gameNoVoiceKeys) state.gameNoVoiceKeys = {};
+      let persisted = false;
+      try { persisted = localStorage.getItem("rpsGameNoVoice:" + onceKey) === "1"; } catch (e) {}
+      if (state.gameNoVoiceKeys[onceKey] || persisted) {
+        try { QA.emit('audio', { wrps: 'WRPS-B47QA', eventType: 'GAME_NO_VOICE_SKIPPED_DUP', onceKey, gameNoOrdinal: ordinal }); } catch (e) {}
+        return null;
+      }
+      state.gameNoVoiceKeys[onceKey] = true;
+      try { localStorage.setItem("rpsGameNoVoice:" + onceKey, "1"); } catch (e) {}
+      const key = gameStartVoiceKey(ordinal);
+      try { QA.emit('audio', { wrps: 'WRPS-B47QA', eventType: 'GAME_NO_VOICE', onceKey, gameNoOrdinal: ordinal, audioKey: key }); } catch (e) {}
+      return { key, ordinal };
     }
 
     // Build21: "게임 끝!" 안내는 라운드 단위가 아니라 게임(회차) 단위로 1회만 — endGame()(호스트 직접 진입)과
@@ -11740,7 +11978,10 @@ function summarizeGameStats(rows) {
           } else if (__nonSingleMatch) {
             // Build47 D3(STATE A, 물리 QA IMG_0117 "술래 확정! (1/1명)" 오노출 봉인): 비단판 매치의
             // 판 패배는 어떤 평가 경로로도 확정 카피가 될 수 없다 — 룰 자체로 분기(§UI SOURCE OF TRUTH).
-            const __tally = ((typeof parsePenalty === "function") ? ((parsePenalty(state.penalty).matchTally || {})[state.currentUserId] || 0) : 0);
+            const __stats = (typeof sanitizeMatchStats === "function")
+              ? sanitizeMatchStats(parsePenalty(state.penalty).matchStats, parsePenalty(state.penalty).matchTally)
+              : {};
+            const __tally = (__stats[state.currentUserId] || {}).losses || 0;
             const __th = (typeof matchQualificationThreshold === "function" && typeof getMatchRule === "function") ? matchQualificationThreshold(getMatchRule()) : 0;
             title.textContent = t("result.titleGameLose");
             setCap(t("result.capLost"));
@@ -14226,7 +14467,19 @@ function summarizeGameStats(rows) {
       const CLIPS = {
         ko: {
           ready: "ko/ko_ready.mp3",                       // "준비하세요!"
-          countdownRps: "ko/ko_countdown_rps.mp3",        // "안 내면 술래! 가위바위보!"
+          // Build47 필드QA 정정(항목 2): GAME 순번 안내 — G1은 "준비" 대체, G2+는 "N 번째 판 갑니다."
+          gameStart1: "ko/ko_game_start_1.mp3",
+          gameStart2: "ko/ko_game_start_2.mp3",
+          gameStart3: "ko/ko_game_start_3.mp3",
+          gameStart4: "ko/ko_game_start_4.mp3",
+          gameStart5: "ko/ko_game_start_5.mp3",
+          gameStart6: "ko/ko_game_start_6.mp3",
+          gameStart7: "ko/ko_game_start_7.mp3",
+          gameStart8: "ko/ko_game_start_8.mp3",
+          gameStart9: "ko/ko_game_start_9.mp3",
+          gameStart10: "ko/ko_game_start_10.mp3",
+          gameStartNext: "ko/ko_game_start_next.mp3",
+          countdownRps: "ko/ko_maru_rps.mp3",             // "마루 가위바위보"
           retry: "ko/ko_retry.mp3",                       // "다시 한 번!"
           drawRetry: "ko/ko_draw_retry.mp3",               // "비겼습니다! 다시 합니다!"
           replayLosersOnly: "ko/ko_replay_losers_only.mp3", // "패자끼리 다시 합니다!"
@@ -14234,8 +14487,8 @@ function summarizeGameStats(rows) {
           taggerSelected: "ko/ko_tagger_selected.mp3",     // "술래가 정해졌습니다!"
           gameOver: "ko/ko_game_over.mp3",                 // "게임 끝!"
           // legacy alias(Build19-B/20까지 사용, 현재 코드 미호출 — 호환성 안전망)
-          intro: "ko/ko_countdown_rps.mp3",
-          go: "ko/ko_countdown_rps.mp3",
+          intro: "ko/ko_maru_rps.mp3",
+          go: "ko/ko_maru_rps.mp3",
           becameLoser: "ko/ko_tagger_selected.mp3",
           continue: "ko/ko_replay_winners_only.mp3",
           countScissors: "ko/ko_scissors.mp3",
@@ -14244,6 +14497,18 @@ function summarizeGameStats(rows) {
         },
         ja: {
           ready: "ja/ja_ready.mp3",                       // "準備してね！"
+          // Build47 필드QA 정정(항목 2): GAME 순번 안내 — G1은 "준비" 대체, G2+는 "N 번째 판 갑니다."
+          gameStart1: "ja/ja_game_start_1.mp3",
+          gameStart2: "ja/ja_game_start_2.mp3",
+          gameStart3: "ja/ja_game_start_3.mp3",
+          gameStart4: "ja/ja_game_start_4.mp3",
+          gameStart5: "ja/ja_game_start_5.mp3",
+          gameStart6: "ja/ja_game_start_6.mp3",
+          gameStart7: "ja/ja_game_start_7.mp3",
+          gameStart8: "ja/ja_game_start_8.mp3",
+          gameStart9: "ja/ja_game_start_9.mp3",
+          gameStart10: "ja/ja_game_start_10.mp3",
+          gameStartNext: "ja/ja_game_start_next.mp3",
           countdownRps: "ja/ja_countdown_rps.mp3",        // "最初はグー！じゃんけんぽん！"
           retry: "ja/ja_retry.mp3",                       // "もう一回！"
           drawRetry: "ja/ja_draw_retry.mp3",               // "あいこです！もう一回！"
@@ -14258,6 +14523,18 @@ function summarizeGameStats(rows) {
         },
         en: {
           ready: "en/en_ready.mp3",                       // "Get ready!"
+          // Build47 필드QA 정정(항목 2): GAME 순번 안내 — G1은 "준비" 대체, G2+는 "N 번째 판 갑니다."
+          gameStart1: "en/en_game_start_1.mp3",
+          gameStart2: "en/en_game_start_2.mp3",
+          gameStart3: "en/en_game_start_3.mp3",
+          gameStart4: "en/en_game_start_4.mp3",
+          gameStart5: "en/en_game_start_5.mp3",
+          gameStart6: "en/en_game_start_6.mp3",
+          gameStart7: "en/en_game_start_7.mp3",
+          gameStart8: "en/en_game_start_8.mp3",
+          gameStart9: "en/en_game_start_9.mp3",
+          gameStart10: "en/en_game_start_10.mp3",
+          gameStartNext: "en/en_game_start_next.mp3",
           countdownRps: "en/en_countdown_rps.mp3",        // "Rock, paper, scissors, shoot!"
           retry: "en/en_retry.mp3",                       // "One more time!"
           drawRetry: "en/en_draw_retry.mp3",               // "It's a draw! Try again!"

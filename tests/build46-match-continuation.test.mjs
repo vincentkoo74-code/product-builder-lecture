@@ -327,13 +327,13 @@ describe('FIELD RACE #3 — playing-phase penalty writer 의 조건부 쓰기', 
   });
 });
 
-// ═══ Vincent UI 지시(2026-09-01): 내기록 화면의 "계정삭제" 메뉴 삭제 ═══
-describe('내기록 — 계정삭제 메뉴 삭제', () => {
-  it('accountStatsPopup 에 계정삭제 버튼이 없다(닫기 버튼은 유지)', () => {
+// Build47 recovery: a22724d의 게임 레이스 수정에 섞인 계정삭제 UI 제거를 원상복구한다.
+describe('내기록 — 계정삭제 회귀 방지', () => {
+  it('accountStatsPopup 에 기존 계정삭제 버튼과 닫기 버튼이 모두 유지된다', () => {
     const s = html.indexOf('id="accountStatsPopup"');
     const seg = html.slice(s, html.indexOf('</div>\n    </div>', s) + 20);
-    expect(seg).not.toContain('deleteAccountWithConfirm');
-    expect(seg).not.toContain('account.deleteBtn');
+    expect(seg).toContain('deleteAccountWithConfirm');
+    expect(seg).toContain('account.deleteBtn');
     expect(seg).toContain('closeAccountStatsPopup');
   });
 });

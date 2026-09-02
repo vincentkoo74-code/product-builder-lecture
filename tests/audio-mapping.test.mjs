@@ -27,6 +27,8 @@ function extractClips() {
 const CLIPS = extractClips();
 
 const NEW_KEYS = ['ready', 'countdownRps', 'retry', 'drawRetry', 'replayLosersOnly', 'replayWinnersOnly', 'taggerSelected', 'gameOver'];
+// Build47 필드QA 정정(항목 2): GAME 순번 안내 11종 — ko/ja/en 공통. 파일 존재 루프가 실제 mp3 존재까지 검증한다.
+const GAME_NO_KEYS = [...Array.from({ length: 10 }, (_, i) => `gameStart${i + 1}`), 'gameStartNext'];
 const LEGACY_KEYS_COMMON = ['intro', 'go', 'becameLoser', 'continue'];
 const LEGACY_KEYS_KO_ONLY = ['countScissors', 'countRock', 'countPaper'];
 
@@ -37,13 +39,13 @@ describe('Build21 — CLIPS 구조 스냅샷(ko/ja/en)', () => {
 
   it('ko는 8개 신규 키 + 4개 공통 legacy + 3개 ko전용 legacy(총 15개)를 갖는다', () => {
     const keys = Object.keys(CLIPS.ko).sort();
-    expect(keys).toEqual([...NEW_KEYS, ...LEGACY_KEYS_COMMON, ...LEGACY_KEYS_KO_ONLY].sort());
+    expect(keys).toEqual([...NEW_KEYS, ...GAME_NO_KEYS, ...LEGACY_KEYS_COMMON, ...LEGACY_KEYS_KO_ONLY].sort());
   });
 
   it('ja/en은 8개 신규 키 + 4개 공통 legacy(총 12개, countScissors류 없음)를 갖는다', () => {
     for (const locale of ['ja', 'en']) {
       const keys = Object.keys(CLIPS[locale]).sort();
-      expect(keys).toEqual([...NEW_KEYS, ...LEGACY_KEYS_COMMON].sort());
+      expect(keys).toEqual([...NEW_KEYS, ...GAME_NO_KEYS, ...LEGACY_KEYS_COMMON].sort());
     }
   });
 
@@ -98,7 +100,8 @@ describe('Build21 — legacy key compatibility', () => {
 
 describe('Build21 — runCountdown() 2박자 통일 구조(정적 계약)', () => {
   it('ko/ja/en 공통 로직으로 ready → countdownRps 순서로 재생한다(로케일 분기 없음)', () => {
-    expect(html).toContain('void playVoiceClip("ready");');
+    // Build47 항목2: 1박자는 GAME 순번 안내(__gameAnnounce)가 있으면 그것으로 대체, 없으면 기존 ready.
+    expect(html).toContain('void playVoiceClip(__gameAnnounce ? __gameAnnounce.key : "ready");');
     expect(html).toContain('void playVoiceClip("countdownRps");');
     expect(html).toContain('const COUNTDOWN_TIMING = {');
     expect(html).toMatch(/ko: \{ readySleepMs: \d+, rpsSleepMs: \d+ \}/);

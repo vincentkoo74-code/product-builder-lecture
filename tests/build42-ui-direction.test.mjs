@@ -130,7 +130,8 @@ describe.skipIf(!hasChrome)('Build42 — geometry 계약 (상태 8 × 뷰포트 
       const o = r.order; expect(o.summaryBottom, `${tag(r)} 요약→카드`).toBeLessThanOrEqual(o.cardTop + 0.5); expect(o.cardBottom, `${tag(r)} 카드→미리보기`).toBeLessThanOrEqual(o.previewTop + 0.5);
       if (r.viewportH >= 732) expect(o.previewBottom, `${tag(r)} 미리보기→액션`).toBeLessThanOrEqual(o.actionsTop + 0.5); else expect(o.previewTop, `${tag(r)} 미리보기 시작이 액션 위`).toBeLessThan(o.actionsTop);
       expect(r.summary.clipped, `${tag(r)} 요약`).toBe(0); expect(r.roundResult.clipped, `${tag(r)} 카드`).toBe(0);
-      expect(r.preview.natH, `${tag(r)} 미리보기 상한`).toBeLessThanOrEqual(120); expect(r.preview.natH, `${tag(r)} 미리보기 하한`).toBeGreaterThanOrEqual(56);
+      expect(r.preview.natH, `${tag(r)} 미리보기 상한`).toBeLessThanOrEqual(160); // Build47 항목3: 상단 회수분으로 상한 120→160
+      expect(r.preview.natH, `${tag(r)} 미리보기 하한`).toBeGreaterThanOrEqual(56);
       expect(r.preview.imgH, `${tag(r)} 미리보기 손 이미지가 실제로 렌더된다(≥40px)`).toBeGreaterThanOrEqual(40);
       if (r.viewportH >= 732) { expect(r.preview.clipped, `${tag(r)} 미리보기 clip`).toBe(0); }
       // 승인된 최소 게이트(360×732) 미만(iPhone SE 667)은 §15 압축을 다 해도 미리보기 56px 중 ~7px 만 fold 안에 남는다(증거: docs §Build42).

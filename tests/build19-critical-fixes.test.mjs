@@ -105,7 +105,9 @@ describe('WRPS-SYNC-B19 — RESULT/NEXT_ROUND/GAME_OVER/COUNTDOWN scheduled-rend
   it('updateRoomStatusScheduled는 status와 예정시각을 원자적으로 함께 기록한다', () => {
     // 계약은 "status 와 penalty(예정시각)를 한 write 로 기록"이다. 인자 목록은 부수적이다 —
     // Build40 P0-1 이 continuation 인자를 더하면서 시그니처 전체 매칭이 깨졌다(마커 규약 D).
-    expect(html).toMatch(/async function updateRoomStatusScheduled\(status, phaseKind[\s\S]{0,1600}await db\.from\('rooms'\)\.update\(\{ status, penalty \}\)/);
+    // Build47 정정: CAS 재작성으로 write 는 update({ status, penalty: __penalty }) + .eq(status).eq(penalty)
+    // 조건이 됐다 — 계약(한 write 로 status+penalty 원자 기록)은 그대로, 매칭 문자열만 갱신.
+    expect(html).toMatch(/async function updateRoomStatusScheduled\(status, phaseKind[\s\S]{0,3200}await db\.from\('rooms'\)\.update\(\{ status, penalty: __penalty \}\)/);
   });
 
   it('publishHostRoundResult의 두 커밋 지점 모두 updateRoomStatusScheduled를 사용한다', () => {

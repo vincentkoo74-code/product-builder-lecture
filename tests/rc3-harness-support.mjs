@@ -421,7 +421,7 @@ function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, re
       return { message: '[rc3-harness] dbErrorInjectionFn threw: ' + String(e && e.message || e) };
     }
   }
-  async function opRoomsUpdate(patch) {
+  async function opRoomsUpdate(patch, filters = [], returnRows = false) {
     if (!isHost) {
       // 실제 앱도 host만 rooms.update를 호출한다 — 방어적으로 하니스 버그를 조기 발견.
       throw new Error('[rc3-harness] non-host device attempted rooms.update — harness bug');
@@ -429,11 +429,19 @@ function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, re
     // H-1: 실패 주입은 커밋/브로드캐스트 "이전"에 판정한다 — 실패한 write는 row를 바꾸지도,
     // 구독자에게 전파되지도 않는다(실제 DB 실패와 동일 의미).
     const roomsUpdateError = injectedError('rooms', 'update', patch, roomStore.id);
+    const ackDelay = ackDelayFn();
     if (roomsUpdateError) {
-      await delay(ackDelayFn());
+      await delay(ackDelay);
       return { error: roomsUpdateError };
     }
-    const ackDelay = ackDelayFn();
+    // Supabase filters are evaluated atomically with UPDATE. This matters for the production
+    // playing-phase stale-writer guard and FINAL compare-and-swap: zero matching rows is a
+    // successful no-op, and .select() must return an empty applied-row set.
+    const matches = filters.every(([col, value]) => roomStore.row[col] === value);
+    if (!matches) {
+      await delay(ackDelay);
+      return { data: returnRows ? [] : null, error: null };
+    }
     Object.assign(roomStore.row, patch);
     roomStore.version += 1;
     const snapshot = { ...roomStore.row };
@@ -453,7 +461,7 @@ function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, re
       });
     }
     await delay(ackDelay);
-    return { error: null };
+    return { data: returnRows ? [{ ...roomStore.row }] : null, error: null };
   }
   async function opRoomsSelectSingle() {
     await delay(ackDelayFn());
@@ -487,8 +495,34 @@ function createDb({ roomStore, deviceId, isHost, rng, clockRttFn, ackDelayFn, re
   function from(table) {
     if (table === 'rooms') {
       return {
-        update: (patch) => ({ eq: () => opRoomsUpdate(patch) }),
-        select: () => ({ eq: () => ({ single: () => opRoomsSelectSingle() }) }),
+        update: (patch) => {
+          const filters = [];
+          let execution = null;
+          const run = (returnRows) => execution || (execution = opRoomsUpdate(patch, filters, returnRows));
+          const query = {
+            eq: (col, value) => { filters.push([col, value]); return query; },
+            select: () => run(true),
+            then: (resolve, reject) => run(false).then(resolve, reject),
+            // thenable 완성(critic): 구 호출부는 .eq() 종단 반환값에 .catch()를 건다(fireAndAdvanceUntil).
+            catch: (fn) => run(false).catch(fn),
+            finally: (fn) => run(false).finally(fn),
+          };
+          return query;
+        },
+        select: () => {
+          const filters = [];
+          const matches = () => filters.every(([col, value]) => roomStore.row[col] === value);
+          const query = {
+            eq: (col, value) => { filters.push([col, value]); return query; },
+            single: async () => matches() ? opRoomsSelectSingle() : { data: null, error: null },
+            limit: async () => {
+              if (!matches()) { await delay(ackDelayFn()); return { data: [], error: null }; }
+              const result = await opRoomsSelectSingle();
+              return { data: result.data ? [result.data] : [], error: result.error };
+            },
+          };
+          return query;
+        },
       };
     }
     if (table === 'participants') {

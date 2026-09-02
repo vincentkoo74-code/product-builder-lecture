@@ -19,7 +19,7 @@ function fns() {
   const e = html.indexOf('// ── Build43 게임룰(매치) 순수 함수 끝');
   expect(s, '순수 함수 블록').toBeGreaterThan(-1); expect(e).toBeGreaterThan(s);
   return new Function(html.slice(s, e) +
-    '\nreturn { normalizeMatchRule, matchQualificationThreshold, matchEarlyLockThreshold, applyMatchGameResult, computeMatchDecision };')();
+    '\nreturn { normalizeMatchRule, matchQualificationThreshold, matchEarlyLockThreshold, applyMatchGameResult, applyCompletedGameToMatchStats, deriveMatchLossTally, computeMatchDecision };')();
 }
 // 판 시뮬레이터: 확정(locked)된 참가자는 이후 판에서 절대 다시 술래가 되지 않는다(열외 계약).
 function playGames({ rule, target, participants, games }) {
@@ -108,9 +108,10 @@ describe('B43 필드 결함(호스트 QR 미생성·게임룰 고정) — parseP
       expect(r.matchNo, `${String(raw)} matchNo`).toBe(1);
     }
   });
-  it('isMatchRuleEditable 은 matchTally 부재에도 던지지 않는다(방어 가드)', () => {
+  it('isMatchRuleEditable 은 canonical matchStats만 편집 잠금 근거로 쓴다', () => {
     const s = html.indexOf('function isMatchRuleEditable()'); const body = html.slice(s, s + 500);
-    expect(body).toContain('.matchTally || {}');
+    expect(body).toContain('.matchStats || {}');
+    expect(body).not.toContain('.matchTally || {}');
   });
 });
 
@@ -186,9 +187,9 @@ describe('판-최종 승/패 집계 (Vincent 2026-09-01)', () => {
     const src = html.slice(s0, s1);
     const state = { participants };
     const toPositiveInt = (v, f = 0) => { const n = parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : f; };
-    const factory = new Function('state', 'getMatchEnvelope', 'getConfiguredTaggerCount', 'QA', 'qaRoundCtx', 'toPositiveInt', 'applyMatchGameResult', 'computeMatchDecision',
+    const factory = new Function('state', 'getMatchEnvelope', 'getConfiguredTaggerCount', 'QA', 'qaRoundCtx', 'toPositiveInt', 'applyCompletedGameToMatchStats', 'deriveMatchLossTally', 'computeMatchDecision',
       src + '\nreturn hostComposeMatchUpdate;');
-    return factory(state, () => envelope, () => target, { emit() {} }, undefined, toPositiveInt, M.applyMatchGameResult, M.computeMatchDecision);
+    return factory(state, () => envelope, () => target, { emit() {} }, undefined, toPositiveInt, M.applyCompletedGameToMatchStats, M.deriveMatchLossTally, M.computeMatchDecision);
   }
   const P = (id) => ({ id, name: id, wins: 5, draws: 2, losses: 3 }); // 손내기 카운터는 무시되어야 한다(정크 주입)
   const baseEnv = (over) => Object.assign({ stale: false, matchNo: 1, rule: 'best3', tally: {}, stats: {}, lockedIds: [], qualifiedIds: [], finalTaggerIds: [], talliedGameNo: 0, statsGameNo: 0 }, over);
@@ -196,26 +197,25 @@ describe('판-최종 승/패 집계 (Vincent 2026-09-01)', () => {
   it('판1 확정 [a] → a=패1, h/b=승1 (손내기 wins/draws/losses 는 무시, d=0)', () => {
     const f = loadHostCompose({ envelope: baseEnv(), participants: [P('h'), P('a'), P('b')], target: 1 });
     const u = f({ mode: 'FINAL', gameNo: 1, confirmedLoserIds: ['a'] });
-    expect(u.matchStats.a).toMatchObject({ w: 0, l: 1 });
-    expect(u.matchStats.h).toMatchObject({ w: 1, l: 0 });
-    expect(u.matchStats.b).toMatchObject({ w: 1, l: 0 });
-    expect(Number(u.matchStats.a.d || 0)).toBe(0);
+    expect(u.matchStats.a).toEqual({ wins: 0, losses: 1 });
+    expect(u.matchStats.h).toEqual({ wins: 1, losses: 0 });
+    expect(u.matchStats.b).toEqual({ wins: 1, losses: 0 });
   });
   it('판2 확정 [h] → 누적: h=1승1패, a=1승1패, b=2승', () => {
     const prev = { a: { w: 0, d: 0, l: 1 }, h: { w: 1, d: 0, l: 0 }, b: { w: 1, d: 0, l: 0 } };
     const f = loadHostCompose({ envelope: baseEnv({ tally: { a: 1 }, stats: prev, talliedGameNo: 1 }), participants: [P('h'), P('a'), P('b')], target: 1 });
     const u = f({ mode: 'FINAL', gameNo: 2, confirmedLoserIds: ['h'] });
-    expect(u.matchStats.h).toMatchObject({ w: 1, l: 1 });
-    expect(u.matchStats.a).toMatchObject({ w: 1, l: 1 });
-    expect(u.matchStats.b).toMatchObject({ w: 2, l: 0 });
+    expect(u.matchStats.h).toEqual({ wins: 1, losses: 1 });
+    expect(u.matchStats.a).toEqual({ wins: 1, losses: 1 });
+    expect(u.matchStats.b).toEqual({ wins: 2, losses: 0 });
   });
   it('확정(locked) 참가자의 전적은 동결 — 시드된 패자 마커는 승/패 어느 쪽도 늘리지 않는다', () => {
     const prev = { a: { w: 0, d: 0, l: 2 }, h: { w: 1, d: 0, l: 1 }, b: { w: 2, d: 0, l: 0 } };
     const f = loadHostCompose({ envelope: baseEnv({ tally: { a: 2, h: 1 }, stats: prev, lockedIds: ['a'], qualifiedIds: ['a'], talliedGameNo: 2 }), participants: [P('h'), P('a'), P('b')], target: 2 });
     const u = f({ mode: 'FINAL', gameNo: 3, confirmedLoserIds: ['a', 'h'] }); // a 는 시드 마커
-    expect(u.matchStats.a).toMatchObject({ w: 0, l: 2 }); // 동결
-    expect(u.matchStats.h).toMatchObject({ w: 1, l: 2 });
-    expect(u.matchStats.b).toMatchObject({ w: 3, l: 0 });
+    expect(u.matchStats.a).toEqual({ wins: 0, losses: 2 }); // 동결
+    expect(u.matchStats.h).toEqual({ wins: 1, losses: 2 });
+    expect(u.matchStats.b).toEqual({ wins: 3, losses: 0 });
   });
   it('[소스] 집계는 손내기 카운터 합산(p.wins/p.draws/p.losses)을 쓰지 않는다', () => {
     const s0 = html.indexOf('function hostComposeMatchUpdate');
