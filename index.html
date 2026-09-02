@@ -14782,10 +14782,17 @@ function summarizeGameStats(rows) {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (error) throw error;
+        // ── 여기서부터는 서버 삭제가 확정된 뒤다. 그 전에는 아무것도 지우지 않는다.
+        //    (삭제가 실패했는데 로컬만 지우면 사용자는 지워졌다고 오인하고
+        //     기기의 재입장 기록만 잃는다.)
         await db.auth.signOut();
         localStorage.removeItem("rpsAuthState");
         localStorage.removeItem("rpsNickname");
         localStorage.removeItem("rpsAccountStatsCache");
+        // JP-BL-022A §8: authed 스코프의 최근 방 기록에는 {방코드, 닉네임, participantId}
+        // 가 들어 있어 이 기기와 잔존 participants 행을 잇는다. HIKARI 결정에 따라 지운다.
+        // guest 스코프/무스코프 기록은 삭제된 계정의 것이 아니므로 건드리지 않는다.
+        localStorage.removeItem("rpsRecentRoomCodes:authed");
         closeAccountStatsPopup();
         updateAuthTopbar();
         showToast(t("account.deleteDone"));
