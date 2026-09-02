@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "comment": [
+    "법무 문서 라우팅 레지스트리. CRIS 는 구조만 관리하고 문안은 HIKARI 가 소유한다.",
+    "status=APPROVED 인 문서만 그 로케일의 정식 법무 문서로 제시할 수 있다.",
+    "다른 로케일 문서로의 fallback 은 금지다 — JP 사용자가 한국어 문서를 받으면 안 된다."
+  ],
+  "documents": {
+    "privacy": {
+      "ko": { "path": "privacy.html",            "language": "ko", "status": "APPROVED" },
+      "ja": { "path": "legal/privacy.ja.html",   "language": "ja", "status": "PENDING_HIKARI" }
+    },
+    "terms": {
+      "ko": { "path": "terms.html",              "language": "ko", "status": "APPROVED" },
+      "ja": { "path": "legal/terms.ja.html",     "language": "ja", "status": "PENDING_HIKARI" }
+    }
+  },
+  "fallback_policy": "NONE — 로케일 문서가 없거나 미승인이면 다른 로케일로 대체하지 않는다"
+}

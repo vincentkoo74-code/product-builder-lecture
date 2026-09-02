@@ -183,9 +183,16 @@ describe('Build35 — KR V1 인증 정책 유지', () => {
   });
 
   it('Settings에서도 법적 고지에 도달할 수 있다 (C-1)', () => {
+    // JP-02: 법무 문서는 **로케일 라우팅**으로 연결된다(href 하드코딩 제거).
+    // 이유: 하드코딩이 남으면 JP 사용자가 한국어 문서로 갈 수 있다(JP_RELEASE_BLOCKER).
+    // C-1 의 의도(설정에서 법적 고지에 도달 가능)는 그대로이며, 아래로 더 강하게 잠근다.
     const set = sectionOf('screenSettings');
-    expect(set).toContain('href="privacy.html"');
-    expect(set).toContain('href="terms.html"');
+    expect(set).toContain('id="legalPrivacyLinkSettings"');
+    expect(set).toContain('id="legalTermsLinkSettings"');
+    // 라우팅이 ko 에서 기존 문서를 그대로 준다 — KR 동작 무변경.
+    const docs = html.slice(html.indexOf('const LEGAL_DOCUMENTS = Object.freeze({'));
+    expect(docs.slice(0, docs.indexOf('\n    });'))).toContain("ko: Object.freeze({ path: 'privacy.html'");
+    expect(html).toContain('applyLegalDocumentRouting(loc)');
   });
 });
 

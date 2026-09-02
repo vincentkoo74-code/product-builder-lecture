@@ -7,6 +7,9 @@
 
 | ID | 상태 | 심각도 | 항목 | 출시 차단 |
 |---|---|---|---|---|
+| JP-BL-020 | DONE | **Blocker** | JP 빌드가 한국어 개인정보 처리방침을 노출 → 로케일 라우팅 + ja 슬롯 도입, 마크업 하드코딩 제거(한국어 유출 경로 0) | — |
+| JP-BL-021 | OPEN | **High** | 일본어 개인정보 처리방침·이용약관 **문안 미확정** — ja 슬롯은 PENDING_HIKARI 상태 고지만 담고 있다 | **예** |
+| JP-BL-022 | OPEN | Medium | 계정 삭제 시 participants 행(닉네임 포함)이 잔존한다 — 일본 법령상 허용 여부 미확정 | 미정 |
 | JP-BL-013 | DONE | **Blocker** | JP 백엔드 확보 → **기존 Tokyo 복원(Option A′), ACTIVE_HEALTHY** | — |
 | JP-BL-001 | OPEN | High | region-guard 메커니즘을 KR 브랜치로 백포트 | 아니오 (KR 측 위험) |
 | JP-BL-002 | DONE | High | JP 빌드에서 Kakao 인증 표면 제거 — 시장 계층 경계. KR 공개 키가 source/dist 에서 사라짐(JPX-001 범위 축소) | — |
@@ -524,6 +527,38 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-09-02 (5차) — SPRINT JP-02: JP 출시 기반 / LINE 이전 하드닝
+
+LINE/LIFF SDK 미도입 · LINE Login 비활성 유지 · 네이티브 산출물 미재생성.
+
+**A 브랜치 백업** — JP 브랜치 30 커밋을 origin 에 push. 로컬 전용 이력 소실 위험 해소.
+push 전 30 커밋 diff(688KB)를 시크릿 패턴으로 스캔해 검출 0 확인.
+
+**C 운영자/IP 소유 분리** — `WOORIMARU_IP_OWNER`(불변)와 `JP_OPERATOR_CONFIG`(교체 가능)를
+서로 참조하지 않는 독립 구조로 도입. 운영자 개인 신원은 하드코딩하지 않고 **null 로 미확정을 명시**한다.
+플랫폼/법령 요구 슬롯(line.channelId, legal.businessName 등)은 자리만 만들고 값은 비워 둔다.
+
+**B 법무 문서 라우팅** — JP 빌드가 한국어 개인정보 처리방침을 링크하던 문제(JP-BL-020)를 닫았다.
+로케일별 문서만 제시하고 **다른 로케일로 fallback 하지 않는다**. 마크업의 하드코딩 href 4곳을
+제거해 JS 가 죽어도 한국어 문서로 새지 않는다. ja 슬롯은 상태 고지만 담고 **법적 문언은 없다** —
+문안은 HIKARI 소유(JP-BL-021). 레지스트리는 `config/legal-documents.json`.
+
+**D KR 출시 상태 게이트** — `KR_RPS_LAUNCH_STATUS` / `KR_MARUSNAP_LAUNCH_STATUS` 도입.
+현재 둘 다 `IN_DEVELOPMENT`. `mayClaimLaunchedInKorea()` 가 `PUBLIC_LAUNCHED` 에서만 true 다.
+현재 빌드의 사용자 대면 문구에 「韓国で提供中」류 표기 0건 확인.
+
+**E LIFF 어댑터 경계 설계** — 문서만(`docs/JP_LIFF_ADAPTER_BOUNDARY_2026-09-02.md`).
+교체 지점이 어댑터 3개(진입·신원·공유)로 좁혀지며 그 아래 계층은 무변경임을 실측으로 확인.
+정책 질문 6건을 POLICY_QUESTION_FOR_HIKARI 로 분리.
+
+**F 계정 삭제 E2E** — 비파괴 검증. Tokyo edge function 이 3중으로 인증을 강제한다
+(게이트웨이 2 + 함수 자체 `getUser`). 로컬 스키마 검증: auth.users 삭제 시
+stats/history 는 CASCADE 삭제되나 **participants 행은 닉네임과 함께 잔존한다**(JP-BL-022).
+
+**KR 영향** — 없음. ko 라우팅이 기존 문서를 그대로 준다.
+`build35-layout-contract` 의 C-1 어설션은 마크업 하드코딩을 검사하던 것이라 라우팅 구조에 맞게
+갱신했다(의도 유지, 검증은 강화). KR 런타임 동작은 바이트 단위로 동일하다.
 
 ### 2026-09-02 (4차) — CEO 최종 판정 / JP 엔지니어링 현황
 

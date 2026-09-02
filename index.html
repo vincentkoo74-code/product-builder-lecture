@@ -2581,9 +2581,9 @@
            상대 경로를 쓴다: 웹(vercel rewrite 예외 경로)과 네이티브(Capacitor 번들 내 동일 파일)
            양쪽에서 동일하게 열리고, 각 문서의 "앱으로 돌아가기"가 다시 앱으로 복귀시킨다. -->
       <p class="auth-legal-links" style="text-align:center;font-size:12px;margin:10px 0 0">
-        <a href="privacy.html" style="color:var(--muted);text-decoration:underline" data-i18n="auth.legalPrivacy">개인정보 처리방침</a>
+        <a id="legalPrivacyLinkAuth" style="color:var(--muted);text-decoration:underline" data-i18n="auth.legalPrivacy">개인정보 처리방침</a>
         <span aria-hidden="true" style="color:var(--muted);margin:0 6px">·</span>
-        <a href="terms.html" style="color:var(--muted);text-decoration:underline" data-i18n="auth.legalTerms">이용약관</a>
+        <a id="legalTermsLinkAuth" style="color:var(--muted);text-decoration:underline" data-i18n="auth.legalTerms">이용약관</a>
       </p>
       </div>
 
@@ -2716,11 +2716,11 @@
         <!-- C-1: 로그인 이후에도 법적 고지에 도달할 수 있는 유일한 경로. 문서 제목만 둔다. -->
         <div class="set-head" data-i18n="settings.groupLegal">법적 고지</div>
         <div class="set-group">
-          <a class="settings-legal-link" href="privacy.html">
+          <a id="legalPrivacyLinkSettings" class="settings-legal-link">
             <span class="lbl"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8C7563" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg><span data-i18n="auth.legalPrivacy">개인정보 처리방침</span></span>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B8A48C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
           </a>
-          <a class="settings-legal-link" href="terms.html">
+          <a id="legalTermsLinkSettings" class="settings-legal-link">
             <span class="lbl"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8C7563" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg><span data-i18n="auth.legalTerms">이용약관</span></span>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B8A48C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
           </a>
@@ -4832,6 +4832,10 @@
         img.src = `ASSETS/rps/scenes/cat-${choice}-${loc}.png`;
       });
       applyNativeAppIconForLocale(loc);
+      // JP-02: 법무 문서를 현재 로케일 문서로 라우팅한다.
+      // 해당 로케일 문서가 없으면 **링크를 숨긴다** — 다른 언어 문서로 보내지 않는다.
+      // (typeof 가드는 이 파일의 관례 — 좁게 추출해 실행하는 하니스에서 안전하게 무동작)
+      if (typeof applyLegalDocumentRouting === "function") try { applyLegalDocumentRouting(loc); } catch (e) {}
       // Build35: 언어 세그먼트/설정 표시값 동기화
       if (typeof syncSettingsUi === "function") try { syncSettingsUi(); } catch {}
       // 동적 텍스트가 변하는 화면 다시 렌더
@@ -4998,6 +5002,119 @@
     //   마치면 1인 자동 시작이 발화하고 status 가 'playing' 이 되어 isJoinLocked() 가
     //   초대받은 친구의 입장을 막는다 — 초대 퍼널이 성립하지 않는다.
     //   KR(QR 로 한자리에 모이는 사용)은 이 값을 설정하지 않으므로 host 단독 시작이 유지된다.
+    // ── 법무 문서 라우팅 (JP-02, CEO §3) ─────────────────────────────────────
+    //
+    // 문제: JP 빌드가 **한국어 개인정보 처리방침**을 링크하고 있었다(JP_RELEASE_BLOCKER).
+    //
+    // 규칙: 로케일별 문서만 제시한다. **다른 로케일로 fallback 하지 않는다** —
+    //       일본어 사용자가 한국어 법무 문서를 받는 일이 없어야 한다. 없으면 없다고 말한다.
+    //
+    // ⚠️ CRIS 는 일본어 법적 문언을 만들지 않는다. 한국어판을 번역해 승인된 일본어 법무
+    //    문서처럼 쓰는 것도 금지다. 문안은 HIKARI 소유이며, ja 슬롯은 PENDING_HIKARI 다.
+    //    (config/legal-documents.json 이 같은 내용을 운영 레지스트리로 보관한다)
+    const LEGAL_DOC_STATUS = Object.freeze({ APPROVED: 'APPROVED', PENDING_HIKARI: 'PENDING_HIKARI' });
+    const LEGAL_DOCUMENTS = Object.freeze({
+      privacy: Object.freeze({
+        ko: Object.freeze({ path: 'privacy.html',          language: 'ko', status: LEGAL_DOC_STATUS.APPROVED }),
+        ja: Object.freeze({ path: 'legal/privacy.ja.html', language: 'ja', status: LEGAL_DOC_STATUS.PENDING_HIKARI }),
+      }),
+      terms: Object.freeze({
+        ko: Object.freeze({ path: 'terms.html',            language: 'ko', status: LEGAL_DOC_STATUS.APPROVED }),
+        ja: Object.freeze({ path: 'legal/terms.ja.html',   language: 'ja', status: LEGAL_DOC_STATUS.PENDING_HIKARI }),
+      }),
+    });
+
+    // 해당 로케일의 문서만 돌려준다. 없으면 null — **절대 다른 언어로 대체하지 않는다.**
+    // en 로케일은 아직 전용 문서가 없으므로 null 이 정상이다(한국어로 대체하지 않는다).
+    function legalDocumentFor(kind, locale) {
+      const byLocale = LEGAL_DOCUMENTS[kind];
+      if (!byLocale) return null;
+      const doc = byLocale[locale];
+      return doc || null;
+    }
+
+    // UI 가 링크를 걸어도 되는가. 미승인(PENDING)이어도 **그 로케일 문서**이므로 링크는 건다 —
+    // 그 페이지가 스스로 "준비 중"이라고 말한다. 다른 언어 문서로 보내는 것만이 금지다.
+    function legalDocumentHref(kind, locale) {
+      const doc = legalDocumentFor(kind, locale);
+      return doc ? doc.path : null;
+    }
+
+    // 현재 로케일에 맞는 법무 문서로 링크를 갈아끼운다.
+    // 문서가 없는 로케일(현재 en)에서는 링크 자체를 숨긴다 — 한국어 문서로 새는 것보다 낫다.
+    function applyLegalDocumentRouting(locale) {
+      const sites = [
+        ['legalPrivacyLinkAuth', 'privacy'], ['legalTermsLinkAuth', 'terms'],
+        ['legalPrivacyLinkSettings', 'privacy'], ['legalTermsLinkSettings', 'terms'],
+      ];
+      for (const [id, kind] of sites) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const href = legalDocumentHref(kind, locale);
+        if (href) { el.setAttribute('href', href); el.classList.remove('hidden'); }
+        else { el.removeAttribute('href'); el.classList.add('hidden'); }
+      }
+    }
+
+    // ── KR 출시 상태 게이트 (JP-02, CEO §11) ──────────────────────────────────
+    //
+    // 일본 대외 문구는 **사실**에만 근거해야 한다. KR 제품이 실제로 공개 출시되기 전에는
+    // 「韓国で提供中」같은 표기를 쓸 수 없다.
+    //
+    // 값은 아래 셋 중 하나다. 확인된 공개 출시에만 PUBLIC_LAUNCHED 를 쓴다 —
+    // 개발 완료·심사 통과·내부 배포는 PUBLIC_LAUNCHED 가 아니다.
+    const LAUNCH_STATUS = Object.freeze({
+      IN_DEVELOPMENT: 'IN_DEVELOPMENT',
+      SUBMITTED: 'SUBMITTED',
+      PUBLIC_LAUNCHED: 'PUBLIC_LAUNCHED',
+    });
+
+    // ⚠️ 사실 확인 전까지 올리지 않는다. 이 값을 바꾸는 것은 대외 표기 권한을 바꾸는 것이다.
+    const KR_RPS_LAUNCH_STATUS = LAUNCH_STATUS.IN_DEVELOPMENT;
+    const KR_MARUSNAP_LAUNCH_STATUS = LAUNCH_STATUS.IN_DEVELOPMENT;
+
+    // 대외적으로 "한국에서 제공 중"이라고 말할 수 있는가.
+    // 이 함수가 false 를 주는 동안 「韓国で提供中」류 문구를 노출하면 사실과 다른 표기가 된다.
+    function mayClaimLaunchedInKorea(productStatus) {
+      return productStatus === LAUNCH_STATUS.PUBLIC_LAUNCHED;
+    }
+
+    // ── 소유권 / 운영자 분리 (JP-02, CEO §6) ──────────────────────────────────
+    //
+    // 두 개념은 **구조적으로 독립**이다. 운영자는 바뀔 수 있고, 바뀌어도 IP 소유권은 그대로다.
+    // 그래서 한쪽을 다른 쪽에서 파생시키지 않고, 서로를 참조하지도 않는다.
+    //
+    //   WOORIMARU_IP_OWNER  — 게임·캐릭터·브랜드의 IP 소유 주체. 시장/운영자와 무관하게 불변.
+    //   JP_OPERATOR_CONFIG  — LINE 을 마주하는 일본 시장 운영 주체. **교체 가능**.
+    //
+    // ⚠️ 개인 신원을 하드코딩하지 않는다. 아래는 **구조(슬롯)** 이며 값은 운영자 확정 후
+    //    배포 설정으로 주입한다. 미확정 상태에서 임의의 이름을 넣는 것은 금지다.
+    // ⚠️ 법적 판단을 담지 않는다 — 플랫폼/법령이 요구하는 필드의 **자리**만 만든다.
+    //    무엇을 채워야 하는지는 HIKARI 소관이다(POLICY_QUESTION_FOR_HIKARI).
+    const WOORIMARU_IP_OWNER = Object.freeze({
+      // IP 소유 주체. 운영자가 누구든 이 값은 바뀌지 않는다.
+      entity: 'Woorimaru',
+      // 이 빌드가 쓰는 IP 자산군(게임 규칙·캐릭터·브랜드). 표기 용도.
+      ipScope: Object.freeze(['maru-rps-game', 'maru-character', 'woorimaru-brand']),
+    });
+
+    const JP_OPERATOR_CONFIG = Object.freeze({
+      // 운영자 확정 전에는 null 을 유지한다. null 은 "미확정"이라는 **명시적 상태**다.
+      operatorId: null,          // 배포 설정이 주입하는 불투명 식별자(개인 신원 아님)
+      displayName: null,         // 사용자 대면 사업자 표기(일본 법령 요구 시)
+      contactUrl: null,          // 문의 창구 URL
+      // 플랫폼 요구 슬롯 — 값은 운영자의 LINE 계정에 귀속되므로 여기서 만들지 않는다.
+      line: Object.freeze({ channelId: null, miniAppId: null, officialAccountId: null }),
+      // 법령 요구 슬롯 — 기재 항목·필요 여부는 HIKARI 판단이다.
+      legal: Object.freeze({ businessName: null, representative: null, address: null,
+                             specifiedCommercialTransactionsUrl: null }),
+    });
+
+    // 운영자가 확정됐는가. 미확정이면 운영자 의존 표기를 노출하지 않는다.
+    function isJpOperatorConfigured() {
+      return Boolean(JP_OPERATOR_CONFIG && JP_OPERATOR_CONFIG.operatorId);
+    }
+
     const MARKET_CONFIG = {
       market: 'JP',
       minParticipantsToStart: 2,
