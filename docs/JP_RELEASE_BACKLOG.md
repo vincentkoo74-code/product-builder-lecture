@@ -25,7 +25,7 @@
 | JP-ENTRY-INVITE-002 | DONE | **High** | 보류 초대(pending invite) 도입 — 초대는 신원 확립까지 보류되고 URL 에 남는다. 브라우저 E2E 15/15 로 실증(1라운드 진행 포함) | — |
 | JP-TOKYO-REALTIME-001 | DONE | **High** | 실제 Tokyo Realtime 두 클라이언트 검증 — A~H 전 시나리오 REALTIME 도달, 3라운드 완주, 과거 데이터 무변경 | — |
 | JP-CORE-DEFERRED-LEAVE-TIMING | OPEN | Medium | 결과 화면에서 누른 퇴장이 **한 라운드 더** 지연 실행된다(WRPS-084 설계). 1:1 대전에서 체감 큼 — **CORE, KR 공용** | 아니오 |
-| JP-RT-PRESUBSCRIBE-GAP | OPEN | Medium | 채널 구독 완료 **이전** 커밋 변경은 Realtime 이 재생하지 않는다 → 폴링이 안전망. 전송 특성(R1), 클라이언트 처리 사항 | 아니오 |
+| JP-RT-PRESUBSCRIBE-GAP | ACCEPTED / MONITOR | Medium | 구독 확립 p50 3.1s·p95 5.4s·max 8.4s, Realtime 도달 ~99%, 폴링 구제 ~1%, 전 흐름 수렴. CEO 결정: 2.6s 폴링 안전망 유지, heartbeat/presence/강제 재조회/구독 아키텍처 변경 없음 | 아니오 |
 | JP-E2E-JWT-FIDELITY | DONE | **High** | 브라우저 게이트가 실제 JWT 검증 + 목표 GRANT/RLS 아래에서 돈다. 로컬 서명 토큰 치환(벗기기 폐기), 부정 경로·소유자 RLS·교차 차단 실증 | — |
 | JP-MIG-REPLICA-IDENTITY | DONE | **High** | Realtime publication 마이그레이션이 REPLICA IDENTITY 를 고정하지 않아 저장소만으로 세운 백엔드가 Tokyo(FULL)와 달라졌다 → 필터된 DELETE 이벤트 유실. 마이그레이션에서 수정(Tokyo 는 이미 FULL, no-op) | — |
 | JP-I18N-JOIN-DEFAULT | DONE | Medium | 기본 표시명을 시장 계층으로 옮김 — JP=`ゲスト`. 키 없는 시장(KR)은 기존 공용 기본값 유지(KR 무변경) | — |
@@ -35,7 +35,7 @@
 | JP-BL-014 | DONE | Medium | A5 device-matrix 타임아웃 → **Tokyo 복원으로 해소, 통과 확인** | — |
 | JP-BL-015 | RE-VERIFIED | **High** | 로컬 clean bootstrap 실증 완료. **보안 5종은 여전히 Tokyo 미적용**(별도 게이트) | **예** |
 | JP-TOKYO-MIG-INVITE-001 | DONE | **High** | `rooms.invite_token` 격리 배포 완료(2026-08-31). 보안 5종 미적용 유지, 원장 2행 | — |
-| JP-H1A-STRICT-CALIBRATION | DIAGNOSED | Medium | 잔여 10건 전량 H1 분류(P1 0건). 실측 데이터셋 확보 완료(JP-RC3-FIELD-LATENCY-001) — 레짐 변경은 CEO 승인 대기 | 아니오 |
+| JP-H1A-STRICT-CALIBRATION | DIAGNOSED / NO P1 | Medium | 잔여 10건 전량 H1, P1 증거 0. **레짐 변경 미승인** — 현재 실측이 권위 레짐 재정의에 불충분. §재개 게이트 충족 전까지 재론 금지 | 아니오 |
 | JP-INFRA-STALE-ROOM | OPEN | Medium | 물리적 stale row 정리(cron/TTL) — 별도 인프라 태스크. **추가 케이스(2026-09-02)**: 온라인 도전 생성 중 rooms INSERT 성공 후 후속 단계 실패 시 참가자 없는 고아 방 행이 남을 수 있다(초대 토큰 미발급이라 외부 발견 불가) | 아니오 |
 | JP-BL-016 | DECIDED | High | free plan 은 엔지니어링 기간 유지, 외부 베타 전 Pro 승격 (JP-PROD-GATE) | **예** |
 | JP-BL-017 | OPEN | Medium | `SUPABASE_DB_PASSWORD` 리전별 분리 | 아니오 |
@@ -524,6 +524,48 @@ CEO §16 이 허용한 대로 **되돌리고 반환한다.**
 로컬 Supabase 풀스택을 세우지 못했다. 대역폭이 확보되거나 별도 승인된 검증 전략이 필요하다.
 
 ## JP-BL-027-C — rc3 하니스 participants realtime 전파 (Phase B 선행 조건)
+
+### 2026-09-02 (4차) — CEO 최종 판정 / JP 엔지니어링 현황
+
+**JP-RC3-FIELD-LATENCY-001 = PASS.** 프로덕션 타이밍 결함 없음. rc3 임계값·레짐 변경 **미승인**.
+
+**실측 데이터셋 분류(확정)**
+`REAL NETWORK MEASUREMENT / REFERENCE / NON-REPRESENTATIVE PATH`.
+앱이 실제 네트워크 경로로 Tokyo Supabase 에 도달했다는 유효한 증거다.
+JP 전역 프로덕션 지연 분포의 근거로는 불충분하다. **폐기하지 않는다.**
+일본 직결·한국·중국·모바일 어느 것으로도 라벨링하지 않는다.
+
+**레짐 해석(기록만, 승격/강등 없음)**
+- optimistic — 관측된 REAL 꼬리를 충분히 덮지 못한다
+- moderate — 현재 실측 최적합이나 **아직 권위 아님**
+- pessimistic — 현재 관측을 모두 덮으나 4~9초 꼬리를 현 데이터 대비 과대 배정
+
+**레짐 재개 게이트** — 실질적으로 새로운 증거 전까지 재론하지 않는다:
+독립적인 실제 네트워크 조건 2개 이상(가능하면 일본 직결), 실제로 확보 가능한 추가 지리/회선 맥락,
+평가 대상 제품 범위에 맞는 참가자 수 증거. **없는 조건을 지어내지 않는다.**
+
+**N>2 라이브 팬아웃 측정 — 지금 착수하지 않는다.** JP 출시 경로는 2인 초대 대전이다.
+N>2 는 JP 제품 범위가 명시적으로 확장되기 전까지 공유 CORE 스트레스/연구 영역으로 둔다.
+지원되지 않는 대형 N 가정을 보정하느라 JP 출시 작업을 지연시키지 않는다.
+
+## JP 엔지니어링 현황 (2026-09-02, CEO 확정)
+
+| 축 | 상태 |
+|---|---|
+| BACKEND SECURITY | **READY** |
+| TOKYO REALTIME | **VALIDATED** |
+| JWT / RLS | **VALIDATED** |
+| JP/KR REGION ISOLATION | **VALIDATED** |
+| KAKAO JP PATH | **REMOVED** |
+| SECURE INVITE | **VALIDATED** |
+| BROWSER E2E | **VALIDATED** |
+| ONLINE FAILURE UX | **VALIDATED** |
+| RC3 RESIDUALS | **DIAGNOSED / NO P1 EVIDENCE** |
+| LINE ENTRY | **WAITING ON HIKARI** |
+| NATIVE ARTIFACTS | **HOLD** |
+
+다음 진행은 CEO/HIKARI 의 LINE 진입 아키텍처 결정에 달려 있다.
+그때까지 새 구현 슬라이스를 시작하지 않는다.
 
 ### 2026-09-02 (3차) — JP-RC3-FIELD-LATENCY-001: 실측 지연 데이터셋
 
