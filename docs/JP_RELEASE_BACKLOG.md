@@ -35,8 +35,8 @@
 | JP-BL-014 | DONE | Medium | A5 device-matrix 타임아웃 → **Tokyo 복원으로 해소, 통과 확인** | — |
 | JP-BL-015 | RE-VERIFIED | **High** | 로컬 clean bootstrap 실증 완료. **보안 5종은 여전히 Tokyo 미적용**(별도 게이트) | **예** |
 | JP-TOKYO-MIG-INVITE-001 | DONE | **High** | `rooms.invite_token` 격리 배포 완료(2026-08-31). 보안 5종 미적용 유지, 원장 2행 | — |
-| JP-H1A-STRICT-CALIBRATION | OPEN | Medium | strict 권위 모드의 mutation 민감도 임계값 재보정(11 vs 12, 399.0 vs 400.7). **이번 슬라이스에서 건드리지 않았다** | 아니오 |
-| JP-INFRA-STALE-ROOM | OPEN | Medium | 물리적 stale row 정리(cron/TTL) — 별도 인프라 태스크. 도전 유효성 판정과 분리됨 | 아니오 |
+| JP-H1A-STRICT-CALIBRATION | DIAGNOSED | Medium | strict 잔여 10건을 개별 분류 완료 — 전량 H1(지연 레짐 모델이 실측 근거 없음), P1 0건. 임계값 미변경, CEO 승인 대기 | 아니오 |
+| JP-INFRA-STALE-ROOM | OPEN | Medium | 물리적 stale row 정리(cron/TTL) — 별도 인프라 태스크. **추가 케이스(2026-09-02)**: 온라인 도전 생성 중 rooms INSERT 성공 후 후속 단계 실패 시 참가자 없는 고아 방 행이 남을 수 있다(초대 토큰 미발급이라 외부 발견 불가) | 아니오 |
 | JP-BL-016 | DECIDED | High | free plan 은 엔지니어링 기간 유지, 외부 베타 전 Pro 승격 (JP-PROD-GATE) | **예** |
 | JP-BL-017 | OPEN | Medium | `SUPABASE_DB_PASSWORD` 리전별 분리 | 아니오 |
 | JP-BL-018 | DESIGNED | **High** | 목표 RLS 설계 완료 — 배포 미승인 | **예** |
