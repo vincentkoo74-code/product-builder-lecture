@@ -5,6 +5,14 @@
 
 상태: `OPEN` / `IN PROGRESS` / `DONE` / `WONTFIX`
 
+> ⚠️ **ID 충돌(2026-09-02 발견, 미해결).** 같은 표 안에서 `JP-BL-020/021/022/023` 이
+> **각각 두 항목에 중복 사용**되고 있다 — 출시 계열과 Tokyo 인프라 계열.
+> CEO 지시문이 가리키는 것은 **출시 계열**이다:
+> `020`=한국어 방침 노출(해소), `021`=일본어 법무 문안, `022`=삭제 정책(법무 판단),
+> `023`=JP 문의 창구(출시 차단). 인프라 계열 동명 항목은 각각
+> GRANT 정규화 / 원장 복구 / `participants.room_id` 인덱스 / Storage 버킷이다.
+> **재번호는 CEO 가 참조 중인 ID 를 바꾸므로 임의로 하지 않았다** — 정리 방식은 CEO 판단 사항.
+
 | ID | 상태 | 심각도 | 항목 | 출시 차단 |
 |---|---|---|---|---|
 | JP-BL-023 | OPEN | High | JP 문의 창구 미설정 — `JP_SUPPORT_CONFIG` 전 필드 null. 운영자 확정 후 주입 필요(현재 UI 안전 실패) | **예** |
@@ -17,7 +25,7 @@
 | JP-BL-003 | DONE | High | JP 브랜치를 origin 에 push → 539e0de | — |
 | JP-BL-004 | DONE | High | GitHub Environments `supabase-KR`/`supabase-JP` 구성 | — |
 | JP-BL-010 | DONE | **High** | 온라인 백엔드 실패를 조용한 로컬 강등으로 덮지 않는다 — 시장 계층 정책 + 전용 실패 화면 | — |
-| JP-WEB-ASSET-SELFHOST | OPEN | Low | Google Fonts 외부 의존(요청 52건). 리전 격리 결함 아님 — 장래 self-host/subset 최적화 | 아니오 |
+| JP-WEB-ASSET-SELFHOST | DONE | Low | JP 로케일 Google Fonts 의존 제거 — **26건(googleapis 1 + gstatic 25) / 1,284,882B → 0건 / 0B**(BEFORE·AFTER 동일 조건 3회 실측). 주 폰트는 이미 로컬 번들(OFL-1.1), Google 가족은 JP 에겐 fallback 이었다. KR 은 주 폰트라 보존(요청·바이트 동일) | — |
 | JP-BL-005 | DONE | High | JP 런타임 리전 격리 실증 — 백엔드 선택 지점 1곳, 런타임 입력으로 변경 불가, 라이브 목적지 Tokyo 단일, fallback 6종 Seoul 무접촉 | — |
 | JP-BL-006 | OPEN | Medium | 네이티브 산출물(ios/android public) JP 재생성 — CEO 지시로 보류 중 | **예** |
 | JP-BL-007 | DONE | Medium | Tokyo 백엔드 실물 점검 → **삭제 아님, INACTIVE(일시정지)** | — |

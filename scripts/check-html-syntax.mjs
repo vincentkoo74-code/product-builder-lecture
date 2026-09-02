@@ -37,7 +37,8 @@ export const REPO_ROOT = path.resolve(HERE, '..');
 //     누군가 나중에 인라인 script를 끼워 넣으면 (a) COUNT_MISMATCH로 즉시 RED가 되고
 //     (b) 이 목록을 갱신하는 순간부터 그 블록이 매 실행 파싱된다. 검사 비용은 사실상 0이다.
 export const HTML_SYNTAX_TARGETS = Object.freeze([
-  Object.freeze({ file: 'index.html', expectedInline: 2, expectedExternal: 7 }),
+  // JP-02C(2026-09-02): <head>에 로케일별 Google Fonts 주입 스크립트를 추가해 2 -> 3.
+  Object.freeze({ file: 'index.html', expectedInline: 3, expectedExternal: 7 }),
   Object.freeze({ file: 'oauth-bridge.html', expectedInline: 1, expectedExternal: 0 }),
   Object.freeze({ file: 'privacy.html', expectedInline: 0, expectedExternal: 0 }),
   Object.freeze({ file: 'terms.html', expectedInline: 0, expectedExternal: 0 }),

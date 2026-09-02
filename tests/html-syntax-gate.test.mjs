@@ -55,7 +55,7 @@ describe('F7-1: HTML 인라인 script 구문 게이트', () => {
     expect(() => new Function(m[1])).toThrow(/Unexpected token '<'/);
   });
 
-  it('[HS-1] 현재 index.html의 두 인라인 블록이 각각 독립 파싱되어 PASS한다', () => {
+  it('[HS-1] 현재 index.html의 인라인 블록이 각각 독립 파싱되어 PASS한다', () => {
     const res = checkHtmlSyntax(HTML, {
       file: 'index.html',
       expectedInline: TARGET.expectedInline,
@@ -66,10 +66,14 @@ describe('F7-1: HTML 인라인 script 구문 게이트', () => {
     // 검사 대상 축소 금지: 인라인 블록 전부가 실제로 파싱됐어야 한다.
     expect(res.checked.length).toBe(TARGET.expectedInline);
     expect(res.checked.every((c) => c.ok)).toBe(true);
-    // 두 블록이 한 덩어리로 합쳐지지 않았는지(=greedy 회귀 방지) 크기로 확인한다.
-    expect(res.checked[0].bytes).toBeGreaterThan(1000);
-    expect(res.checked[1].bytes).toBeGreaterThan(0);
-    expect(res.checked[0].bytes + res.checked[1].bytes).toBeLessThan(HTML.length);
+    // 블록이 한 덩어리로 합쳐지지 않았는지(=greedy 회귀 방지) 크기로 확인한다.
+    // JP-02C: <head> 주입 스크립트가 추가돼 블록 순서에 의존하지 않도록 바꿨다.
+    // (본문 블록이 첫 번째라는 가정을 없애되, "합쳐지지 않았다"는 검증은 유지·강화한다.)
+    const bytes = res.checked.map((c) => c.bytes);
+    expect(bytes.length).toBe(TARGET.expectedInline);
+    expect(Math.max(...bytes)).toBeGreaterThan(1000);   // 큰 본문 블록이 실재한다
+    expect(Math.min(...bytes)).toBeGreaterThan(0);      // 빈 블록으로 계산되지 않았다
+    expect(bytes.reduce((a, b) => a + b, 0)).toBeLessThan(HTML.length);
   });
 
   it('[HS-1b] 어느 인라인 블록의 코드에도 `</script`가 남아있지 않다(greedy 삼킴 회귀 탐지)', () => {
@@ -90,7 +94,7 @@ describe('F7-1: HTML 인라인 script 구문 게이트', () => {
     expect(res.ok).toBe(false);
     const syntaxErrors = res.errors.filter((e) => e.type === 'SYNTAX_ERROR');
     expect(syntaxErrors.length).toBe(1);
-    // 첫 번째 인라인 블록(전체 script 태그 중 index 7)에서 잡혀야 한다.
+    // 첫 번째 인라인 블록에서 잡혀야 한다(절대 index 는 고정하지 않는다).
     expect(syntaxErrors[0].blockIndex).toBe(inlineBlocks(HTML)[0].index);
     // 개수는 그대로여야 한다 — 즉 이 FAIL은 순수하게 구문 때문이다.
     expect(res.errors.some((e) => e.type.endsWith('COUNT_MISMATCH'))).toBe(false);
@@ -185,7 +189,7 @@ describe('F7-1: HTML 인라인 script 구문 게이트', () => {
       cwd: REPO_ROOT, encoding: 'utf8',
     });
     expect(out).toContain('[html-syntax] PASS');
-    expect(out).toContain('인라인 2');
+    expect(out).toContain(`인라인 ${TARGET.expectedInline}`);
     // 리포트가 블록별로 출력된다(요약만 찍고 넘어가지 않는다).
     expect(out).toContain('inline #');
   });

@@ -18,6 +18,13 @@ npm test        # vitest run --exclude 'tests/e2e/**'
 > 빠른 반복에는 `npx vitest run --exclude 'tests/e2e/**' --exclude 'tests/rc3-multiparticipant-sim.test.mjs'` 를 쓰고,
 > 게이트 판정에는 층 3 을 **단독으로** 따로 측정한다(아래 참조).
 
+> **HTML 구문 게이트 트립와이어(JP-02C).** `scripts/check-html-syntax.mjs` 의
+> `HTML_SYNTAX_TARGETS` 는 `index.html` 의 인라인/외부 `<script>` **개수를 고정**한다.
+> 블록을 추가·삭제하면 7건이 한꺼번에 FAIL 한다. 이는 결함이 아니라 설계된 경보다 —
+> 검사 커버리지가 조용히 달라지는 것을 막는다. 의도적 변경이면 대상 수를 갱신하고,
+> **새 블록이 실제로 파싱되는지 뮤테이션으로 확인**한 뒤 통과시킨다.
+> (2026-09-02: 로케일별 폰트 주입 스크립트 추가로 인라인 2 → 3.)
+
 ## 층 2 — CORE 회귀
 
 층 1 에 포함된다. `nextRound` 카디널리티, 라운드 상태 기계, 판정 로직 등 KR/JP 공용 동작.

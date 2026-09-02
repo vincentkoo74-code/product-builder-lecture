@@ -5,10 +5,51 @@
   <!-- WRPS-063: viewport lock — 게임 신뢰(공정성)를 위해 확대/축소/이동 금지(DR-17). -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>마루의 가위바위보 · K-파티 게임</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- 한글: Google Fonts CDN -->
-  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;700;900&family=Inter:wght@400;500;700;900&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <!-- JP-02C: Google Fonts 는 **JP 이외 로케일에서만** 로드한다.
+       근거: JP 의 주 폰트(Reggae One / M PLUS Rounded 1c)는 이미 로컬 번들이고,
+             Google 가족은 JP 에게 fallback 일 뿐이다. 반면 KR 은 Noto Sans KR /
+             Black Han Sans / Gowun Dodum 을 **주 폰트로** 쓰므로 제거하면 표현이 바뀐다.
+       그래서 링크를 없애지 않고, 로케일이 ja 일 때만 주입하지 않는다(KR/EN 동작 보존).
+       주입은 <head> 파싱 중 동기 실행되므로 KR 의 로드 시점이 사실상 바뀌지 않는다. -->
+  <script>
+    (function () {
+      try {
+        // 앱의 해석 순서를 그대로 따른다: ?lang= → localStorage → navigator.
+        // (?lang= 를 빠뜨리면 ?lang=ja 로 처음 들어온 JP 사용자가 Google 폰트를 받는다 —
+        //  실제로 JP-02C E2E 가 이 결함을 잡았다.)
+        var loc = null;
+        try {
+          var q = new URLSearchParams(location.search).get("lang");
+          if (q) { q = q.toLowerCase(); if (["ko", "en", "ja"].indexOf(q) >= 0) loc = q; }
+        } catch (e) {}
+        if (!loc) {
+          var saved = null;
+          try { saved = localStorage.getItem("rpsLocale"); } catch (e) {}
+          if (saved && ["ko", "en", "ja"].indexOf(saved) >= 0) loc = saved;
+        }
+        if (!loc) {
+          var lang = (navigator.language || navigator.userLanguage || "ko").toLowerCase();
+          loc = lang.indexOf("ja") === 0 ? "ja" : (lang.indexOf("en") === 0 ? "en" : "ko");
+        }
+        if (loc === "ja") return;   // JP: 외부 폰트 요청 0
+        var HREF = "https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;700;900&family=Inter:wght@400;500;700;900&family=Noto+Sans+JP:wght@400;500;700;900&display=swap";
+        var TAGS = '<link rel="preconnect" href="https://fonts.googleapis.com">'
+                 + '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+                 + '<link rel="stylesheet" href="' + HREF + '">';
+        // 파싱 중에는 document.write 로 넣는다 — 정적 <link> 와 **동일하게 파서를 막는다**.
+        // appendChild 로 넣으면 스타일시트가 더 이상 파싱을 막지 않아 KR 의 로드 타이밍이
+        // 바뀐다(실측: KR DOMContentLoaded 약 6000ms → 139ms, 그리고 폰트 스왑 발생).
+        // 이 스프린트는 JP 범위이고 KR 표현/동작을 바꾸지 않는 것이 조건이라 종전 의미를 유지한다.
+        if (document.readyState === "loading") {
+          document.write(TAGS);
+        } else {
+          var d = document.createElement("div");
+          d.innerHTML = TAGS;
+          while (d.firstChild) document.head.appendChild(d.firstChild);
+        }
+      } catch (e) { /* 폰트는 장식이다 — 실패해도 앱을 막지 않는다 */ }
+    })();
+  </script>
   <!-- 영어/일본어 디스플레이 폰트: 로컬 TTF (사용자 등록) -->
   <style>
     @font-face{
@@ -99,9 +140,9 @@
       --font-sub: "Inter", sans-serif;
     }
     body[data-locale="ja"]{
-      --font-display: "Reggae One", "Black Han Sans", sans-serif;
-      --font-body: "M PLUS Rounded 1c", "Noto Sans JP", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      --font-sub: "M PLUS Rounded 1c", "Noto Sans JP", sans-serif;
+      --font-display: "Reggae One", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+      --font-body: "M PLUS Rounded 1c", -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+      --font-sub: "M PLUS Rounded 1c", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
     }
     body {
       margin: 0;
