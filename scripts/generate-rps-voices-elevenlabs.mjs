@@ -11,6 +11,7 @@
 // 사용: node scripts/generate-rps-voices-elevenlabs.mjs
 //   (선택) --dry-run   ← API 호출 없이 계획만 출력
 //   (선택) --locale=ko ← 특정 언어만 생성(생략 시 ko/ja/en 전체)
+//   (선택) --group=game-start ← 해당 언어의 GAME 순번 안내만 생성
 
 import { readFileSync, existsSync, mkdirSync, cpSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -128,6 +129,17 @@ const VOICE_SETTINGS = { stability: 0.5, similarity_boost: 0.75, style: 0.3, use
 const DRY_RUN = process.argv.includes('--dry-run');
 const LOCALE_ARG = (process.argv.find((a) => a.startsWith('--locale=')) || '').split('=')[1];
 const LOCALES = LOCALE_ARG ? [LOCALE_ARG] : Object.keys(SCRIPTS);
+const GROUP_ARG = (process.argv.find((a) => a.startsWith('--group=')) || '').split('=')[1];
+const GROUP_FILTERS = {
+  'game-start': (item, locale) => new RegExp(`^${locale}_game_start_[1-9][0-9]?\\.mp3$`).test(item.filename),
+};
+if (GROUP_ARG && !GROUP_FILTERS[GROUP_ARG]) {
+  console.error(`ERROR: unsupported group '${GROUP_ARG}' (supported: ${Object.keys(GROUP_FILTERS).join(', ')})`);
+  process.exit(1);
+}
+const SELECTED_SCRIPTS = (locale) => GROUP_ARG
+  ? SCRIPTS[locale].filter((item) => GROUP_FILTERS[GROUP_ARG](item, locale))
+  : SCRIPTS[locale];
 
 function timestamp() {
   const d = new Date();
@@ -161,7 +173,7 @@ async function main() {
   console.log('=== RPS Voice Polish (ElevenLabs, multilingual) ===');
   console.log(`locales: ${LOCALES.join(', ')}`);
   console.log(`voice root: ${VOICE_ROOT}`);
-  const totalFiles = LOCALES.reduce((n, loc) => n + (SCRIPTS[loc]?.length || 0), 0);
+  const totalFiles = LOCALES.reduce((n, loc) => n + (SELECTED_SCRIPTS(loc)?.length || 0), 0);
   console.log(`files to generate: ${totalFiles}`);
   if (DRY_RUN) console.log('(dry-run — no API calls, no file writes)');
 
@@ -191,7 +203,7 @@ async function main() {
   const results = [];
   for (const loc of LOCALES) {
     const voiceId = VOICE_ID_BY_LOCALE[loc];
-    for (const item of SCRIPTS[loc]) {
+    for (const item of SELECTED_SCRIPTS(loc)) {
       const outPath = resolve(VOICE_ROOT, loc, item.filename);
       if (DRY_RUN) {
         console.log(`[dry-run] would generate: ${loc}/${item.filename} <- "${item.text}"`);
