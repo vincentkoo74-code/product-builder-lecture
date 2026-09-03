@@ -5267,6 +5267,8 @@
       gameStarting: false,
       finishingRound: false,
       resultVoiceKey: null, // WRPS-046: 라운드당 결과 음성 1회 재생 가드
+      gameResultVoiceKeys: {}, // Build47: KR GAME_RESULT (방/매치/GAME/result) 1회 가드
+      taggerConfirmVoiceKeys: {}, // Build47: KR NOT_CONFIRMED→CONFIRMED 1회 가드
       resultSfxKey: null,   // 라운드당 결과 효과음(win/lose/draw) 1회 재생 가드
       resultMetricKey: null, // WRPS-072(Build18): 라운드당 ROUND_RESULT metric 1회 기록 가드
       lastRoundResolution: null, // WRPS-072-B19(Build19): 라운드 재분류 방지(idempotency) 캐시
@@ -8293,6 +8295,7 @@
       }
       // Local authority advances only after the server returns the exact canonical stats/tallied GAME.
       state.penalty = __committedPenalty;
+      if (typeof observeMatchLockedTransitions === "function") observeMatchLockedTransitions('canonical_commit');
       return true;
     }
 
@@ -10378,6 +10381,57 @@
       setTimeout(() => playVoiceClip(eventKey, ttsText, pitch, rate), delayMs);
     }
 
+    // Build47 GAME RESULT voice semantics (KR only): a completed GAME announces the
+    // participant's result with the current GAME ordinal. This is deliberately separate
+    // from TAGGER_CONFIRMED; an ordinary loss must never select taggerSelected.
+    function getCompletedMatchGameOrdinal() {
+      try {
+        const p = parsePenalty(state.penalty);
+        const stats = sanitizeMatchStats(p.matchStats, p.matchTally);
+        let completed = 0;
+        for (const id of Object.keys(stats)) {
+          const v = stats[id] || {};
+          completed = Math.max(completed, (Number(v.wins) || 0) + (Number(v.losses) || 0));
+        }
+        if (completed > 0) return completed;
+      } catch (e) {}
+      return 1;
+    }
+    function gameResultVoiceKey(result, ordinal) {
+      const n = Number(ordinal) || 1;
+      const kind = result === "win" ? "Win" : result === "lose" ? "Lose" : null;
+      if (!kind) return null;
+      return `gameResult${kind}${n <= 10 ? n : "Next"}`;
+    }
+    function gameResultVoicePhraseKo(result, ordinal) {
+      const ordinals = ["", "첫째", "둘째", "셋째", "넷째", "다섯째", "여섯째", "일곱째", "여덟째", "아홉째", "열째"];
+      const n = Number(ordinal) || 1;
+      const prefix = ordinals[n] || "다음";
+      return result === "win" ? `${prefix} 판 이겼습니다` : `${prefix} 판 졌습니다`;
+    }
+    function playGameResultVoiceOnce(result, delayMs = 2200) {
+      if (!isKrVoiceLocale()) return;
+      const key = `${state.roomCode || "offline"}:m${parsePenalty(state.penalty).matchNo || 1}:g${getGameRound()}:r${state.round || 1}:${result}`;
+      if (!state.gameResultVoiceKeys) state.gameResultVoiceKeys = {};
+      if (state.gameResultVoiceKeys[key]) return;
+      const voiceKey = gameResultVoiceKey(result, getCompletedMatchGameOrdinal());
+      if (!voiceKey) return;
+      state.gameResultVoiceKeys[key] = true;
+      try { QA.emit('audio', { wrps: 'WRPS-B47VOICE', eventType: 'GAME_RESULT_VOICE', result, voiceKey,
+        phraseKo: gameResultVoicePhraseKo(result, getCompletedMatchGameOrdinal()), identity: key }); } catch (e) {}
+      setTimeout(() => playVoiceClip(voiceKey), delayMs);
+    }
+
+    function playTaggerConfirmationVoiceOnce(playerId, matchNo, delayMs = 2200) {
+      if (!isKrVoiceLocale() || playerId !== state.currentUserId) return;
+      const key = `${state.roomCode || "offline"}:m${matchNo || 1}:${playerId}`;
+      if (!state.taggerConfirmVoiceKeys) state.taggerConfirmVoiceKeys = {};
+      if (state.taggerConfirmVoiceKeys[key]) return;
+      state.taggerConfirmVoiceKeys[key] = true;
+      try { QA.emit('audio', { wrps: 'WRPS-B47VOICE', eventType: 'TAGGER_CONFIRMED_VOICE', playerId, matchNo, identity: key }); } catch (e) {}
+      setTimeout(() => playVoiceClip("taggerSelected"), delayMs);
+    }
+
     // 결과 효과음(win/lose/draw)도 finishRoundLocal 2회 호출 시 중복되지 않도록 라운드당 1회.
     function playResultSfxOnce(kind, delayMs = 400) {
       const key = `${getGameRound()}:${state.round || 1}`;
@@ -10388,6 +10442,14 @@
         else if (kind === "lose") SoundManager.playLose();
         else if (kind === "draw") SoundManager.playDraw();
       }, delayMs);
+    }
+
+    function getCurrentResultForVoice() {
+      const p = (state.participants || []).find(x => x.id === state.currentUserId);
+      return p ? (p.lastResult || getChoiceResult(p.choice) || null) : null;
+    }
+    function isKrVoiceLocale() {
+      return typeof currentLocale !== "undefined" && currentLocale === "ko";
     }
 
     // ── Build47 score/voice recovery: GAME 순번 음성 안내 ───────────────────────────
@@ -11060,7 +11122,8 @@
         autoSaveGameOverResultOnce();
         if (typeof scheduleMatchAutoNextGame === "function") scheduleMatchAutoNextGame(); // Build46(레거시 샌드박스 격리: 모듈 경계 typeof-가드 관례)
         playResultSfxOnce(isConfirmedLoser() ? "lose" : "win");
-        playResultVoiceOnce("taggerSelected", null, 1, 1, 2200);
+        if (typeof currentLocale !== "undefined" && currentLocale === "ko") playGameResultVoiceOnce(getCurrentResultForVoice());
+        else playResultVoiceOnce("taggerSelected", null, 1, 1, 2200);
         __engineV2ShadowCompare("gameOver");
         try { QA.emit('metric', { wrps: 'WRPS-075', eventType: 'ROUND_GAMEOVER_SLOTS_FILLED', eventId: roundEventId, activeCount: activePlayers.length, confirmedLoserCount: prevLoserIds.length, targetCount }); } catch (e) {}
         recordRoundResolution({ eventId: roundEventId, confirmedSafeIds: [...state.confirmedSafeIds], confirmedLoserIds: [...state.confirmedLoserIds], outcome: "gameOver", roundLoserCount: 0, remainingSlots });
@@ -11087,7 +11150,8 @@
         // 전원 술래 확정·종료: 본인이 술래면 패배음, 살아남았으면(이전 안전) 승리 팡파레(개인 신호=SFX 유지)
         playResultSfxOnce(isConfirmedLoser() ? "lose" : "win");
         // Build21: 술래 확정 그룹 공지(전원 동일, 승패 무관)
-        playResultVoiceOnce("taggerSelected", null, 1, 1, 2200);
+        if (typeof currentLocale !== "undefined" && currentLocale === "ko") playGameResultVoiceOnce(getCurrentResultForVoice());
+        else playResultVoiceOnce("taggerSelected", null, 1, 1, 2200);
         __engineV2ShadowCompare("gameOver");
         recordRoundResolution({ eventId: roundEventId, confirmedSafeIds: [...state.confirmedSafeIds], confirmedLoserIds: [...state.confirmedLoserIds], outcome: "gameOver", roundLoserCount: activePlayers.length, remainingSlots });
         state.finishingRound = false;
@@ -11137,7 +11201,8 @@
         // 게임 종료: 승자=arcade 팡파레, 패자(술래)=low-tone decay(개인 신호=SFX 유지)
         playResultSfxOnce(myResult === "win" ? "win" : "lose");
         // Build21: 술래 확정 그룹 공지(전원 동일, 승패 무관) / Build40 P0-1: 단일 mode
-        if (typeof announceContinuation === "function") announceContinuation("FINAL", "gameOver", 2200);
+        if (typeof currentLocale !== "undefined" && currentLocale === "ko") playGameResultVoiceOnce(myResult);
+        else if (typeof announceContinuation === "function") announceContinuation("FINAL", "gameOver", 2200);
         else playResultVoiceOnce("taggerSelected", null, 1, 1, 2200); // 추출본 폴백: 종전 키 그대로
       } else if (roundLosers.length > remainingSlots) {
         state.confirmedSafeIds = [...prevSafeIds, ...roundWinners.map(p => p.id)];
@@ -12343,11 +12408,20 @@ function summarizeGameStats(rows) {
         if (m.stale) return;
         const mNo = m.matchNo || 1;
         if (!state.taggerConfirmShownKeys) state.taggerConfirmShownKeys = {};
+        if (!state.observedMatchLockedIds) state.observedMatchLockedIds = {};
         if (state.lockedBaselineMatchNo !== mNo) {
           state.lockedBaselineMatchNo = mNo;
           const pre = (m.lockedIds || []).slice();
+          state.observedMatchLockedIds[mNo] = pre.slice();
           for (const id of pre) state.taggerConfirmShownKeys[String(mNo) + ':' + String(id)] = true;
           if (pre.length) { try { QA.emit('metric', { wrps: 'WRPS-B47', eventType: 'TAGGER_CONFIRM_BASELINE_SEEDED', matchNo: mNo, seeded: pre, reason: reason || '', localNow: Date.now() }); } catch (_) {} }
+        } else {
+          const previous = state.observedMatchLockedIds[mNo] || [];
+          const current = (m.lockedIds || []).slice();
+          state.observedMatchLockedIds[mNo] = current.slice();
+          for (const id of current.filter(x => !previous.includes(x))) {
+            if (typeof playTaggerConfirmationVoiceOnce === "function") playTaggerConfirmationVoiceOnce(id, mNo);
+          }
         }
       } catch (e) {}
     }
@@ -14633,6 +14707,28 @@ function summarizeGameStats(rows) {
           gameStart9: "ko/ko_game_start_9.mp3",
           gameStart10: "ko/ko_game_start_10.mp3",
           gameStartNext: "ko/ko_game_start_next.mp3",
+          gameResultWin1: "ko/ko_game_result_win_1.mp3",
+          gameResultWin2: "ko/ko_game_result_win_2.mp3",
+          gameResultWin3: "ko/ko_game_result_win_3.mp3",
+          gameResultWin4: "ko/ko_game_result_win_4.mp3",
+          gameResultWin5: "ko/ko_game_result_win_5.mp3",
+          gameResultWin6: "ko/ko_game_result_win_6.mp3",
+          gameResultWin7: "ko/ko_game_result_win_7.mp3",
+          gameResultWin8: "ko/ko_game_result_win_8.mp3",
+          gameResultWin9: "ko/ko_game_result_win_9.mp3",
+          gameResultWin10: "ko/ko_game_result_win_10.mp3",
+          gameResultWinNext: "ko/ko_game_result_win_next.mp3",
+          gameResultLose1: "ko/ko_game_result_lose_1.mp3",
+          gameResultLose2: "ko/ko_game_result_lose_2.mp3",
+          gameResultLose3: "ko/ko_game_result_lose_3.mp3",
+          gameResultLose4: "ko/ko_game_result_lose_4.mp3",
+          gameResultLose5: "ko/ko_game_result_lose_5.mp3",
+          gameResultLose6: "ko/ko_game_result_lose_6.mp3",
+          gameResultLose7: "ko/ko_game_result_lose_7.mp3",
+          gameResultLose8: "ko/ko_game_result_lose_8.mp3",
+          gameResultLose9: "ko/ko_game_result_lose_9.mp3",
+          gameResultLose10: "ko/ko_game_result_lose_10.mp3",
+          gameResultLoseNext: "ko/ko_game_result_lose_next.mp3",
           countdownRps: "ko/ko_countdown_rps.mp3",        // "안 내면 술래! 가위바위보!"
           retry: "ko/ko_retry.mp3",                       // "다시 한 번!"
           drawRetry: "ko/ko_draw_retry.mp3",               // "비겼습니다! 다시 합니다!"

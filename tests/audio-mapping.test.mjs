@@ -29,6 +29,12 @@ const CLIPS = extractClips();
 const NEW_KEYS = ['ready', 'countdownRps', 'retry', 'drawRetry', 'replayLosersOnly', 'replayWinnersOnly', 'taggerSelected', 'gameOver'];
 // Build47 필드QA 정정(항목 2): GAME 순번 안내 11종 — ko/ja/en 공통. 파일 존재 루프가 실제 mp3 존재까지 검증한다.
 const GAME_NO_KEYS = [...Array.from({ length: 10 }, (_, i) => `gameStart${i + 1}`), 'gameStartNext'];
+const GAME_RESULT_KEYS = [
+  ...Array.from({ length: 10 }, (_, i) => `gameResultWin${i + 1}`),
+  'gameResultWinNext',
+  ...Array.from({ length: 10 }, (_, i) => `gameResultLose${i + 1}`),
+  'gameResultLoseNext'
+];
 const LEGACY_KEYS_COMMON = ['intro', 'go', 'becameLoser', 'continue'];
 const LEGACY_KEYS_KO_ONLY = ['countScissors', 'countRock', 'countPaper'];
 
@@ -37,9 +43,9 @@ describe('Build21 — CLIPS 구조 스냅샷(ko/ja/en)', () => {
     expect(Object.keys(CLIPS).sort()).toEqual(['en', 'ja', 'ko']);
   });
 
-  it('ko는 8개 신규 키 + 4개 공통 legacy + 3개 ko전용 legacy(총 15개)를 갖는다', () => {
+  it('ko는 기존 키와 22개 GAME_RESULT 키를 갖는다', () => {
     const keys = Object.keys(CLIPS.ko).sort();
-    expect(keys).toEqual([...NEW_KEYS, ...GAME_NO_KEYS, ...LEGACY_KEYS_COMMON, ...LEGACY_KEYS_KO_ONLY].sort());
+    expect(keys).toEqual([...NEW_KEYS, ...GAME_NO_KEYS, ...GAME_RESULT_KEYS, ...LEGACY_KEYS_COMMON, ...LEGACY_KEYS_KO_ONLY].sort());
   });
 
   it('ja/en은 8개 신규 키 + 4개 공통 legacy(총 12개, countScissors류 없음)를 갖는다', () => {

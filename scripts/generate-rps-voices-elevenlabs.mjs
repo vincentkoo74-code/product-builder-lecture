@@ -12,6 +12,7 @@
 //   (선택) --dry-run   ← API 호출 없이 계획만 출력
 //   (선택) --locale=ko ← 특정 언어만 생성(생략 시 ko/ja/en 전체)
 //   (선택) --group=game-start ← 해당 언어의 GAME 순번 안내만 생성
+//   (선택) --group=game-result ← KR GAME_RESULT 승/패 음성만 생성
 
 import { readFileSync, existsSync, mkdirSync, cpSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -75,6 +76,13 @@ const SCRIPTS = {
     { filename: 'ko_game_start_9.mp3', text: '아홉째판' },
     { filename: 'ko_game_start_10.mp3', text: '열째판' },
     { filename: 'ko_game_start_next.mp3', text: '다음판' },
+    ...[
+      ['win', '이겼습니다'], ['lose', '졌습니다'],
+    ].flatMap(([kind, phrase]) => [
+      ...['첫째', '둘째', '셋째', '넷째', '다섯째', '여섯째', '일곱째', '여덟째', '아홉째', '열째']
+        .map((ordinal) => ({ filename: `ko_game_result_${kind}_${['첫째','둘째','셋째','넷째','다섯째','여섯째','일곱째','여덟째','아홉째','열째'].indexOf(ordinal) + 1}.mp3`, text: `${ordinal} 판 ${phrase}` })),
+      { filename: `ko_game_result_${kind}_next.mp3`, text: `다음 판 ${phrase}` },
+    ]),
   ],
   ja: [
     { filename: 'ja_ready.mp3', text: '準備してね！' },
@@ -132,6 +140,7 @@ const LOCALES = LOCALE_ARG ? [LOCALE_ARG] : Object.keys(SCRIPTS);
 const GROUP_ARG = (process.argv.find((a) => a.startsWith('--group=')) || '').split('=')[1];
 const GROUP_FILTERS = {
   'game-start': (item, locale) => new RegExp(`^${locale}_game_start_[1-9][0-9]?\\.mp3$`).test(item.filename),
+  'game-result': (item, locale) => locale === 'ko' && new RegExp(`^${locale}_game_result_(win|lose)_(?:[1-9][0-9]?|next)\\.mp3$`).test(item.filename),
 };
 if (GROUP_ARG && !GROUP_FILTERS[GROUP_ARG]) {
   console.error(`ERROR: unsupported group '${GROUP_ARG}' (supported: ${Object.keys(GROUP_FILTERS).join(', ')})`);
