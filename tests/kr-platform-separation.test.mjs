@@ -146,8 +146,8 @@ maybe('산출물 manifest — 빌드 후에만 검사', () => {
     expect(String(vc)).not.toBe(String(iosBuild));            // 같은 필드로 억지 공유 금지
     // versionCode 는 iOS build 번호에 01 을 붙인 규칙(3901 ← 39)이어야 한다 — 번호만 다르고 규칙은 고정
     expect(vc, `versionCode ${vc} 가 iOS build ${iosBuild} 에서 파생된 규칙(build*100+1)과 다르다`).toBe(iosBuild * 100 + 1);
-    // 제품 라벨은 ASC 바이너리 번호와 독립적이다(Build47-Score-Voice는 CPV 50 사용).
-    expect(vn).toBe('1.0-KR-B47-SCORE-VOICE');
+    // 제품 라벨은 ASC 바이너리 번호와 독립적이다(Build47-Result-Voice는 CPV 51 사용).
+    expect(vn).toBe('1.0-KR-B47-RESULT-VOICE');
   });
 
   it('[T1] 어느 산출물에도 Tokyo ref 가 없다', () => {

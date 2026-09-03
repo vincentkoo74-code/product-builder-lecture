@@ -30,8 +30,8 @@ describe('빌드 메타데이터 — 진실 소스', () => {
     expect([...new Set(all)], `타깃별 build number 불일치: ${all.join(',')}`).toEqual([CANONICAL_BUILD]);
   });
 
-  it('[계약 1] 이번 QA 릴리즈의 Apple 바이너리 build number는 50이다 (제품=Build47-Score-Voice)', () => {
-    expect(CANONICAL_BUILD).toBe(50);
+  it('[계약 1] 이번 QA 릴리즈의 Apple 바이너리 build number는 51이다 (제품=Build47-Result-Voice)', () => {
+    expect(CANONICAL_BUILD).toBe(51);
   });
 });
 
@@ -53,7 +53,7 @@ describe('빌드 메타데이터 — index.html이 진실 소스를 미러한다
   it('[계약 4] buildLabel은 하드코딩이 아니라 BUILD_NUMBER에서 파생된다', () => {
     expect(html, "QA_BUILD_LABEL이 문자열 리터럴로 하드코딩돼 있다")
       .toContain("const QA_BUILD_LABEL = 'build' + PRODUCT_BUILD_LABEL;");
-    expect(html).toContain("const PRODUCT_BUILD_LABEL = '47-score-voice';");
+    expect(html).toContain("const PRODUCT_BUILD_LABEL = '47-result-voice';");
     expect(html, '옛 하드코딩 라벨이 남아 있다').not.toMatch(/QA_BUILD_LABEL = 'build\d+'/);
   });
 
@@ -66,19 +66,19 @@ describe('빌드 메타데이터 — index.html이 진실 소스를 미러한다
 describe('빌드 메타데이터 — 리포트 실제 산출값', () => {
   // 문자열 검사에 그치지 않고, 실제로 만들어지는 값이 canonical과 같은지 본다.
   const BUILD_NUMBER = CANONICAL_BUILD;
-  const PRODUCT_BUILD_LABEL = '47-score-voice';
+  const PRODUCT_BUILD_LABEL = '47-result-voice';
   const QA_BUILD_LABEL = 'build' + PRODUCT_BUILD_LABEL;
 
-  it('[계약 3] report.build == canonical(바이너리 50)의 문자열 표현', () => {
-    expect(String(BUILD_NUMBER)).toBe('50');
+  it('[계약 3] report.build == canonical(바이너리 51)의 문자열 표현', () => {
+    expect(String(BUILD_NUMBER)).toBe('51');
   });
 
-  it('[계약 4] report.buildLabel == "build47-score-voice" (제품 라벨)', () => {
-    expect(QA_BUILD_LABEL).toBe('build47-score-voice');
+  it('[계약 4] report.buildLabel == "build47-result-voice" (제품 라벨)', () => {
+    expect(QA_BUILD_LABEL).toBe('build47-result-voice');
   });
 
-  it('[계약 5-SCORE-VOICE] 제품 라벨은 현재 KR score-voice 후보 정체성을 사용한다', () => {
-    expect(QA_BUILD_LABEL).toBe('build47-score-voice');
+  it('[계약 5-RESULT-VOICE] 제품 라벨은 현재 KR result-voice 후보 정체성을 사용한다', () => {
+    expect(QA_BUILD_LABEL).toBe('build47-result-voice');
   });
 });
 
@@ -87,7 +87,7 @@ describe('빌드 메타데이터 — BUILD_MANIFEST', () => {
     const m = buildManifest({ qa: true, build: readBuildNumber(pbxproj),
       branch: 'b', commit: 'c', buildTime: 't' });
     expect(m.build).toBe(CANONICAL_BUILD);
-    expect(m.build).toBe(50);
+    expect(m.build).toBe(51);
   });
 
   it('QA 빌드 manifest는 qa_enabled/dist_qa_flag true, source_qa_flag false', () => {
