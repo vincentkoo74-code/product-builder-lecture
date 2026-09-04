@@ -61,6 +61,11 @@ grant execute on function public.participant_caller_is_room_host(text) to authen
 
 alter table public.participants enable row level security;
 
+-- Anonymous API-key callers are not participant identities. Remove legacy DML
+-- grants explicitly; RLS policies alone cannot override a separate grant path
+-- for a role that has no matching authenticated policy.
+revoke insert, update, delete on public.participants from anon;
+
 -- RESTRICTIVE policies compose with existing multiplayer visibility policies;
 -- they cannot be bypassed by an older permissive policy.
 drop policy if exists participants_owner_insert on public.participants;
@@ -92,6 +97,9 @@ comment on column public.participants.owner_user_id is
   'Supabase Auth owner; participant.id is not an authorization credential. Legacy NULL rows are unbound.';
 
 -- Rollback:
+-- -- Restore these only after confirming the pre-migration grants from the
+-- -- deployment schema; they are intentionally not guessed here.
+-- revoke insert, update, delete on public.participants from anon;
 -- drop policy if exists participants_owner_delete on public.participants;
 -- drop policy if exists participants_owner_update on public.participants;
 -- drop policy if exists participants_owner_insert on public.participants;
