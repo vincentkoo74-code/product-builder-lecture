@@ -8544,21 +8544,26 @@
           }
 
           const hostId = `h_${Date.now()}`;
-          await withTimeout(
+          const { error: participantInsertError } = await withTimeout(
             db.from('participants').insert([{
               id: hostId, room_id: code, name: nickname, is_host: true
             }]),
             5000
           );
+          if (participantInsertError) throw new Error(`참가자 생성 실패: ${participantInsertError.message || participantInsertError}`);
           state.currentUserId = hostId;
           saveLastJoinedRoomCode(code, nickname, hostId, "host");
           subscribeToRoom(code);
         } catch (e) {
-          console.error("Supabase 연결 실패, 오프라인 모드로 전환:", e.message);
-          state.currentUserId = "host";
-          saveLastJoinedRoomCode(code, nickname, "host", "host");
-          state.participants = [createParticipant("host", nickname, true)];
-          saveState();
+          // Online membership must never fall back to an unowned local row.
+          // Keep the guest flow retryable, but fail closed when Auth or either
+          // room/participant write is unavailable.
+          console.error("Supabase 방 생성 실패:", e?.message || e);
+          state.roomCode = "";
+          state.currentUserId = "";
+          state.participants = [];
+          showToast(t("toast.error", { msg: e?.message || String(e) }));
+          return;
         }
       } else {
         state.currentUserId = "host";
@@ -9264,14 +9269,16 @@
           if (existing) {
             state.currentUserId = existing.id;
             state.role = existing.is_host ? "host" : "participant";
-            await db.from('participants').update({ choice: waitingChoice, is_ready: false }).eq('id', existing.id);
+            const { error: reclaimError } = await db.from('participants').update({ choice: waitingChoice, is_ready: false }).eq('id', existing.id);
+            if (reclaimError) throw new Error(`참가자 재연결 실패: ${reclaimError.message || reclaimError}`);
           } else {
             // Invariant 5-A: 재입장자는 언제나 일반 참가자다. 과거 Host 이력(state.joinRecentRoom.role,
             // 저장된 recent room role 등)은 현재 권한의 근거가 될 수 없으므로 is_host는 항상 false로
             // 고정하고, 현재 Host(DB is_host=true 한 명)는 이 insert로 절대 바뀌지 않는다.
-            await db.from('participants').insert([{
+            const { error: participantInsertError } = await db.from('participants').insert([{
               id, room_id: code, name, is_host: false, choice: waitingChoice, is_ready: false
             }]);
+            if (participantInsertError) throw new Error(`참가자 생성 실패: ${participantInsertError.message || participantInsertError}`);
             state.currentUserId = id;
             state.role = "participant";
           }
@@ -9328,18 +9335,29 @@
             clearRoomScopedCache(code);
             return;
           }
-          const { data: participants } = await db.from('participants')
+          const { data: participants, error: participantFetchError } = await db.from('participants')
             .select('*').eq('room_id', code).order('created_at', { ascending: true });
-          const existing = (participants || []).find(p => p.id === id)
-            || (participants || []).find(p => p.name === name);
+          if (participantFetchError) throw participantFetchError;
+          const { data: currentUser, error: currentUserError } = await db.auth.getUser();
+          if (currentUserError || !currentUser?.user?.id) {
+            throw new Error("카카오/계정 세션을 확인할 수 없습니다");
+          }
+          // Reclaim is keyed by room + auth.uid(). Stored participant IDs and
+          // nicknames are hints only and never establish ownership.
+          const existing = (participants || []).find(p =>
+            p.owner_user_id === currentUser.user.id
+          );
           if (existing) {
             state.currentUserId = existing.id;
           } else {
-            await db.from('participants').insert([{ id, room_id: code, name, is_host: true }]);
+            const { error: participantInsertError } = await db.from('participants').insert([{ id, room_id: code, name, is_host: true }]);
+            if (participantInsertError) throw participantInsertError;
           }
 
-          await db.from('participants').update({ is_host: false, is_ready: false, choice: null }).eq('room_id', code);
-          await db.from('participants').update({ is_host: true }).eq('id', state.currentUserId);
+          const { error: demoteError } = await db.from('participants').update({ is_host: false, is_ready: false, choice: null }).eq('room_id', code);
+          if (demoteError) throw demoteError;
+          const { error: promoteError } = await db.from('participants').update({ is_host: true }).eq('id', state.currentUserId);
+          if (promoteError) throw promoteError;
           await cleanupDuplicateRoomProfiles(code, name, state.currentUserId, participants || []);
           await db.from('rooms').update({ status: 'reinviting', round: 1 }).eq('id', code);
           saveNickname(name);
