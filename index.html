@@ -2720,7 +2720,10 @@
 
     </section>
 
-    <section class="card maru-card" id="screenHome">
+    <!-- Hidden until the canonical startup router chooses Home. Leaving this
+         visible alongside screenAuth made the raw cold-launch DOM render two
+         cards while async Auth/owned-room recovery was still pending. -->
+    <section class="card maru-card hidden" id="screenHome">
       <div class="saekdong-v">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
@@ -16385,11 +16388,27 @@ function summarizeGameStats(rows) {
       }
     }
 
+    // Cold launch must establish one input-owning screen *before* any async
+    // Auth/session/reclaim work. Settings → Back already converged through
+    // showScreen(); cold launch now uses that same path instead of exposing
+    // the raw multi-screen markup while recovery is pending.
+    function normalizeColdLaunchScreen() {
+      const initialScreen = getAuthState() ? "screenHome" : "screenAuth";
+      showScreen(initialScreen);
+      $("confirmPopup")?.classList.add("hidden");
+      $("gameMenuSheet")?.classList.add("hidden");
+      $("countdownOverlay")?.classList.add("hidden");
+    }
+
     function bootAppWhenReady() {
-      if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", initFromUrl, { once: true });
-      } else {
+      const boot = () => {
+        normalizeColdLaunchScreen();
         initFromUrl();
+      };
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", boot, { once: true });
+      } else {
+        boot();
       }
     }
 
