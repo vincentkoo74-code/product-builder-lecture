@@ -40,7 +40,7 @@ describe('KR participant identity security contracts', () => {
 
   it('closes the anonymous API-key DML path and protects owner identity', () => {
     expect(migration).toContain('revoke insert, update, delete on public.participants from anon');
-    expect(migration).toContain('as restrictive');
+    expect(migration).toContain('as permissive');
     expect(migration).toContain('to authenticated');
     expect(migration).toContain('owner_user_id = auth.uid()');
     expect(migration).toContain('owner_user_id is immutable');

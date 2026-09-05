@@ -25,8 +25,9 @@ describe('KR participant Auth ownership foundation', () => {
     expect(migration).toContain('participants_room_owner_uidx');
   });
 
-  it('uses restrictive authenticated policies and fixed SECURITY DEFINER search paths', () => {
-    expect(migration).toContain('on public.participants as restrictive');
+  it('uses role-scoped authenticated policies and fixed SECURITY DEFINER search paths', () => {
+    expect(migration).toContain('drop policy if exists allow_all_participants on public.participants');
+    expect(migration).toContain('on public.participants as permissive');
     expect(migration).toContain('set search_path = pg_catalog, public');
     expect(migration).toContain('grant execute on function public.participant_caller_is_room_host(text) to authenticated');
     expect(migration).not.toContain('grant execute on function public.participant_caller_is_room_host(text) to anon');
