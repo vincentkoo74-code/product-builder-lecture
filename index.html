@@ -5914,6 +5914,106 @@
       saveRecentRoomCode(code, nickname, participantId, role);
     }
 
+    // Reconnect authority is the server-owned participant binding, never the
+    // device's cached participant ID or host role. `destroyed` is the current
+    // room tombstone; a deleted room has no row and is therefore ineligible.
+    // Do not add a status whitelist here: rooms.status is an open text field
+    // and the rest of the room runtime intentionally recognizes more states
+    // than the lobby's initial waiting/playing path.
+    function isReclaimableOwnedRoom(room) {
+      return Boolean(room?.id) && room.status !== "destroyed";
+    }
+
+    // Pure selection rule shared by startup recovery and its deterministic
+    // contract tests. A valid persisted room hint wins. Without one, exactly
+    // one server-owned active membership is safe to restore; ambiguity never
+    // selects a room and never creates a new one.
+    function selectOwnedRoomRecovery(candidates = [], preferredRoomCode = "") {
+      const byRoomCode = new Map();
+      for (const candidate of candidates || []) {
+        if (!candidate?.participant || !isReclaimableOwnedRoom(candidate.room)) continue;
+        if (!byRoomCode.has(candidate.room.id)) byRoomCode.set(candidate.room.id, candidate);
+      }
+      const valid = [...byRoomCode.values()];
+      const preferred = String(preferredRoomCode || "").trim().toUpperCase();
+      const preferredCandidate = preferred
+        ? valid.find(candidate => candidate.room.id === preferred)
+        : null;
+      if (preferredCandidate) return { kind: "reclaim", candidate: preferredCandidate, source: "persistedRoomCode" };
+      if (valid.length === 1) return { kind: "reclaim", candidate: valid[0], source: "serverOwnership" };
+      if (valid.length > 1) return { kind: "ambiguous", candidateCount: valid.length };
+      return { kind: "none", candidateCount: 0 };
+    }
+
+    async function restoreOwnedRoomOnStartup() {
+      if (!getOnlineMode() || !ensureDb()?.auth) return { kind: "none", candidateCount: 0 };
+      const { data: sessionData, error: sessionError } = await db.auth.getSession();
+      if (sessionError) throw sessionError;
+      const ownerUserId = sessionData?.session?.user?.id;
+      if (!ownerUserId) return { kind: "none", candidateCount: 0 };
+
+      const preferredRoomCode = String(state.roomCode || getLastJoinedRoomCode() || "").trim().toUpperCase();
+      const loadCandidate = async (roomCode) => {
+        const { data: memberships, error: membershipError } = await db.from("participants")
+          .select("id,room_id,is_host")
+          .eq("owner_user_id", ownerUserId)
+          .eq("room_id", roomCode);
+        if (membershipError) throw membershipError;
+        const participant = memberships?.[0];
+        if (!participant) return null;
+        const { data: room, error: roomError } = await db.from("rooms").select("*").eq("id", roomCode).single();
+        if (roomError || !isReclaimableOwnedRoom(room)) return null;
+        return { participant, room };
+      };
+
+      // A persisted room code is only a hint. It is accepted only after both
+      // ownership and the live room row have been verified by the server.
+      if (preferredRoomCode) {
+        const preferredCandidate = await loadCandidate(preferredRoomCode);
+        if (preferredCandidate) {
+          const recovery = { kind: "reclaim", candidate: preferredCandidate, source: "persistedRoomCode" };
+          await applyOwnedRoomRecovery(recovery.candidate);
+          return recovery;
+        }
+      }
+
+      const { data: memberships, error: membershipsError } = await db.from("participants")
+        .select("id,room_id,is_host")
+        .eq("owner_user_id", ownerUserId);
+      if (membershipsError) throw membershipsError;
+      const roomCodes = [...new Set((memberships || []).map(p => p.room_id).filter(Boolean))];
+      if (!roomCodes.length) return { kind: "none", candidateCount: 0 };
+      const { data: rooms, error: roomsError } = await db.from("rooms").select("*").in("id", roomCodes);
+      if (roomsError) throw roomsError;
+      const roomsById = new Map((rooms || []).map(room => [room.id, room]));
+      const recovery = selectOwnedRoomRecovery(
+        (memberships || []).map(participant => ({ participant, room: roomsById.get(participant.room_id) })),
+        ""
+      );
+      if (recovery.kind === "reclaim") await applyOwnedRoomRecovery(recovery.candidate);
+      return recovery;
+    }
+
+    async function applyOwnedRoomRecovery(candidate) {
+      const { participant, room } = candidate;
+      resetRoomLocalState({ keepRoomCode: room.id });
+      state.roomCode = room.id;
+      state.shareBaseUrl = getDefaultShareBaseUrl();
+      state.roomUrl = buildRoomUrl(room.id);
+      state.currentUserId = participant.id;
+      state.role = participant.is_host ? "host" : "participant";
+      state.status = room.status;
+      state.penalty = room.penalty || "";
+      state.round = room.round || 1;
+      state.gameRound = getPenaltyGameRound(room.penalty) || 1;
+      state.lastStartedGameRound = ["playing", "result", "game_over", "stats"].includes(room.status)
+        ? state.gameRound
+        : 0;
+      saveLastJoinedRoomCode(room.id, state.nickname || loadNickname(), participant.id, state.role);
+      saveState();
+      await subscribeToRoom(room.id);
+    }
+
     function getRoomPlayers() {
       return state.participants.filter(p => !p.is_host);
     }
@@ -16187,8 +16287,23 @@ function summarizeGameStats(rows) {
         }
 
         loadState();
-        // 시작 시 자동 복귀 없음 → 복원된 진행 중 방 상태 폐기(새 방/QR 입장은 항상 서버 권위로 시작)
-        discardInProgressRoomSession();
+        // Cold launch recovery uses the server-side owner binding. The old
+        // behavior discarded this state unconditionally, so a relaunch lost
+        // JKHC and later explicit host creation produced HGRU.
+        let startupRoomRecovery = { kind: "none", candidateCount: 0 };
+        try {
+          startupRoomRecovery = await restoreOwnedRoomOnStartup();
+        } catch (e) {
+          console.warn("Owned room startup recovery failed:", e?.message || e);
+        }
+        if (startupRoomRecovery.kind !== "reclaim") {
+          // No valid server-owned room was restored. This remains a clean home
+          // state; importantly, no recovery path calls createRoom().
+          discardInProgressRoomSession();
+          if (startupRoomRecovery.kind === "ambiguous") {
+            showToast("진행 중인 방이 여러 개입니다. 새 방을 자동으로 만들지 않았습니다.");
+          }
+        }
         lockOrientationForDevice();
         const savedNickname = loadNickname();
         if (savedNickname) setValueIfExists("homeNickname", savedNickname);
@@ -16197,6 +16312,9 @@ function summarizeGameStats(rows) {
 
         const authState = getAuthState();
 
+        if (startupRoomRecovery.kind === "reclaim") {
+          return;
+        }
         if (room) {
           state.roomCode = room.toUpperCase();
           state.shareBaseUrl = location.origin;
