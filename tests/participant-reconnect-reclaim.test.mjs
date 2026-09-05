@@ -78,4 +78,24 @@ describe('KR participant reconnect reclaim — server ownership contract', () =>
     expect(html).toContain('await requireActiveSession(verifyData?.session, "카카오 로그인")');
     expect(html).toContain('db.auth.signInAnonymously()');
   });
+
+  it('REC-ROUTE-01/02: recovered host and participant both receive a final canonical route', () => {
+    const recovery = sliceFn('applyOwnedRoomRecovery');
+    expect(recovery).toContain('state.role = participant.is_host ? "host" : "participant"');
+    expect(recovery).toContain('await handleRoomUpdate(room)');
+  });
+
+  it('REC-ROUTE-03/12: the safe Home boot screen is explicitly overridden only after owned recovery', () => {
+    const recovery = sliceFn('applyOwnedRoomRecovery');
+    expect(recovery).toContain('state.status = "__startup_owned_room_recovery__"');
+    expect(html).toContain('normalizeColdLaunchScreen();');
+    expect(html).toContain('if (startupRoomRecovery.kind === "reclaim") {\n          return;');
+  });
+
+  it('REC-ROUTE-04/05/08/10/11: recovery retains server authority and does not create membership', () => {
+    const recovery = sliceFn('restoreOwnedRoomOnStartup');
+    expect(recovery).toContain('currentUserHasTerminalRoomExit');
+    expect(recovery).not.toContain('.insert(');
+    expect(recovery).not.toContain('createRoom(');
+  });
 });

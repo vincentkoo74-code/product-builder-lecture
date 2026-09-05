@@ -6036,6 +6036,12 @@
       saveLastJoinedRoomCode(room.id, state.nickname || loadNickname(), participant.id, state.role);
       saveState();
       await subscribeToRoom(room.id);
+      // subscribeToRoom's initial room fetch normally routes only on a status
+      // transition. Recovery has already hydrated state.status from that same
+      // row, so force one awaited canonical routing pass rather than leaving
+      // BOOT_SAFE_SCREEN (Home) as the final route after a valid reclaim.
+      state.status = "__startup_owned_room_recovery__";
+      await handleRoomUpdate(room);
     }
 
     function getRoomPlayers() {
