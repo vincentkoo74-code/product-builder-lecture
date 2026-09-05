@@ -5705,7 +5705,11 @@
       return JSON.stringify(value);
     }
     // Build19: RESULT/GAME_OVER/NEXT_ROUND(ready) 전환 예정 시각 계산(countdown과 동일한 lead 패턴).
-    const PHASE_RENDER_BUFFER_MS = 900; // 서버 커밋~클라 표시까지 흡수할 고정 버퍼(800~1200ms 권장 범위 중앙)
+    // RESULT/READY는 하나의 권위 scheduledAt으로 모든 기기가 맞춘다. Normal release profile의
+    // Realtime tail은 최대 2000ms이므로, 900ms lead에서는 늦게 받은 기기가 즉시 catch-up
+    // 렌더되어 cohort gap이 tail만큼 벌어진다. 2200ms는 그 immutable Normal tail에 200ms
+    // 여유를 더한 delivery lead다; 250ms cohort coherence contract는 변경하지 않는다.
+    const PHASE_RENDER_BUFFER_MS = 2200;
     function getNextPhaseScheduledAt(bufferMs = PHASE_RENDER_BUFFER_MS) { return serverNow() + bufferMs; }
     // Build30-R2 Phase A(WRPS-078, CRITICAL 재수정): choice window(선택 시간) 종료 예정 시각.
     //
@@ -6643,8 +6647,8 @@
 	      state.renderedPhaseKeys[renderKey] = true;
 
 	      const waitMs = scheduledAt ? Math.max(0, scheduledAt - serverNow()) : 0;
-	      // Build29(WRPS-076) [P1, R6]: 캡을 4000→4800으로 올려 6987 부근과 동일한 불변식
-	      // (캡 > lead(3600) + PHASE_RENDER_BUFFER_MS(900) = 4500)을 유지한다.
+	      // Build29(WRPS-076) [P1, R6]: 4800ms cap은 countdown lead(3600ms)와 이 phase
+	      // delivery lead(2200ms)를 각각 완전히 덮는다. 두 wait는 더해지지 않는다.
 	      if (waitMs > 0) await sleep(Math.min(waitMs, 4800));
 	      const clientRenderedTs = Date.now();
 	      const lateRenderMs = scheduledAt ? Math.max(0, serverNow() - scheduledAt) : 0;
@@ -9787,9 +9791,9 @@
         labelEl.textContent = "";
         // WRPS-047: 캡은 lead(3600ms)보다 커야 호스트/빠른 단말이 startAt까지 끝까지 대기해
         // 늦은 단말과 같은 startAt에 애니메이션을 시작한다(캡<lead면 빠른 단말이 조기 시작=desync).
-        // Build29(WRPS-076) [P1, R6]: lead(3600) + PHASE_RENDER_BUFFER_MS(900) = 4500 > 종전 캡
-        // 4000 — 캡<lead+buffer이면 조기 시작 desync가 난다(실측 1건: p#1 waitMs 4,877 →
-        // 877ms 조기 시작). 캡을 4800으로 올려 위 불변식(캡>lead+buffer)을 회복한다.
+        // Build29(WRPS-076) [P1, R6]: 4800ms cap은 이 countdown lead(3600ms)를 덮어
+        // 조기 시작 desync를 막는다(실측 1건: p#1 waitMs 4,877 → 877ms 조기 시작).
+        // RESULT/READY delivery lead는 별도 waitForPhaseRender 경로에서 최대 2200ms로 대기한다.
         await sleep(Math.min(waitMs, 4800));
         // Build30-R2 Phase2(WRPS-078) checkpoint 2/5: lead sleep 반환 직후. 이어지는 오디오 재생
         // 요청("ready" voice) 직전에 세대를 재확인한다.
