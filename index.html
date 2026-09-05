@@ -2971,7 +2971,11 @@
           <span class="go-pill">GO</span>
         </button>
         <button id="penaltySetBtn" class="btn-primary btn-full" onclick="window.showPenaltyScreen()" data-i18n="hostRoom.penaltySetBtn">벌칙 설정하기</button>
-        <button class="btn-outline btn-full" onclick="window.goHome()" data-i18n="common.home">처음으로</button>
+        <!-- An active room's Home action is a terminal membership exit, not
+             generic navigation. leaveRoom() preserves the existing host /
+             deferred-leave flow and commits exit_room_permanently before it
+             can route Home. -->
+        <button class="btn-outline btn-full" onclick="window.leaveRoom()" data-i18n="common.home">처음으로</button>
       </div>
       </div>
 
@@ -14074,7 +14078,15 @@ function summarizeGameStats(rows) {
           p_exit_reason: 'explicit_leave',
           p_owner_user_id: null,
         });
-        if (exitError) throw new Error(exitError.message || String(exitError));
+        if (exitError) {
+          // The RPC is the membership commit point. Keep the active local
+          // room and its subscription intact when it fails; navigating Home
+          // here would falsely claim a terminal exit that never occurred.
+          try { showToast(t("common.syncError")); } catch (e) {}
+          try { QA.emit('lobby', { wrps: 'WRPS-EXIT-LEAVE', eventType: 'TERMINAL_EXIT_FAILED',
+            roomCode: exitRoomCode || null, message: exitError.message || String(exitError) }); } catch (e) {}
+          return false;
+        }
         clearRoomScopedCache(exitRoomCode);
       }
       clearRealtime();
