@@ -72,12 +72,21 @@ function buildEnv({ status = 'playing', myChoice = 'rock' } = {}) {
       chain.then = (res) => res({ error: null });
       return chain; },
   });
-  const db = { from: table };
+  // Terminal, non-round leave now uses the canonical server exit primitive
+  // rather than a client-addressed participants.delete(). Keep this small
+  // harness faithful to that production contract.
+  const db = {
+    from: table,
+    rpc: async (fn, args) => {
+      ops.push({ op: 'rpc', fn, args });
+      return { error: null };
+    },
+  };
 
   const factory = new Function(
     'state','db','QA','t','getOnlineMode','loadNickname','showConfirmPopup','showHostLeavePopup',
     'showNextHostPopup','clearRealtime','goHome','beginNewGameRound','isRoomClosingOrDestroyed',
-    'showToast','isNonPlayingChoice','onGoHome','onClearRealtime','onConfirm','onBeginNewGameRound',
+    'showToast','isNonPlayingChoice','clearRoomScopedCache','onGoHome','onClearRealtime','onConfirm','onBeginNewGameRound',
     ROUND_PROG_SRC + '\n' + ACTIVITY_SRC + '\n' + LEAVE_ROOM_SRC + '\n' + DO_LEAVE_SRC + '\n' +
     'return { leaveRoom, _doLeaveRoom, isRoundInProgressForLeave, hasCurrentGameRoundActivity };'
   );
@@ -89,7 +98,7 @@ function buildEnv({ status = 'playing', myChoice = 'rock' } = {}) {
     () => { calls.clearRealtime++; },
     () => { calls.goHome++; },
     async () => { calls.beginNewGameRound++; },
-    () => false, noop,
+    () => false, noop, noop,
     (c) => c === '__safe__' || c === '__loser__' || c === '__waiting__',
     noop, noop, noop, noop
   );
@@ -178,8 +187,8 @@ describe('A2 — 참가자 퇴장 예약: 동작', () => {
   it('[대조군] waiting 상태의 즉시 퇴장은 계약상 허용이므로 종전대로 동작한다', async () => {
     const env = buildEnv({ status: 'waiting' });
     await env.mod.leaveRoom();
-    const deletes = env.ops.filter(o => o.table === 'participants' && o.op === 'delete');
-    expect(deletes.length, 'waiting에서는 즉시 삭제가 정상').toBeGreaterThan(0);
+    const exits = env.ops.filter(o => o.op === 'rpc' && o.fn === 'exit_room_permanently');
+    expect(exits.length, 'waiting에서는 canonical terminal exit이 정상').toBe(1);
     expect(env.calls.goHome).toBe(1);
   });
 

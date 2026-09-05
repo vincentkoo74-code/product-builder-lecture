@@ -92,13 +92,23 @@ function buildEnv({ status = 'playing', path = 'transfer' } = {}) {
       };
       return chain; },
     select: () => mkChain({ table, op: 'select', filters: {} }),
-  }) };
+  }),
+  rpc: async (fn, args) => {
+    ops.push({ op: 'rpc', fn, args });
+    if (fn === 'exit_room_permanently') {
+      // This harness has no Auth client. Model the authenticated caller as
+      // the old host when the client requests its own exit.
+      const owner = args.p_owner_user_id || OLD_HOST;
+      if (owner === OLD_HOST) dbRows = dbRows.filter(r => r.id !== OLD_HOST);
+    }
+    return { error: null };
+  } };
 
   const factory = new Function(
     'state','db','QA','t','getOnlineMode','loadNickname','showConfirmPopup','showHostLeavePopup',
     'showNextHostPopup','closeNextHostPopup','clearRealtime','goHome','beginNewGameRound',
     'isRoomClosingOrDestroyed','showToast','promoteParticipantToHost','verifyExactlyOneHost',
-    'getGameRound','isNonPlayingChoice',
+    'getGameRound','isNonPlayingChoice','clearRoomScopedCache',
     ROUND_PROG_SRC + '\n' + ACTIVITY_SRC + '\n' + PICK_SRC + '\n' +
     LEAVE_ROOM_SRC + '\n' + FORCE_SRC + '\n' + DO_LEAVE_SRC + '\n' + TRANSFER_SRC + '\n' +
     'return { leaveRoom, leaveRoomForce, transferHostAndLeave, _doLeaveRoom, ' +
@@ -117,7 +127,8 @@ function buildEnv({ status = 'playing', path = 'transfer' } = {}) {
       return true; },
     async (room, preferred) => { calls.verifyExactlyOneHost.push({ room, preferred }); },
     () => state.gameRound,
-    (c) => c === '__safe__' || c === '__loser__' || c === '__waiting__'
+    (c) => c === '__safe__' || c === '__loser__' || c === '__waiting__',
+    noop
   );
 
   const run = () => path === 'transfer' ? mod.transferHostAndLeave(P2) : mod.leaveRoomForce();

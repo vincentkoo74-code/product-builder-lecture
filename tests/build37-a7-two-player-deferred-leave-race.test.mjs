@@ -92,15 +92,23 @@ function createSharedDb({ participants = [], rooms = [] } = {}) {
                delete: () => makeBuilder(table, 'delete'),
                select: () => makeBuilder(table, 'select') };
     },
+    async rpc(name, args = {}) {
+      if (name !== 'exit_room_permanently') throw new Error('[a7] unsupported rpc: ' + name);
+      const owner = args.p_owner_user_id;
+      const rows = tables.participants.filter(p => p.room_id === args.p_room_id && p.owner_user_id === owner);
+      writeLog.push({ table: 'participants', op: 'delete', via: 'exit_room_permanently', matched: rows.length });
+      for (const row of rows) tables.participants.splice(tables.participants.indexOf(row), 1);
+      return { data: [], error: null };
+    },
   };
 }
 
 const ROOM = 'BYZ7';
 const seedRows = () => ([
   { id: 'h1', room_id: ROOM, name: 'host', is_host: true,  choice: 'scissors', is_ready: true,
-    leave_after_round: false, created_at: '2026-08-20T10:00:00Z' },
+    leave_after_round: false, owner_user_id: 'owner-h1', created_at: '2026-08-20T10:00:00Z' },
   { id: 'p2', room_id: ROOM, name: 'p2',   is_host: false, choice: 'rock',     is_ready: true,
-    leave_after_round: false, created_at: '2026-08-20T10:01:00Z' },
+    leave_after_round: false, owner_user_id: 'owner-p2', created_at: '2026-08-20T10:01:00Z' },
 ]);
 
 // ── 단말 A: 나가기/예약/정리 경로 ───────────────────────────────────────────
@@ -116,18 +124,24 @@ function buildLeaveTerminal({ db, currentUserId, role, status = 'playing' }) {
     pendingSuccessorHostId: null, publishingRoundResult: false, finishingRound: false,
     gameStarting: false,
   };
+  const dbForCaller = Object.assign(Object.create(db), {
+    rpc: (name, args = {}) => db.rpc(name, {
+      ...args,
+      p_owner_user_id: args.p_owner_user_id || `owner-${currentUserId}`,
+    }),
+  });
   const factory = new Function(
     'state', 'db', 'QA', 'getOnlineMode', 'loadNickname', 'showToast', 't',
-    'clearRealtime', 'goHome', 'beginNewGameRound', 'isNonPlayingChoice', 'getGameRound',
+    'clearRealtime', 'goHome', 'beginNewGameRound', 'isNonPlayingChoice', 'getGameRound', 'clearRoomScopedCache',
     `"use strict";\n${ROOM_GUARD_SRC}\n${ROUND_PROG_SRC}\n${ACTIVITY_SRC}\n${LEAVE_SRC}\n` +
     'return { _doLeaveRoom, reserveDeferredLeave, processDeferredLeaves, isRoundInProgressForLeave };'
   );
   const impl = factory(
-    state, db, { emit: (kind, p) => calls.qa.push({ kind, ...p }) },
+    state, dbForCaller, { emit: (kind, p) => calls.qa.push({ kind, ...p }) },
     () => true, () => state.nickname, m => calls.toast.push(m), k => k,
     () => { calls.clearRealtime++; }, () => { calls.goHome++; },
     asyncNoop, c => c === '__safe__' || c === '__loser__' || c === '__waiting__',
-    () => state.gameRound
+    () => state.gameRound, noop
   );
   return { state, calls, impl };
 }
