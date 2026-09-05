@@ -576,9 +576,9 @@ describe('Build30-R2 Phase A(WRPS-078) 소스 계약 — visibilitychange 훅/�
   it('visibilitychange 리스너가 resyncChoiceTimerOnResume()을 동기적으로(비동기 resyncRoomOnResume보다 먼저) 호출한다', () => {
     expect(html).toMatch(/if \(!document\.hidden\) \{[\s\S]{0,220}resyncChoiceTimerOnResume\(\);[\s\S]{0,50}resyncRoomOnResume\(\);/);
   });
-  it('countdown lead(3600ms)/PHASE_RENDER_BUFFER_MS(900) 등 기존 서버시각 동기화 상수는 무변경이다', () => {
+  it('countdown lead(3600ms)와 Normal Realtime tail을 흡수하는 RESULT/READY lead(2200ms)를 유지한다', () => {
     expect(html).toContain('function getNextCountdownStartAt(delayMs = 3600) {');
-    expect(html).toContain('const PHASE_RENDER_BUFFER_MS = 900;');
+    expect(html).toContain('const PHASE_RENDER_BUFFER_MS = 2200;');
   });
   it('판정 알고리즘/Build23 guard 소스 계약은 무변경이다', () => {
     expect(html).toContain('function judgeRound(');

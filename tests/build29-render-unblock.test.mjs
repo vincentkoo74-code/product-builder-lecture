@@ -206,14 +206,15 @@ describe('Build29 [P1, R5] ready 분기 — 참가자 새로고침과 waitForPha
   });
 });
 
-describe('Build29 [P1, R6] sleep 캡 4000 → 4800 (불변식: 캡 > lead(3600)+buffer(900)=4500)', () => {
+describe('Build29 [P1, R6] phase render wait cap and Normal delivery lead', () => {
   it('waitForPhaseRender/countdown 두 지점 모두 캡이 4800으로 상향됐다(4000 잔존 없음)', () => {
     expect(html).toMatch(/if \(waitMs > 0\) await sleep\(Math\.min\(waitMs, 4800\)\);/);
     expect(html).toMatch(/await sleep\(Math\.min\(waitMs, 4800\)\);/);
     expect(html).not.toContain('Math.min(waitMs, 4000)');
   });
-  it('PHASE_RENDER_BUFFER_MS(900)는 변경되지 않았다(CEO 결정 범위 — 폴링만 조정)', () => {
-    expect(html).toContain('const PHASE_RENDER_BUFFER_MS = 900;');
+  it('RESULT/READY scheduled lead는 2000ms Normal Realtime tail을 넘고 polling interval은 건드리지 않는다', () => {
+    expect(html).toContain('const PHASE_RENDER_BUFFER_MS = 2200;');
+    expect(html).toContain('}, 2600);');
   });
 });
 
