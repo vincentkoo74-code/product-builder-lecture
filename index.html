@@ -2753,7 +2753,7 @@
       </button>
 
       <div class="quick-row">
-        <button class="quick-btn" onclick="window.showJoinScreen({ recent: true })">
+        <button class="quick-btn" onclick="window.showParticipatedRoomsHistory()">
           <span class="icon">📱</span>
           <span data-i18n="home.quickJoin">참가했던 방</span>
         </button>
@@ -2779,6 +2779,14 @@
       </button>
       </div>
 
+    </section>
+
+    <section class="card maru-card hidden" id="screenParticipatedRoomsHistory">
+      <button type="button" class="screen-close-btn" onclick="window.goHome()" aria-label="Close">×</button>
+      <div class="saekdong-v"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="c-head"><h2 class="maru-section-title" style="margin:2px 0 4px">참가했던 방</h2><p class="maru-subtitle" style="margin:0">기록만 확인할 수 있어요.</p></div>
+      <div class="c-body"><div id="participatedRoomsHistoryBody"></div></div>
+      <div class="c-foot"><button class="btn-outline btn-full" onclick="window.goHome()" data-i18n="common.home">처음으로</button></div>
     </section>
 
 
@@ -8471,6 +8479,7 @@
         "screenQrScanner",
         "screenHostRoom",
         "screenJoin",
+        "screenParticipatedRoomsHistory",
         "screenParticipantWait",
         "screenPenalty",
         "screenReady",
@@ -8951,6 +8960,45 @@
         } else {
           refreshJoinRoomPreview(joinedRoomCode);
         }
+      }
+    }
+
+    async function showParticipatedRoomsHistory() {
+      const body = $("participatedRoomsHistoryBody");
+      if (!body) return;
+      showScreen("screenParticipatedRoomsHistory");
+      body.innerHTML = `<div class="participant"><span>${t("account.loading")}</span></div>`;
+      if (getAuthState() !== "authed" || !db?.auth) {
+        body.innerHTML = `<div class="participant"><strong>${t("account.loginRequired")}</strong></div>`;
+        return;
+      }
+      try {
+        const { data: { user }, error: userError } = await db.auth.getUser();
+        if (userError || !user?.id) throw userError || new Error("로그인 정보를 찾을 수 없습니다.");
+        const { data, error } = await db.from("user_game_history")
+          .select("room_id,round,result,penalty_text,created_at")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(80);
+        if (error) throw error;
+        const uniqueRooms = [];
+        const seen = new Set();
+        for (const row of data || []) {
+          if (!row.room_id || seen.has(row.room_id)) continue;
+          seen.add(row.room_id);
+          uniqueRooms.push(row);
+        }
+        body.innerHTML = uniqueRooms.length
+          ? uniqueRooms.map(row => {
+              const meta = getAccountResultMeta(row.result);
+              return `<div class="participant" data-history-room="${escapeHtml(row.room_id)}" style="display:block;cursor:default">
+                <strong>${escapeHtml(row.room_id)}</strong>
+                <div style="margin-top:4px;color:var(--muted);font-size:12px">${escapeHtml(formatAccountDate(row.created_at))} · ${escapeHtml(meta.label)}</div>
+              </div>`;
+            }).join("")
+          : `<div class="participant"><strong>참가 기록이 없습니다.</strong><span>종료된 방은 기록으로만 표시됩니다.</span></div>`;
+      } catch (e) {
+        body.innerHTML = `<div class="participant"><strong>${t("common.syncError")}</strong></div>`;
       }
     }
 
@@ -16435,6 +16483,7 @@ function summarizeGameStats(rows) {
     // onclick 속성에서 접근 가능하도록 window에 명시 등록
     window.createRoom = createRoom;
     window.showJoinScreen = showJoinScreen;
+    window.showParticipatedRoomsHistory = showParticipatedRoomsHistory;
     window.showQrScanner = showQrScanner;
     window.startQrScan = startQrScan;
     window.retryQrScanner = retryQrScanner;
