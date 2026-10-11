@@ -1,0 +1,42 @@
+name: KR deployment guard CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/kr-deployment-guard-ci.yml"
+      - ".github/workflows/supabase-deploy.yml"
+      - "scripts/assert-kr-security-migration-scope.mjs"
+      - "scripts/create-kr-deployment-approval.mjs"
+      - "scripts/verify-kr-deployment-approval.mjs"
+      - "tests/kr-deployment-workflow-guard.test.mjs"
+      - "package.json"
+      - "package-lock.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kr-deployment-guard-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  guard-tests:
+    name: KR deployment guard / syntax and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Validate repository JavaScript syntax
+        run: npm test
+
+      - name: Run deployment guard tests
+        run: node --test tests/kr-deployment-workflow-guard.test.mjs
