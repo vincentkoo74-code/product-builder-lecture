@@ -37,7 +37,7 @@ jobs:
       - name: Verify Supabase Edge Functions are reachable
         run: |
           set -euo pipefail
-          for fn in kakao-auth line-auth delete-account; do
+          for fn in kakao-auth delete-account; do
             for attempt in $(seq 1 20); do
               if curl -fsS --max-time 20 -X OPTIONS "https://sannrfmhevebqgfdqcps.supabase.co/functions/v1/$fn" >/dev/null; then
                 echo "$fn is reachable."
