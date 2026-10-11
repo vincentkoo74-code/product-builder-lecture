@@ -1,122 +1,205 @@
-name: Deploy Supabase
+name: Supabase KR validation and approved deployment
 
 on:
-  push:
-    branches:
-      - main
+  pull_request:
     paths:
       - "supabase/**"
       - ".github/workflows/supabase-deploy.yml"
+      - "scripts/assert-kr-security-migration-scope.mjs"
+      - "scripts/create-kr-deployment-approval.mjs"
+      - "scripts/verify-kr-deployment-approval.mjs"
+      - "tests/kr-deployment-workflow-guard.test.mjs"
+  push:
+    branches:
+      - main
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Validate, prepare a review artifact, or deploy that exact prepared bundle
+        type: choice
+        required: true
+        default: validate_only
+        options:
+          - validate_only
+          - prepare_kr_deployment
+          - deploy_approved_kr_bundle
+      candidate_sha:
+        description: Exact commit SHA to validate; must equal the selected workflow ref
+        type: string
+        required: false
+      approval_request_id:
+        description: Request ID from the successful Prepare artifact
+        type: string
+        required: false
+      prepare_run_id:
+        description: Successful Prepare workflow run ID containing the immutable approval artifact
+        type: string
+        required: false
+
+permissions:
+  contents: read
 
 concurrency:
-  group: supabase-deploy-main
+  group: supabase-kr-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  migrate:
-    name: Push database migrations
+  validate:
+    name: Test and validate only
     runs-on: ubuntu-latest
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      SUPABASE_PROJECT_REF: cmfxhehpreanijwanwrr
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          version: latest
+          ref: ${{ inputs.candidate_sha || github.sha }}
 
-      - name: Validate required secrets
+      - name: Confirm exact candidate commit
+        if: github.event_name == 'workflow_dispatch' && inputs.candidate_sha != ''
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: test -n "$CANDIDATE_SHA" && test "$CANDIDATE_SHA" = "$GITHUB_SHA"
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run automated tests
+        run: npm test
+
+      - name: Validate shipped HTML syntax
+        run: npm run test:syntax
+
+      - name: Validate deployment guard tests
+        run: npx vitest run tests/kr-deployment-workflow-guard.test.mjs
+
+  prepare-kr-deployment:
+    name: Prepare immutable KR approval request (no production credentials)
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.operation == 'prepare_kr_deployment'
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the exact candidate commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.candidate_sha }}
+
+      - name: Generate approval request manifest
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          PREPARE_RUN_ID: ${{ github.run_id }}
+        run: |
+          test -n "$CANDIDATE_SHA"
+          test "$CANDIDATE_SHA" = "$GITHUB_SHA"
+          node scripts/create-kr-deployment-approval.mjs --commit "$CANDIDATE_SHA" --run-id "$PREPARE_RUN_ID" --output approval-request.json
+
+      - name: Upload immutable approval request
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kr-deployment-approval-${{ github.run_id }}
+          path: approval-request.json
+          if-no-files-found: error
+          retention-days: 30
+
+  deploy-approved-kr-bundle:
+    name: Deploy the exact approved KR bundle
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.operation == 'deploy_approved_kr_bundle'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: supabase-kr-production-deploy
+      cancel-in-progress: false
+    environment: supabase-KR
+    permissions:
+      actions: read
+      contents: read
+    env:
+      # These names must exist only as supabase-KR Environment Secrets.
+      # Do not fall back to repository-level secrets.
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.KR_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.KR_SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: sannrfmhevebqgfdqcps
+      EXPECTED_SCOPE: kr-security-20261010100000-20261010110000-delete-account
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      APPROVAL_REQUEST_ID: ${{ inputs.approval_request_id }}
+      PREPARE_RUN_ID: ${{ inputs.prepare_run_id }}
+    steps:
+      - name: Check out the exact approved candidate commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.candidate_sha }}
+
+      - name: Verify request references a successful Prepare run from this workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           set -euo pipefail
+          test "$CANDIDATE_SHA" = "$GITHUB_SHA"
+          [[ "$PREPARE_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$APPROVAL_REQUEST_ID" =~ ^KR-[0-9a-f]{16}$ ]]
+          workflow_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/supabase-deploy.yml" --jq .id)"
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PREPARE_RUN_ID")"
+          test "$(jq -r .workflow_id <<<"$run_json")" = "$workflow_id"
+          test "$(jq -r .event <<<"$run_json")" = "workflow_dispatch"
+          test "$(jq -r .status <<<"$run_json")" = "completed"
+          test "$(jq -r .conclusion <<<"$run_json")" = "success"
+          test "$(jq -r .head_sha <<<"$run_json")" = "$CANDIDATE_SHA"
+
+      - name: Download the exact Prepare run artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kr-deployment-approval-${{ inputs.prepare_run_id }}
+          run-id: ${{ inputs.prepare_run_id }}
+          github-token: ${{ github.token }}
+          path: approval
+
+      - name: Revalidate approval request, backup gate, hashes, and KR scope
+        env:
+          EXPECTED_COMMIT: ${{ inputs.candidate_sha }}
+          EXPECTED_REQUEST_ID: ${{ inputs.approval_request_id }}
+          EXPECTED_PREPARE_RUN_ID: ${{ inputs.prepare_run_id }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$EXPECTED_SCOPE" = "kr-security-20261010100000-20261010110000-delete-account"
+          test "$SUPABASE_PROJECT_REF" = "sannrfmhevebqgfdqcps"
+          node scripts/verify-kr-deployment-approval.mjs approval/approval-request.json \
+            --commit "$EXPECTED_COMMIT" --request-id "$EXPECTED_REQUEST_ID" --run-id "$EXPECTED_PREPARE_RUN_ID"
           test -n "$SUPABASE_ACCESS_TOKEN"
           test -n "$SUPABASE_DB_PASSWORD"
-          case "$SUPABASE_ACCESS_TOKEN" in
-            sbp_*) ;;
-            *) echo "SUPABASE_ACCESS_TOKEN must start with sbp_"; exit 1 ;;
-          esac
+          case "$SUPABASE_ACCESS_TOKEN" in sbp_*) ;; *) exit 1 ;; esac
 
-      - name: Link Supabase project
-        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
-
-      - name: Push database migrations
-        run: supabase db push --linked --password "$SUPABASE_DB_PASSWORD" --yes
-
-      - name: Notify Telegram
-        if: always()
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          JOB_STATUS: ${{ job.status }}
-          COMMIT_SHA: ${{ github.sha }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
-            echo "Telegram secrets are not configured. Skipping notification."
-            exit 0
-          fi
-          if [ "$JOB_STATUS" = "success" ]; then
-            STATUS_TEXT="성공"
-          else
-            STATUS_TEXT="실패"
-          fi
-          MESSAGE="$(printf '윈도우-덱스: Supabase 마이그레이션 %s\n커밋: %s\n%s' "$STATUS_TEXT" "${COMMIT_SHA:0:7}" "$RUN_URL")"
-          curl -fsS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-            --data-urlencode "text=${MESSAGE}"
-
-  deploy-functions:
-    name: Deploy Edge Functions
-    runs-on: ubuntu-latest
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_PROJECT_REF: cmfxhehpreanijwanwrr
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Supabase CLI
-        uses: supabase/setup-cli@v1
+      - name: Set up pinned Supabase CLI
+        uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
         with:
-          version: latest
+          version: 2.115.0
 
-      - name: Validate required secrets
+      - name: Link only the approved KR project
+        shell: bash
         run: |
           set -euo pipefail
-          test -n "$SUPABASE_ACCESS_TOKEN"
-          case "$SUPABASE_ACCESS_TOKEN" in
-            sbp_*) ;;
-            *) echo "SUPABASE_ACCESS_TOKEN must start with sbp_"; exit 1 ;;
-          esac
+          test "$SUPABASE_PROJECT_REF" = "sannrfmhevebqgfdqcps"
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
 
-      - name: Deploy Edge Functions
-        run: supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF"
-
-      - name: Notify Telegram
-        if: always()
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          JOB_STATUS: ${{ job.status }}
-          COMMIT_SHA: ${{ github.sha }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      - name: Require the exact reviewed migration set before applying it
+        shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
-            echo "Telegram secrets are not configured. Skipping notification."
-            exit 0
-          fi
-          if [ "$JOB_STATUS" = "success" ]; then
-            STATUS_TEXT="성공"
-          else
-            STATUS_TEXT="실패"
-          fi
-          MESSAGE="$(printf '윈도우-덱스: Supabase Edge Functions 배포 %s\n커밋: %s\n%s' "$STATUS_TEXT" "${COMMIT_SHA:0:7}" "$RUN_URL")"
-          curl -fsS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-            --data-urlencode "text=${MESSAGE}"
+          test "$SUPABASE_PROJECT_REF" = "sannrfmhevebqgfdqcps"
+          dry_run_output="$(supabase db push --linked --password "$SUPABASE_DB_PASSWORD" --dry-run --yes 2>&1)"
+          printf '%s\n' "$dry_run_output" | node scripts/assert-kr-security-migration-scope.mjs \
+            20261010100000 20261010110000
+          test "$SUPABASE_PROJECT_REF" = "sannrfmhevebqgfdqcps"
+          supabase db push --linked --password "$SUPABASE_DB_PASSWORD" --yes
+
+      - name: Deploy only the reviewed account-deletion function
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$SUPABASE_PROJECT_REF" = "sannrfmhevebqgfdqcps"
+          supabase functions deploy delete-account --project-ref "$SUPABASE_PROJECT_REF"
