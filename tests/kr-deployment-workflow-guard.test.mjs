@@ -32,13 +32,14 @@ describe('KR Supabase deployment guard', () => {
     assert.ok(workflow.includes('npm run test:syntax'));
     assert.ok(workflow.includes('pull_request:'));
     assert.ok(ciWorkflow.includes('pull_request:'));
+    assert.ok(ciWorkflow.includes('push:\n    branches:\n      - main'));
     assert.ok(ciWorkflow.includes('branches:'));
     assert.ok(ciWorkflow.includes('- main'));
     assert.ok(!ciWorkflow.includes('paths:'));
     assert.ok(ciWorkflow.includes('contents: read'));
     assert.ok(ciWorkflow.includes('npm test'));
     assert.ok(ciWorkflow.includes('node --test tests/kr-deployment-workflow-guard.test.mjs'));
-    assert.doesNotMatch(ciWorkflow, /supabase (?:db push|functions deploy|link)/);
+    assert.doesNotMatch(ciWorkflow, /supabase (?:db push|functions deploy|link|secrets set)/);
     assert.doesNotMatch(ciWorkflow, /secrets\./i);
     const ciActions = [...ciWorkflow.matchAll(/^\s+uses:\s+([^\s]+)(?:\s+#.*)?$/gm)].map((match) => match[1]);
     assert.ok(ciActions.length > 0);
