@@ -34,6 +34,7 @@ describe('KR Supabase deployment guard', () => {
     assert.ok(ciWorkflow.includes('pull_request:'));
     assert.ok(ciWorkflow.includes('branches:'));
     assert.ok(ciWorkflow.includes('- main'));
+    assert.ok(!ciWorkflow.includes('paths:'));
     assert.ok(ciWorkflow.includes('contents: read'));
     assert.ok(ciWorkflow.includes('npm test'));
     assert.ok(ciWorkflow.includes('node --test tests/kr-deployment-workflow-guard.test.mjs'));

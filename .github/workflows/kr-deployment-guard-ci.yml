@@ -4,15 +4,6 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - ".github/workflows/kr-deployment-guard-ci.yml"
-      - ".github/workflows/supabase-deploy.yml"
-      - "scripts/assert-kr-security-migration-scope.mjs"
-      - "scripts/create-kr-deployment-approval.mjs"
-      - "scripts/verify-kr-deployment-approval.mjs"
-      - "tests/kr-deployment-workflow-guard.test.mjs"
-      - "package.json"
-      - "package-lock.json"
 
 permissions:
   contents: read
