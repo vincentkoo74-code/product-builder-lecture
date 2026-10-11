@@ -4,12 +4,15 @@ on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
 
 concurrency:
-  group: kr-deployment-guard-ci-${{ github.event.pull_request.number }}
+  group: kr-deployment-guard-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
